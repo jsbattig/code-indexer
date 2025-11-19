@@ -6766,7 +6766,7 @@ def _status_impl(ctx, force_docker: bool):
         # Add daemon mode indicator (requested by user)
         try:
             daemon_config = config.daemon if hasattr(config, "daemon") else None
-            socket_path = config_manager.config_path.parent / "daemon.sock"
+            socket_path = config_manager.get_socket_path()
             daemon_running = socket_path.exists()
 
             if daemon_config and daemon_config.enabled:
@@ -8875,8 +8875,30 @@ def setup_global_registry(ctx, test_access: bool, quiet: bool):
     is_flag=True,
     help="Reinstall even if already installed",
 )
+@click.option(
+    "--systemd",
+    is_flag=True,
+    help="Generate systemd service file for production deployment",
+)
+@click.option(
+    "--issuer-url",
+    type=str,
+    help="OAuth issuer URL for remote access (e.g., https://your-domain.com:8383)",
+)
+@click.option(
+    "--voyage-api-key",
+    type=str,
+    help="VoyageAI API key for embeddings (optional, can use VOYAGE_API_KEY env var)",
+)
 @click.pass_context
-def install_server(ctx, port: Optional[int], force: bool):
+def install_server(
+    ctx,
+    port: Optional[int],
+    force: bool,
+    systemd: bool,
+    issuer_url: Optional[str],
+    voyage_api_key: Optional[str],
+):
     """Install and configure CIDX multi-user server.
 
     Sets up the CIDX multi-user server with JWT authentication, role-based
@@ -8998,6 +9020,16 @@ def install_server(ctx, port: Optional[int], force: bool):
         with console.status("⚙️  Setting up server installation..."):
             allocated_port, config_path, script_path, is_new = installer.install()
 
+        # Generate systemd service if requested
+        service_path = None
+        if systemd:
+            with console.status("⚙️  Generating systemd service file..."):
+                service_path = installer.create_systemd_service(
+                    port=allocated_port,
+                    issuer_url=issuer_url,
+                    voyage_api_key=voyage_api_key,
+                )
+
         # Display success message
         console.print("✅ CIDX Server installed successfully!", style="green bold")
         console.print()
@@ -9008,6 +9040,8 @@ def install_server(ctx, port: Optional[int], force: bool):
         console.print(f"   🌐 Allocated port: {allocated_port}", style="white")
         console.print(f"   ⚙️  Configuration: {config_path.name}", style="white")
         console.print(f"   🚀 Startup script: {script_path.name}", style="white")
+        if service_path:
+            console.print(f"   🔧 Systemd service: {service_path.name}", style="white")
         console.print()
 
         # Initial credentials
@@ -9028,6 +9062,23 @@ def install_server(ctx, port: Optional[int], force: bool):
             style="dim",
         )
         console.print()
+
+        if service_path:
+            # Systemd installation instructions
+            console.print("🔧 Systemd Service Installation:", style="cyan bold")
+            console.print("   Copy service file to system:", style="white")
+            console.print(
+                f"   sudo cp {service_path} /etc/systemd/system/", style="green"
+            )
+            console.print()
+            console.print("   Enable and start service:", style="white")
+            console.print("   sudo systemctl daemon-reload", style="green")
+            console.print("   sudo systemctl enable cidx-server", style="green")
+            console.print("   sudo systemctl start cidx-server", style="green")
+            console.print()
+            console.print("   Check service status:", style="white")
+            console.print("   sudo systemctl status cidx-server", style="green")
+            console.print()
 
         # API documentation
         console.print("📚 API Documentation:", style="cyan bold")

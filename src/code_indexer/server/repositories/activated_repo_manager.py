@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import logging
+# yaml import removed - using json for config files
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -332,6 +333,10 @@ class ActivatedRepoManager:
                 proxy_init = ProxyInitializer(composite_path)
                 proxy_init.initialize(force=True)
                 update_progress(30, "Proxy configuration initialized")
+
+                # Add FilesystemVectorStore and VoyageAI config for composite repos
+                self._update_composite_config(composite_path)
+
             except Exception as e:
                 # Clean up on failure
                 if composite_path.exists():
@@ -1287,8 +1292,12 @@ class ActivatedRepoManager:
             else:
                 update_progress(75, f"Using default branch '{branch_name}'")
 
+            # Note: .code-indexer/config.json already copied by CoW clone (Issue #500)
+            # cidx fix-config was already called in _clone_with_copy_on_write()
+            # No need to manually create config - it comes from golden repo!
+
             # Create metadata file
-            update_progress(85, "Creating repository metadata")
+            update_progress(80, "Creating repository metadata")
             activated_at = datetime.now(timezone.utc).isoformat()
             metadata = {
                 "user_alias": user_alias,
@@ -1802,12 +1811,19 @@ class ActivatedRepoManager:
 
     def _clone_with_copy_on_write(self, source_path: str, dest_path: str) -> bool:
         """
-        Clone repository using copy-on-write and configure git structure properly.
+        Clone repository using copy-on-write to preserve all files including .code-indexer/.
 
-        Creates a CoW clone that preserves git functionality by:
-        1. Using git clone to preserve all branches and git structure
-        2. Configuring proper git remote for branch operations
-        3. Ensuring all branches are available for switching
+        CRITICAL (Issue #500): Uses cp --reflink=auto instead of git clone --local because:
+        - git clone --local skips gitignored directories (.code-indexer/)
+        - CoW clone copies EVERYTHING including indexes
+        - Ensures search works immediately without manual indexing
+
+        Post-clone workflow (from claude-server CowCloneOperationsService.cs):
+        1. cp --reflink=auto -r (CoW clone - copies .code-indexer/)
+        2. git update-index --refresh (fix timestamp mismatches)
+        3. git restore . (undo timestamp changes)
+        4. cidx fix-config --force (update paths in cloned config)
+        5. Configure git structure (remotes, fetch)
 
         Args:
             source_path: Source repository path (golden repository)
@@ -1820,39 +1836,83 @@ class ActivatedRepoManager:
             ActivatedRepoError: If CoW clone or git setup fails
         """
         try:
-            # Check if source is a git repository
-            git_dir = os.path.join(source_path, ".git")
+            # Step 1: Perform CoW clone to copy EVERYTHING including .code-indexer/
+            self.logger.info(
+                f"CoW cloning repository: {source_path} -> {dest_path}"
+            )
 
+            # Use cp --reflink=auto to attempt CoW, fallback to regular copy
+            result = subprocess.run(
+                ["cp", "--reflink=auto", "-r", source_path, dest_path],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if result.returncode != 0:
+                raise ActivatedRepoError(f"CoW clone failed: {result.stderr}")
+
+            self.logger.info(f"CoW clone successful: {source_path} -> {dest_path}")
+
+            # Step 2: Fix git status for CoW cloned files (only if git repo)
+            git_dir = os.path.join(dest_path, ".git")
             if os.path.exists(git_dir):
-                # Step 1: Perform git clone to preserve all branches and git structure
+                # Step 2a: Run git update-index --refresh to sync index with file timestamps
                 self.logger.info(
-                    f"Git repository detected, using git clone: {source_path} -> {dest_path}"
+                    f"Running git update-index --refresh to fix CoW clone timestamps"
                 )
                 result = subprocess.run(
-                    ["git", "clone", "--local", source_path, dest_path],
+                    ["git", "update-index", "--refresh"],
+                    cwd=dest_path,
                     capture_output=True,
                     text=True,
-                    timeout=120,
+                    timeout=60,
                 )
 
                 if result.returncode != 0:
-                    # Fallback to CoW clone if git clone fails
                     self.logger.warning(
-                        f"Git clone failed: {result.stderr}. Falling back to CoW clone."
+                        f"git update-index --refresh failed (non-fatal): {result.stderr}"
                     )
-                    return self._fallback_copy_on_write_clone(source_path, dest_path)
 
-                self.logger.info(f"Git clone successful: {source_path} -> {dest_path}")
-
-                # Step 2: Set up origin remote to point to golden repository for branch operations
-                self._setup_origin_remote_for_local_repo(source_path, dest_path)
-
-            else:
-                # Step 1: Perform CoW clone for non-git directories
+                # Step 2b: Run git restore . to clean up any remaining modified files
                 self.logger.info(
-                    f"Non-git directory detected, using CoW clone: {source_path} -> {dest_path}"
+                    f"Running git restore . to clean up CoW clone timestamp changes"
                 )
-                return self._fallback_copy_on_write_clone(source_path, dest_path)
+                result = subprocess.run(
+                    ["git", "restore", "."],
+                    cwd=dest_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+                if result.returncode != 0:
+                    self.logger.warning(
+                        f"git restore . failed (non-fatal): {result.stderr}"
+                    )
+
+            # Step 3: Fix cidx config paths (only if .code-indexer/ exists)
+            code_indexer_dir = os.path.join(dest_path, ".code-indexer")
+            if os.path.exists(code_indexer_dir):
+                self.logger.info(
+                    f"Running cidx fix-config --force to update cloned config paths"
+                )
+                result = subprocess.run(
+                    ["cidx", "fix-config", "--force"],
+                    cwd=dest_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+                if result.returncode != 0:
+                    self.logger.warning(
+                        f"cidx fix-config failed (non-fatal): {result.stderr}"
+                    )
+
+            # Step 4: Configure git structure if this is a git repository
+            if os.path.exists(git_dir):
+                self._configure_git_structure(source_path, dest_path)
 
             return True
 
@@ -2395,3 +2455,50 @@ class ActivatedRepoManager:
         except Exception as e:
             self.logger.warning(f"Failed to get branches for {repo_path}: {str(e)}")
             return ["main"]
+
+    def _update_composite_config(self, composite_path: Path) -> None:
+        """
+        Update composite repository config with FilesystemVectorStore and VoyageAI.
+
+        ProxyInitializer creates config.json with proxy_mode settings, but we need
+        to add vector_store and embedding_provider settings for Issue #499.
+
+        Args:
+            composite_path: Path to the composite repository
+
+        Raises:
+            ActivatedRepoError: If config update fails
+        """
+        try:
+            config_file = composite_path / ".code-indexer" / "config.json"
+
+            if not config_file.exists():
+                raise ActivatedRepoError(
+                    f"Config file not found at {config_file}. ProxyInitializer should have created it."
+                )
+
+            # Read existing config
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+
+            # Add FilesystemVectorStore and VoyageAI settings
+            config_data["vector_store"] = {
+                "provider": "filesystem"
+            }
+            config_data["embedding_provider"] = "voyage-ai"
+            config_data["voyage_ai"] = {
+                "model": "voyage-code-3"
+            }
+
+            # Write updated config
+            with open(config_file, 'w') as f:
+                json.dump(config_data, f, indent=2)
+
+            self.logger.info(
+                f"Updated composite config with FilesystemVectorStore for {composite_path}"
+            )
+
+        except Exception as e:
+            raise ActivatedRepoError(
+                f"Failed to update composite repository config: {str(e)}"
+            )

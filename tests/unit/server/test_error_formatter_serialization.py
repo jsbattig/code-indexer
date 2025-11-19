@@ -33,7 +33,7 @@ def test_serialize_nested_structure_with_path_and_datetime():
     result = _serialize_value_for_json(data)
 
     # All should be serializable
-    json_str = json.dumps(result)  # Should not raise TypeError
+    _ = json.dumps(result)  # Should not raise TypeError
 
     # Verify conversions
     assert result["file_path"] == "/tmp/test.txt"

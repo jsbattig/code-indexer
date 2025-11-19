@@ -139,9 +139,13 @@ class GoldenRepoManager:
         description: Optional[str] = None,
         enable_temporal: bool = False,
         temporal_options: Optional[Dict] = None,
-    ) -> Dict[str, Any]:
+        submitter_username: str = "admin",
+    ) -> str:
         """
         Add a golden repository.
+
+        This method submits a background job and returns immediately with a job_id.
+        Use BackgroundJobManager to track progress and results.
 
         Args:
             repo_url: Git repository URL
@@ -150,90 +154,101 @@ class GoldenRepoManager:
             description: Optional description for the repository
             enable_temporal: Enable temporal git history indexing
             temporal_options: Temporal indexing configuration options
+            submitter_username: Username of the user submitting the job (default: "admin")
 
         Returns:
-            Result dictionary with success status and message
+            Job ID for tracking add operation progress
 
         Raises:
             GoldenRepoError: If alias already exists
-            GitOperationError: If git repository is invalid or clone fails
+            GitOperationError: If git repository is invalid or inaccessible
             ResourceLimitError: If resource limits are exceeded
         """
-        # Check if we've reached the maximum limit
+        # Validate BEFORE submitting job
         if len(self.golden_repos) >= self.MAX_GOLDEN_REPOS:
             raise ResourceLimitError(
                 f"Maximum of {self.MAX_GOLDEN_REPOS} golden repositories allowed"
             )
 
-        # Check if alias already exists
         if alias in self.golden_repos:
             raise GoldenRepoError(f"Golden repository alias '{alias}' already exists")
 
-        # Validate git repository accessibility
         if not self._validate_git_repository(repo_url):
             raise GitOperationError(
                 f"Invalid or inaccessible git repository: {repo_url}"
             )
 
-        # Clone repository
-        try:
-            clone_path = self._clone_repository(repo_url, alias, default_branch)
+        # Create no-args wrapper for background execution
+        def background_worker() -> Dict[str, Any]:
+            """Execute add operation in background thread."""
+            try:
+                # Clone repository
+                clone_path = self._clone_repository(repo_url, alias, default_branch)
 
-            # Execute post-clone workflow if repository was successfully cloned
-            self._execute_post_clone_workflow(
-                clone_path,
-                force_init=False,
-                enable_temporal=enable_temporal,
-                temporal_options=temporal_options,
-            )
+                # Execute post-clone workflow
+                self._execute_post_clone_workflow(
+                    clone_path,
+                    force_init=False,
+                    enable_temporal=enable_temporal,
+                    temporal_options=temporal_options,
+                )
 
-        except subprocess.CalledProcessError as e:
-            raise GitOperationError(
-                f"Failed to clone repository: Git process failed with exit code {e.returncode}: {e.stderr}"
-            )
-        except subprocess.TimeoutExpired as e:
-            raise GitOperationError(
-                f"Failed to clone repository: Git operation timed out after {e.timeout} seconds"
-            )
-        except (OSError, IOError) as e:
-            raise GitOperationError(
-                f"Failed to clone repository: File system error: {str(e)}"
-            )
-        except GitOperationError:
-            # Re-raise GitOperationError from sub-methods without modification
-            raise
+                # Check repository size
+                repo_size = self._get_repository_size(clone_path)
+                if repo_size > self.MAX_REPO_SIZE_BYTES:
+                    # Clean up cloned repository
+                    self._cleanup_repository_files(clone_path)
+                    size_gb = repo_size / (1024 * 1024 * 1024)
+                    limit_gb = self.MAX_REPO_SIZE_BYTES / (1024 * 1024 * 1024)
+                    raise ResourceLimitError(
+                        f"Repository size ({size_gb:.1f}GB) exceeds limit ({limit_gb:.1f}GB)"
+                    )
 
-        # Check repository size
-        repo_size = self._get_repository_size(clone_path)
-        if repo_size > self.MAX_REPO_SIZE_BYTES:
-            # Clean up cloned repository (ignore cleanup result since we're rejecting anyway)
-            self._cleanup_repository_files(clone_path)
-            size_gb = repo_size / (1024 * 1024 * 1024)
-            limit_gb = self.MAX_REPO_SIZE_BYTES / (1024 * 1024 * 1024)
-            raise ResourceLimitError(
-                f"Repository size ({size_gb:.1f}GB) exceeds limit ({limit_gb:.1f}GB)"
-            )
+                # Create golden repository record
+                created_at = datetime.now(timezone.utc).isoformat()
+                golden_repo = GoldenRepo(
+                    alias=alias,
+                    repo_url=repo_url,
+                    default_branch=default_branch,
+                    clone_path=clone_path,
+                    created_at=created_at,
+                    enable_temporal=enable_temporal,
+                    temporal_options=temporal_options,
+                )
 
-        # Create golden repository record
-        created_at = datetime.now(timezone.utc).isoformat()
-        golden_repo = GoldenRepo(
-            alias=alias,
-            repo_url=repo_url,
-            default_branch=default_branch,
-            clone_path=clone_path,
-            created_at=created_at,
-            enable_temporal=enable_temporal,
-            temporal_options=temporal_options,
+                # Store and persist
+                self.golden_repos[alias] = golden_repo
+                self._save_metadata()
+
+                return {
+                    "success": True,
+                    "message": f"Golden repository '{alias}' added successfully",
+                }
+
+            except subprocess.CalledProcessError as e:
+                raise GitOperationError(
+                    f"Failed to clone repository: Git process failed with exit code {e.returncode}: {e.stderr}"
+                )
+            except subprocess.TimeoutExpired as e:
+                raise GitOperationError(
+                    f"Failed to clone repository: Git operation timed out after {e.timeout} seconds"
+                )
+            except (OSError, IOError) as e:
+                raise GitOperationError(
+                    f"Failed to clone repository: File system error: {str(e)}"
+                )
+            except GitOperationError:
+                # Re-raise GitOperationError from sub-methods without modification
+                raise
+
+        # Submit to BackgroundJobManager
+        job_id = self.background_job_manager.submit_job(
+            operation_type="add_golden_repo",
+            func=background_worker,
+            submitter_username=submitter_username,
+            is_admin=True,
         )
-
-        # Store and persist
-        self.golden_repos[alias] = golden_repo
-        self._save_metadata()
-
-        return {
-            "success": True,
-            "message": f"Golden repository '{alias}' added successfully",
-        }
+        return job_id
 
     def list_golden_repos(self) -> List[Dict[str, str]]:
         """
@@ -244,69 +259,82 @@ class GoldenRepoManager:
         """
         return [repo.to_dict() for repo in self.golden_repos.values()]
 
-    def remove_golden_repo(self, alias: str) -> Dict[str, Any]:
+    def remove_golden_repo(self, alias: str, submitter_username: str = "admin") -> str:
         """
         Remove a golden repository.
 
+        This method submits a background job and returns immediately with a job_id.
+        Use BackgroundJobManager to track progress and results.
+
         Args:
             alias: Alias of the repository to remove
+            submitter_username: Username of the user submitting the job (default: "admin")
 
         Returns:
-            Result dictionary with success status and message
+            Job ID for tracking removal progress
 
         Raises:
             GoldenRepoError: If repository not found
         """
+        # Validate repository exists BEFORE submitting job
         if alias not in self.golden_repos:
             raise GoldenRepoError(f"Golden repository '{alias}' not found")
 
-        # Get repository info before removal
-        golden_repo = self.golden_repos[alias]
+        # Create no-args wrapper for background execution
+        def background_worker() -> Dict[str, Any]:
+            """Execute removal in background thread."""
+            # Get repository info before removal
+            golden_repo = self.golden_repos[alias]
 
-        # Perform cleanup BEFORE removing from memory - this is the critical transaction boundary
-        try:
-            cleanup_successful = self._cleanup_repository_files(golden_repo.clone_path)
-        except GitOperationError as cleanup_error:
-            # Critical cleanup failures should prevent deletion
-            logging.error(
-                f"Critical cleanup failure prevents repository deletion: {cleanup_error}"
-            )
-            raise  # Re-raise to prevent deletion
+            # Perform cleanup BEFORE removing from memory
+            try:
+                cleanup_successful = self._cleanup_repository_files(golden_repo.clone_path)
+            except GitOperationError as cleanup_error:
+                # Critical cleanup failures should prevent deletion
+                logging.error(
+                    f"Critical cleanup failure prevents repository deletion: {cleanup_error}"
+                )
+                raise  # Re-raise to prevent deletion
 
-        # Only remove from storage after cleanup is complete (successful or recoverable failure)
-        del self.golden_repos[alias]
+            # Only remove from storage after cleanup is complete
+            del self.golden_repos[alias]
 
-        try:
-            self._save_metadata()
-        except Exception as save_error:
-            # If metadata save fails, rollback the deletion
-            logging.error(
-                f"Failed to save metadata after deletion, rolling back: {save_error}"
-            )
-            self.golden_repos[alias] = golden_repo  # Restore repository
-            raise GitOperationError(
-                f"Repository deletion rollback due to metadata save failure: {save_error}"
-            )
+            try:
+                self._save_metadata()
+            except Exception as save_error:
+                # If metadata save fails, rollback the deletion
+                logging.error(
+                    f"Failed to save metadata after deletion, rolling back: {save_error}"
+                )
+                self.golden_repos[alias] = golden_repo  # Restore repository
+                raise GitOperationError(
+                    f"Repository deletion rollback due to metadata save failure: {save_error}"
+                )
 
-        # Generate appropriate success message based on cleanup result
-        warnings = []
-        if cleanup_successful:
-            message = f"Golden repository '{alias}' removed successfully"
-        else:
-            message = f"Golden repository '{alias}' removed successfully (some cleanup issues occurred)"
-            warnings.append(
-                "resource leak detected: some cleanup operations did not complete fully"
-            )
+            # ANTI-FALLBACK RULE: Fail operation when cleanup is incomplete
+            # Per MESSI Rule 2: "Graceful failure over forced success"
+            # Don't report "success with warnings" - either succeed or fail clearly
+            if cleanup_successful:
+                message = f"Golden repository '{alias}' removed successfully"
+                return {
+                    "success": True,
+                    "message": message,
+                }
+            else:
+                # FAIL the operation - don't mask cleanup failures
+                raise GitOperationError(
+                    f"Repository metadata removed but cleanup incomplete. "
+                    f"Resource leak detected: some cleanup operations did not complete fully."
+                )
 
-        result = {
-            "success": True,
-            "message": message,
-        }
-
-        if warnings:
-            result["warnings"] = warnings
-
-        return result
+        # Submit to BackgroundJobManager
+        job_id = self.background_job_manager.submit_job(
+            operation_type="remove_golden_repo",
+            func=background_worker,
+            submitter_username=submitter_username,
+            is_admin=True,
+        )
+        return job_id
 
     def _validate_git_repository(self, repo_url: str) -> bool:
         """
@@ -888,92 +916,106 @@ class GoldenRepoManager:
                 f"Post-clone workflow failed: System error: {str(e)}"
             )
 
-    def refresh_golden_repo(self, alias: str) -> Dict[str, Any]:
+    def refresh_golden_repo(self, alias: str, submitter_username: str = "admin") -> str:
         """
         Refresh a golden repository by pulling latest changes and re-indexing.
 
+        This method submits a background job and returns immediately with a job_id.
+        Use BackgroundJobManager to track progress and results.
+
         Args:
             alias: Alias of the repository to refresh
+            submitter_username: Username of the user submitting the job (default: "admin")
 
         Returns:
-            Result dictionary with success status and message
+            Job ID for tracking refresh progress
 
         Raises:
             GoldenRepoError: If repository not found
-            GitOperationError: If git pull or re-index fails
         """
+        # Validate repository exists BEFORE submitting job
         if alias not in self.golden_repos:
             raise GoldenRepoError(f"Golden repository '{alias}' not found")
 
-        golden_repo = self.golden_repos[alias]
-        clone_path = golden_repo.clone_path
+        # Create no-args wrapper for background execution
+        def background_worker() -> Dict[str, Any]:
+            """Execute refresh in background thread."""
+            golden_repo = self.golden_repos[alias]
+            clone_path = golden_repo.clone_path
 
-        # Read temporal configuration from existing golden repo
-        enable_temporal = golden_repo.enable_temporal
-        temporal_options = golden_repo.temporal_options
+            # Read temporal configuration from existing golden repo
+            enable_temporal = golden_repo.enable_temporal
+            temporal_options = golden_repo.temporal_options
 
-        try:
-            # For local repositories, we can't do git pull, so just re-run workflow
-            if self._is_local_path(golden_repo.repo_url):
-                logging.info(
-                    f"Refreshing local repository {alias} by re-running workflow"
-                )
-                self._execute_post_clone_workflow(
-                    clone_path,
-                    force_init=True,
-                    enable_temporal=enable_temporal,
-                    temporal_options=temporal_options,
-                )
-            else:
-                # For remote repositories, do git pull first
-                logging.info(f"Pulling latest changes for {alias}")
-                result = subprocess.run(
-                    ["git", "pull", "origin", golden_repo.default_branch],
-                    cwd=clone_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
+            try:
+                # For local repositories, we can't do git pull, so just re-run workflow
+                if self._is_local_path(golden_repo.repo_url):
+                    logging.info(
+                        f"Refreshing local repository {alias} by re-running workflow"
+                    )
+                    self._execute_post_clone_workflow(
+                        clone_path,
+                        force_init=True,
+                        enable_temporal=enable_temporal,
+                        temporal_options=temporal_options,
+                    )
+                else:
+                    # For remote repositories, do git pull first
+                    logging.info(f"Pulling latest changes for {alias}")
+                    result = subprocess.run(
+                        ["git", "pull", "origin", golden_repo.default_branch],
+                        cwd=clone_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                    )
 
-                if result.returncode != 0:
-                    raise GitOperationError(f"Git pull failed: {result.stderr}")
+                    if result.returncode != 0:
+                        raise GitOperationError(f"Git pull failed: {result.stderr}")
 
-                logging.info(f"Git pull successful for {alias}")
+                    logging.info(f"Git pull successful for {alias}")
 
-                # Re-run the indexing workflow with force flag for refresh
-                self._execute_post_clone_workflow(
-                    clone_path,
-                    force_init=True,
-                    enable_temporal=enable_temporal,
-                    temporal_options=temporal_options,
-                )
+                    # Re-run the indexing workflow with force flag for refresh
+                    self._execute_post_clone_workflow(
+                        clone_path,
+                        force_init=True,
+                        enable_temporal=enable_temporal,
+                        temporal_options=temporal_options,
+                    )
 
-            return {
-                "success": True,
-                "message": f"Golden repository '{alias}' refreshed successfully",
-            }
+                return {
+                    "success": True,
+                    "message": f"Golden repository '{alias}' refreshed successfully",
+                }
 
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Failed to refresh repository '{alias}': Git command failed with exit code {e.returncode}: {e.stderr}"
-            logging.error(error_msg)
-            raise GitOperationError(error_msg)
-        except subprocess.TimeoutExpired as e:
-            error_msg = f"Failed to refresh repository '{alias}': Git operation timed out after {e.timeout} seconds"
-            logging.error(error_msg)
-            raise GitOperationError(error_msg)
-        except FileNotFoundError as e:
-            error_msg = f"Failed to refresh repository '{alias}': Required file or command not found: {str(e)}"
-            logging.error(error_msg)
-            raise GitOperationError(error_msg)
-        except PermissionError as e:
-            error_msg = (
-                f"Failed to refresh repository '{alias}': Permission denied: {str(e)}"
-            )
-            logging.error(error_msg)
-            raise GitOperationError(error_msg)
-        except GitOperationError:
-            # Re-raise GitOperationError from sub-methods without modification
-            raise
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Failed to refresh repository '{alias}': Git command failed with exit code {e.returncode}: {e.stderr}"
+                logging.error(error_msg)
+                raise GitOperationError(error_msg)
+            except subprocess.TimeoutExpired as e:
+                error_msg = f"Failed to refresh repository '{alias}': Git operation timed out after {e.timeout} seconds"
+                logging.error(error_msg)
+                raise GitOperationError(error_msg)
+            except FileNotFoundError as e:
+                error_msg = f"Failed to refresh repository '{alias}': Required file or command not found: {str(e)}"
+                logging.error(error_msg)
+                raise GitOperationError(error_msg)
+            except PermissionError as e:
+                error_msg = f"Failed to refresh repository '{alias}': Permission denied: {str(e)}"
+                logging.error(error_msg)
+                raise GitOperationError(error_msg)
+            except GitOperationError:
+                # Re-raise GitOperationError from sub-methods without modification
+                raise
+
+        # Submit to BackgroundJobManager
+        job_id = self.background_job_manager.submit_job(
+            operation_type="refresh_golden_repo",
+            func=background_worker,
+            submitter_username=submitter_username,
+            is_admin=True,
+        )
+        return job_id
 
     def _is_recoverable_init_error(self, error_output: str) -> bool:
         """

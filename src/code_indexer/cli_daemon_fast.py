@@ -21,13 +21,18 @@ from rich.console import Console  # ~40ms
 def get_socket_path(config_path: Path) -> Path:
     """Get daemon socket path from config path.
 
+    Uses ConfigManager.get_socket_path() which generates /tmp/cidx/ paths
+    to avoid Unix socket 108-character limit.
+
     Args:
         config_path: Path to .code-indexer/config.json
 
     Returns:
-        Path to daemon.sock in same directory
+        Path to daemon socket file
     """
-    return config_path.parent / "daemon.sock"
+    from code_indexer.config import ConfigManager
+    config_manager = ConfigManager(config_path)
+    return config_manager.get_socket_path()
 
 
 def parse_query_args(args: List[str]) -> Dict[str, Any]:

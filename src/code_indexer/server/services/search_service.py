@@ -16,7 +16,7 @@ from ..models.api_models import (
     SearchResultItem,
 )
 from ...config import ConfigManager
-from ...services.qdrant import QdrantClient
+from ...backends.backend_factory import BackendFactory
 from ...services.embedding_factory import EmbeddingProviderFactory
 
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class SemanticSearchService:
         # CLAUDE.md Foundation #1: Real semantic search with vector embeddings
         # 1. Load repository-specific configuration
         # 2. Generate embeddings for the query
-        # 3. Search Qdrant vector database with correct collection name
+        # 3. Search vector store (filesystem or Qdrant) with correct collection name
         # 4. Rank results by semantic similarity
 
         search_results = self._perform_semantic_search(
@@ -132,6 +132,7 @@ class SemanticSearchService:
         Perform real semantic search using repository-specific configuration.
 
         CLAUDE.md Foundation #1: Real vector search, no text search fallbacks.
+        Uses BackendFactory to support both FilesystemVectorStore and Qdrant.
 
         Args:
             repo_path: Path to repository directory
@@ -143,7 +144,7 @@ class SemanticSearchService:
             List of search results ranked by semantic similarity
 
         Raises:
-            RuntimeError: If embedding generation or Qdrant search fails
+            RuntimeError: If embedding generation or vector search fails
         """
         try:
             # Load repository-specific configuration
@@ -151,32 +152,46 @@ class SemanticSearchService:
             config = config_manager.get_config()
 
             logger.info(f"Loaded repository config from {repo_path}")
-            logger.info(f"Qdrant host: {config.qdrant.host}")
 
-            # Create repository-specific Qdrant client (connects to correct port)
-            qdrant_client = QdrantClient(
-                config=config.qdrant, project_root=Path(repo_path)
-            )
+            # Create backend using BackendFactory (supports filesystem and Qdrant)
+            backend = BackendFactory.create(config=config, project_root=Path(repo_path))
+            vector_store_client = backend.get_vector_store_client()
+
+            logger.info(f"Using backend: {type(backend).__name__}")
 
             # Create repository-specific embedding service
             embedding_service = EmbeddingProviderFactory.create(config=config)
 
-            # Generate real embedding for query using repository's embedding service
-            query_embedding = embedding_service.get_embedding(query)
-
             # Resolve correct collection name based on repository configuration
-            collection_name = qdrant_client.resolve_collection_name(
+            collection_name = vector_store_client.resolve_collection_name(
                 config, embedding_service
             )
 
             logger.info(f"Using collection: {collection_name}")
 
-            # Real vector search in repository-specific Qdrant instance
-            search_results = qdrant_client.search(
-                query_vector=query_embedding,
-                limit=limit,
-                collection_name=collection_name,
-            )
+            # Real vector search - different parameter patterns for different backends
+            # FilesystemVectorStore: parallel execution (query + embedding_provider)
+            # QdrantClient: sequential execution (pre-computed query_vector)
+            from ...storage.filesystem_vector_store import FilesystemVectorStore
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # FilesystemVectorStore: parallel execution with query string and provider
+                # Embedding generation happens in parallel with index loading
+                search_results, _ = vector_store_client.search(
+                    query=query,
+                    embedding_provider=embedding_service,
+                    collection_name=collection_name,
+                    limit=limit,
+                    return_timing=True,
+                )
+            else:
+                # QdrantClient: sequential execution with pre-computed embedding
+                query_embedding = embedding_service.get_embedding(query)
+                search_results = vector_store_client.search(
+                    query_vector=query_embedding,
+                    limit=limit,
+                    collection_name=collection_name,
+                )
 
             logger.info(f"Found {len(search_results)} results")
 

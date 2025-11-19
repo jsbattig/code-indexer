@@ -31,6 +31,13 @@ except ImportError:
     rpyc = None
     ThreadedServer = None
 
+# Import socket helper for /tmp/cidx socket management
+from code_indexer.config import ConfigManager
+from code_indexer.daemon.socket_helper import (
+    create_mapping_file,
+    cleanup_old_socket
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -1081,7 +1088,12 @@ def start_daemon(config_path: Path) -> None:
         logger.error("RPyC not installed. Install with: pip install rpyc")
         sys.exit(1)
 
-    socket_path = config_path.parent / "daemon.sock"
+    # Use ConfigManager to get socket path (uses /tmp/cidx/ to avoid 108-char limit)
+    config_manager = ConfigManager(config_path)
+    socket_path = config_manager.get_socket_path()
+
+    # Clean up old socket in .code-indexer/ if it exists (backward compatibility)
+    cleanup_old_socket(config_path.parent)
 
     # Clean up stale socket if exists
     cleanup_socket(socket_path)
@@ -1104,6 +1116,10 @@ def start_daemon(config_path: Path) -> None:
 
         # Store server reference for shutdown
         service._server = server
+
+        # Create mapping file for debugging (links socket to repo path)
+        repo_path = config_path.parent
+        create_mapping_file(repo_path, socket_path)
 
         # Start eviction thread
         eviction_thread = CacheEvictionThread(service)

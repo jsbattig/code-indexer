@@ -1,5 +1,21 @@
 # Code-Indexer (CIDX) Project Instructions
 
+## 0. CRITICAL BUSINESS INSIGHT - Query is Everything
+
+**THE SINGLE MOST IMPORTANT FEATURE**: Query capability is the core value proposition of CIDX. All query features available in CLI MUST be available in MCP/REST APIs with full parity.
+
+**Query Parity is Non-Negotiable**: Any feature gap between CLI and MCP/REST query interfaces represents a critical degradation of the product's primary function. This is not optional - this is the business.
+
+**Current Status** (as of 2025-11-18):
+- CLI query parameters: 23 total
+- MCP query parameters: 11 total (48% parity)
+- **P0 filters implemented**: language, exclude_language, path_filter, exclude_path, file_extensions, accuracy
+- **Remaining gap**: FTS-specific options (8 params), temporal options (4 params)
+
+**Never remove or break query functionality** without explicit approval. Query degradation = product failure.
+
+---
+
 ## 1. Operational Modes Overview
 
 CIDX has **three operational modes**. Understanding which mode you're working in is critical.
@@ -83,6 +99,31 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 - Change tracking system
 - Real-time vs batch updates
 - Performance optimizations
+
+### MCP Protocol (Server Mode)
+
+**Protocol Version**: `2024-11-05` (Model Context Protocol)
+
+**Initialize Handshake** (CRITICAL for Claude Code connection):
+- Method: `initialize` - MUST be first client-server interaction
+- Server Response: `{ "protocolVersion": "2024-11-05", "capabilities": { "tools": {} }, "serverInfo": { "name": "CIDX", "version": "7.3.0" } }`
+- Implemented in: `src/code_indexer/server/mcp/protocol.py` (process_jsonrpc_request)
+- Required for OAuth flow completion - Claude Code calls `initialize` after authentication
+
+**Key Points**:
+- Without `initialize` method, Claude Code fails with "Method not found: initialize"
+- Must return protocolVersion, capabilities (with tools), and serverInfo (name + version)
+- Tests in: `tests/unit/server/mcp/test_protocol.py::TestInitializeMethod`
+
+**Tool Response Format** (CRITICAL for Claude Code compatibility):
+- All tool results MUST return `content` as an **array of content blocks**, NOT a string
+- Each content block must have: `{ "type": "text", "text": "actual content here" }`
+- Empty content should be `[]`, NOT `""` or missing
+- Error responses must also include `content: []` (empty array is valid)
+- Example: `{ "success": true, "content": [{"type": "text", "text": "file contents"}], "metadata": {...} }`
+- Violating this format causes Claude Code to fail with "Expected array, received string"
+- Implemented in: `src/code_indexer/server/mcp/handlers.py` (all tool handlers)
+- Tests in: `tests/unit/server/mcp/test_handlers.py::TestFileHandlers::test_get_file_content`
 
 ---
 
@@ -337,12 +378,14 @@ cidx query "def.*" --fts --regex    # FTS/regex search
 ```
 
 **Key Flags** (ALWAYS use `--quiet`):
-- `--limit N` - Results (default 10)
+- `--limit N` - Results (default 10, start with 5-10 to conserve context window)
 - `--language python` - Filter by language
 - `--path-filter */tests/*` - Path pattern
 - `--min-score 0.8` - Similarity threshold
 - `--accuracy high` - Higher precision
 - `--quiet` - Minimal output
+
+**Context Conservation**: Start with low `--limit` values (5-10) on initial queries. High limits consume context window rapidly when results contain large code files.
 
 **Search Decision**:
 - ✅ "What code does", "Where is X implemented" → CIDX

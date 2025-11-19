@@ -5,6 +5,7 @@ Handles server installation, port allocation, configuration setup,
 and startup script generation.
 """
 
+import getpass
 import socket
 import stat
 import sys
@@ -144,6 +145,71 @@ cd "{self.home_dir}"
         script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC)
 
         return script_path
+
+    def create_systemd_service(
+        self,
+        port: int,
+        issuer_url: Optional[str] = None,
+        voyage_api_key: Optional[str] = None,
+    ) -> Path:
+        """
+        Create systemd service file for the server.
+
+        Args:
+            port: Server port
+            issuer_url: OAuth issuer URL (e.g., https://linner.ddns.net:8383)
+            voyage_api_key: VoyageAI API key (WARNING: stored in plaintext in service file)
+
+        Returns:
+            Path to created service file
+
+        Security Note:
+            If voyage_api_key is provided, it will be stored in PLAINTEXT in the systemd
+            service file. For production, prefer using systemd EnvironmentFile with
+            restricted permissions instead.
+        """
+        import sys
+
+        python_exe = sys.executable
+        current_user = getpass.getuser()
+
+        # Build environment variables
+        env_vars = [
+            f'Environment="PATH={self.home_dir}/.local/bin:/usr/local/bin:/usr/bin"',
+            'Environment="PYTHONUNBUFFERED=1"',
+        ]
+
+        if voyage_api_key:
+            env_vars.append(f'Environment="VOYAGE_API_KEY={voyage_api_key}"')
+
+        if issuer_url:
+            env_vars.append(f'Environment="CIDX_ISSUER_URL={issuer_url}"')
+
+        service_content = f"""[Unit]
+Description=CIDX Multi-User Server with MCP Integration
+After=network.target
+
+[Service]
+Type=simple
+User={current_user}
+WorkingDirectory={self.home_dir}
+{chr(10).join(env_vars)}
+ExecStart={python_exe} -m code_indexer.server.main --host 0.0.0.0 --port {port}
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cidx-server
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+        service_path = self.server_dir / "cidx-server.service"
+        with open(service_path, "w") as f:
+            f.write(service_content)
+
+        return service_path
 
     def seed_initial_admin_user(self) -> bool:
         """

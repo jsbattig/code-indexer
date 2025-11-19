@@ -8,9 +8,11 @@
 - Pattern matching (regex) → `--fts --regex` (10-50x faster than grep)
 - CIDX unavailable → grep/find (fallback only)
 
-**Key Flags**: `--limit N` | `--language python` | `--path-filter */tests/*` | `--exclude-path PATTERN` | `--exclude-language LANG` | `--min-score 0.8` | `--accuracy high` | `--quiet`
+**Key Flags**: `--limit N` (default 10, start with 5-10 to conserve context) | `--language python` | `--path-filter */tests/*` | `--exclude-path PATTERN` | `--exclude-language LANG` | `--min-score 0.8` | `--accuracy high` | `--quiet`
 
-**Example**: `cidx query "authentication" --language python --exclude-path "*/tests/*" --quiet`
+**Context Conservation**: Start with low `--limit` values (5-10) on initial queries. High limits consume context window rapidly when results contain large code files.
+
+**Example**: `cidx query "authentication" --language python --exclude-path "*/tests/*" --limit 5 --quiet`
 
 ---
 

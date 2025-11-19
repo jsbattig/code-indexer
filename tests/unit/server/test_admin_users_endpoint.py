@@ -140,13 +140,14 @@ class TestGetUserByUsernameEndpoint:
 
         assert "detail" in response_data
 
-    def test_get_user_by_username_no_auth_returns_403(self, client):
-        """Test getting user without authentication returns 403 (FastAPI HTTPBearer behavior)."""
+    def test_get_user_by_username_no_auth_returns_401(self, client):
+        """Test getting user without authentication returns 401 per MCP spec (RFC 9728)."""
         # No authentication headers
         response = client.get("/api/admin/users/testuser")
 
-        # HTTPBearer auto_error=True returns 403 when no credentials provided
-        assert response.status_code == 403
+        # Should return 401 per MCP spec (RFC 9728) with WWW-Authenticate header
+        assert response.status_code == 401
+        assert "www-authenticate" in response.headers
 
     @patch("code_indexer.server.auth.dependencies.jwt_manager")
     @patch("code_indexer.server.auth.dependencies.user_manager")

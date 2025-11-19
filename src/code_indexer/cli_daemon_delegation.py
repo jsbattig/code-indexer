@@ -42,13 +42,18 @@ def _get_socket_path(config_path: Path) -> Path:
     """
     Calculate socket path from config location.
 
+    Uses ConfigManager.get_socket_path() which generates /tmp/cidx/ paths
+    to avoid Unix socket 108-character limit.
+
     Args:
         config_path: Path to config.json file
 
     Returns:
         Path to daemon socket file
     """
-    return config_path.parent / "daemon.sock"
+    from code_indexer.config import ConfigManager
+    config_manager = ConfigManager(config_path)
+    return config_manager.get_socket_path()
 
 
 def _connect_to_daemon(
