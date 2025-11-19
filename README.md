@@ -154,7 +154,7 @@ cidx teach-ai --codex --global
 
 ```bash
 # Configure Claude Code to connect to CIDX MCP server
-# Add to Claude Code MCP settings (see docs/server-mode.md for details)
+# Add to Claude Code MCP settings (see docs/v5.0.0-architecture-summary.md for server setup)
 ```
 
 ## Two Operating Modes
@@ -187,7 +187,7 @@ cidx server start
 
 **MCP Server Integration**: Connect AI assistants (Claude Code, etc.) to your CIDX server for remote semantic code search. The server implements MCP protocol 2024-11-05, enabling AI tools to query your team's indexed codebases with full authentication and permission controls.
 
-See [Server Documentation](docs/server-mode.md) for details.
+See [Server Architecture](docs/v5.0.0-architecture-summary.md) for detailed server setup and configuration.
 
 ## Common Commands
 
@@ -222,7 +222,7 @@ cidx uninstall                      # Remove current project
 
 Python, JavaScript, TypeScript, Java, C#, C, C++, Go, Rust, Kotlin, Swift, Ruby, PHP, Lua, Groovy, Pascal/Delphi, SQL, HTML, CSS, YAML, XML, and more.
 
-See [Supported Languages](docs/supported-languages.md) for complete list.
+See [Technical Details - Supported Languages](docs/technical-details.md#supported-languages) for complete language support details.
 
 ## Configuration
 
@@ -261,11 +261,11 @@ Configuration stored in `.code-indexer/config.json`:
 
 ## Documentation
 
-- **[Changelog](CHANGELOG.md)** - Version history and release notes
+- **[Changelog](docs/CHANGELOG.md)** - Version history and release notes
 - **[Architecture](docs/architecture.md)** - System design and technical decisions
 - **[Technical Details](docs/technical-details.md)** - Deep dives into algorithms and implementation
-- **[Server Mode](docs/server-mode.md)** - Multi-user server setup and API reference
-- **[Supported Languages](docs/supported-languages.md)** - Complete language support matrix
+- **[Server Architecture](docs/v5.0.0-architecture-summary.md)** - Multi-user server setup and configuration
+- **[Algorithms](docs/algorithms.md)** - Detailed algorithm descriptions and complexity analysis
 
 ## Development
 
@@ -283,7 +283,7 @@ pip install -e ".[dev]"
 ./lint.sh                   # ruff, black, mypy
 ```
 
-See [Development Guide](docs/development.md) for contributor guidelines.
+For detailed testing infrastructure and contribution guidelines, see the project documentation.
 
 ## License
 
@@ -291,4 +291,4 @@ MIT License
 
 ## Contributing
 
-Issues and pull requests welcome! See [Contributing Guide](CONTRIBUTING.md).
+Issues and pull requests welcome! Please follow the testing guidelines in the project documentation and ensure all tests pass before submitting PRs.
