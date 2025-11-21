@@ -116,7 +116,7 @@ class SequentialCommandExecutor:
 
         Args:
             command: CIDX command to execute (start/stop/uninstall)
-            args: Command arguments (e.g., ['--force-docker'])
+            args: Command arguments (e.g., ['--verbose'])
 
         Returns:
             SequentialExecutionResult with results for each repository

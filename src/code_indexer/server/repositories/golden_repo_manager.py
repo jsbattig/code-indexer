@@ -1075,7 +1075,7 @@ class GoldenRepoManager:
                 "Attempting service conflict resolution by stopping existing services"
             )
             subprocess.run(
-                ["cidx", "stop", "--force-docker"],
+                ["cidx", "stop"],
                 cwd=clone_path,
                 capture_output=True,
                 text=True,
@@ -1090,7 +1090,7 @@ class GoldenRepoManager:
 
             # Try starting again
             result = subprocess.run(
-                ["cidx", "start", "--force-docker"],
+                ["cidx", "start"],
                 cwd=clone_path,
                 capture_output=True,
                 text=True,
@@ -1140,7 +1140,7 @@ class GoldenRepoManager:
             # Check if services are stopped by attempting status check
             try:
                 result = subprocess.run(
-                    ["cidx", "status", "--force-docker"],
+                    ["cidx", "status"],
                     cwd=clone_path,
                     capture_output=True,
                     text=True,
