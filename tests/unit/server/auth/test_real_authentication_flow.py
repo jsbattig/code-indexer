@@ -13,6 +13,10 @@ from tests.fixtures.test_infrastructure import RealComponentTestInfrastructure
 from code_indexer.server.auth.user_manager import UserRole
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestRealAuthenticationFlow:
     """
     Real authentication flow tests with zero mocks.
@@ -224,6 +228,7 @@ class TestRealAuthenticationFlow:
 
 # This test will initially FAIL because the infrastructure is not yet complete
 # Following TDD: Red -> Green -> Refactor
+@pytest.mark.e2e
 def test_infrastructure_validation():
     """
     Validation test to ensure test infrastructure works.

@@ -14,6 +14,7 @@ import psutil
 from pathlib import Path
 
 
+@pytest.mark.e2e
 class TestServerStartupFixIntegration:
     """Integration tests for server startup fixes."""
 

@@ -16,6 +16,7 @@ from src.code_indexer.server.repositories.golden_repo_manager import (
 )
 
 
+@pytest.mark.e2e
 class TestDeleteEndpointErrorHandling:
     """Test suite for DELETE endpoint HTTP status code behavior."""
 

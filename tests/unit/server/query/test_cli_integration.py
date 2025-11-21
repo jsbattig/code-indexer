@@ -16,6 +16,7 @@ from code_indexer.server.query.semantic_query_manager import (
 )
 
 
+@pytest.mark.e2e
 class TestCLIParameterConversion:
     """Test parameter conversion from server format to CLI args."""
 
@@ -89,6 +90,7 @@ class TestCLIParameterConversion:
         assert "--accuracy" not in args
 
 
+@pytest.mark.e2e
 class TestCLIOutputParsing:
     """Test parsing of CLI output to QueryResult objects."""
 
@@ -158,6 +160,7 @@ class TestCLIOutputParsing:
         assert results[0].repository_alias == "repo1"
 
 
+@pytest.mark.e2e
 class TestCLIFunctionIntegration:
     """Test integration with CLI's _execute_query function."""
 
@@ -228,6 +231,7 @@ class TestCLIFunctionIntegration:
         assert len(repo_paths) == 2
 
 
+@pytest.mark.e2e
 class TestCLIErrorHandling:
     """Test error handling in CLI integration."""
 
@@ -272,6 +276,7 @@ class TestCLIErrorHandling:
         assert isinstance(result, list)
 
 
+@pytest.mark.e2e
 class TestSearchCompositeIntegration:
     """Test async search_composite() method."""
 

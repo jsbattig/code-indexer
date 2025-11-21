@@ -17,6 +17,7 @@ from src.code_indexer.server.repositories.golden_repo_manager import (
 )
 
 
+@pytest.mark.e2e
 class TestRepositoryDeletionTDD:
     """
     TDD test suite for repository deletion error fix.

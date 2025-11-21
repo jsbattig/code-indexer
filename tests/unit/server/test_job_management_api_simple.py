@@ -14,6 +14,7 @@ from code_indexer.server.app import create_app
 from code_indexer.server.auth.user_manager import User, UserRole
 
 
+@pytest.mark.e2e
 class TestJobManagementAPI:
     """Test job management API endpoints."""
 

@@ -17,6 +17,7 @@ from src.code_indexer.server.query.semantic_query_manager import (
 )
 
 
+@pytest.mark.e2e
 class TestSemanticQueryManagerFileExtensionBugReproduction:
     """Test to reproduce the file extension filtering bug."""
 

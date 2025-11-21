@@ -17,6 +17,7 @@ from code_indexer.server.auth.dependencies import require_permission
 from code_indexer.server.auth.user_manager import User, UserRole
 
 
+@pytest.mark.e2e
 class TestAuthLoginEndpoint:
     """Test /auth/login endpoint functionality."""
 
@@ -196,6 +197,7 @@ class TestAuthLoginEndpoint:
         assert response.status_code == 422
 
 
+@pytest.mark.e2e
 class TestGlobalAuthenticationMiddleware:
     """Test global authentication middleware for all API endpoints."""
 
@@ -300,6 +302,7 @@ class TestGlobalAuthenticationMiddleware:
         assert response.status_code == 422  # Not 401
 
 
+@pytest.mark.e2e
 class TestRoleBasedAccessControl:
     """Test role-based access control for different user types."""
 
@@ -486,6 +489,7 @@ class TestRoleBasedAccessControl:
         assert result == "power_success"
 
 
+@pytest.mark.e2e
 class TestSwaggerDocumentation:
     """Test Swagger/OpenAPI documentation endpoint."""
 

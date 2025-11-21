@@ -21,6 +21,7 @@ from src.code_indexer.server.repositories.activated_repo_manager import (
 from src.code_indexer.server.repositories.golden_repo_manager import GoldenRepo
 
 
+@pytest.mark.e2e
 class TestCoWGitStructureFix:
     """Test suite for CoW git structure preservation and branch operations."""
 

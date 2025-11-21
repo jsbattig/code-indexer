@@ -20,6 +20,7 @@ from src.code_indexer.server.models.api_models import (
 )
 
 
+@pytest.mark.e2e
 class TestHealthCheckEndpoint:
     """Unit tests for system health check endpoint."""
 

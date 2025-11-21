@@ -14,6 +14,10 @@ from tests.fixtures.test_infrastructure import RealComponentTestInfrastructure
 from code_indexer.server.auth.user_manager import UserRole
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestRealTokenManagement:
     """
     Real token management tests with zero mocks.
@@ -361,6 +365,7 @@ class TestRealTokenManagement:
 
 
 # Validation test to ensure token management infrastructure works
+@pytest.mark.e2e
 def test_token_management_infrastructure_validation():
     """
     Validation test to ensure token management infrastructure works.

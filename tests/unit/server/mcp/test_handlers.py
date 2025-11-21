@@ -45,6 +45,7 @@ def mock_admin_user():
     return user
 
 
+@pytest.mark.e2e
 class TestHandlerRegistry:
     """Test handler registry completeness."""
 
@@ -95,6 +96,7 @@ class TestHandlerRegistry:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestSearchCode:
     """Test search_code handler."""
 
@@ -301,6 +303,7 @@ class TestSearchCode:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestDiscoverRepositories:
     """Test discover_repositories handler."""
 
@@ -333,6 +336,7 @@ class TestDiscoverRepositories:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestListRepositories:
     """Test list_repositories handler."""
 
@@ -375,6 +379,7 @@ class TestListRepositories:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestActivateRepository:
     """Test activate_repository handler."""
 
@@ -420,6 +425,7 @@ class TestActivateRepository:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestDeactivateRepository:
     """Test deactivate_repository handler."""
 
@@ -442,6 +448,7 @@ class TestDeactivateRepository:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestAdminHandlers:
     """Test admin-only handlers."""
 
@@ -547,6 +554,7 @@ class TestAdminHandlers:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestFileHandlers:
     """Test file-related handlers."""
 
@@ -757,6 +765,7 @@ class TestFileHandlers:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestHealthCheck:
     """Test health check handler."""
 
@@ -783,6 +792,7 @@ class TestHealthCheck:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestRepositoryStatus:
     """Test get_repository_status handler."""
 
@@ -827,6 +837,7 @@ class TestRepositoryStatus:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestStatisticsHandlers:
     """Test statistics handlers."""
 
@@ -885,6 +896,7 @@ class TestStatisticsHandlers:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestCompositeRepository:
     """Test composite repository management."""
 
@@ -930,6 +942,7 @@ class TestCompositeRepository:
 
 
 @pytest.mark.asyncio
+@pytest.mark.e2e
 class TestSyncRepository:
     """Test sync_repository handler."""
 

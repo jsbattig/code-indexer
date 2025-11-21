@@ -25,6 +25,10 @@ from code_indexer.server.utils.config_manager import PasswordSecurityConfig
 from code_indexer.server.utils.jwt_secret_manager import JWTSecretManager
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestAuditLoggingFileCreationFix:
     """
     TDD test suite for audit logging file creation fix.

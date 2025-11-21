@@ -29,6 +29,7 @@ from src.code_indexer.server.repositories.activated_repo_manager import (
 )
 
 
+@pytest.mark.e2e
 class TestRepositoryListingManager:
     """Test suite for Repository Listing Manager functionality."""
 

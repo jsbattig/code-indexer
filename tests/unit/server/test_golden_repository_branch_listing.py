@@ -19,6 +19,7 @@ from code_indexer.server.models.golden_repo_branch_models import (
 )
 
 
+@pytest.mark.e2e
 class TestGoldenRepositoryBranchListingEndpoint:
     """Test suite for the golden repository branch listing API endpoint."""
 
@@ -329,6 +330,7 @@ class TestGoldenRepositoryBranchListingEndpoint:
             ), f"Branch '{branch_name}' should be classified as '{expected_type}', got '{result}'"
 
 
+@pytest.mark.e2e
 class TestGoldenRepositoryBranchModels:
     """Test suite for golden repository branch data models."""
 
@@ -405,6 +407,7 @@ class TestGoldenRepositoryBranchModels:
         assert branch_info.branch_type is None
 
 
+@pytest.mark.e2e
 class TestBranchClassificationLogic:
     """Test suite for branch classification functionality."""
 

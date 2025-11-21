@@ -26,6 +26,7 @@ from src.code_indexer.server.repositories.golden_repo_manager import (
 )
 
 
+@pytest.mark.e2e
 class TestBranchSwitchingIntegration:
     """Integration tests for branch switching workflow."""
 

@@ -23,6 +23,7 @@ from src.code_indexer.server.repositories.golden_repo_manager import (
 )
 
 
+@pytest.mark.e2e
 class TestBranchSwitchingLocalRepos:
     """Test branch switching with local repositories without remote origins."""
 

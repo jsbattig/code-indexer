@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from code_indexer.server.app import create_app
 
 
+@pytest.mark.e2e
 class TestJWTRefreshEndpointSecurity:
     """Test JWT refresh endpoint authentication requirements."""
 

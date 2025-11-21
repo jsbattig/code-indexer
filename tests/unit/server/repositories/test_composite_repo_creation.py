@@ -22,6 +22,7 @@ from code_indexer.server.repositories.activated_repo_manager import (
 from code_indexer.server.repositories.golden_repo_manager import GoldenRepoManager
 
 
+@pytest.mark.e2e
 class TestCompositeRepositoryCreation:
     """Test composite repository creation acceptance criteria."""
 
@@ -520,6 +521,7 @@ class TestCompositeRepositoryCreation:
             assert len(items) <= 1, "Should not leave partial clones on failure"
 
 
+@pytest.mark.e2e
 class TestCompositeRepoCreationReusesExistingCLIComponents:
     """
     Test that composite creation REUSES existing CLI components.

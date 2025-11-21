@@ -8,6 +8,10 @@ import json
 import sys
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestSubprocessPipeIssue:
     """Test subprocess pipe buffer issues."""
 

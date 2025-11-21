@@ -21,6 +21,7 @@ from code_indexer.server.lifecycle.server_lifecycle_manager import (
 from code_indexer.server.utils.config_manager import ServerConfig
 
 
+@pytest.mark.e2e
 class TestServerLifecycleManager:
     """Test suite for ServerLifecycleManager class."""
 

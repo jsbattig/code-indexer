@@ -31,6 +31,10 @@ from code_indexer.server.utils.config_manager import PasswordSecurityConfig
 from code_indexer.server.utils.jwt_secret_manager import JWTSecretManager
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestTokenRefreshRealComponents:
     """
     Elite TDD test suite using REAL components for token refresh functionality.
@@ -507,6 +511,7 @@ class TestTokenRefreshRealComponents:
             assert "Try again in" in error_detail  # Specific time information
 
 
+@pytest.mark.e2e
 class TestRateLimiterOffByOneFix:
     """
     Elite test suite specifically for the rate limiter off-by-one fix.

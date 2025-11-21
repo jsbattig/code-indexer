@@ -11,6 +11,10 @@ from fastapi import status
 from src.code_indexer.server.app import create_app
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestPlaceholderEndpoints501:
     """Test placeholder endpoints return 501 Not Implemented."""
 

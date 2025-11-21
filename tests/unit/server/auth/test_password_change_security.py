@@ -18,6 +18,7 @@ from code_indexer.server.app import create_app
 from code_indexer.server.auth.user_manager import User, UserRole
 
 
+@pytest.mark.e2e
 class TestPasswordChangeSecurityVulnerability:
     """Test critical security vulnerability in password change endpoint."""
 
@@ -144,6 +145,7 @@ class TestPasswordChangeSecurityVulnerability:
                     )
 
 
+@pytest.mark.e2e
 class TestPasswordChangeRateLimiting:
     """Test rate limiting to prevent brute force attacks."""
 
@@ -250,6 +252,7 @@ class TestPasswordChangeRateLimiting:
         )
 
 
+@pytest.mark.e2e
 class TestPasswordChangeTimingAttackPrevention:
     """Test timing attack prevention with constant response times."""
 
@@ -303,6 +306,7 @@ class TestPasswordChangeTimingAttackPrevention:
         )
 
 
+@pytest.mark.e2e
 class TestPasswordChangeConcurrencyProtection:
     """Test concurrent password change handling with row-level locking."""
 
@@ -488,6 +492,7 @@ class TestPasswordChangeConcurrencyProtection:
                                 ), f"Expected 4 conflicts, got {conflict_count}"
 
 
+@pytest.mark.e2e
 class TestPasswordChangeAuditLogging:
     """Test comprehensive audit logging for password change attempts."""
 
@@ -656,6 +661,7 @@ class TestPasswordChangeAuditLogging:
                             assert "additional_context" in call_args[1]
 
 
+@pytest.mark.e2e
 class TestPasswordChangeSessionInvalidation:
     """Test session invalidation after successful password change."""
 
@@ -829,6 +835,7 @@ class TestPasswordChangeSessionInvalidation:
                                 )  # Session should remain valid
 
 
+@pytest.mark.e2e
 class TestPasswordChangeRequestModel:
     """Test password change request model with old password validation."""
 

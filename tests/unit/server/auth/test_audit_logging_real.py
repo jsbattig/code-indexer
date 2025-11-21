@@ -12,6 +12,7 @@ from code_indexer.server.auth.user_manager import UserRole
 from tests.fixtures.test_infrastructure import RealComponentTestInfrastructure
 
 
+@pytest.mark.e2e
 class TestRealAuditLogging:
     """Test audit logging with real file system operations."""
 
@@ -264,6 +265,7 @@ class TestRealAuditLogging:
         print(f"✅ Real refresh failure audit logging: {failure_entry}")
 
 
+@pytest.mark.e2e
 class TestAuditLoggerIntegrationFix:
     """Fix for tests that incorrectly reference audit_logger."""
 

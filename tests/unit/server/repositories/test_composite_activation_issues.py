@@ -168,6 +168,7 @@ def activated_repo_manager(temp_data_dir, golden_repo_manager):
     )
 
 
+@pytest.mark.e2e
 class TestIssue1RepositoryDiscoveryFailure:
     """
     Test Issue #1: Repository discovery failure after composite activation.
@@ -264,6 +265,7 @@ class TestIssue1RepositoryDiscoveryFailure:
         ).exists(), "hello-world-test component should have config.json"
 
 
+@pytest.mark.e2e
 class TestIssue2RepositoryListingValidationError:
     """
     Test Issue #2: Repository listing fails with Pydantic validation errors.
@@ -350,6 +352,7 @@ class TestIssue2RepositoryListingValidationError:
         assert set(repo_metadata["discovered_repos"]) == {"click", "hello-world-test"}
 
 
+@pytest.mark.e2e
 class TestIssue3QueryExecutionAnomaly:
     """
     Test Issue #3: Query execution searches wrong number of repositories.
@@ -484,6 +487,7 @@ class TestIssue3QueryExecutionAnomaly:
 
 
 # Integration test combining all three issues
+@pytest.mark.e2e
 class TestCompositeActivationIntegration:
     """
     Integration test validating all three issues are fixed together.

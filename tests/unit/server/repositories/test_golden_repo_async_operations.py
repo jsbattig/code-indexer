@@ -21,6 +21,7 @@ from src.code_indexer.server.repositories.golden_repo_manager import (
 from src.code_indexer.server.repositories.background_jobs import BackgroundJobManager
 
 
+@pytest.mark.e2e
 class TestGoldenRepoAsyncOperations:
     """Test suite for async golden repository operations."""
 

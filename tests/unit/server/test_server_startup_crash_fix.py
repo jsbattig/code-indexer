@@ -13,6 +13,7 @@ import requests
 from unittest.mock import patch, MagicMock
 
 
+@pytest.mark.e2e
 class TestServerStartupCrashFix:
     """Test server startup crash issues and fixes."""
 
@@ -233,6 +234,7 @@ class TestServerStartupCrashFix:
             )
 
 
+@pytest.mark.e2e
 class TestServerLifecycleManagerImplementation:
     """Tests for the ServerLifecycleManager implementation that needs to be created."""
 

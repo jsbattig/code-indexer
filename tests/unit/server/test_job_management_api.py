@@ -37,6 +37,7 @@ def mock_admin_user():
     return user
 
 
+@pytest.mark.e2e
 class TestJobManagementAPI:
     """Test job management API endpoints."""
 

@@ -13,6 +13,10 @@ from tests.fixtures.test_infrastructure import RealComponentTestInfrastructure
 from code_indexer.server.auth.user_manager import UserRole
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestRealRateLimiting:
     """
     Real rate limiting tests with zero mocks.
@@ -292,6 +296,7 @@ class TestRealRateLimiting:
 
 
 # This test will initially FAIL because we need to ensure rate limiting works
+@pytest.mark.e2e
 def test_rate_limiter_infrastructure_validation():
     """
     Validation test to ensure rate limiting infrastructure works.

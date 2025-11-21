@@ -18,6 +18,7 @@ from src.code_indexer.server.models.api_models import (
 )
 
 
+@pytest.mark.e2e
 class TestSemanticSearchEndpoint:
     """Unit tests for semantic search endpoint."""
 

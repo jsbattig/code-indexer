@@ -18,6 +18,7 @@ from src.code_indexer.server.app import create_app
 from src.code_indexer.server.auth.user_manager import User, UserRole
 
 
+@pytest.mark.e2e
 class TestFileExtensionFiltering:
     """Test file extension filtering in semantic queries."""
 

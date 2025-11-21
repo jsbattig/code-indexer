@@ -13,6 +13,10 @@ from unittest.mock import patch
 from src.code_indexer.server.app import create_app
 
 
+import pytest
+
+
+@pytest.mark.e2e
 class TestJWTSecretPersistence:
     """Test JWT secret key persistence across server restarts."""
 

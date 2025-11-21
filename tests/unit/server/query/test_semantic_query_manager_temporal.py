@@ -61,6 +61,7 @@ def semantic_query_manager(temp_data_dir, activated_repo_manager_mock):
     )
 
 
+@pytest.mark.e2e
 class TestTemporalParameterAcceptance:
     """Test that query_user_repositories accepts temporal parameters."""
 
@@ -168,6 +169,7 @@ class TestTemporalParameterAcceptance:
             assert call_kwargs["evolution_limit"] == 5
 
 
+@pytest.mark.e2e
 class TestTemporalServiceIntegration:
     """Test integration with TemporalSearchService."""
 
@@ -236,6 +238,7 @@ class TestTemporalServiceIntegration:
             assert "Temporal index not available" in result["warning"]
 
 
+@pytest.mark.e2e
 class TestTemporalMetadata:
     """Test that temporal queries include proper metadata in results."""
 
@@ -304,6 +307,7 @@ class TestTemporalMetadata:
             assert "commits" in result_item["temporal_context"]
 
 
+@pytest.mark.e2e
 class TestTemporalErrorHandling:
     """Test error handling for invalid temporal parameters."""
 
@@ -379,6 +383,7 @@ class TestTemporalErrorHandling:
             assert "End date must be after start date" in str(exc_info.value)
 
 
+@pytest.mark.e2e
 class TestPerformanceRequirements:
     """Test performance characteristics of temporal queries."""
 

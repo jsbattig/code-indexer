@@ -15,6 +15,7 @@ from code_indexer.server.middleware.error_handler import (
 )
 
 
+@pytest.mark.e2e
 class TestFileSizeCompliance:
     """Test that middleware files comply with CLAUDE.md Foundation #5/6 size limits."""
 
@@ -110,6 +111,7 @@ class TestFileSizeCompliance:
         assert retry_handler is not None
 
 
+@pytest.mark.e2e
 class TestModularArchitecture:
     """Test that the modular architecture is properly implemented."""
 
@@ -211,6 +213,7 @@ class TestModularArchitecture:
             )
 
 
+@pytest.mark.e2e
 class TestModuleIntegration:
     """Test that split modules integrate correctly."""
 

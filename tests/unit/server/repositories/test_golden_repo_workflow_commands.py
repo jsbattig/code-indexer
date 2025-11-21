@@ -19,6 +19,7 @@ import pytest
 from code_indexer.server.repositories.golden_repo_manager import GoldenRepoManager
 
 
+@pytest.mark.e2e
 class TestGoldenRepoWorkflowCommands:
     """Test suite for post-clone workflow command generation."""
 

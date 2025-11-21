@@ -19,6 +19,7 @@ from code_indexer.server.app import create_app
 from code_indexer.server.auth.user_manager import User, UserRole
 
 
+@pytest.mark.e2e
 class TestUserManagementCRUDEndpoints:
     """Test CRUD operations for user management endpoints."""
 
@@ -29,6 +30,7 @@ class TestUserManagementCRUDEndpoints:
         return TestClient(app)
 
 
+@pytest.mark.e2e
 class TestCreateUserEndpoint:
     """Test POST /api/admin/users endpoint for creating users."""
 
@@ -454,6 +456,7 @@ class TestCreateUserEndpoint:
         assert response.status_code == 403
 
 
+@pytest.mark.e2e
 class TestUpdateUserEndpoint:
     """Test PUT /api/admin/users/{username} endpoint for updating users."""
 
@@ -609,6 +612,7 @@ class TestUpdateUserEndpoint:
         assert response.status_code == 403
 
 
+@pytest.mark.e2e
 class TestDeleteUserEndpoint:
     """Test DELETE /api/admin/users/{username} endpoint for deleting users."""
 
@@ -919,6 +923,7 @@ class TestDeleteUserEndpoint:
         mock_app_user_manager.delete_user.assert_called_once_with("poweruser1")
 
 
+@pytest.mark.e2e
 class TestChangePasswordEndpoints:
     """Test password change endpoints."""
 
@@ -1127,6 +1132,7 @@ class TestChangePasswordEndpoints:
         assert response.status_code == 403
 
 
+@pytest.mark.e2e
 class TestPasswordComplexityValidation:
     """Test password complexity validation functionality."""
 

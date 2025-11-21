@@ -20,6 +20,7 @@ from src.code_indexer.server.repositories.activated_repo_manager import (
 from src.code_indexer.server.repositories.golden_repo_manager import GoldenRepo
 
 
+@pytest.mark.e2e
 class TestCowCloneIssue500:
     """Unit tests for CoW clone .code-indexer/ copying (Issue #500)."""
 

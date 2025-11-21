@@ -15,6 +15,7 @@ from code_indexer.server.auth.user_manager import UserRole
 from code_indexer.server.auth.rate_limiter import password_change_rate_limiter
 
 
+@pytest.mark.e2e
 class TestPasswordChangeSecurityReal:
     """Real integration tests with actual components."""
 
