@@ -328,6 +328,7 @@ class SemanticQueryManager:
         accuracy: Optional[str] = None,
         # Temporal query parameters (Story #446)
         time_range: Optional[str] = None,
+        time_range_all: bool = False,
         at_commit: Optional[str] = None,
         include_removed: bool = False,
         show_evolution: bool = False,
@@ -359,6 +360,7 @@ class SemanticQueryManager:
             exclude_path: Exclude files matching path pattern (e.g., '*/node_modules/*')
             accuracy: Search accuracy profile ('fast', 'balanced', 'high')
             time_range: Time range filter for temporal queries (format: YYYY-MM-DD..YYYY-MM-DD)
+            time_range_all: Query across all git history without time range limit
             at_commit: Query code at specific commit hash or ref
             include_removed: Include files removed from current HEAD
             show_evolution: Include code evolution timeline with diffs
@@ -413,6 +415,7 @@ class SemanticQueryManager:
                 accuracy,
                 # Temporal parameters (Story #446)
                 time_range=time_range,
+                time_range_all=time_range_all,
                 at_commit=at_commit,
                 include_removed=include_removed,
                 show_evolution=show_evolution,
@@ -459,7 +462,9 @@ class SemanticQueryManager:
             self.logger.warning("Unexpected result format in query response")
 
         # Check if temporal parameters were used but no results (graceful fallback)
-        has_temporal_params = any([time_range, at_commit, show_evolution])
+        has_temporal_params = any(
+            [time_range, time_range_all, at_commit, show_evolution]
+        )
         warning_message = None
         if has_temporal_params and len(results) == 0:
             warning_message = (
@@ -580,6 +585,7 @@ class SemanticQueryManager:
         accuracy: Optional[str] = None,
         # Temporal parameters (Story #446)
         time_range: Optional[str] = None,
+        time_range_all: bool = False,
         at_commit: Optional[str] = None,
         include_removed: bool = False,
         show_evolution: bool = False,
@@ -611,6 +617,7 @@ class SemanticQueryManager:
             exclude_path: Exclude files matching path pattern
             accuracy: Search accuracy profile
             time_range: Time range filter for temporal queries
+            time_range_all: Query across all git history without time range limit
             at_commit: Query at specific commit
             include_removed: Include removed files
             show_evolution: Include evolution timeline
@@ -650,6 +657,7 @@ class SemanticQueryManager:
                     accuracy,
                     # Temporal parameters (Story #446)
                     time_range=time_range,
+                    time_range_all=time_range_all,
                     at_commit=at_commit,
                     include_removed=include_removed,
                     show_evolution=show_evolution,
@@ -701,6 +709,7 @@ class SemanticQueryManager:
         accuracy: Optional[str] = None,
         # Temporal parameters (Story #446)
         time_range: Optional[str] = None,
+        time_range_all: bool = False,
         at_commit: Optional[str] = None,
         include_removed: bool = False,
         show_evolution: bool = False,
@@ -743,6 +752,7 @@ class SemanticQueryManager:
             exclude_path: Exclude files matching path pattern
             accuracy: Search accuracy profile
             time_range: Time range filter for temporal queries
+            time_range_all: Query across all git history without time range limit
             at_commit: Query at specific commit
             include_removed: Include removed files
             show_evolution: Include evolution timeline
@@ -788,7 +798,9 @@ class SemanticQueryManager:
 
             # TEMPORAL QUERY HANDLING (Story #446)
             # Check if temporal parameters are present
-            has_temporal_params = any([time_range, at_commit, show_evolution])
+            has_temporal_params = any(
+                [time_range, time_range_all, at_commit, show_evolution]
+            )
 
             if has_temporal_params:
                 return self._execute_temporal_query(

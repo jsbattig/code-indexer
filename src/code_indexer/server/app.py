@@ -642,6 +642,10 @@ class SemanticQueryRequest(BaseModel):
         None,
         description="Time range filter (e.g., '2024-01-01..2024-12-31'). Requires temporal index.",
     )
+    time_range_all: bool = Field(
+        False,
+        description="Query across all git history without time range limit. Requires temporal index.",
+    )
     at_commit: Optional[str] = Field(
         None,
         description="Query code at specific commit hash or ref. Requires temporal index.",
@@ -726,6 +730,81 @@ class SemanticQueryRequest(BaseModel):
             validated_extensions.append(ext)
 
         return validated_extensions
+
+    @field_validator("time_range")
+    @classmethod
+    def validate_time_range(cls, v: Optional[str]) -> Optional[str]:
+        """Validate time_range format (YYYY-MM-DD..YYYY-MM-DD)."""
+        if v is None:
+            return None
+
+        # Validate format
+        if ".." not in v:
+            raise ValueError("time_range must be in format 'YYYY-MM-DD..YYYY-MM-DD'")
+
+        parts = v.split("..")
+        if len(parts) != 2:
+            raise ValueError("time_range must be in format 'YYYY-MM-DD..YYYY-MM-DD'")
+
+        # Validate each date
+        import datetime
+
+        for date_str in parts:
+            try:
+                datetime.datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError as e:
+                raise ValueError(
+                    f"time_range contains invalid date '{date_str}': {str(e)}"
+                )
+
+        return v
+
+    @field_validator("diff_type")
+    @classmethod
+    def validate_diff_type(
+        cls, v: Optional[Union[str, List[str]]]
+    ) -> Optional[Union[str, List[str]]]:
+        """Validate diff_type values (Story #503 Phase 3)."""
+        if v is None:
+            return None
+
+        valid_values = {"added", "modified", "deleted", "renamed", "binary"}
+
+        # Handle single string value
+        if isinstance(v, str):
+            if v not in valid_values:
+                raise ValueError(
+                    f"diff_type value '{v}' is not valid. Must be one of: {', '.join(sorted(valid_values))}"
+                )
+            return v
+
+        # Handle list of values
+        if isinstance(v, list):
+            for value in v:
+                if value not in valid_values:
+                    raise ValueError(
+                        f"diff_type value '{value}' is not valid. Must be one of: {', '.join(sorted(valid_values))}"
+                    )
+            return v
+
+        return v
+
+    @field_validator("author")
+    @classmethod
+    def validate_author(cls, v: Optional[str]) -> Optional[str]:
+        """Validate author field (Story #503 Phase 3)."""
+        if v is None:
+            return None
+
+        # Max length validation
+        if len(v) > 255:
+            raise ValueError("author field must not exceed 255 characters")
+
+        # Ensure not empty/whitespace
+        if not v.strip():
+            raise ValueError("author field cannot be empty or contain only whitespace")
+
+        return v.strip()
 
     @model_validator(mode="after")
     def validate_regex_compatibility(self) -> "SemanticQueryRequest":
@@ -4002,6 +4081,7 @@ def create_app() -> FastAPI:
                             accuracy=request.accuracy,
                             # Temporal parameters (Story #446)
                             time_range=request.time_range,
+                            time_range_all=request.time_range_all,
                             at_commit=request.at_commit,
                             include_removed=request.include_removed,
                             show_evolution=request.show_evolution,
@@ -4064,6 +4144,7 @@ def create_app() -> FastAPI:
                 accuracy=request.accuracy,
                 # Temporal parameters (Story #446)
                 time_range=request.time_range,
+                time_range_all=request.time_range_all,
                 at_commit=request.at_commit,
                 include_removed=request.include_removed,
                 show_evolution=request.show_evolution,
