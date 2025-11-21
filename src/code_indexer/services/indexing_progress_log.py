@@ -52,6 +52,10 @@ class FileIndexingRecord:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FileIndexingRecord":
         """Create from dictionary loaded from JSON."""
+        # Handle legacy field name migration (pre-v8.0: qdrant_point_ids -> vector_point_ids)
+        if "qdrant_point_ids" in data:
+            data["vector_point_ids"] = data.pop("qdrant_point_ids")
+
         data["status"] = FileIndexingStatus(data["status"])
         return cls(**data)
 
@@ -294,6 +298,20 @@ class IndexingProgressLog:
             with open(self.progress_file, "r") as f:
                 data = json.load(f)
 
+            # Detect if legacy format is present (qdrant_point_ids field)
+            migration_needed = False
+            if "file_records" in data:
+                for record_data in data["file_records"].values():
+                    if "qdrant_point_ids" in record_data:
+                        migration_needed = True
+                        break
+
+            if migration_needed:
+                logger.warning(
+                    "Detected legacy indexing_progress.json format (pre-v8.0). "
+                    "Automatically migrating 'qdrant_point_ids' -> 'vector_point_ids'."
+                )
+
             if "current_session" in data and data["current_session"]:
                 self.current_session = IndexingSession.from_dict(
                     data["current_session"]
@@ -305,8 +323,25 @@ class IndexingProgressLog:
                     for file_path, record_data in data["file_records"].items()
                 }
 
+            # If migration occurred, save immediately in new format
+            if migration_needed:
+                logger.info("Saving migrated progress file in new format.")
+                self._save_progress()
+
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.warning(f"Failed to load progress file: {e}")
+            logger.error(
+                f"Failed to load progress file (corrupted or invalid format): {e}. "
+                "Deleting corrupted file and starting with clean state."
+            )
+            # Delete corrupted file to prevent blocking indexing
+            try:
+                if self.progress_file.exists():
+                    self.progress_file.unlink()
+                    logger.info(
+                        f"Deleted corrupted progress file: {self.progress_file}"
+                    )
+            except Exception as delete_error:
+                logger.error(f"Failed to delete corrupted file: {delete_error}")
 
     def _save_progress(self) -> None:
         """Save progress to disk atomically."""

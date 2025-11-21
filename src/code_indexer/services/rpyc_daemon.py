@@ -1019,9 +1019,21 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         """Get or create indexer for watch mode."""
         from ..services.smart_indexer import SmartIndexer
         from ..config import ConfigManager
+        from ..services.embedding_service import EmbeddingProviderFactory
+        from ..backends.backend_factory import BackendFactory
 
         config_manager = ConfigManager.create_with_backtrack(project_path)
-        return SmartIndexer(config_manager)
+        config = config_manager.get_config()
+        embedding_provider = EmbeddingProviderFactory.create(config)
+        backend = BackendFactory.create(
+            config=config, project_root=Path(config.codebase_dir)
+        )
+        vector_store_client = backend.get_vector_store_client()
+        metadata_path = config_manager.config_path.parent / "metadata.json"
+
+        return SmartIndexer(
+            config, embedding_provider, vector_store_client, metadata_path
+        )
 
 
 class CacheEvictionThread(threading.Thread):
