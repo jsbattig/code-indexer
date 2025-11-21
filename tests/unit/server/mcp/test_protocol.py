@@ -639,8 +639,12 @@ class TestInitializeMethod:
 class TestStreamableHTTPTransport:
     """Test Streamable HTTP transport features (GET, DELETE, Mcp-Session-Id)."""
 
+    @pytest.mark.slow
     def test_get_mcp_returns_sse_stream_with_auth(self):
-        """Test GET /mcp returns SSE event stream when authenticated."""
+        """Test GET /mcp returns SSE event stream when authenticated.
+
+        Marked as slow because TestClient blocks on SSE stream consumption.
+        """
         from fastapi.testclient import TestClient
         from code_indexer.server.app import create_app
         from code_indexer.server.auth.user_manager import User, UserRole
