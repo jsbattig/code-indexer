@@ -9,7 +9,6 @@ Tests for:
 - Parameter defaults
 """
 
-import pytest
 from code_indexer.server.app import SemanticQueryRequest
 
 

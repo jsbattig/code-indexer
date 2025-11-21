@@ -137,8 +137,8 @@ class TestHealthCheckEndpoint:
             # Response time should be reasonable for database check
             assert db_health.response_time_ms < 1000  # Less than 1 second
 
-    def test_health_check_qdrant_service_check(self, client, admin_token):
-        """Test that health check includes Qdrant connectivity status."""
+    def test_health_check_filesystem_service_check(self, client, admin_token):
+        """Test that health check includes Filesystem connectivity status."""
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         response = client.get("/api/system/health", headers=headers)
@@ -147,19 +147,19 @@ class TestHealthCheckEndpoint:
             data = response.json()
             health_response = HealthCheckResponse(**data)
 
-            # Should include qdrant in services
-            assert "qdrant" in health_response.services
+            # Should include filesystem in services
+            assert "filesystem" in health_response.services
 
-            qdrant_health = health_response.services["qdrant"]
-            assert qdrant_health.status in [
+            filesystem_health = health_response.services["filesystem"]
+            assert filesystem_health.status in [
                 HealthStatus.HEALTHY,
                 HealthStatus.DEGRADED,
                 HealthStatus.UNHEALTHY,
             ]
-            assert qdrant_health.response_time_ms >= 0
+            assert filesystem_health.response_time_ms >= 0
 
-            # Response time should be reasonable for Qdrant check
-            assert qdrant_health.response_time_ms < 2000  # Less than 2 seconds
+            # Response time should be reasonable for Filesystem check
+            assert filesystem_health.response_time_ms < 2000  # Less than 2 seconds
 
     def test_health_check_storage_service_check(self, client, admin_token):
         """Test that health check includes storage availability status."""

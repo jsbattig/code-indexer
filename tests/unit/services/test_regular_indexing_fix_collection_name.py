@@ -90,7 +90,7 @@ class TestRegularIndexingFixCollectionName:
                 json.dump(config_data, f)
 
             # Test the fix with collection_name in metadata
-            config_manager = ConfigManager.create_with_backtrack(test_repo)
+            ConfigManager.create_with_backtrack(test_repo)
             vector_store = FilesystemVectorStore(
                 base_path=index_dir, project_root=test_repo
             )
@@ -132,14 +132,14 @@ class TestRegularIndexingFixCollectionName:
                 codebase_dir=test_repo,
             )
 
-            # Create the Qdrant point
-            qdrant_point = file_chunking_mgr._create_qdrant_point(
+            # Create the Filesystem point
+            filesystem_point = file_chunking_mgr._create_filesystem_point(
                 test_chunk, embedding, metadata, test_file
             )
 
             # WITH THE FIX: upsert_points should work now
             result = vector_store.upsert_points(
-                points=[qdrant_point],
+                points=[filesystem_point],
                 collection_name=metadata.get(
                     "collection_name"
                 ),  # This now returns "voyage-code-3"

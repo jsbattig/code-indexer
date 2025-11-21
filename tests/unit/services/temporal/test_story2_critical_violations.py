@@ -102,7 +102,7 @@ class TestContentDisplay:
 
         # Extract results from tuple
         results = result_tuple[0]
-        fetch_time = result_tuple[1]
+        result_tuple[1]
 
         # Verify result uses actual content from payload, not placeholder
         assert len(results) == 1

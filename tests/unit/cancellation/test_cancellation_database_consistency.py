@@ -19,8 +19,8 @@ from collections import defaultdict
 pytestmark = pytest.mark.e2e
 
 
-class MockQdrantClient:
-    """Mock Qdrant client that tracks batch operations for consistency testing."""
+class MockFilesystemClient:
+    """Mock Filesystem client that tracks batch operations for consistency testing."""
 
     def __init__(self):
         self.points_by_file = defaultdict(list)  # file_path -> list of points
@@ -107,7 +107,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 test_files.append(test_file)
 
             # Mock processor with database consistency tracking
-            mock_qdrant = MockQdrantClient()
+            mock_filesystem = MockFilesystemClient()
             mock_embedding = SlowMockEmbeddingProvider(delay=0.1)
 
             # Test scenario: cancel during processing and verify no partial files
@@ -142,7 +142,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 processor = HighThroughputProcessor(
                     config=config,
                     embedding_provider=mock_embedding,
-                    vector_store_client=mock_qdrant,
+                    vector_store_client=mock_filesystem,
                 )
 
                 # Mock file identifier
@@ -173,7 +173,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 )
 
                 # CRITICAL TEST: Verify no partial files exist in database
-                file_chunk_counts = mock_qdrant.get_file_chunk_counts()
+                file_chunk_counts = mock_filesystem.get_file_chunk_counts()
 
                 for file_path, chunk_count in file_chunk_counts.items():
                     # Each file should have either 0 chunks (not started) or 5 chunks (completed)
@@ -191,7 +191,7 @@ class TestDatabaseConsistencyDuringCancellation:
             test_file = Path(temp_dir) / "test_file.py"
             test_file.write_text("def test(): pass\n" * 20)
 
-            mock_qdrant = MockQdrantClient()
+            mock_filesystem = MockFilesystemClient()
             mock_embedding = SlowMockEmbeddingProvider(delay=0.1)
 
             with (
@@ -221,7 +221,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 processor = HighThroughputProcessor(
                     config=config,
                     embedding_provider=mock_embedding,
-                    vector_store_client=mock_qdrant,
+                    vector_store_client=mock_filesystem,
                 )
 
                 # Mock file identifier
@@ -252,8 +252,8 @@ class TestDatabaseConsistencyDuringCancellation:
                 )
 
     def test_batch_safety_during_cancellation(self):
-        """Test that Qdrant batches are handled safely during cancellation."""
-        # This test will fail until we implement enhanced Qdrant batch safety
+        """Test that Filesystem batches are handled safely during cancellation."""
+        # This test will fail until we implement enhanced Filesystem batch safety
 
         with local_temporary_directory() as temp_dir:
             # Create multiple files to trigger batching
@@ -263,7 +263,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 test_file.write_text(f"def func_{i}(): pass\n")
                 test_files.append(test_file)
 
-            mock_qdrant = MockQdrantClient()
+            mock_filesystem = MockFilesystemClient()
             mock_embedding = SlowMockEmbeddingProvider(delay=0.05)
 
             with (
@@ -295,7 +295,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 processor = HighThroughputProcessor(
                     config=config,
                     embedding_provider=mock_embedding,
-                    vector_store_client=mock_qdrant,
+                    vector_store_client=mock_filesystem,
                 )
 
                 # Mock file identifier
@@ -327,7 +327,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 # Verify that batches were handled consistently
                 # All batches that were started should complete successfully
                 total_points = sum(
-                    len(points) for points in mock_qdrant.points_by_file.values()
+                    len(points) for points in mock_filesystem.points_by_file.values()
                 )
 
                 # Should have some points (batches that completed before cancellation)
@@ -338,8 +338,10 @@ class TestDatabaseConsistencyDuringCancellation:
                 )
 
                 # All upsert operations should have succeeded (no partial batches)
-                for batch in mock_qdrant.upsert_calls:
-                    assert len(batch) > 0, "Empty batch should not be sent to Qdrant"
+                for batch in mock_filesystem.upsert_calls:
+                    assert (
+                        len(batch) > 0
+                    ), "Empty batch should not be sent to Filesystem"
 
 
 if __name__ == "__main__":

@@ -8,9 +8,9 @@ from unittest.mock import Mock, patch
 import httpx
 from rich.console import Console
 
-from code_indexer.config import Config, OllamaConfig, VoyageAIConfig
+from code_indexer.config import Config, VoyageConfig, VoyageAIConfig
 from code_indexer.services.embedding_provider import EmbeddingProvider, EmbeddingResult
-from code_indexer.services.ollama import OllamaClient
+from code_indexer.services.voyage import VoyageClient
 from code_indexer.services.voyage_ai import VoyageAIClient
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 
@@ -24,12 +24,12 @@ class TestEmbeddingProviderInterface:
             EmbeddingProvider()
 
 
-class TestOllamaClient:
-    """Test OllamaClient implementation."""
+class TestVoyageClient:
+    """Test VoyageClient implementation."""
 
     @pytest.fixture
-    def ollama_config(self):
-        return OllamaConfig(
+    def voyage_config(self):
+        return VoyageConfig(
             host="http://localhost:11434", model="nomic-embed-text", timeout=30
         )
 
@@ -38,78 +38,78 @@ class TestOllamaClient:
         return Console(quiet=True)
 
     @pytest.fixture
-    def ollama_client(self, ollama_config, console):
-        return OllamaClient(ollama_config, console)
+    def voyage_client(self, voyage_config, console):
+        return VoyageClient(voyage_config, console)
 
-    def test_initialization(self, ollama_client, ollama_config):
-        """Test OllamaClient initialization."""
-        assert ollama_client.config == ollama_config
-        assert ollama_client.get_provider_name() == "ollama"
-        assert ollama_client.get_current_model() == "nomic-embed-text"
-        assert not ollama_client.supports_batch_processing()
+    def test_initialization(self, voyage_client, voyage_config):
+        """Test VoyageClient initialization."""
+        assert voyage_client.config == voyage_config
+        assert voyage_client.get_provider_name() == "voyage"
+        assert voyage_client.get_current_model() == "nomic-embed-text"
+        assert not voyage_client.supports_batch_processing()
 
     @patch("httpx.Client.get")
-    def test_health_check_success(self, mock_get, ollama_client):
+    def test_health_check_success(self, mock_get, voyage_client):
         """Test successful health check."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_get.return_value = mock_response
 
-        assert ollama_client.health_check() is True
+        assert voyage_client.health_check() is True
 
     @patch("httpx.Client.get")
-    def test_health_check_failure(self, mock_get, ollama_client):
+    def test_health_check_failure(self, mock_get, voyage_client):
         """Test failed health check."""
         mock_get.side_effect = Exception("Connection failed")
 
-        assert ollama_client.health_check() is False
+        assert voyage_client.health_check() is False
 
     @patch("httpx.Client.post")
-    def test_get_embedding_success(self, mock_post, ollama_client):
+    def test_get_embedding_success(self, mock_post, voyage_client):
         """Test successful embedding generation."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"embedding": [0.1, 0.2, 0.3, 0.4]}
         mock_post.return_value = mock_response
 
-        embedding = ollama_client.get_embedding("test text")
+        embedding = voyage_client.get_embedding("test text")
 
         assert embedding == [0.1, 0.2, 0.3, 0.4]
         mock_post.assert_called_once()
 
     @patch("httpx.Client.post")
-    def test_get_embedding_with_metadata(self, mock_post, ollama_client):
+    def test_get_embedding_with_metadata(self, mock_post, voyage_client):
         """Test embedding generation with metadata."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"embedding": [0.1, 0.2, 0.3, 0.4]}
         mock_post.return_value = mock_response
 
-        result = ollama_client.get_embedding_with_metadata("test text")
+        result = voyage_client.get_embedding_with_metadata("test text")
 
         assert isinstance(result, EmbeddingResult)
         assert result.embedding == [0.1, 0.2, 0.3, 0.4]
         assert result.model == "nomic-embed-text"
-        assert result.provider == "ollama"
-        assert result.tokens_used is None  # Ollama doesn't provide token usage
+        assert result.provider == "voyage"
+        assert result.tokens_used is None  # Voyage doesn't provide token usage
 
     @patch("httpx.Client.post")
-    def test_get_embeddings_batch(self, mock_post, ollama_client):
-        """Test batch embedding generation (sequential for Ollama)."""
+    def test_get_embeddings_batch(self, mock_post, voyage_client):
+        """Test batch embedding generation (sequential for Voyage)."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"embedding": [0.1, 0.2, 0.3, 0.4]}
         mock_post.return_value = mock_response
 
         texts = ["text1", "text2", "text3"]
-        embeddings = ollama_client.get_embeddings_batch(texts)
+        embeddings = voyage_client.get_embeddings_batch(texts)
 
         assert len(embeddings) == 3
         assert all(embedding == [0.1, 0.2, 0.3, 0.4] for embedding in embeddings)
         assert mock_post.call_count == 3  # Sequential calls
 
     @patch("httpx.Client.post")
-    def test_get_embedding_model_not_found(self, mock_post, ollama_client):
+    def test_get_embedding_model_not_found(self, mock_post, voyage_client):
         """Test embedding generation with model not found error."""
         mock_response = Mock()
         mock_response.status_code = 404
@@ -119,14 +119,14 @@ class TestOllamaClient:
         mock_post.return_value = mock_response
 
         with pytest.raises(ValueError, match="Model nomic-embed-text not found"):
-            ollama_client.get_embedding("test text")
+            voyage_client.get_embedding("test text")
 
-    def test_get_model_info(self, ollama_client):
+    def test_get_model_info(self, voyage_client):
         """Test getting model information."""
-        info = ollama_client.get_model_info()
+        info = voyage_client.get_model_info()
 
         assert info["name"] == "nomic-embed-text"
-        assert info["provider"] == "ollama"
+        assert info["provider"] == "voyage"
         assert info["dimensions"] == 768
 
 
@@ -257,9 +257,9 @@ class TestEmbeddingProviderFactory:
     """Test EmbeddingProviderFactory."""
 
     @pytest.fixture
-    def config_ollama(self):
+    def config_voyage(self):
         config = Config()
-        config.embedding_provider = "ollama"
+        config.embedding_provider = "voyage"
         return config
 
     @pytest.fixture
@@ -272,12 +272,12 @@ class TestEmbeddingProviderFactory:
     def console(self):
         return Console(quiet=True)
 
-    def test_create_ollama_provider(self, config_ollama, console):
-        """Test creating Ollama provider."""
-        provider = EmbeddingProviderFactory.create(config_ollama, console)
+    def test_create_voyage_provider(self, config_voyage, console):
+        """Test creating Voyage provider."""
+        provider = EmbeddingProviderFactory.create(config_voyage, console)
 
-        assert isinstance(provider, OllamaClient)
-        assert provider.get_provider_name() == "ollama"
+        assert isinstance(provider, VoyageClient)
+        assert provider.get_provider_name() == "voyage"
 
     def test_create_voyage_ai_provider(self, config_voyage_ai, console):
         """Test creating VoyageAI provider."""
@@ -299,16 +299,16 @@ class TestEmbeddingProviderFactory:
         """Test getting available providers."""
         providers = EmbeddingProviderFactory.get_available_providers()
 
-        assert "ollama" in providers
+        assert "voyage" in providers
         assert "voyage-ai" in providers
 
     def test_get_provider_info(self):
         """Test getting provider information."""
         info = EmbeddingProviderFactory.get_provider_info()
 
-        assert "ollama" in info
+        assert "voyage" in info
         assert "voyage-ai" in info
-        assert info["ollama"]["requires_api_key"] is False
+        assert info["voyage"]["requires_api_key"] is False
         assert info["voyage-ai"]["requires_api_key"] is True
         assert info["voyage-ai"]["api_key_env"] == "VOYAGE_API_KEY"
 
@@ -320,10 +320,10 @@ class TestEmbeddingProviderIntegration:
     def console(self):
         return Console(quiet=True)
 
-    def test_ollama_provider_workflow(self, console):
-        """Test complete Ollama provider workflow."""
+    def test_voyage_provider_workflow(self, console):
+        """Test complete Voyage provider workflow."""
         config = Config()
-        config.embedding_provider = "ollama"
+        config.embedding_provider = "voyage"
 
         with (
             patch("httpx.Client.get") as mock_get,
@@ -351,7 +351,7 @@ class TestEmbeddingProviderIntegration:
             result = provider.get_embedding_with_metadata("test text")
             assert result.embedding == [0.1, 0.2, 0.3, 0.4]
             assert result.model == "nomic-embed-text"
-            assert result.provider == "ollama"
+            assert result.provider == "voyage"
 
     def test_voyage_ai_provider_workflow(self, console):
         """Test complete VoyageAI provider workflow."""

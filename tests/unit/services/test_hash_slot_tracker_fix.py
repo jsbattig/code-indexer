@@ -39,9 +39,9 @@ def mock_config():
         indexing_config.max_file_size = 1000000
         config.indexing = indexing_config
 
-        # Mock qdrant config
-        config.qdrant = Mock()
-        config.qdrant.vector_size = 768
+        # Mock filesystem config
+        config.filesystem = Mock()
+        config.filesystem.vector_size = 768
 
         # Mock embedding config
         embedding_config = Mock()

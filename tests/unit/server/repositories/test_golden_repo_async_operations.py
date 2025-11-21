@@ -7,10 +7,9 @@ Tests the async refactoring of golden repository operations:
 - remove_golden_repo returns job_id and submits background job
 """
 
-import json
 import os
 import tempfile
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import patch, MagicMock
 
 import pytest
 

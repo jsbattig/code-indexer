@@ -83,7 +83,7 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
                 ]
 
                 # Call index_commits
-                result = indexer.index_commits(all_branches=False)
+                indexer.index_commits(all_branches=False)
 
                 # Verify _process_commits_parallel was called
                 indexer._process_commits_parallel.assert_called_once()

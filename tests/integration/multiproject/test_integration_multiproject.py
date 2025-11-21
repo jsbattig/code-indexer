@@ -43,41 +43,49 @@ def handle_start_command_gracefully(project_dir, extra_args=None):
         # If start failed due to port conflicts, check if services are already running
         if "already in use" in start_result.stdout:
             print("🔍 Services may already be running, attempting to proceed...")
-            # Verify we can reach Qdrant by detecting running services
+            # Verify we can reach Filesystem by detecting running services
             try:
-                # Try to detect running Qdrant service on common ports
-                qdrant_ports = [7249, 6560, 6333, 6334, 6335]  # Common Qdrant ports
+                # Try to detect running Filesystem service on common ports
+                filesystem_ports = [
+                    7249,
+                    6560,
+                    6333,
+                    6334,
+                    6335,
+                ]  # Common Filesystem ports
                 working_port = None
 
-                for port in qdrant_ports:
+                for port in filesystem_ports:
                     try:
                         response = requests.get(
                             f"http://localhost:{port}/cluster", timeout=2
                         )
                         if response.status_code == 200 and "status" in response.json():
                             working_port = port
-                            print(f"🔍 Found Qdrant running on port {port}")
+                            print(f"🔍 Found Filesystem running on port {port}")
                             break
                     except Exception:
                         continue
 
                 if working_port:
-                    print("✅ Qdrant service is accessible, proceeding with test")
+                    print("✅ Filesystem service is accessible, proceeding with test")
                     # Update config if it exists to use the detected port
                     config_file = project_dir / ".code-indexer" / "config.json"
                     if config_file.exists():
                         with open(config_file, "r") as f:
                             config = json.load(f)
-                        config.setdefault("qdrant", {})[
+                        config.setdefault("filesystem", {})[
                             "host"
                         ] = f"http://localhost:{working_port}"
                         with open(config_file, "w") as f:
                             json.dump(config, f, indent=2)
-                        print(f"✅ Updated config to use Qdrant on port {working_port}")
+                        print(
+                            f"✅ Updated config to use Filesystem on port {working_port}"
+                        )
                     return True
                 else:
                     pytest.skip(
-                        f"Start failed and no accessible Qdrant found: {start_result.stdout}"
+                        f"Start failed and no accessible Filesystem found: {start_result.stdout}"
                     )
             except Exception as e:
                 pytest.skip(f"Start failed and could not verify services: {e}")
@@ -239,7 +247,7 @@ class TestMultiProjectIntegration:
         """Verify that no root-owned files are left in the data directory after cleanup.
 
         This method provides immediate feedback when cleanup fails to remove root-owned files,
-        which cause Qdrant startup failures in subsequent tests.
+        which cause Filesystem startup failures in subsequent tests.
         """
         import subprocess
         import os
@@ -263,7 +271,7 @@ class TestMultiProjectIntegration:
                 root_owned_files = result.stdout.strip().split("\n")
                 pytest.fail(
                     f"CLEANUP VERIFICATION FAILED: Found {len(root_owned_files)} root-owned files after cleanup!\n"
-                    f"These files will cause Qdrant permission errors in subsequent tests:\n"
+                    f"These files will cause Filesystem permission errors in subsequent tests:\n"
                     + "\n".join(
                         f"  - {file}" for file in root_owned_files[:10]
                     )  # Show first 10 files
@@ -272,7 +280,7 @@ class TestMultiProjectIntegration:
                         if len(root_owned_files) > 10
                         else ""
                     )
-                    + f"\n\nTo fix manually: sudo rm -rf {global_data_dir}/qdrant/collections"
+                    + f"\n\nTo fix manually: sudo rm -rf {global_data_dir}/filesystem/collections"
                 )
 
         except Exception as e:
@@ -321,7 +329,9 @@ class TestMultiProjectIntegration:
                 project_name="test_shared", project_config_dir=project_config_dir1
             )
             project_config1 = docker_manager1._generate_container_names(project1_path)
-            qdrant_name1 = docker_manager1.get_container_name("qdrant", project_config1)
+            filesystem_name1 = docker_manager1.get_container_name(
+                "filesystem", project_config1
+            )
         finally:
             os.chdir(original_cwd)
 
@@ -332,21 +342,23 @@ class TestMultiProjectIntegration:
                 project_name="test_shared", project_config_dir=project_config_dir2
             )
             project_config2 = docker_manager2._generate_container_names(project2_path)
-            qdrant_name2 = docker_manager2.get_container_name("qdrant", project_config2)
+            filesystem_name2 = docker_manager2.get_container_name(
+                "filesystem", project_config2
+            )
         finally:
             os.chdir(original_cwd)
 
         # Check container names are different (per-project isolation)
         # Each project should get its own containers for better isolation
-        assert qdrant_name1 != qdrant_name2
-        print(f"Project 1 Qdrant: {qdrant_name1}")
-        print(f"Project 2 Qdrant: {qdrant_name2}")
+        assert filesystem_name1 != filesystem_name2
+        print(f"Project 1 Filesystem: {filesystem_name1}")
+        print(f"Project 2 Filesystem: {filesystem_name2}")
 
         # Verify both names follow the expected pattern
-        assert "qdrant" in qdrant_name1
-        assert "qdrant" in qdrant_name2
-        assert "cidx-" in qdrant_name1
-        assert "cidx-" in qdrant_name2
+        assert "filesystem" in filesystem_name1
+        assert "filesystem" in filesystem_name2
+        assert "cidx-" in filesystem_name1
+        assert "cidx-" in filesystem_name2
 
     def test_docker_compose_generation(self, multiproject_test_setup):
         """Test that Docker Compose configurations are generated correctly."""
@@ -363,11 +375,11 @@ class TestMultiProjectIntegration:
             # Generate compose configuration with mock project config to avoid port conflicts
             # This test focuses on compose structure, not actual service startup
             mock_project_config = {
-                "qdrant_name": "cidx-test-qdrant",
-                "ollama_name": "cidx-test-ollama",
+                "filesystem_name": "cidx-test-filesystem",
+                "voyage_name": "cidx-test-voyage",
                 "data_cleaner_name": "cidx-test-data-cleaner",
-                "qdrant_port": 7777,  # Use non-conflicting test port
-                "ollama_port": 11777,
+                "filesystem_port": 7777,  # Use non-conflicting test port
+                "voyage_port": 11777,
                 "data_cleaner_port": 8777,
                 "project_hash": "test1234",
             }
@@ -377,10 +389,10 @@ class TestMultiProjectIntegration:
 
             # Verify services are generated correctly
             services = compose_config["services"]
-            assert "qdrant" in services
+            assert "filesystem" in services
 
             # Verify container names use project-specific naming (current architecture)
-            assert services["qdrant"]["container_name"] == "cidx-test-qdrant"
+            assert services["filesystem"]["container_name"] == "cidx-test-filesystem"
 
             # Verify network name follows project-specific pattern
             networks = compose_config["networks"]
@@ -426,7 +438,7 @@ class TestMultiProjectIntegration:
                 # Handle CoW legacy detection issue temporarily
                 if "Legacy container detected" in str(e):
                     pytest.skip(
-                        "CoW implementation bug: qdrant service missing home directory mount"
+                        "CoW implementation bug: filesystem service missing home directory mount"
                     )
                 raise
             finally:

@@ -57,9 +57,11 @@ class TestFileLevelCollectionRequirements:
         # Use only first 2 files for this test
         test_files = test_files[:2]
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
         processor.file_identifier.get_file_metadata.return_value = {
@@ -147,9 +149,11 @@ class TestFileLevelCollectionRequirements:
         # Setup with proper constructor arguments and real files
         config, test_files, temp_dir = create_test_config_and_files()
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
         processor.file_identifier.get_file_metadata.return_value = {
@@ -238,9 +242,11 @@ class TestFileLevelCollectionRequirements:
         # Use only first file for this test
         test_files = test_files[:1]
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
         processor.file_identifier.get_file_metadata.return_value = {
@@ -307,9 +313,11 @@ class TestFileLevelCollectionRequirements:
         # Only use first 2 files for this test
         test_files = test_files[:2]
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
         processor.file_identifier.get_file_metadata.return_value = {
@@ -386,8 +394,10 @@ class TestFileLevelCollectionRequirements:
         # For now, we just verify the processor exists and can be instantiated
         config, _, temp_dir = create_test_config_and_files()
         embedding_provider = Mock()
-        qdrant_client = Mock()
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        filesystem_client = Mock()
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         assert processor is not None
 
         # Clean up

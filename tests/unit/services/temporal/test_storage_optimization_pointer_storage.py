@@ -16,11 +16,6 @@ class TestPointerBasedStorage:
     def test_added_file_payload_has_reconstruct_marker(self):
         """Test that added files have reconstruct_from_git marker in payload."""
         # Simulate what temporal_indexer should create for an added file
-        diff_info_added = {
-            "diff_type": "added",
-            "commit_hash": "abc123",
-            "file_path": "test.py",
-        }
 
         # Expected payload structure for added file (pointer only)
         expected_payload = {
@@ -95,7 +90,7 @@ class TestPointerBasedStorage:
             }
 
             # Create indexer
-            indexer = TemporalIndexer(mock_config_manager, mock_vector_store)
+            TemporalIndexer(mock_config_manager, mock_vector_store)
 
             # Create an added file diff
             diff_info = DiffInfo(

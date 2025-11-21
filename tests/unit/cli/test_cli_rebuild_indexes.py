@@ -97,9 +97,9 @@ class TestCLIRebuildIndexesE2E:
                 "config",
                 "services",
                 "container",
-                "qdrant",
+                "filesystem",
                 "collection",
-                "ollama service not available",
+                "voyage service not available",
                 "start first",
             ]
             output_lower = (result.stdout + result.stderr).lower()

@@ -115,12 +115,12 @@ def test_voyage_ai_shared_container_full_workflow():
         )
         assert result.returncode == 0, f"Status failed: {result.stderr}"
 
-        # Verify VoyageAI provider is configured and Ollama shows "Not needed"
+        # Verify VoyageAI provider is configured and Voyage shows "Not needed"
         status_lower = result.stdout.lower()
-        if "ollama" in status_lower:
+        if "voyage" in status_lower:
             assert (
                 "not needed" in status_lower
-            ), f"Ollama should show 'Not needed' status: {result.stdout}"
+            ), f"Voyage should show 'Not needed' status: {result.stdout}"
         assert (
             "voyage" in status_lower or "voyage-ai" in status_lower
         ), f"VoyageAI should be in status: {result.stdout}"

@@ -1,7 +1,7 @@
 """Abstract base class for vector storage backends.
 
 Defines the interface that all vector storage backends must implement,
-allowing code-indexer to work with different storage solutions (filesystem, Qdrant, etc.).
+allowing code-indexer to work with different storage solutions (filesystem, Filesystem, etc.).
 """
 
 from abc import ABC, abstractmethod
@@ -14,7 +14,7 @@ class VectorStoreBackend(ABC):
 
     This interface allows code-indexer to support multiple vector storage solutions:
     - FilesystemBackend: Container-free storage using local filesystem
-    - QdrantContainerBackend: Container-based storage using Docker/Podman + Qdrant
+    - FilesystemContainerBackend: Container-based storage using Docker/Podman + Filesystem
 
     All backends must implement these methods to ensure consistent behavior across
     different storage solutions.
@@ -33,7 +33,7 @@ class VectorStoreBackend(ABC):
         """Initialize the backend storage.
 
         For FilesystemBackend: Creates directory structure
-        For QdrantContainerBackend: Sets up container configuration
+        For FilesystemContainerBackend: Sets up container configuration
 
         Raises:
             RuntimeError: If initialization fails
@@ -45,7 +45,7 @@ class VectorStoreBackend(ABC):
         """Start the backend services.
 
         For FilesystemBackend: No-op, returns True immediately
-        For QdrantContainerBackend: Starts Docker/Podman containers
+        For FilesystemContainerBackend: Starts Docker/Podman containers
 
         Returns:
             True if services started successfully, False otherwise
@@ -57,7 +57,7 @@ class VectorStoreBackend(ABC):
         """Stop the backend services.
 
         For FilesystemBackend: No-op, returns True immediately
-        For QdrantContainerBackend: Stops Docker/Podman containers
+        For FilesystemContainerBackend: Stops Docker/Podman containers
 
         Returns:
             True if services stopped successfully, False otherwise
@@ -78,7 +78,7 @@ class VectorStoreBackend(ABC):
         """Clean up backend resources.
 
         For FilesystemBackend: Removes vectors directory
-        For QdrantContainerBackend: Removes containers and volumes
+        For FilesystemContainerBackend: Removes containers and volumes
 
         Raises:
             RuntimeError: If cleanup fails
@@ -90,7 +90,7 @@ class VectorStoreBackend(ABC):
         """Get the vector store client instance.
 
         For FilesystemBackend: Returns filesystem-based client
-        For QdrantContainerBackend: Returns Qdrant client instance
+        For FilesystemContainerBackend: Returns Filesystem client instance
 
         Returns:
             Client instance for interacting with vector storage
@@ -102,7 +102,7 @@ class VectorStoreBackend(ABC):
         """Check if backend is healthy and operational.
 
         For FilesystemBackend: Verifies write access to vectors directory
-        For QdrantContainerBackend: Checks container health and connectivity
+        For FilesystemContainerBackend: Checks container health and connectivity
 
         Returns:
             True if backend is healthy, False otherwise
@@ -122,7 +122,7 @@ class VectorStoreBackend(ABC):
         """Optimize the vector storage (optional operation).
 
         For FilesystemBackend: No-op, returns True
-        For QdrantContainerBackend: Triggers Qdrant optimization
+        For FilesystemContainerBackend: Triggers Filesystem optimization
 
         Returns:
             True if optimization succeeded or is not applicable
@@ -134,7 +134,7 @@ class VectorStoreBackend(ABC):
         """Force flush pending operations to storage (optional operation).
 
         For FilesystemBackend: No-op, returns True
-        For QdrantContainerBackend: Forces Qdrant to flush to disk
+        For FilesystemContainerBackend: Forces Filesystem to flush to disk
 
         Returns:
             True if flush succeeded or is not applicable

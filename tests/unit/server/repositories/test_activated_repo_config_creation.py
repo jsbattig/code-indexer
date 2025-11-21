@@ -11,14 +11,13 @@ import subprocess
 import tempfile
 import yaml
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 from datetime import datetime, timezone
 
 import pytest
 
 from src.code_indexer.server.repositories.activated_repo_manager import (
     ActivatedRepoManager,
-    ActivatedRepoError,
 )
 from src.code_indexer.server.repositories.golden_repo_manager import GoldenRepo
 
@@ -98,7 +97,7 @@ class TestActivatedRepoConfigCreation:
         """Test that activated repository contains .code-indexer/config.json after activation.
 
         This is the failing test for Issue #499 - activated repos must have config.json
-        to ensure FilesystemVectorStore backend is used instead of defaulting to Qdrant.
+        to ensure FilesystemVectorStore backend is used instead of defaulting to Filesystem.
         """
         username = "testuser"
         golden_repo_alias = "test-repo"
@@ -129,7 +128,7 @@ class TestActivatedRepoConfigCreation:
     ):
         """Test that config.json specifies FilesystemVectorStore provider.
 
-        Without this, backend_factory defaults to QdrantContainerBackend,
+        Without this, backend_factory defaults to FilesystemContainerBackend,
         causing search to return 0 results (Issue #499).
         """
         username = "testuser"
@@ -159,7 +158,7 @@ class TestActivatedRepoConfigCreation:
         ), "config.json must contain 'vector_store' section"
         assert (
             config_data["vector_store"]["provider"] == "filesystem"
-        ), "vector_store provider must be 'filesystem' to avoid defaulting to Qdrant"
+        ), "vector_store provider must be 'filesystem' to avoid defaulting to Filesystem"
 
     def test_config_yml_contains_voyage_ai_configuration(
         self, activated_repo_manager, temp_data_dir

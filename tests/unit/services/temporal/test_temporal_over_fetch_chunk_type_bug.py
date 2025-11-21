@@ -69,7 +69,7 @@ def test_chunk_type_filter_triggers_over_fetch_multiplier():
 
         # Execute search with chunk_type filter (the bug condition)
         try:
-            results = search_service.query_temporal(
+            search_service.query_temporal(
                 query="test query",
                 time_range=ALL_TIME_RANGE,  # ("1970-01-01", "2100-12-31")
                 chunk_type="commit_message",  # POST-FILTER: Should trigger over-fetch

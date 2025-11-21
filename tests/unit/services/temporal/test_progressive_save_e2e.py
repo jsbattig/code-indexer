@@ -138,7 +138,7 @@ class TestProgressiveSaveE2E(unittest.TestCase):
                             )
 
                             # Run indexing
-                            result = indexer.index_commits(
+                            indexer.index_commits(
                                 all_branches=False, max_commits=None, since_date=None
                             )
 

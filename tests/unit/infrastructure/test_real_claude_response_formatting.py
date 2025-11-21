@@ -39,7 +39,7 @@ Let me search for more specific algorithms and services:
 algorithms)
 Let me read the key algorithm files to understand the core components:
 📖 Reading: /home/jsbattig/Dev/code-indexer/src/code_indexer/indexing/chunker.py
-📖 Reading: /home/jsbattig/Dev/code-indexer/src/code_indexer/services/qdrant.py
+📖 Reading: /home/jsbattig/Dev/code-indexer/src/code_indexer/services/filesystem.py
 🔍✨ Semantic search: 'git topology branch aware incremental indexing' --limit 10 (description=Search for git and branch topology algorithms)
 📖 Reading: /home/jsbattig/Dev/code-indexer/src/code_indexer/services/git_topology_service.py
 Now let me search for embedding generation and file watching algorithms:
@@ -59,7 +59,7 @@ core algorithms.
 
 **Key Project Purpose:**
 - **Semantic Code Search**: Find code by meaning, not just keywords
-- **Multi-Provider Support**: Works with both local (Ollama) and cloud (VoyageAI) AI models
+- **Multi-Provider Support**: Works with both local (Voyage) and cloud (VoyageAI) AI models
 - **Git-Aware Intelligence**: Understands branch topology and code changes
 - **Real-Time Synchronization**: Keeps search index current as code evolves
 - **AI-Powered Analysis**: Integrates with Claude CLI for intelligent code analysis using RAG
@@ -107,7 +107,7 @@ def analyze_branch_change(self, old_branch: str, new_branch: str) -> BranchChang
 ```
 
 ### **3. Vector Search with Model-Aware Filtering Algorithm**
-**Location:** QdrantClient class (/home/jsbattig/Dev/code-indexer/src/code_indexer/services/qdrant.py)
+**Location:** FilesystemClient class (/home/jsbattig/Dev/code-indexer/src/code_indexer/services/filesystem.py)
 
 **What it does:**
 - **Cosine Similarity Search**: Uses high-dimensional vector space for semantic code matching

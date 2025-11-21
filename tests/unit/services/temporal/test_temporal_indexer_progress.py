@@ -32,7 +32,7 @@ class TestTemporalIndexerProgress:
         # Cleanup previous test state
         try:
             shutil.rmtree(test_dir / ".code-indexer" / "temporal", ignore_errors=True)
-        except:
+        except Exception:
             pass
 
         mock_config_manager = MagicMock()
@@ -193,7 +193,7 @@ class TestTemporalIndexerProgress:
         # Cleanup previous test state
         try:
             shutil.rmtree(test_dir / ".code-indexer" / "temporal", ignore_errors=True)
-        except:
+        except Exception:
             pass
 
         mock_config_manager = MagicMock()

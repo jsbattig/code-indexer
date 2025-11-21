@@ -192,7 +192,7 @@ class TestRepositoryDeletionTDD:
 
         # Simulate partial failure during deletion
         mock_manager.remove_golden_repo.side_effect = GitOperationError(
-            "Failed to cleanup repository files: Qdrant service unavailable"
+            "Failed to cleanup repository files: Filesystem service unavailable"
         )
 
         monkeypatch.setattr(
@@ -311,7 +311,7 @@ class TestRepositoryDeletionTDD:
                 "permission denied",
             ),
             (
-                GitOperationError("Failed to cleanup: Qdrant connection refused"),
+                GitOperationError("Failed to cleanup: Filesystem connection refused"),
                 503,  # Service unavailable for external service failures
                 "unavailability",
             ),

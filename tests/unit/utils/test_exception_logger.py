@@ -105,9 +105,9 @@ class TestExceptionLoggerInitialization:
         project_root = tmp_path / "test_project"
         project_root.mkdir()
 
-        before_time = datetime.now()
+        datetime.now()
         logger = ExceptionLogger.initialize(project_root, mode="cli")
-        after_time = datetime.now()
+        datetime.now()
 
         filename = logger.log_file_path.name
         pid = os.getpid()

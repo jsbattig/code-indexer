@@ -11,24 +11,40 @@ from pydantic import BaseModel, Field, field_validator
 logger = logging.getLogger(__name__)
 
 
-class OllamaConfig(BaseModel):
-    """Configuration for Ollama service.
+def _validate_no_legacy_config(data: Dict[str, Any]) -> None:
+    """Validate configuration fields.
 
-    Environment variable references:
-    - Ollama FAQ: https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server
+    Raises:
+        ValueError: If invalid configuration options are detected.
     """
+    # Check for invalid fields
+    invalid_fields = []
+    if "project_containers" in data and data["project_containers"]:
+        if isinstance(data["project_containers"], dict) and any(
+            v is not None for v in data["project_containers"].values()
+        ):
+            invalid_fields.append("project_containers")
 
-    host: str = Field(default="http://localhost:11434", description="Ollama API host")
-    model: str = Field(default="nomic-embed-text", description="Embedding model name")
-    timeout: int = Field(default=30, description="Request timeout in seconds")
-    # OLLAMA_NUM_PARALLEL: Default 4 or 1 based on memory
-    num_parallel: int = Field(default=1, description="Number of parallel request slots")
-    # OLLAMA_MAX_LOADED_MODELS: Default 3×GPU count or 3 for CPU
-    max_loaded_models: int = Field(
-        default=1, description="Maximum number of models to keep loaded"
-    )
-    # OLLAMA_MAX_QUEUE: Default 512
-    max_queue: int = Field(default=512, description="Maximum request queue size")
+    if "project_ports" in data and data["project_ports"]:
+        if isinstance(data["project_ports"], dict) and any(
+            v is not None for v in data["project_ports"].values()
+        ):
+            invalid_fields.append("project_ports")
+
+    if invalid_fields:
+        raise ValueError(f"Invalid configuration fields: {', '.join(invalid_fields)}")
+
+    # Check for invalid vector store provider
+    if "vector_store" in data and isinstance(data["vector_store"], dict):
+        provider = data["vector_store"].get("provider")
+        if provider and provider != "filesystem":
+            raise ValueError(f"Invalid vector store provider: '{provider}'")
+
+    # Check for invalid embedding provider
+    if "embedding_provider" in data:
+        provider = data["embedding_provider"]
+        if provider != "voyage-ai":
+            raise ValueError(f"Invalid embedding provider: '{provider}'")
 
 
 class VoyageAIConfig(BaseModel):
@@ -72,87 +88,6 @@ class VoyageAIConfig(BaseModel):
     exponential_backoff: bool = Field(
         default=True, description="Use exponential backoff for retries"
     )
-
-
-class QdrantConfig(BaseModel):
-    """Configuration for Qdrant vector database."""
-
-    host: str = Field(default="http://localhost:6333", description="Qdrant API host")
-    collection_base_name: str = Field(
-        default="code_index",
-        description="Base name for collections (only dynamic part is embedding model)",
-    )
-    vector_size: int = Field(
-        default=768,
-        description="Vector dimension size (deprecated - auto-detected from provider)",
-    )
-    # Collection naming: base_name + model_slug (no provider, no project hash)
-
-    # HNSW search parameters - Phase 1: Search-time optimization
-    hnsw_ef: int = Field(
-        default=64,
-        description="HNSW search parameter for accuracy vs speed tradeoff (higher = more accurate, slower)",
-    )
-
-    # HNSW collection parameters - Phase 2: Collection-time optimization
-    hnsw_ef_construct: int = Field(
-        default=200,
-        description="HNSW index construction parameter (higher = better index quality, slower indexing)",
-    )
-    hnsw_m: int = Field(
-        default=32,
-        description="HNSW connectivity parameter (higher = better connectivity for large datasets, more memory)",
-    )
-
-    # Segment size configuration - Git-friendly storage optimization
-    max_segment_size_kb: int = Field(
-        default=102400,
-        description="Maximum segment size in KB (default: 100MB for optimal performance while staying Git-friendly)",
-    )
-
-    # Payload index configuration
-    enable_payload_indexes: bool = Field(
-        default=True,
-        description="Enable payload indexes for faster filtering (uses 100-300MB additional RAM)",
-    )
-
-    payload_indexes: List[Tuple[str, str]] = Field(
-        default=[
-            ("type", "keyword"),
-            ("path", "text"),
-            ("git_branch", "keyword"),
-            ("file_mtime", "integer"),
-            ("hidden_branches", "keyword"),
-            ("language", "keyword"),
-            (
-                "embedding_model",
-                "keyword",
-            ),  # Required for model-specific filtering in non-git projects
-        ],
-        description="List of (field_name, field_schema) tuples for payload indexes",
-    )
-
-    @field_validator("max_segment_size_kb")
-    @classmethod
-    def validate_segment_size(cls, v: int) -> int:
-        """Validate segment size is positive."""
-        if v <= 0:
-            raise ValueError("Segment size must be positive")
-        return v
-
-    @field_validator("payload_indexes")
-    @classmethod
-    def validate_payload_indexes(
-        cls, v: List[Tuple[str, str]]
-    ) -> List[Tuple[str, str]]:
-        """Validate payload index field schemas."""
-        valid_schemas = {"keyword", "text", "integer", "geo", "bool"}
-        for field_name, field_schema in v:
-            if field_schema not in valid_schemas:
-                raise ValueError(
-                    f"Invalid field_schema '{field_schema}' for field '{field_name}'"
-                )
-        return v
 
 
 class IndexingConfig(BaseModel):
@@ -203,33 +138,6 @@ class PollingConfig(BaseModel):
     )
 
 
-class ProjectContainersConfig(BaseModel):
-    """Configuration for project-specific container names."""
-
-    project_hash: Optional[str] = Field(
-        default=None, description="Hash derived from project path"
-    )
-    qdrant_name: Optional[str] = Field(
-        default=None, description="Qdrant container name"
-    )
-    ollama_name: Optional[str] = Field(
-        default=None, description="Ollama container name"
-    )
-    data_cleaner_name: Optional[str] = Field(
-        default=None, description="Data cleaner container name"
-    )
-
-
-class ProjectPortsConfig(BaseModel):
-    """Configuration for project-specific port assignments."""
-
-    qdrant_port: Optional[int] = Field(default=None, description="Qdrant service port")
-    ollama_port: Optional[int] = Field(default=None, description="Ollama service port")
-    data_cleaner_port: Optional[int] = Field(
-        default=None, description="Data cleaner service port"
-    )
-
-
 class OverrideConfig(BaseModel):
     """Override configuration for file inclusion/exclusion rules."""
 
@@ -277,16 +185,11 @@ class AutoRecoveryConfig(BaseModel):
 
 
 class VectorStoreConfig(BaseModel):
-    """Configuration for vector storage backend.
+    """Configuration for vector storage backend."""
 
-    Determines which vector storage backend to use:
-    - filesystem: Container-free storage using local filesystem
-    - qdrant: Container-based storage using Docker/Podman + Qdrant
-    """
-
-    provider: Literal["filesystem", "qdrant"] = Field(
+    provider: Literal["filesystem"] = Field(
         default="filesystem",
-        description="Vector storage provider: 'filesystem' for container-free, 'qdrant' for containers",
+        description="Vector storage provider",
     )
 
 
@@ -458,9 +361,9 @@ class Config(BaseModel):
     )
 
     # Embedding provider selection
-    embedding_provider: Literal["ollama", "voyage-ai"] = Field(
-        default="ollama",
-        description="Embedding provider to use: 'ollama' for local Ollama, 'voyage-ai' for VoyageAI API",
+    embedding_provider: Literal["voyage-ai"] = Field(
+        default="voyage-ai",
+        description="Embedding provider to use",
     )
 
     # Vector storage backend selection
@@ -470,20 +373,12 @@ class Config(BaseModel):
     )
 
     # Provider-specific configurations
-    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     voyage_ai: VoyageAIConfig = Field(default_factory=VoyageAIConfig)
 
     # Other service configurations
-    qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
     indexing: IndexingConfig = Field(default_factory=IndexingConfig)
     timeouts: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     polling: PollingConfig = Field(default_factory=PollingConfig)
-
-    # Per-project container configuration
-    project_containers: ProjectContainersConfig = Field(
-        default_factory=ProjectContainersConfig
-    )
-    project_ports: ProjectPortsConfig = Field(default_factory=ProjectPortsConfig)
 
     # Override configuration
     override_config: Optional[OverrideConfig] = Field(
@@ -551,6 +446,9 @@ class ConfigManager:
             try:
                 with open(self.config_path, "r") as f:
                     data = json.load(f)
+
+                # Validate no legacy configuration options BEFORE attempting to parse
+                _validate_no_legacy_config(data)
 
                 # Ensure absolute path for codebase_dir
                 if "codebase_dir" in data:
@@ -668,74 +566,19 @@ How text is split for AI processing:
 
 ## Performance Configuration
 
-### Ollama Performance Control
-Configure request handling and resource usage for the AI embedding model:
-
-```json
-"ollama": {
-  "host": "http://localhost:11434",
-  "model": "nomic-embed-text",
-  "timeout": 30,
-  "num_parallel": 1,            // Parallel request slots (default: 1)
-  "max_loaded_models": 1,       // Max models in memory (default: 1)
-  "max_queue": 512              // Max request queue size (default: 512)
-}
-```
-
-#### Ollama Server Settings
-Configuration maps to Ollama environment variables. See: https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server
-
-- **`num_parallel`** (→ OLLAMA_NUM_PARALLEL): Maximum concurrent requests Ollama server accepts
-  - `1`: Server processes one request at a time
-  - `2-4`: Server can handle multiple simultaneous requests from different clients
-  - **Default in Ollama**: 4 or 1 based on available memory
-  - **Note**: Code-indexer processes files sequentially, so this mainly benefits other clients using the same Ollama instance
-- **`max_loaded_models`** (→ OLLAMA_MAX_LOADED_MODELS): Maximum models Ollama keeps loaded in memory
-  - `1`: Single model (code-indexer uses one embedding model)
-  - `2+`: Multiple models (uses more RAM, not needed for code-indexer)  
-  - **Default in Ollama**: 3×GPU count or 3 for CPU
-- **`max_queue`** (→ OLLAMA_MAX_QUEUE): Maximum requests Ollama queues when busy
-  - `512`: Default queue size
-  - Higher values allow more requests to wait when server is at capacity
-  - **Default in Ollama**: 512
-
-#### Processing Architecture
-Code-indexer processes files sequentially: reads file → chunks text → generates embedding → stores in Qdrant → next file. CPU thread allocation is handled automatically by Ollama and cannot be configured.
-
-#### Configuration Examples
-```json
-// Single-user development (default)
-"ollama": { "num_parallel": 1, "max_queue": 256 }
-
-// Shared Ollama instance (multiple clients)
-"ollama": { "num_parallel": 4, "max_queue": 512 }
-```
-
 ## Embedding Providers
 
-### Ollama (Local)
-Uses local AI models for privacy and no API costs:
-```json
-"embedding_provider": "ollama",
-"qdrant": { "vector_size": 768 }  // Ollama models use 768 dimensions
-```
-
-### VoyageAI (Cloud, Default)
+### VoyageAI
 Uses VoyageAI API for high-quality code embeddings:
 ```json
 "embedding_provider": "voyage-ai",
-"qdrant": { "vector_size": 1024 },  // VoyageAI models use 1024 dimensions
 "voyage_ai": {
   "model": "voyage-code-3",
   "parallel_requests": 8,
   "tokens_per_minute": 1000000  // Set to avoid rate limiting
 }
+// VoyageAI models use 1024 dimensions (voyage-code-3) or 1536 dimensions (voyage-large-2)
 ```
-
-**IMPORTANT**: When switching embedding providers:
-1. **Vector size must match**: Ollama = 768, VoyageAI = 1024
-2. **Clear existing data**: Run `code-indexer clean --remove-data`
-3. **Re-index**: Run `code-indexer index --clear`
 
 **VoyageAI Setup**:
 1. Get API key from https://www.voyageai.com/

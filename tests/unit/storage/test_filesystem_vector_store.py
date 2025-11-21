@@ -1,7 +1,7 @@
 """Unit tests for FilesystemVectorStore.
 
 Test Strategy: Use real filesystem operations with deterministic test data (NO mocking of file I/O).
-Following Story 2 requirements for QdrantClient-compatible interface.
+Following Story 2 requirements for FilesystemClient-compatible interface.
 """
 
 import json
@@ -988,8 +988,8 @@ class TestProgressReporting:
         assert callbacks[6]["total"] == 5
 
 
-class TestQdrantClientCompatibility:
-    """Test QdrantClient-compatible interface methods."""
+class TestFilesystemClientCompatibility:
+    """Test FilesystemClient-compatible interface methods."""
 
     def test_ensure_provider_aware_collection_creates_collection(self, tmp_path):
         """GIVEN embedding provider with model info

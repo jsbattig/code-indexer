@@ -227,7 +227,7 @@ class TestRichFormatAggregatorErrorHandling:
 ──────────────────────────────────────────────────"""
 
         # repo2 has error output
-        repo2_output = "Error: Cannot connect to Qdrant service"
+        repo2_output = "Error: Cannot connect to Filesystem service"
 
         # repo3 has error output
         repo3_output = "Failed to execute query: Connection refused"

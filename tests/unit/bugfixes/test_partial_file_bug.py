@@ -16,8 +16,8 @@ from collections import defaultdict
 pytestmark = pytest.mark.e2e
 
 
-class TrackedQdrantClient:
-    """Qdrant client that carefully tracks what gets indexed."""
+class TrackedFilesystemClient:
+    """Filesystem client that carefully tracks what gets indexed."""
 
     def __init__(self):
         self.indexed_chunks = defaultdict(list)  # file_path -> list of chunk_indices
@@ -25,7 +25,7 @@ class TrackedQdrantClient:
 
     def upsert_points(self, points):
         """Track exactly which chunks get indexed."""
-        print(f"QDRANT: Upserting {len(points)} points")
+        print(f"FILESYSTEM: Upserting {len(points)} points")
         self.upsert_calls.append(points)
 
         for point in points:
@@ -77,7 +77,7 @@ def test_partial_file_bug_reproduction():
         )
         test_file.write_text(content)
 
-        tracked_qdrant = TrackedQdrantClient()
+        tracked_filesystem = TrackedFilesystemClient()
 
         with (
             patch("code_indexer.services.git_aware_processor.FileIdentifier"),
@@ -127,7 +127,7 @@ def test_partial_file_bug_reproduction():
             processor = HighThroughputProcessor(
                 config=config,
                 embedding_provider=embedding_provider,
-                vector_store_client=tracked_qdrant,
+                vector_store_client=tracked_filesystem,
             )
 
             # Mock file identifier
@@ -156,7 +156,7 @@ def test_partial_file_bug_reproduction():
                     return "INTERRUPT"
                 return None
 
-            # Use small batch size to force frequent Qdrant calls
+            # Use small batch size to force frequent Filesystem calls
             print("Starting processing...")
             stats = processor.process_files_high_throughput(
                 files=[test_file],
@@ -169,7 +169,7 @@ def test_partial_file_bug_reproduction():
             )
 
             # Analyze what got indexed
-            file_completeness = tracked_qdrant.get_file_completeness()
+            file_completeness = tracked_filesystem.get_file_completeness()
             print("File completeness analysis:")
             for file_path, info in file_completeness.items():
                 print(f"  {file_path}: {info}")

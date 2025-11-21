@@ -239,7 +239,6 @@ class TestAsyncProgressCallback:
         manager.start_bottom_display()
 
         # Mock join to simulate timeout (thread still alive)
-        original_is_alive = manager._progress_worker.is_alive
 
         def mock_join(timeout=None):
             time.sleep(0.01)  # Simulate some time passing

@@ -49,11 +49,11 @@ class TestHintGeneratorQueryFailures:
         """Initialize HintGenerator for each test."""
         self.generator = HintGenerator()
 
-    def test_query_failure_qdrant_connection_suggests_grep(self):
-        """Test query failure with Qdrant connection error suggests grep."""
+    def test_query_failure_filesystem_connection_suggests_grep(self):
+        """Test query failure with Filesystem connection error suggests grep."""
         hint = self.generator.generate_hint(
             command="query",
-            error_text="Cannot connect to Qdrant service at port 6333",
+            error_text="Cannot connect to Filesystem service at port 6333",
             repository="backend/auth-service",
         )
 
@@ -69,10 +69,10 @@ class TestHintGeneratorQueryFailures:
         # Should mention the repository name
         assert "backend/auth-service" in hint.message
 
-        # Should have explanation about Qdrant unavailability
+        # Should have explanation about Filesystem unavailability
         assert hint.explanation is not None
         assert (
-            "qdrant" in hint.explanation.lower()
+            "filesystem" in hint.explanation.lower()
             or "service" in hint.explanation.lower()
         )
 
@@ -94,7 +94,9 @@ class TestHintGeneratorQueryFailures:
     def test_query_failure_suggests_status_check(self):
         """Test query failure suggests checking cidx status."""
         hint = self.generator.generate_hint(
-            command="query", error_text="Qdrant not running", repository="backend/auth"
+            command="query",
+            error_text="Filesystem not running",
+            repository="backend/auth",
         )
 
         # Should suggest checking status
@@ -251,7 +253,7 @@ class TestErrorCategoryDetector:
             self.detector.detect_category("Cannot connect to service") == "connection"
         )
         assert self.detector.detect_category("Connection refused") == "connection"
-        assert self.detector.detect_category("Qdrant not running") == "connection"
+        assert self.detector.detect_category("Filesystem not running") == "connection"
 
     def test_detect_port_conflict(self):
         """Test detection of port conflict errors."""
@@ -304,7 +306,7 @@ class TestHintFormattingIntegration:
         """Test that hints have proper structure for formatting."""
         hint = self.generator.generate_hint(
             command="query",
-            error_text="Cannot connect to Qdrant",
+            error_text="Cannot connect to Filesystem",
             repository="backend/auth",
         )
 
@@ -346,7 +348,7 @@ class TestConversationRequirements:
         """
         hint = self.generator.generate_hint(
             command="query",
-            error_text="Qdrant connection failed",
+            error_text="Filesystem connection failed",
             repository="backend/auth-service",
         )
 
@@ -359,7 +361,9 @@ class TestConversationRequirements:
         CONVERSATION REQUIREMENT: Must hint at using grep or other means.
         """
         hint = self.generator.generate_hint(
-            command="query", error_text="Cannot connect to Qdrant", repository="my-repo"
+            command="query",
+            error_text="Cannot connect to Filesystem",
+            repository="my-repo",
         )
 
         # Must have at least one grep command
@@ -391,7 +395,7 @@ class TestConversationRequirements:
         """
         hint = self.generator.generate_hint(
             command="query",
-            error_text="Qdrant service not responding",
+            error_text="Filesystem service not responding",
             repository="test-repo",
         )
 
@@ -400,5 +404,5 @@ class TestConversationRequirements:
         # Explanation should mention service unavailability or similar
         assert any(
             word in hint.explanation.lower()
-            for word in ["service", "unavailable", "qdrant", "not available"]
+            for word in ["service", "unavailable", "filesystem", "not available"]
         )

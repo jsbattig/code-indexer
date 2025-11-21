@@ -66,7 +66,6 @@ def _get_inventory_config(inventory: TestProjectInventory) -> Dict[str, Any]:
         "embedding_provider": "voyage",
         "embedding_model": "voyage-code-2",
         "segment_size": 100,
-        "ollama_model": "all-minilm:l6-v2",
         "ignore_patterns": ["*.log", "__pycache__", ".git", "*.pyc"],
     }
 

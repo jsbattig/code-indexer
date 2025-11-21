@@ -1,14 +1,11 @@
 """Integration test for socket path in deep directory structures."""
 
-import os
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from code_indexer.config import ConfigManager
 from code_indexer.daemon.socket_helper import (
-    generate_socket_path,
     get_repo_from_mapping,
 )
 

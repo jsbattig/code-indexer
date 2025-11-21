@@ -13,7 +13,7 @@ This test suite validates:
 Test approach:
 - Unit tests for filter logic and conflict detection
 - Integration tests for CLI filter construction
-- E2E tests with real Qdrant filters
+- E2E tests with real Filesystem filters
 - Performance benchmarks
 """
 
@@ -299,7 +299,7 @@ class TestFilterPrecedence:
         WHEN filters are applied to search
         THEN no Python files should be returned (exclusion wins)
 
-        Note: This tests the logical precedence, actual Qdrant behavior tested in E2E
+        Note: This tests the logical precedence, actual Filesystem behavior tested in E2E
         """
         from code_indexer.services.filter_conflict_detector import (
             FilterConflictDetector,
@@ -338,11 +338,11 @@ class TestFilterPrecedence:
         path_exclusion = path_builder.build_exclusion_filter(["*/src/tests/*"])
         filter_conditions["must_not"] = path_exclusion["must_not"]
 
-        # Verify structure exists (Qdrant will apply precedence)
+        # Verify structure exists (Filesystem will apply precedence)
         assert "must" in filter_conditions
         assert "must_not" in filter_conditions
 
-        # Both conditions should coexist (Qdrant handles precedence)
+        # Both conditions should coexist (Filesystem handles precedence)
         assert len(filter_conditions["must"]) == 1
         assert len(filter_conditions["must_not"]) == 1
 

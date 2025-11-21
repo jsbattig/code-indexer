@@ -33,7 +33,7 @@ def test_dry_run_show_claude_prompt_flag_exists(mock_claude_check):
 @patch("src.code_indexer.cli.check_claude_sdk_availability")
 @patch("src.code_indexer.cli.GenericQueryService")
 @patch("src.code_indexer.cli.ClaudeIntegrationService")
-@patch("src.code_indexer.cli.QdrantClient")
+@patch("src.code_indexer.cli.FilesystemClient")
 @patch("src.code_indexer.cli.EmbeddingProviderFactory")
 @patch("src.code_indexer.cli.ConfigManager")
 @patch("httpx.Client")
@@ -41,7 +41,7 @@ def test_dry_run_shows_prompt_without_execution(
     mock_httpx_client,
     mock_config_manager,
     mock_embedding_factory,
-    mock_qdrant,
+    mock_filesystem,
     mock_claude_service,
     mock_query_service,
     mock_claude_check,
@@ -62,13 +62,13 @@ def test_dry_run_shows_prompt_without_execution(
     mock_config_manager_instance = MagicMock()
     mock_config_instance = MagicMock()
     mock_config_instance.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
-    mock_config_instance.qdrant = MagicMock()
-    mock_config_instance.qdrant.host = "http://localhost:6333"
+    mock_config_instance.filesystem = MagicMock()
+    mock_config_instance.filesystem.host = "http://localhost:6333"
     mock_config_instance.embedding_provider = (
-        "voyage-ai"  # Not ollama to avoid that health check
+        "voyage-ai"  # Not voyage to avoid that health check
     )
-    mock_config_instance.ollama = MagicMock()
-    mock_config_instance.ollama.host = "http://localhost:11434"
+    mock_config_instance.voyage = MagicMock()
+    mock_config_instance.voyage.host = "http://localhost:11434"
     mock_config_manager_instance.load.return_value = mock_config_instance
     mock_config_manager.return_value = mock_config_manager_instance
 
@@ -77,10 +77,10 @@ def test_dry_run_shows_prompt_without_execution(
     mock_embedding_instance.get_provider_name.return_value = "test"
     mock_embedding_factory.create.return_value = mock_embedding_instance
 
-    mock_qdrant_instance = MagicMock()
-    mock_qdrant_instance.health_check.return_value = True
-    mock_qdrant_instance.resolve_collection_name.return_value = "test_collection"
-    mock_qdrant.return_value = mock_qdrant_instance
+    mock_filesystem_instance = MagicMock()
+    mock_filesystem_instance.health_check.return_value = True
+    mock_filesystem_instance.resolve_collection_name.return_value = "test_collection"
+    mock_filesystem.return_value = mock_filesystem_instance
 
     mock_claude_instance = MagicMock()
     # Mock the prompt creation method
@@ -130,7 +130,7 @@ def test_dry_run_shows_prompt_without_execution(
 @patch("src.code_indexer.cli.check_claude_sdk_availability")
 @patch("src.code_indexer.cli.GenericQueryService")
 @patch("src.code_indexer.cli.ClaudeIntegrationService")
-@patch("src.code_indexer.cli.QdrantClient")
+@patch("src.code_indexer.cli.FilesystemClient")
 @patch("src.code_indexer.cli.EmbeddingProviderFactory")
 @patch("src.code_indexer.cli.Config")
 @patch("httpx.Client")
@@ -138,7 +138,7 @@ def test_dry_run_prevents_claude_execution(
     mock_httpx_client,
     mock_config,
     mock_embedding_factory,
-    mock_qdrant,
+    mock_filesystem,
     mock_claude_service,
     mock_query_service,
     mock_claude_check,
@@ -158,11 +158,11 @@ def test_dry_run_prevents_claude_execution(
     # Setup mocks similar to above
     mock_config_instance = MagicMock()
     mock_config_instance.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
-    mock_config_instance.qdrant = MagicMock()
-    mock_config_instance.qdrant.host = "http://localhost:6333"
-    mock_config_instance.embedding_provider = "ollama"
-    mock_config_instance.ollama = MagicMock()
-    mock_config_instance.ollama.host = "http://localhost:11434"
+    mock_config_instance.filesystem = MagicMock()
+    mock_config_instance.filesystem.host = "http://localhost:6333"
+    mock_config_instance.embedding_provider = "voyage"
+    mock_config_instance.voyage = MagicMock()
+    mock_config_instance.voyage.host = "http://localhost:11434"
     mock_config.return_value = mock_config_instance
 
     mock_embedding_instance = MagicMock()
@@ -170,10 +170,10 @@ def test_dry_run_prevents_claude_execution(
     mock_embedding_instance.get_provider_name.return_value = "test"
     mock_embedding_factory.create.return_value = mock_embedding_instance
 
-    mock_qdrant_instance = MagicMock()
-    mock_qdrant_instance.health_check.return_value = True
-    mock_qdrant_instance.resolve_collection_name.return_value = "test_collection"
-    mock_qdrant.return_value = mock_qdrant_instance
+    mock_filesystem_instance = MagicMock()
+    mock_filesystem_instance.health_check.return_value = True
+    mock_filesystem_instance.resolve_collection_name.return_value = "test_collection"
+    mock_filesystem.return_value = mock_filesystem_instance
 
     mock_claude_instance = MagicMock()
     mock_claude_instance.create_claude_first_prompt.return_value = (

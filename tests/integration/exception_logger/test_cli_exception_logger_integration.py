@@ -56,7 +56,7 @@ class TestCLIModeExceptionLogger:
 
         # Run CLI command that should initialize ExceptionLogger
         # Use 'cidx init' which definitely initializes the system
-        result = subprocess.run(
+        subprocess.run(
             ["cidx", "init"],
             cwd=project_dir,
             capture_output=True,

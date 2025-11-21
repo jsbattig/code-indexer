@@ -1,7 +1,7 @@
 """Integration tests for MCP tool handlers."""
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, patch
 from code_indexer.server.mcp.handlers import (
     search_code,
     list_repositories,
@@ -270,7 +270,7 @@ class TestSearchCode:
                 }
             )
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify FTS parameters were passed to query manager
             mock_query_manager.query_user_repositories.assert_called_once_with(

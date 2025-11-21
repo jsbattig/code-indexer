@@ -59,7 +59,7 @@ class TestListFilesBug:
         mock_file_service.list_files = Mock(side_effect=capture_call)
 
         with patch("code_indexer.server.app.file_service", mock_file_service):
-            result = await list_files(params, mock_user)
+            await list_files(params, mock_user)
 
             # Verify the call was made
             assert mock_file_service.list_files.called

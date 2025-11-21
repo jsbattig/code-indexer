@@ -120,7 +120,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         """
         Normalize file path to relative for portable database storage.
 
-        CRITICAL FOR COW CLONING: All paths stored in Qdrant must be relative
+        CRITICAL FOR COW CLONING: All paths stored in Filesystem must be relative
         to codebase_dir to ensure database portability across different filesystem
         locations (CoW clones, repository moves, etc.).
 
@@ -299,7 +299,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             with FileChunkingManager(
                 vector_manager=vector_manager,
                 chunker=self.fixed_size_chunker,
-                vector_store_client=self.qdrant_client,
+                vector_store_client=self.vector_store_client,
                 thread_count=vector_thread_count,
                 slot_tracker=local_slot_tracker,
                 codebase_dir=self.config.codebase_dir,
@@ -580,7 +580,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 # FAST FILE SUBMISSION - No more I/O delays
                 # CRITICAL FIX: Get collection name for regular indexing
                 # When temporal collection exists, regular indexing needs explicit collection_name
-                collection_name = self.qdrant_client.resolve_collection_name(
+                collection_name = self.vector_store_client.resolve_collection_name(
                     self.config, self.embedding_provider
                 )
 
@@ -781,10 +781,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
         return stats
 
-    def _create_qdrant_point(
+    def _create_vector_point(
         self, chunk_task: ChunkTask, embedding: List[float]
     ) -> Dict[str, Any]:
-        """Create Qdrant point from chunk task and embedding."""
+        """Create vector point from chunk task and embedding."""
 
         # Use existing metadata creation logic
         metadata_info = None
@@ -836,8 +836,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             chunk_task.file_metadata, chunk_task.chunk_data["chunk_index"]
         )
 
-        # Create Qdrant point
-        point = self.qdrant_client.create_point(
+        # Create vector point
+        point = self.vector_store_client.create_point(
             point_id=point_id,
             vector=embedding,
             payload=payload,
@@ -874,7 +874,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             new_branch: Current branch name
             changed_files: List of relative file paths that changed
             unchanged_files: List of relative file paths that didn't change but need visibility updates
-            collection_name: Qdrant collection name
+            collection_name: Filesystem collection name
             progress_callback: Optional callback for progress reporting
             vector_thread_count: Number of threads for parallel processing
             watch_mode: If True, skip HNSW rebuild (for watch mode performance)
@@ -895,7 +895,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         )
 
         # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
-        self.qdrant_client.begin_indexing(collection_name)
+        self.vector_store_client.begin_indexing(collection_name)
 
         try:
             # Convert relative paths to absolute paths for processing
@@ -1004,7 +1004,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     info="Finalizing indexing session...",
                     slot_tracker=slot_tracker,
                 )
-            end_result = self.qdrant_client.end_indexing(
+            end_result = self.vector_store_client.end_indexing(
                 collection_name, progress_callback, skip_hnsw_rebuild=watch_mode
             )
             if watch_mode:
@@ -1025,7 +1025,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         import uuid
 
         content_str = f"{file_path}:{commit}:{chunk_index}"
-        # Use UUID5 for deterministic UUIDs that Qdrant accepts
+        # Use UUID5 for deterministic UUIDs that Filesystem accepts
         namespace = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # DNS namespace
         return str(uuid.uuid5(namespace, content_str))
 
@@ -1035,7 +1035,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         """Thread-safe check if content point already exists."""
         with self._content_id_lock:
             try:
-                point = self.qdrant_client.get_point(content_id, collection_name)
+                point = self.vector_store_client.get_point(content_id, collection_name)
                 return point is not None
             except Exception as e:
                 logger.warning(
@@ -1141,7 +1141,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         with self._visibility_lock:
             # Get all content points for this file with error handling
             try:
-                content_points, _ = self.qdrant_client.scroll_points(
+                content_points, _ = self.vector_store_client.scroll_points(
                     filter_conditions={
                         "must": [
                             {"key": "type", "match": {"value": "content"}},
@@ -1172,7 +1172,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
             # Batch update the points with new hidden_branches arrays
             if points_to_update:
-                return self.qdrant_client._batch_update_points(
+                return self.vector_store_client._batch_update_points(
                     points_to_update, collection_name
                 )
 
@@ -1185,7 +1185,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         with self._visibility_lock:
             # Get all content points for this file with error handling
             try:
-                content_points, _ = self.qdrant_client.scroll_points(
+                content_points, _ = self.vector_store_client.scroll_points(
                     filter_conditions={
                         "must": [
                             {"key": "type", "match": {"value": "content"}},
@@ -1216,7 +1216,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
             # Batch update the points with new hidden_branches arrays
             if points_to_update:
-                return self.qdrant_client._batch_update_points(
+                return self.vector_store_client._batch_update_points(
                     points_to_update, collection_name
                 )
 
@@ -1240,7 +1240,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         Args:
             file_paths: List of file paths to hide
             branch: Branch name to add to hidden_branches
-            collection_name: Qdrant collection name
+            collection_name: Filesystem collection name
             all_content_points: Pre-fetched content points from database (avoids N queries)
             progress_callback: Optional progress reporting callback
         """
@@ -1294,7 +1294,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
                 # Batch update all points at once instead of individual updates
                 if all_points_to_update:
-                    self.qdrant_client._batch_update_points(
+                    self.vector_store_client._batch_update_points(
                         all_points_to_update, collection_name
                     )
                     logger.info(
@@ -1340,7 +1340,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # Get all unique file paths from content points in the database
         with self._database_lock:
             try:
-                all_content_points, _ = self.qdrant_client.scroll_points(
+                all_content_points, _ = self.vector_store_client.scroll_points(
                     filter_conditions={
                         "must": [{"key": "type", "match": {"value": "content"}}]
                     },

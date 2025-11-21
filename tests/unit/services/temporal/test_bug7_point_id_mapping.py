@@ -133,7 +133,7 @@ class TestBug7PointIDMapping(unittest.TestCase):
 
                         # Create slot tracker
                         slot_tracker = CleanSlotTracker(max_slots=4)
-                        slot_id = slot_tracker.acquire_slot(
+                        slot_tracker.acquire_slot(
                             FileData(
                                 filename="test", file_size=0, status=FileStatus.CHUNKING
                             )

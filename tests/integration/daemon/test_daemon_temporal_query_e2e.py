@@ -72,7 +72,7 @@ class TestDaemonTemporalQueryE2E:
             subprocess.run(
                 ["cidx", "stop"], cwd=self.project_path, timeout=5, capture_output=True
             )
-        except:
+        except Exception:
             pass
 
     def _is_daemon_running(self) -> bool:
@@ -86,7 +86,7 @@ class TestDaemonTemporalQueryE2E:
                 timeout=5,
             )
             return "running" in result.stdout.lower() or result.returncode == 0
-        except:
+        except Exception:
             return False
 
     def _start_daemon(self) -> None:
@@ -119,7 +119,7 @@ class TestDaemonTemporalQueryE2E:
                 if not self._is_daemon_running():
                     return
                 time.sleep(0.5)
-        except:
+        except Exception:
             pass
 
     def test_temporal_query_via_daemon_end_to_end(self):

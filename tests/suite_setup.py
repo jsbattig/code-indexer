@@ -14,7 +14,6 @@ import threading
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from code_indexer.config import ConfigManager
-from code_indexer.services.qdrant import QdrantClient
 from code_indexer.services.docker_manager import DockerManager
 from rich.console import Console
 
@@ -161,7 +160,7 @@ def cleanup_test_collections(
     patterns: Optional[List[str]] = None,
     dry_run: bool = False,
     console: Optional[Console] = None,
-    qdrant_port: Optional[int] = None,
+    filesystem_port: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Clean up test collections that have been tracked by e2e tests.
@@ -193,74 +192,13 @@ def cleanup_test_collections(
             f"🧹 Cleaning up {len(tracked_collections)} tracked test collections"
         )
 
-        # Load configuration
-        config_manager = ConfigManager.create_with_backtrack()
-        config = config_manager.load()
-
-        # Check if Qdrant is available directly (more reliable than Docker status)
-        qdrant_config = config.qdrant
-        if qdrant_port:
-            # Use the custom port if provided
-            qdrant_config = config.qdrant.model_copy()
-            qdrant_config.host = f"http://localhost:{qdrant_port}"
-        qdrant_client = QdrantClient(qdrant_config, console=console)
-        if not qdrant_client.health_check():
-            console.print(
-                "⚠️  Qdrant service not accessible, skipping collection cleanup",
-                style="yellow",
-            )
-            return {"error": "Qdrant not accessible", "total_deleted": 0}
-
-        if dry_run:
-            console.print(f"🔍 Would delete {len(tracked_collections)} collections:")
-            for collection in sorted(tracked_collections):
-                console.print(f"  - {collection}", style="dim")
-            return {
-                "deleted": [],
-                "would_delete": list(tracked_collections),
-                "errors": [],
-                "total_deleted": 0,
-                "total_would_delete": len(tracked_collections),
-            }
-
-        # Delete tracked collections
-        deleted = []
-        errors = []
-
-        for collection_name in tracked_collections:
-            try:
-                if qdrant_client.delete_collection(collection_name):
-                    deleted.append(collection_name)
-                    console.print(
-                        f"🗑️  Deleted collection: {collection_name}", style="dim"
-                    )
-                else:
-                    errors.append(f"{collection_name}: delete_collection failed")
-            except Exception as e:
-                errors.append(f"{collection_name}: {str(e)}")
-
-        # Clear tracking file after successful cleanup
-        if deleted:
-            clear_tracked_test_collections()
-            console.print(
-                f"✅ Successfully deleted {len(deleted)} test collections",
-                style="green",
-            )
-
-        if errors:
-            console.print(
-                f"⚠️  {len(errors)} collections had errors during deletion",
-                style="yellow",
-            )
-            for error in errors:
-                console.print(f"   {error}", style="red")
-
-        return {
-            "deleted": deleted,
-            "errors": errors,
-            "total_deleted": len(deleted),
-            "total_errors": len(errors),
-        }
+        # Note: Filesystem container backend removed in Story #505
+        # FilesystemVectorStore doesn't require external services
+        console.print(
+            "⚠️  Filesystem container backend removed - no cleanup needed",
+            style="yellow",
+        )
+        return {"error": "Filesystem backend removed", "total_deleted": 0}
 
     except Exception as e:
         error_msg = f"Test collection cleanup failed: {str(e)}"
@@ -307,7 +245,7 @@ def start_services_for_test_suite(
         console: Rich console for output
 
     Returns:
-        Tuple of (success, qdrant_port) where success indicates if services started successfully
+        Tuple of (success, filesystem_port) where success indicates if services started successfully
     """
     if console is None:
         console = Console()
@@ -315,7 +253,7 @@ def start_services_for_test_suite(
     try:
         # Load configuration
         config_manager = ConfigManager.create_with_backtrack()
-        config = config_manager.load()
+        config_manager.load()
 
         # Use a consistent path for all test containers to avoid creating multiple container sets
         shared_test_path = Path.home() / ".tmp" / "shared_test_containers"
@@ -344,28 +282,12 @@ def start_services_for_test_suite(
 
         if all_services_ready:
             # All required Docker services are running, verify health
-            try:
-                qdrant_client = QdrantClient(config.qdrant, console=console)
-                if qdrant_client.health_check():
-                    console.print(
-                        "✅ All required services already running and ready!",
-                        style="green",
-                    )
-                    return True, None
-            except Exception:
-                pass
-
-        # Check if essential services are accessible even if Docker shows stopped
-        # (This handles the case where services run outside Docker or via different setup)
-        try:
-            qdrant_client = QdrantClient(config.qdrant, console=console)
-            if qdrant_client.health_check():
-                console.print(
-                    "✅ Essential services accessible, tests can proceed", style="green"
-                )
-                return True, None
-        except Exception:
+            # Note: Filesystem container backend removed in Story #505
             pass
+
+        # Note: Filesystem container backend removed in Story #505
+        # FilesystemVectorStore doesn't require external services
+        pass
 
         console.print("🔧 Starting Docker services for test suite...", style="blue")
 
@@ -415,7 +337,7 @@ def setup_test_suite(console: Optional[Console] = None, force: bool = False) -> 
     console.print("🚀 Setting up test suite environment...", style="bold blue")
 
     # Start services as prerequisite
-    success, qdrant_port = start_services_for_test_suite(console=console)
+    success, filesystem_port = start_services_for_test_suite(console=console)
     if not success:
         console.print(
             "❌ Failed to start services for test suite",
@@ -424,7 +346,9 @@ def setup_test_suite(console: Optional[Console] = None, force: bool = False) -> 
         return False
 
     # Clean up test collections
-    cleanup_result = cleanup_test_collections(console=console, qdrant_port=qdrant_port)
+    cleanup_result = cleanup_test_collections(
+        console=console, filesystem_port=filesystem_port
+    )
 
     if "error" in cleanup_result:
         console.print(

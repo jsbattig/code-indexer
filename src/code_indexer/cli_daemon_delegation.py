@@ -372,10 +372,9 @@ def _status_standalone(**kwargs) -> int:
             except Exception:
                 pass  # Config might not exist yet
 
-        force_docker = kwargs.get("force_docker", False)
         # Call status function directly (not as a click command)
         with ctx:
-            cli_status(ctx, force_docker=force_docker)
+            cli_status(ctx)
         return 0
     except Exception as e:
         console.print(f"[red]Status failed: {e}[/red]")
@@ -538,8 +537,7 @@ def _clean_via_daemon(**kwargs) -> int:
         try:
             ctx = click.Context(click.Command("clean"))
             ctx.obj = {"standalone": True}  # Prevent daemon delegation
-            force_docker = kwargs.get("force_docker", False)
-            cli_clean(ctx, force_docker=force_docker)
+            cli_clean(ctx)
             return 0
         except Exception as e2:
             console.print(f"[red]Clean failed: {e2}[/red]")
@@ -584,8 +582,7 @@ def _clean_data_via_daemon(**kwargs) -> int:
         try:
             ctx = click.Context(click.Command("clean-data"))
             ctx.obj = {"standalone": True}  # Prevent daemon delegation
-            force_docker = kwargs.get("force_docker", False)
-            cli_clean_data(ctx, force_docker=force_docker)
+            cli_clean_data(ctx, **kwargs)
             return 0
         except Exception as e2:
             console.print(f"[red]Clean data failed: {e2}[/red]")

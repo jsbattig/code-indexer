@@ -47,7 +47,7 @@ class TestCompositeRepositoryDetection:
         config_dir.mkdir()
         config_file = config_dir / "config.json"
 
-        config_data = {"proxy_mode": False, "embedding_provider": "ollama"}
+        config_data = {"proxy_mode": False, "embedding_provider": "voyage"}
         config_file.write_text(json.dumps(config_data))
 
         manager = SemanticQueryManager()
@@ -67,7 +67,7 @@ class TestCompositeRepositoryDetection:
         config_dir.mkdir()
         config_file = config_dir / "config.json"
 
-        config_data = {"embedding_provider": "ollama"}
+        config_data = {"embedding_provider": "voyage"}
         config_file.write_text(json.dumps(config_data))
 
         manager = SemanticQueryManager()

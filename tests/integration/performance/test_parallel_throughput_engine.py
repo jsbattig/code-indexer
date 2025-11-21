@@ -67,8 +67,8 @@ class TestClass_{i}:
         self.config.include_extensions = [".py"]
 
         # Mock nested attributes
-        self.config.qdrant = Mock()
-        self.config.qdrant.vector_size = 768
+        self.config.filesystem = Mock()
+        self.config.filesystem.vector_size = 768
 
         self.config.indexing = Mock()
         self.config.indexing.chunk_size = 200  # Small chunks for testing
@@ -80,11 +80,11 @@ class TestClass_{i}:
         self.config.chunking.overlap_size = 50
         self.config.chunking.max_chunk_size = 8192  # Max chunk size
 
-        # Mock Qdrant client
-        self.mock_qdrant = Mock()
-        self.mock_qdrant.create_point.return_value = {"id": "test-point"}
-        self.mock_qdrant.upsert_points.return_value = True
-        self.mock_qdrant.upsert_points_batched.return_value = True
+        # Mock Filesystem client
+        self.mock_filesystem = Mock()
+        self.mock_filesystem.create_point.return_value = {"id": "test-point"}
+        self.mock_filesystem.upsert_points.return_value = True
+        self.mock_filesystem.upsert_points_batched.return_value = True
 
     def test_throughput_comparison_demonstrates_improvement(self):
         """Test that queue-based approach is significantly faster than sequential."""
@@ -149,7 +149,7 @@ class TestClass_{i}:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=provider,
-                vector_store_client=self.mock_qdrant,
+                vector_store_client=self.mock_filesystem,
             )
 
             start_time = time.time()
@@ -194,7 +194,7 @@ class TestClass_{i}:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=provider,
-                vector_store_client=self.mock_qdrant,
+                vector_store_client=self.mock_filesystem,
             )
 
             # Process files
@@ -209,10 +209,10 @@ class TestClass_{i}:
             assert stats.chunks_created > 0
             assert stats.failed_files == 0
 
-            # Verify Qdrant was called with batches (either standard or atomic upsert)
+            # Verify Filesystem was called with batches (either standard or atomic upsert)
             assert (
-                self.mock_qdrant.upsert_points.called
-                or self.mock_qdrant.upsert_points_batched.called
+                self.mock_filesystem.upsert_points.called
+                or self.mock_filesystem.upsert_points_batched.called
             )
 
             # Check that embeddings were generated for all chunks
@@ -243,7 +243,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=provider,
-            vector_store_client=self.mock_qdrant,
+            vector_store_client=self.mock_filesystem,
         )
 
         start_time = time.time()

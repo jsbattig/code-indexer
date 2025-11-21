@@ -19,7 +19,6 @@ from ..models.api_models import (
     HealthStatus,
 )
 from ...config import ConfigManager
-from ...services.qdrant import QdrantClient
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +42,12 @@ class HealthCheckService:
             config_manager = ConfigManager.create_with_backtrack()
             self.config = config_manager.get_config()
 
-            # Real QdrantClient integration - not injectable, not mockable
-            self.qdrant_client = QdrantClient(
-                config=self.config.qdrant, project_root=Path.cwd()
+            # Real FilesystemVectorStore integration (Story #505) - not injectable, not mockable
+            from ...storage.filesystem_vector_store import FilesystemVectorStore
+
+            index_dir = Path.cwd() / ".code-indexer" / "index"
+            self.vector_store_client = FilesystemVectorStore(
+                base_path=index_dir, project_root=Path.cwd()
             )
 
             # Real database URL for health checks
@@ -70,7 +72,7 @@ class HealthCheckService:
         # Check individual services
         services = {
             "database": self._check_database_health(),
-            "qdrant": self._check_qdrant_health(),
+            "vector_store": self._check_vector_store_health(),
             "storage": self._check_storage_health(),
         }
 
@@ -141,20 +143,20 @@ class HealthCheckService:
                 error_message=str(e),
             )
 
-    def _check_qdrant_health(self) -> ServiceHealthInfo:
+    def _check_vector_store_health(self) -> ServiceHealthInfo:
         """
-        Check Qdrant vector database connectivity and performance.
+        Check vector store connectivity and performance.
 
-        CLAUDE.md Foundation #1: Real Qdrant integration, no simulations.
+        CLAUDE.md Foundation #1: Real vector store integration, no simulations.
 
         Returns:
-            Qdrant service health information
+            Vector store service health information
         """
         start_time = time.time()
 
         try:
-            # Real Qdrant health check - not simulated
-            health_ok = self.qdrant_client.health_check()
+            # Real vector store health check - not simulated
+            health_ok = self.vector_store_client.health_check()
 
             response_time = int((time.time() - start_time) * 1000)
 
@@ -162,12 +164,12 @@ class HealthCheckService:
                 return ServiceHealthInfo(
                     status=HealthStatus.UNHEALTHY,
                     response_time_ms=response_time,
-                    error_message="Qdrant health check failed",
+                    error_message="Vector store health check failed",
                 )
 
             # Get additional cluster information for comprehensive health
             try:
-                collections = self.qdrant_client.list_collections()
+                collections = self.vector_store_client.list_collections()
                 cluster_size = len(collections) if collections else 0
             except Exception:
                 cluster_size = 0
@@ -190,7 +192,7 @@ class HealthCheckService:
 
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"Qdrant health check failed: {e}")
+            logger.error(f"Vector store health check failed: {e}")
 
             return ServiceHealthInfo(
                 status=HealthStatus.UNHEALTHY,

@@ -568,7 +568,7 @@ class GitSyncExecutor:
         try:
             from ...services.smart_indexer import SmartIndexer
             from ...services.embedding_factory import EmbeddingProviderFactory
-            from ...services import QdrantClient
+            from ...storage.filesystem_vector_store import FilesystemVectorStore
             from ...config import ConfigManager
             from pathlib import Path
 
@@ -580,15 +580,19 @@ class GitSyncExecutor:
 
             # Initialize required services (similar to CLI approach)
             embedding_provider = EmbeddingProviderFactory.create(config)
-            qdrant_client = QdrantClient(config.qdrant, None, Path(config.codebase_dir))
+            # Initialize vector store (Story #505 - FilesystemVectorStore)
+            index_dir = Path(config.codebase_dir) / ".code-indexer" / "index"
+            vector_store_client = FilesystemVectorStore(
+                base_path=index_dir, project_root=Path(config.codebase_dir)
+            )
 
             # Health checks
             if not embedding_provider.health_check():
                 logger.error("Embedding provider health check failed")
                 return False
 
-            if not qdrant_client.health_check():
-                logger.error("Qdrant client health check failed")
+            if not vector_store_client.health_check():
+                logger.error("Vector store client health check failed")
                 return False
 
             # Create SmartIndexer
@@ -598,7 +602,7 @@ class GitSyncExecutor:
             smart_indexer = SmartIndexer(
                 config=config,
                 embedding_provider=embedding_provider,
-                vector_store_client=qdrant_client,
+                vector_store_client=vector_store_client,
                 metadata_path=metadata_path,
             )
 

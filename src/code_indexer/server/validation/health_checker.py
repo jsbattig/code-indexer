@@ -13,8 +13,8 @@ from datetime import datetime
 
 from .models import HealthCheckResult
 from .exceptions import IndexCorruptionError
-from ...services.qdrant import QdrantClient
 from ...config import Config
+from ...storage.filesystem_vector_store import FilesystemVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +27,16 @@ class IndexHealthChecker:
     and query performance to ensure index health and quality.
     """
 
-    def __init__(self, config: Config, qdrant_client: QdrantClient):
+    def __init__(self, config: Config, vector_store_client: FilesystemVectorStore):
         """
         Initialize IndexHealthChecker.
 
         Args:
             config: CIDX configuration
-            qdrant_client: Qdrant client for database operations
+            vector_store_client: Vector store client for database operations
         """
         self.config = config
-        self.qdrant_client = qdrant_client
+        self.vector_store_client = vector_store_client
 
         # Health check configuration
         self.sample_size = getattr(config, "validation_sample_size", 100)
@@ -65,8 +65,10 @@ class IndexHealthChecker:
         try:
             logger.info("Checking embedding dimensions consistency")
 
-            # Get sample of embeddings from Qdrant
-            sample_embeddings = self.qdrant_client.sample_vectors(self.sample_size)
+            # Get sample of embeddings from vector store
+            sample_embeddings = self.vector_store_client.sample_vectors(
+                self.sample_size
+            )
 
             if not sample_embeddings:
                 logger.warning("No embeddings found in index for dimension checking")
@@ -141,8 +143,10 @@ class IndexHealthChecker:
         try:
             logger.info("Analyzing vector quality for corruption detection")
 
-            # Get sample of embeddings from Qdrant
-            sample_embeddings = self.qdrant_client.sample_vectors(self.sample_size)
+            # Get sample of embeddings from Filesystem
+            sample_embeddings = self.vector_store_client.sample_vectors(
+                self.sample_size
+            )
 
             if not sample_embeddings:
                 logger.warning("No embeddings found for vector quality analysis")
@@ -255,7 +259,9 @@ class IndexHealthChecker:
             logger.info("Checking metadata integrity")
 
             # Get sample of embeddings with metadata
-            sample_embeddings = self.qdrant_client.sample_vectors(self.sample_size)
+            sample_embeddings = self.vector_store_client.sample_vectors(
+                self.sample_size
+            )
 
             if not sample_embeddings:
                 logger.warning("No embeddings found for metadata integrity check")
@@ -417,8 +423,8 @@ class IndexHealthChecker:
                 # Measure query time
                 start_time = time.time()
                 try:
-                    results = self.qdrant_client.search(
-                        collection_name=None,  # Let QdrantClient resolve the collection name
+                    results = self.vector_store_client.search(
+                        collection_name=None,  # Let FilesystemVectorStore resolve the collection name
                         query_vector=query_vector,
                         limit=10,
                     )
@@ -513,8 +519,8 @@ class IndexHealthChecker:
         try:
             logger.info("Collecting index statistics")
 
-            # Get collection info from Qdrant
-            collection_info = self.qdrant_client.get_collection_info()
+            # Get collection info from Filesystem
+            collection_info = self.vector_store_client.get_collection_info()
 
             # Extract basic statistics
             total_documents = collection_info.get("points_count", 0)

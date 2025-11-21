@@ -2,7 +2,7 @@
 Semantic Search Service.
 
 Provides real semantic search operations following CLAUDE.md Foundation #1: No mocks.
-All operations use real vector embeddings and Qdrant searches.
+All operations use real vector embeddings and vector store searches.
 """
 
 import os
@@ -59,7 +59,7 @@ class SemanticSearchService:
         # NO dependency injection parameters that enable mocking
 
         # Note: We don't load any configuration here because each search operation
-        # needs repository-specific configuration (different Qdrant ports and collection names)
+        # needs repository-specific configuration (different collection names)
         pass
 
     def search_repository(
@@ -109,7 +109,7 @@ class SemanticSearchService:
         # CLAUDE.md Foundation #1: Real semantic search with vector embeddings
         # 1. Load repository-specific configuration
         # 2. Generate embeddings for the query
-        # 3. Search vector store (filesystem or Qdrant) with correct collection name
+        # 3. Search vector store with correct collection name
         # 4. Rank results by semantic similarity
 
         search_results = self._perform_semantic_search(
@@ -132,7 +132,7 @@ class SemanticSearchService:
         Perform real semantic search using repository-specific configuration.
 
         CLAUDE.md Foundation #1: Real vector search, no text search fallbacks.
-        Uses BackendFactory to support both FilesystemVectorStore and Qdrant.
+        Uses BackendFactory for vector storage.
 
         Args:
             repo_path: Path to repository directory
@@ -153,7 +153,7 @@ class SemanticSearchService:
 
             logger.info(f"Loaded repository config from {repo_path}")
 
-            # Create backend using BackendFactory (supports filesystem and Qdrant)
+            # Create backend using BackendFactory
             backend = BackendFactory.create(config=config, project_root=Path(repo_path))
             vector_store_client = backend.get_vector_store_client()
 
@@ -171,7 +171,7 @@ class SemanticSearchService:
 
             # Real vector search - different parameter patterns for different backends
             # FilesystemVectorStore: parallel execution (query + embedding_provider)
-            # QdrantClient: sequential execution (pre-computed query_vector)
+            # Backend: sequential execution (pre-computed query_vector)
             from ...storage.filesystem_vector_store import FilesystemVectorStore
 
             if isinstance(vector_store_client, FilesystemVectorStore):
@@ -185,7 +185,7 @@ class SemanticSearchService:
                     return_timing=True,
                 )
             else:
-                # QdrantClient: sequential execution with pre-computed embedding
+                # Backend: sequential execution with pre-computed embedding
                 query_embedding = embedding_service.get_embedding(query)
                 search_results = vector_store_client.search(
                     query_vector=query_embedding,

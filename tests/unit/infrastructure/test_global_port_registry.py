@@ -42,14 +42,14 @@ class TestGlobalPortRegistryTDD:
     def test_find_available_port_for_service_basic(self, temp_registry):
         """RED: Test basic port allocation for single service."""
         registry = temp_registry
-        port = registry.find_available_port_for_service("qdrant")
-        assert 6333 <= port <= 7333  # Within qdrant range
+        port = registry.find_available_port_for_service("filesystem")
+        assert 6333 <= port <= 7333  # Within filesystem range
 
     def test_find_available_port_excludes_given_ports(self, temp_registry):
         """RED: Test port allocation excludes specified ports."""
         registry = temp_registry
         exclude_ports = {6333, 6334, 6335}
-        port = registry.find_available_port_for_service("qdrant", exclude_ports)
+        port = registry.find_available_port_for_service("filesystem", exclude_ports)
         assert port not in exclude_ports
         assert 6333 <= port <= 7333
 
@@ -57,12 +57,12 @@ class TestGlobalPortRegistryTDD:
         """RED: Test each service gets ports in correct range."""
         registry = temp_registry
 
-        qdrant_port = registry.find_available_port_for_service("qdrant")
-        ollama_port = registry.find_available_port_for_service("ollama")
+        filesystem_port = registry.find_available_port_for_service("filesystem")
+        voyage_port = registry.find_available_port_for_service("voyage")
         cleaner_port = registry.find_available_port_for_service("data_cleaner")
 
-        assert 6333 <= qdrant_port <= 7333
-        assert 11434 <= ollama_port <= 12434
+        assert 6333 <= filesystem_port <= 7333
+        assert 11434 <= voyage_port <= 12434
         assert 8091 <= cleaner_port <= 9091
 
     def test_register_project_allocation_creates_softlink(self, temp_registry):
@@ -77,7 +77,7 @@ class TestGlobalPortRegistryTDD:
             config_file = config_dir / "config.json"
             config_file.write_text('{"project_containers": {"project_hash": "abc123"}}')
 
-            ports = {"qdrant_port": 6333, "ollama_port": 11434}
+            ports = {"filesystem_port": 6333, "voyage_port": 11434}
             registry.register_project_allocation(project_path, ports)
 
             # Verify soft link created
@@ -97,7 +97,7 @@ class TestGlobalPortRegistryTDD:
             config_file = config_dir / "config.json"
             config_file.write_text('{"project_containers": {"project_hash": "abc123"}}')
 
-            ports = {"qdrant_port": 6333, "ollama_port": 11434}
+            ports = {"filesystem_port": 6333, "voyage_port": 11434}
             registry.register_project_allocation(project_path, ports)
 
             # Calculate expected project hash from path
@@ -119,7 +119,7 @@ class TestGlobalPortRegistryTDD:
         # Mock all ports as busy
         with patch.object(registry, "_is_port_bindable", return_value=False):
             with pytest.raises(PortExhaustionError):
-                registry.find_available_port_for_service("qdrant")
+                registry.find_available_port_for_service("filesystem")
 
     def test_sequential_allocation_avoids_conflicts(self, temp_registry):
         """RED: Test sequential allocations don't conflict."""
@@ -133,11 +133,11 @@ class TestGlobalPortRegistryTDD:
                 exclude_ports.update(prev_ports.values())
 
             ports = {
-                "qdrant_port": registry.find_available_port_for_service(
-                    "qdrant", exclude_ports
+                "filesystem_port": registry.find_available_port_for_service(
+                    "filesystem", exclude_ports
                 ),
-                "ollama_port": registry.find_available_port_for_service(
-                    "ollama", exclude_ports
+                "voyage_port": registry.find_available_port_for_service(
+                    "voyage", exclude_ports
                 ),
             }
             projects_ports.append(ports)
@@ -166,7 +166,7 @@ class TestGlobalPortRegistryTDD:
         mock_socket_instance.bind.side_effect = bind_side_effect
 
         # Should skip port 6333 and find next available
-        port = registry.find_available_port_for_service("qdrant")
+        port = registry.find_available_port_for_service("filesystem")
         assert port != 6333
         assert 6334 <= port <= 7333
 
@@ -182,8 +182,8 @@ class TestGlobalPortRegistryTDD:
 
         # Write test data to allocations file
         test_allocations = {
-            "6333": {"project_hash": "test1", "service": "qdrant"},
-            "11434": {"project_hash": "test2", "service": "ollama"},
+            "6333": {"project_hash": "test1", "service": "filesystem"},
+            "11434": {"project_hash": "test2", "service": "voyage"},
         }
 
         with open(registry.port_allocations_file, "w") as f:

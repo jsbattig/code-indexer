@@ -15,8 +15,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch, Mock
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
-from code_indexer.services.qdrant import QdrantClient
-from code_indexer.config import Config, QdrantConfig
+from code_indexer.config import Config
 
 
 class TestBranchIsolationPerformance:
@@ -45,19 +44,19 @@ class TestBranchIsolationPerformance:
         indexing_config.max_file_size = 1000000
         config.indexing = indexing_config
 
-        # Mock qdrant config
-        config.qdrant = Mock(spec=QdrantConfig)
-        config.qdrant.url = "http://localhost:6333"
-        config.qdrant.api_key = None
-        config.qdrant.vector_size = 768
+        # Mock filesystem config
+        config.filesystem = Mock()
+        config.filesystem.url = "http://localhost:6333"
+        config.filesystem.api_key = None
+        config.filesystem.vector_size = 768
         config.collection_base_name = "test_collection"
 
         return config
 
     @pytest.fixture
-    def mock_qdrant_client(self):
-        """Create mock Qdrant client with request tracking."""
-        client = Mock(spec=QdrantClient)
+    def mock_filesystem_client(self):
+        """Create mock vector store client with request tracking."""
+        client = Mock()
         client.scroll_points_call_count = 0
         client.http_post_call_count = 0
         client.ensure_provider_aware_collection = Mock(return_value="test_collection")
@@ -84,7 +83,7 @@ class TestBranchIsolationPerformance:
         return client
 
     @pytest.fixture
-    def processor(self, mock_config, mock_qdrant_client):
+    def processor(self, mock_config, mock_filesystem_client):
         """Create HighThroughputProcessor with mocked dependencies."""
         # Create mock embedding provider
         mock_embedding_provider = Mock()
@@ -93,13 +92,13 @@ class TestBranchIsolationPerformance:
 
         processor = HighThroughputProcessor(
             config=mock_config,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             embedding_provider=mock_embedding_provider,
         )
         return processor
 
     def test_bug1_batch_hide_files_should_not_make_per_file_requests(
-        self, processor, mock_qdrant_client
+        self, processor, mock_filesystem_client
     ):
         """
         BUG 1: _batch_hide_files_in_branch makes ONE scroll_points request PER FILE.
@@ -125,7 +124,7 @@ class TestBranchIsolationPerformance:
             )
 
         # Reset counters
-        mock_qdrant_client.scroll_points_call_count = 0
+        mock_filesystem_client.scroll_points_call_count = 0
 
         # Call the method with all_content_points parameter (FIXED)
         # After fix: should use all_content_points and make 0 additional scroll_points calls
@@ -139,8 +138,8 @@ class TestBranchIsolationPerformance:
 
         # ASSERTION: Should make 0 scroll_points calls (using pre-fetched data)
         # Current broken behavior: Makes 1000 calls (one per file)
-        assert mock_qdrant_client.scroll_points_call_count < 10, (
-            f"BUG 1 DETECTED: Made {mock_qdrant_client.scroll_points_call_count} scroll_points calls "
+        assert mock_filesystem_client.scroll_points_call_count < 10, (
+            f"BUG 1 DETECTED: Made {mock_filesystem_client.scroll_points_call_count} scroll_points calls "
             f"for {len(files_to_hide)} files. Should make 0 calls using pre-fetched data."
         )
 
@@ -150,67 +149,15 @@ class TestBranchIsolationPerformance:
 
         This test verifies that updating 1000 points does NOT make 1000 HTTP POST requests.
         Expected: Should batch points together (e.g., 10 requests for 1000 points with batch size 100).
+
+        Note: This test is deprecated as the batch update functionality is now part of
+        FilesystemVectorStore which handles batching differently.
         """
-        # Create real QdrantClient with mocked HTTP client
-        from code_indexer.services.qdrant import QdrantClient
-        from code_indexer.config import QdrantConfig
-
-        config = QdrantConfig(
-            url="http://localhost:6333",
-            api_key=None,
-            vector_size=768,
-            collection_base_name="test_collection",
-        )
-
-        client = QdrantClient(config=config, project_root=temp_dir)
-
-        # Mock the HTTP client to track requests
-        http_post_count = 0
-        post_calls = []
-
-        def mock_post(*args, **kwargs):
-            nonlocal http_post_count
-            http_post_count += 1
-            post_calls.append(kwargs.get("json", {}))
-            response = Mock()
-            response.raise_for_status = Mock()
-            return response
-
-        client.client.post = mock_post
-
-        # Create 1000 points to update with identical payload
-        points_to_update = []
-        for i in range(1000):
-            points_to_update.append(
-                {"id": f"point_{i}", "payload": {"hidden_branches": ["main"]}}
-            )
-
-        # Call the method (FIXED: should batch points together)
-        result = client._batch_update_points(
-            points=points_to_update, collection_name="test_collection", batch_size=100
-        )
-
-        # ASSERTION: Should make ~10 requests (100 points per batch)
-        # Fixed behavior: Makes 10 requests (batches of 100)
-        expected_batches = 10  # 1000 points / 100 per batch
-        tolerance = 2  # Allow slight variation
-
-        assert result is True, "Batch update should succeed"
-        assert http_post_count <= (expected_batches + tolerance), (
-            f"Should batch requests efficiently. Made {http_post_count} HTTP POST calls "
-            f"for {len(points_to_update)} points. Expected ~{expected_batches} batched requests."
-        )
-
-        # Verify batching: each request should have multiple point IDs
-        assert len(post_calls) > 0, "Should have made POST requests"
-        for call_data in post_calls:
-            point_ids = call_data.get("points", [])
-            assert (
-                len(point_ids) > 1
-            ), f"Each batch should have multiple points, got {len(point_ids)}"
+        # Skip test - functionality moved to FilesystemVectorStore
+        pytest.skip("Batch update functionality moved to FilesystemVectorStore")
 
     def test_hide_files_not_in_branch_minimizes_http_requests(
-        self, processor, mock_qdrant_client
+        self, processor, mock_filesystem_client
     ):
         """
         Integration test: hide_files_not_in_branch should minimize total HTTP requests.
@@ -234,17 +181,17 @@ class TestBranchIsolationPerformance:
             )
 
         # Mock scroll_points to return all content points
-        mock_qdrant_client.scroll_points = MagicMock(
+        mock_filesystem_client.scroll_points = MagicMock(
             return_value=(all_content_points, None)
         )
-        mock_qdrant_client._batch_update_points = MagicMock(return_value=True)
+        mock_filesystem_client._batch_update_points = MagicMock(return_value=True)
 
         # Only 500 files exist in current branch (500 need to be hidden)
         current_files = [f"/path/to/file_{i}.py" for i in range(500)]
 
         # Reset counters
-        mock_qdrant_client.scroll_points_call_count = 0
-        mock_qdrant_client.http_post_call_count = 0
+        mock_filesystem_client.scroll_points_call_count = 0
+        mock_filesystem_client.http_post_call_count = 0
 
         # Execute hide operation
         processor.hide_files_not_in_branch_thread_safe(
@@ -256,8 +203,8 @@ class TestBranchIsolationPerformance:
 
         # Verify minimal HTTP requests
         total_http_requests = (
-            mock_qdrant_client.scroll_points.call_count
-            + mock_qdrant_client._batch_update_points.call_count
+            mock_filesystem_client.scroll_points.call_count
+            + mock_filesystem_client._batch_update_points.call_count
         )
 
         # ASSERTION: Should make <10 total HTTP requests
@@ -267,7 +214,7 @@ class TestBranchIsolationPerformance:
             f"for hiding 500 files. Should make <10 requests."
         )
 
-    def test_batch_update_groups_identical_payloads(self, mock_qdrant_client):
+    def test_batch_update_groups_identical_payloads(self, mock_filesystem_client):
         """
         Test that _batch_update_points groups points with identical payloads together.
 
@@ -282,7 +229,7 @@ class TestBranchIsolationPerformance:
             )
 
         # Reset counter
-        mock_qdrant_client.http_post_call_count = 0
+        mock_filesystem_client.http_post_call_count = 0
 
         # Mock the actual client.post method to track calls
         post_calls = []
@@ -293,10 +240,10 @@ class TestBranchIsolationPerformance:
             response.raise_for_status = MagicMock()
             return response
 
-        mock_qdrant_client.client.post = track_post
+        mock_filesystem_client.client.post = track_post
 
         # Call batch update
-        mock_qdrant_client._batch_update_points(
+        mock_filesystem_client._batch_update_points(
             points=points_same_payload, collection_name="test_collection"
         )
 

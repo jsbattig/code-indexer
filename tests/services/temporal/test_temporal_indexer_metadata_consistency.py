@@ -47,7 +47,7 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
         # Set up config mock
         config_manager = MagicMock()
         config = MagicMock()
-        config.qdrant.mode = "filesystem"
+        config.filesystem.mode = "filesystem"
         config.embedding.provider = "voyage"
         config.embedding.api_key = "test-key"
         config.voyage_ai.parallel_requests = 3

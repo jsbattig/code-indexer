@@ -119,7 +119,7 @@ class TestCLIStalenessDisplayIntegration:
             mock_provider = Mock()
             mock_provider.health_check.return_value = True
             mock_provider.get_embedding.return_value = [0.1] * 1536
-            mock_provider.get_provider_name.return_value = "ollama"
+            mock_provider.get_provider_name.return_value = "voyage"
             mock_provider.get_model_info.return_value = {"name": "test-model"}
             mock_provider.get_current_model.return_value = "test-model"
             mock_factory.create.return_value = mock_provider
@@ -149,11 +149,11 @@ class TestCLIStalenessDisplayIntegration:
 
             # Create proper mock config
             mock_config = Mock()
-            mock_config.embedding_provider = "ollama"
+            mock_config.embedding_provider = "voyage"
             mock_config.codebase_dir = temp_project_root  # Use Path object directly
-            mock_config.qdrant = Mock()  # Add qdrant config mock
+            mock_config.filesystem = Mock()  # Add filesystem config mock
             mock_config.vector_store = Mock()  # Add vector_store config mock
-            mock_config.vector_store.provider = "qdrant"
+            mock_config.vector_store.provider = "filesystem"
 
             mock_config_manager = Mock()
             mock_config_manager.load.return_value = mock_config

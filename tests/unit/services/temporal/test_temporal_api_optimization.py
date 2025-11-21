@@ -121,7 +121,7 @@ class TestTemporalAPIOptimization(unittest.TestCase):
             TemporalDiffScanner,
         )
 
-        real_scanner = TemporalDiffScanner(self.repo_path)
+        TemporalDiffScanner(self.repo_path)
 
         # Get the actual commit from the test repo
         import subprocess
@@ -213,7 +213,7 @@ class TestTemporalAPIOptimization(unittest.TestCase):
             mock_vector_manager.submit_batch_task.side_effect = mock_submit
 
             # Process commits
-            result = indexer.index_commits(
+            indexer.index_commits(
                 all_branches=False,
                 max_commits=None,
                 since_date=None,

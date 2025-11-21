@@ -112,7 +112,7 @@ class EmbeddingProvider(ABC):
         """Get the name of this embedding provider.
 
         Returns:
-            Provider name (e.g., "ollama", "voyage-ai")
+            Provider name (e.g., "voyage-ai")
         """
         pass
 

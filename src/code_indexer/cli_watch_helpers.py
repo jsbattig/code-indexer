@@ -109,14 +109,17 @@ def start_watch_mode(
             from code_indexer.services.git_topology_service import GitTopologyService
             from code_indexer.services.watch_metadata import WatchMetadata
             from code_indexer.services.embedding_factory import EmbeddingProviderFactory
-            from code_indexer.services.qdrant import QdrantClient
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
 
             config = config_manager.load()
 
             # Initialize semantic indexing components
             embedding_provider = EmbeddingProviderFactory.create(config, console)
-            qdrant_client = QdrantClient(
-                config.qdrant, console, Path(config.codebase_dir)
+            index_dir = Path(config.codebase_dir) / ".code-indexer" / "index"
+            vector_store_client = FilesystemVectorStore(
+                base_path=index_dir, project_root=Path(config.codebase_dir)
             )
 
             # Health checks
@@ -127,14 +130,14 @@ def start_watch_mode(
                 )
                 return
 
-            if not qdrant_client.health_check():
-                console.print("❌ Qdrant service not available", style="red")
+            if not vector_store_client.health_check():
+                console.print("❌ Filesystem service not available", style="red")
                 return
 
             # Initialize SmartIndexer
             metadata_path = config_manager.config_path.parent / "metadata.json"
             smart_indexer = SmartIndexer(
-                config, embedding_provider, qdrant_client, metadata_path
+                config, embedding_provider, vector_store_client, metadata_path
             )
 
             # Initialize git topology service
@@ -186,7 +189,6 @@ def start_watch_mode(
         from code_indexer.services.temporal.temporal_progressive_metadata import (
             TemporalProgressiveMetadata,
         )
-        from code_indexer.backends.filesystem_vector_store import FilesystemVectorStore
 
         temporal_index_dir = project_root / ".code-indexer/index/code-indexer-temporal"
 

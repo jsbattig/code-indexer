@@ -210,7 +210,7 @@ class TestIssue3KeyboardInterruptCleanup:
         # Simulate executor without interrupt handling (current code)
         try:
             with ThreadPoolExecutor(max_workers=thread_count) as executor:
-                futures = [executor.submit(worker_task) for _ in range(10)]
+                [executor.submit(worker_task) for _ in range(10)]
 
                 # Simulate KeyboardInterrupt after some tasks start
                 time.sleep(0.05)

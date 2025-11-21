@@ -239,7 +239,7 @@ class TestWatchMetadata:
         assert metadata.is_provider_changed("voyage-ai", "voyage-code-3") is False
 
         # Different provider
-        assert metadata.is_provider_changed("ollama", "voyage-code-3") is True
+        assert metadata.is_provider_changed("voyage", "voyage-code-3") is True
 
         # Different model
         assert metadata.is_provider_changed("voyage-ai", "different-model") is True

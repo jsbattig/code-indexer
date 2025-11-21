@@ -344,7 +344,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
                 )
 
                 # Run indexing
-                result = indexer.index_commits(progress_callback=progress_callback)
+                indexer.index_commits(progress_callback=progress_callback)
 
                 # Verify no corruption
                 assert (

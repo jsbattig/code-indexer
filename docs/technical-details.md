@@ -13,12 +13,10 @@ cidx setup-global-registry --test-access --quiet  # Test registry access
 
 # Project initialization
 cidx init                               # Initialize with default settings
-cidx init --embedding-provider voyage-ai  # Use VoyageAI instead of Ollama
+cidx init --embedding-provider voyage-ai  # Use VoyageAI
 cidx init --max-file-size 2000000       # Set 2MB file size limit
 cidx init --setup-global-registry       # Init + setup registry (legacy)
 cidx init --create-override-file        # Create .code-indexer-override.yaml
-cidx init --vector-store filesystem     # Use filesystem backend (default)
-cidx init --vector-store qdrant         # Use Qdrant backend
 ```
 
 ### Service Management
@@ -26,16 +24,11 @@ cidx init --vector-store qdrant         # Use Qdrant backend
 ```bash
 # Service lifecycle
 cidx start                      # Start services (smart detection)
-cidx start --force-docker       # Force Docker instead of Podman
-cidx start --force-recreate     # Force recreate containers
 cidx start --quiet              # Silent mode
-cidx start -m all-minilm-l6-v2  # Different Ollama model
 
 cidx status                     # Check service status
-cidx status --force-docker      # Check Docker status specifically
 
 cidx stop                       # Stop services (preserve data)
-cidx stop --force-docker        # Stop Docker services specifically
 ```
 
 ### Indexing Commands
@@ -271,12 +264,10 @@ cidx teach-ai --junie               # Junie
 # Quick cleanup (recommended)
 cidx clean-data                 # Clear current project data
 cidx clean-data --all-projects  # Clear all projects data
-cidx clean-data --force-docker  # Use Docker for cleanup
 
 # Complete removal
 cidx uninstall                  # Remove current project completely
 cidx uninstall --confirm        # Skip confirmation prompt
-cidx uninstall --force-docker   # Use Docker for removal
 cidx uninstall --wipe-all       # DANGEROUS: Complete system wipe
 
 # Migration and maintenance
@@ -304,7 +295,6 @@ cidx config --no-daemon         # Disable daemon mode
 
 ```bash
 # Available on most commands
---force-docker          # Force Docker instead of Podman
 --verbose, -v           # Verbose output
 --config, -c PATH       # Custom config file path
 --path, -p PATH         # Custom project directory
@@ -464,71 +454,14 @@ cidx query "API endpoint" --time-range 2023-01-01..2024-12-31 --language python 
 cidx query "refactor" --time-range-all --chunk-type commit_message --limit 20 --quiet
 ```
 
-## Switching Between Vector Storage Backends
+## Vector Storage
 
-You can switch between filesystem and Qdrant backends at any time. **Warning:** Switching backends requires destroying existing vector data and re-indexing your codebase.
+Code Indexer uses FilesystemVectorStore for vector storage:
 
-**Complete Switching Workflow:**
-
-```bash
-# Method 1: Manual step-by-step (recommended for first-time users)
-cidx stop                                  # Stop any running services
-cidx uninstall --confirm                   # Remove current backend data
-cidx init --vector-store <new-backend>     # Initialize new backend (filesystem or qdrant)
-cidx start                                 # Start services for new backend
-cidx index                                 # Re-index codebase with new backend
-
-# Method 2: Force reinitialize (quick switch, skips uninstall)
-cidx init --vector-store <new-backend> --force
-cidx start
-cidx index
-```
-
-**Examples:**
-
-```bash
-# Switch from Qdrant to filesystem (container-free)
-cidx stop
-cidx uninstall --confirm
-cidx init --vector-store filesystem
-cidx start
-cidx index
-
-# Switch from filesystem to Qdrant (containerized)
-cidx stop  # No-op for filesystem, safe to run
-cidx uninstall --confirm
-cidx init --vector-store qdrant
-cidx start
-cidx index
-
-# Quick switch using --force flag
-cidx init --vector-store qdrant --force
-cidx start
-cidx index
-```
-
-**What gets preserved:**
-- ✅ All source code files
-- ✅ Git repository and history
-- ✅ Project structure and dependencies
-- ✅ Configuration settings (file exclusions, size limits, etc.)
-
-**What gets removed:**
-- ❌ Vector embeddings and index data
-- ❌ Cached search results
-- ❌ Backend-specific containers (when switching from Qdrant)
-- ❌ Backend-specific storage directories
-
-## Docker vs Podman Support
-
-Code Indexer supports both Docker and Podman container engines:
-
-- **Auto-detection**: Automatically detects and uses available container engine
-- **Podman preferred**: Uses Podman by default when available (better rootless support)
-- **Force Docker**: Use `--force-docker` flag to force Docker usage
-- **Rootless containers**: Fully supports rootless container execution
-
-**Global Port Registry**: The `setup-global-registry` command configures system-wide port coordination at `/var/lib/code-indexer/port-registry`, preventing conflicts when running multiple code-indexer projects simultaneously. This is required for proper multi-project support.
+- **Container-free**: No Docker/Podman containers required
+- **Instant startup**: No service initialization needed
+- **Local storage**: Vectors stored as JSON files in `.code-indexer/index/`
+- **Git-aware**: Uses blob hashes for clean files, content for dirty files
 
 ## Real-time Progress Display
 
@@ -553,12 +486,11 @@ Individual file status display:
 Configuration is stored in `.code-indexer/config.json`:
 - `file_extensions`: File types to index
 - `exclude_dirs`: Directories to skip
-- `embedding_provider`: ollama or voyage-ai (determines chunk size automatically)
+- `embedding_provider`: voyage-ai (determines chunk size automatically)
 - `max_file_size`: Maximum file size in bytes (default: 1MB)
 - `chunk_size`: Legacy setting (ignored, chunker uses model-aware sizing)
 - `chunk_overlap`: Legacy setting (ignored, chunker uses 15% of chunk size)
 - `voyage_ai.parallel_requests`: Thread count for VoyageAI (default: 8)
-- `ollama.parallel_requests`: Thread count for Ollama (default: 1)
 
 ## Embedding Provider Token Counting
 
@@ -576,13 +508,6 @@ Configuration is stored in `.code-indexer/config.json`:
 - Automatic token-aware batching
 - Transparent batch splitting
 
-## Containerized Services
-
-Code Indexer uses the following containerized services:
-
-- **Qdrant**: Vector database for storing code embeddings (Qdrant backend only)
-- **Ollama** (optional): Local language model service for embeddings when not using VoyageAI
-- **Data Cleaner**: Containerized service for cleaning root-owned files during data removal operations
 
 ## Performance Notes
 

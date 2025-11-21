@@ -51,13 +51,9 @@ def check_environment():
             "VoyageAI API Key", "⚠ Missing", "Set VOYAGE_API_KEY environment variable"
         )
 
-    # Check if Ollama might be available (local testing)
-    ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-    table.add_row("Ollama Host", "📍 Configured", f"Host: {ollama_host}")
-
-    # Check if Qdrant might be available (local testing)
-    qdrant_host = os.getenv("QDRANT_HOST", "http://localhost:6333")
-    table.add_row("Qdrant Host", "📍 Configured", f"Host: {qdrant_host}")
+    # Check if Filesystem might be available (local testing)
+    filesystem_host = os.getenv("FILESYSTEM_HOST", "http://localhost:6333")
+    table.add_row("Filesystem Host", "📍 Configured", f"Host: {filesystem_host}")
 
     console.print(table)
     console.print()
@@ -146,7 +142,7 @@ def run_e2e_tests():
         console.print("✓ Provider Switching Tests (limited)")
         console.print("⚠ Full Workflow Tests (limited)")
 
-    console.print("✓ Qdrant Integration Tests")
+    console.print("✓ Filesystem Integration Tests")
     console.print("✓ Factory and Configuration Tests")
 
     # Run pytest with specific E2E test file
@@ -202,18 +198,16 @@ def show_setup_guide():
 [bold]3. Test Categories[/bold]
    • [green]TestVoyageAIRealAPI[/green]: Real API integration tests (requires VOYAGE_API_KEY)
    • [green]TestE2EProviderSwitching[/green]: Provider switching and compatibility
-   • [green]TestE2EQdrantIntegration[/green]: Qdrant model metadata integration
+   • [green]TestE2EFilesystemIntegration[/green]: Filesystem model metadata integration
    • [green]TestE2EFullWorkflow[/green]: Complete workflow scenarios
 
 [bold]4. Environment Variables[/bold]
    • [code]VOYAGE_API_KEY[/code]: VoyageAI API key (required for VoyageAI tests)
-   • [code]OLLAMA_HOST[/code]: Ollama server URL (default: http://localhost:11434)
-   • [code]QDRANT_HOST[/code]: Qdrant server URL (default: http://localhost:6333)
+   • [code]FILESYSTEM_HOST[/code]: Filesystem server URL (default: http://localhost:6333)
 
 [bold]5. Local Services (Optional)[/bold]
    If you want to test with local services:
-   • Start Ollama: [code]docker run -d -p 11434:11434 ollama/ollama[/code]
-   • Start Qdrant: [code]docker run -d -p 6333:6333 qdrant/qdrant[/code]
+   • Start Filesystem: [code]docker run -d -p 6333:6333 filesystem/filesystem[/code]
 """
 
     panel = Panel(guide_text, title="E2E Test Setup", border_style="blue")

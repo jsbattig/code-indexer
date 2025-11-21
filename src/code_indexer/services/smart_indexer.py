@@ -97,7 +97,7 @@ class SmartIndexer(HighThroughputProcessor):
         self,
         config: Config,
         embedding_provider: EmbeddingProvider,
-        vector_store_client: Any,  # QdrantClient or FilesystemVectorStore
+        vector_store_client: Any,  # FilesystemVectorStore (vector store backend)
         metadata_path: Path,
     ):
         super().__init__(config, embedding_provider, vector_store_client)
@@ -216,14 +216,14 @@ class SmartIndexer(HighThroughputProcessor):
         except Exception:
             return False
 
-    def _delete_files_from_qdrant(
+    def _delete_files_from_backend(
         self, deleted_files: List[str], collection_name: str
     ) -> int:
-        """Delete files from Qdrant collection.
+        """Delete files from vector store backend.
 
         Args:
             deleted_files: List of file paths to delete
-            collection_name: Qdrant collection name
+            collection_name: Collection name
 
         Returns:
             Number of files successfully deleted
@@ -369,7 +369,7 @@ class SmartIndexer(HighThroughputProcessor):
                 # Invalidate cache to get fresh branch info
                 self.git_topology_service.invalidate_cache()
                 current_branch = self.git_topology_service.get_current_branch()
-                collection_name = self.qdrant_client.resolve_collection_name(
+                collection_name = self.vector_store_client.resolve_collection_name(
                     self.config, self.embedding_provider
                 )
 
@@ -383,7 +383,7 @@ class SmartIndexer(HighThroughputProcessor):
                     current_branch
                     and stored_branch
                     and stored_branch != current_branch
-                    and self.qdrant_client.collection_exists(collection_name)
+                    and self.vector_store_client.collection_exists(collection_name)
                 ):
                     # Branch change detected - use graph-optimized branch indexing
                     old_branch = stored_branch
@@ -610,13 +610,15 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Ensure provider-aware collection exists and get info before clearing
         # Skip migration for full index (clear) since we'll clear all data anyway
-        collection_name = self.qdrant_client.ensure_provider_aware_collection(
+        collection_name = self.vector_store_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet, skip_migration=True
         )
 
         # Get collection info before clearing for meaningful feedback
         try:
-            collection_info = self.qdrant_client.get_collection_info(collection_name)
+            collection_info = self.vector_store_client.get_collection_info(
+                collection_name
+            )
             points_before_clear = collection_info.get("points_count", 0)
         except Exception:
             points_before_clear = 0
@@ -634,7 +636,7 @@ class SmartIndexer(HighThroughputProcessor):
             enhanced_callback = None
 
         # Clear collection - enhanced callback will provide clear, non-duplicate messaging
-        self.qdrant_client.clear_collection(collection_name)
+        self.vector_store_client.clear_collection(collection_name)
         if enhanced_callback and points_before_clear > 0:
             enhanced_callback(
                 0,
@@ -652,7 +654,7 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Recreate collection with fresh metadata after clearing
         # This ensures new quantization_range and other metadata are properly initialized
-        self.qdrant_client.ensure_provider_aware_collection(
+        self.vector_store_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet, skip_migration=True
         )
 
@@ -711,7 +713,7 @@ class SmartIndexer(HighThroughputProcessor):
         current_branch = self.git_topology_service.get_current_branch() or "master"
 
         # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
-        self.qdrant_client.begin_indexing(collection_name)
+        self.vector_store_client.begin_indexing(collection_name)
 
         # Use BranchAwareIndexer for git-aware processing with parallel embeddings
         try:
@@ -804,7 +806,7 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(
+            end_result = self.vector_store_client.end_indexing(
                 collection_name, progress_callback
             )
             logger.info(
@@ -914,7 +916,7 @@ class SmartIndexer(HighThroughputProcessor):
             )
 
         # Ensure provider-aware collection exists for incremental indexing
-        self.qdrant_client.ensure_provider_aware_collection(
+        self.vector_store_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet
         )
 
@@ -945,10 +947,10 @@ class SmartIndexer(HighThroughputProcessor):
 
                 # Handle deletions FIRST (critical for git pull scenarios)
                 if git_delta.deleted:
-                    collection_name = self.qdrant_client.resolve_collection_name(
+                    collection_name = self.vector_store_client.resolve_collection_name(
                         self.config, self.embedding_provider
                     )
-                    deleted_count = self._delete_files_from_qdrant(
+                    deleted_count = self._delete_files_from_backend(
                         git_delta.deleted, collection_name
                     )
                     logger.info(
@@ -974,25 +976,25 @@ class SmartIndexer(HighThroughputProcessor):
 
         if not files_to_index and not deleted_files:
             # SAFETY CHECK: Detect corrupted state before marking as completed
-            # If Qdrant has data but progressive metadata shows 0 files processed,
+            # If vector store has data but progressive metadata shows 0 files processed,
             # this indicates incomplete/corrupted state - don't mark as completed!
             try:
-                collection_name = self.qdrant_client.resolve_collection_name(
+                collection_name = self.vector_store_client.resolve_collection_name(
                     self.config, self.embedding_provider
                 )
-                qdrant_points = self.qdrant_client.count_points(collection_name)
+                vector_points = self.vector_store_client.count_points(collection_name)
                 metadata_files = self.progressive_metadata.metadata.get(
                     "files_processed", 0
                 )
 
-                if qdrant_points > 0 and metadata_files == 0:
-                    # CRITICAL: Inconsistent state detected - Qdrant has data but metadata shows 0 files
+                if vector_points > 0 and metadata_files == 0:
+                    # CRITICAL: Inconsistent state detected - vector store has data but metadata shows 0 files
                     if progress_callback:
                         progress_callback(
                             0,
                             0,
                             Path(""),
-                            info=f"🚨 Inconsistent state detected: {qdrant_points} chunks in Qdrant but metadata shows 0 files processed - forcing full reindex",
+                            info=f"🚨 Inconsistent state detected: {vector_points} chunks in vector store but metadata shows 0 files processed - forcing full reindex",
                         )
                     # Clear progressive metadata to force full reindex on next run
                     self.progressive_metadata.clear()
@@ -1057,12 +1059,12 @@ class SmartIndexer(HighThroughputProcessor):
             current_branch = self.git_topology_service.get_current_branch() or "master"
 
             # Ensure collection exists
-            collection_name = self.qdrant_client.resolve_collection_name(
+            collection_name = self.vector_store_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
 
             # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
-            self.qdrant_client.begin_indexing(collection_name)
+            self.vector_store_client.begin_indexing(collection_name)
 
             # Use direct high-throughput parallel processing for incremental indexing (4-8x faster)
             # STORY 3: Use process_files_high_throughput() directly instead of branch wrapper
@@ -1119,7 +1121,7 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(
+            end_result = self.vector_store_client.end_indexing(
                 collection_name, progress_callback
             )
             logger.info(
@@ -1178,7 +1180,7 @@ class SmartIndexer(HighThroughputProcessor):
         fts_manager: Optional[TantivyIndexManager] = None
 
         # Ensure provider-aware collection exists
-        collection_name = self.qdrant_client.ensure_provider_aware_collection(
+        collection_name = self.vector_store_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet
         )
 
@@ -1296,7 +1298,7 @@ class SmartIndexer(HighThroughputProcessor):
                 # Check if this file exists on disk in current branch (should be visible)
                 if relative_file_path in disk_files_set:
                     # File exists on disk, check if it's hidden for current branch
-                    content_points, _ = self.qdrant_client.scroll_points(
+                    content_points, _ = self.vector_store_client.scroll_points(
                         filter_conditions={
                             "must": [
                                 {"key": "type", "match": {"value": "content"}},
@@ -1364,7 +1366,7 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Handle deleted files using branch-aware strategy
         if deleted_files:
-            collection_name = self.qdrant_client.resolve_collection_name(
+            collection_name = self.vector_store_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
 
@@ -1443,7 +1445,7 @@ class SmartIndexer(HighThroughputProcessor):
         # CRITICAL FIX: In non-git mode, delete old chunks for modified files before re-indexing
         # This ensures old content doesn't persist alongside new content
         if not self.is_git_aware() and files_to_index:
-            collection_name = self.qdrant_client.resolve_collection_name(
+            collection_name = self.vector_store_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
 
@@ -1468,7 +1470,7 @@ class SmartIndexer(HighThroughputProcessor):
             if modified_relative_files:
                 deleted_count = 0
                 for relative_file_path in modified_relative_files:
-                    success = self.qdrant_client.delete_by_filter(
+                    success = self.vector_store_client.delete_by_filter(
                         {
                             "must": [
                                 {"key": "path", "match": {"value": relative_file_path}}
@@ -1488,7 +1490,7 @@ class SmartIndexer(HighThroughputProcessor):
                     )
 
         # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
-        self.qdrant_client.begin_indexing(collection_name)
+        self.vector_store_client.begin_indexing(collection_name)
 
         # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
         try:
@@ -1564,7 +1566,7 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(
+            end_result = self.vector_store_client.end_indexing(
                 collection_name, progress_callback
             )
             logger.info(
@@ -1585,7 +1587,7 @@ class SmartIndexer(HighThroughputProcessor):
         # CRITICAL FIX: After reconcile indexing is complete, clean up multiple visible content points
         # This fixes the git restore scenario where both working_dir and committed content are visible
         if self.is_git_aware():
-            collection_name = self.qdrant_client.resolve_collection_name(
+            collection_name = self.vector_store_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
             self._cleanup_multiple_visible_content_points(
@@ -1618,7 +1620,7 @@ class SmartIndexer(HighThroughputProcessor):
         """Resume a previously interrupted indexing operation."""
 
         # Ensure provider-aware collection exists for resuming
-        self.qdrant_client.ensure_provider_aware_collection(
+        self.vector_store_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet
         )
 
@@ -1657,12 +1659,12 @@ class SmartIndexer(HighThroughputProcessor):
             )
 
         # Get collection name before begin_indexing
-        collection_name = self.qdrant_client.resolve_collection_name(
+        collection_name = self.vector_store_client.resolve_collection_name(
             self.config, self.embedding_provider
         )
 
         # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
-        self.qdrant_client.begin_indexing(collection_name)
+        self.vector_store_client.begin_indexing(collection_name)
 
         # Use HighThroughputProcessor directly for git-aware processing (STORY 3 MIGRATION)
         try:
@@ -1700,7 +1702,7 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(
+            end_result = self.vector_store_client.end_indexing(
                 collection_name, progress_callback
             )
             logger.info(
@@ -1765,7 +1767,7 @@ class SmartIndexer(HighThroughputProcessor):
 
         # CRITICAL: Delete old chunks for files being re-indexed during reconcile
         # This prevents old content from remaining in the database when files are modified
-        collection_name = self.qdrant_client.resolve_collection_name(
+        collection_name = self.vector_store_client.resolve_collection_name(
             self.config, self.embedding_provider
         )
 
@@ -1790,7 +1792,7 @@ class SmartIndexer(HighThroughputProcessor):
                 relative_path = str(file_path)
 
             # Delete all existing chunks for this file
-            success = self.qdrant_client.delete_by_filter(
+            success = self.vector_store_client.delete_by_filter(
                 {"must": [{"key": "path", "match": {"value": relative_path}}]},
                 collection_name,
             )
@@ -1877,12 +1879,12 @@ class SmartIndexer(HighThroughputProcessor):
         Returns a dictionary with cleanup statistics.
         """
         try:
-            collection_name = self.qdrant_client.resolve_collection_name(
+            collection_name = self.vector_store_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
 
             # Get all content points for this branch
-            content_points, _ = self.qdrant_client.scroll_points(
+            content_points, _ = self.vector_store_client.scroll_points(
                 collection_name=collection_name,
                 filter_conditions={
                     "must": [{"key": "visible_branches", "match": {"value": branch}}]
@@ -1976,7 +1978,7 @@ class SmartIndexer(HighThroughputProcessor):
                     logger.info(
                         f"🗑️  WATCH MODE: Processing deletion of {file_path} (watch_mode={watch_mode})"
                     )
-                    collection_name = self.qdrant_client.resolve_collection_name(
+                    collection_name = self.vector_store_client.resolve_collection_name(
                         self.config, self.embedding_provider
                     )
                     success = self.delete_file_branch_aware(
@@ -2011,7 +2013,7 @@ class SmartIndexer(HighThroughputProcessor):
                     )
 
                     # Ensure collection exists
-                    collection_name = self.qdrant_client.resolve_collection_name(
+                    collection_name = self.vector_store_client.resolve_collection_name(
                         self.config, self.embedding_provider
                     )
 
@@ -2167,7 +2169,7 @@ class SmartIndexer(HighThroughputProcessor):
         offset = None
 
         while True:
-            points, next_offset = self.qdrant_client.scroll_points(
+            points, next_offset = self.vector_store_client.scroll_points(
                 collection_name=collection_name,
                 filter_conditions={
                     "must": [{"key": "type", "match": {"value": "content"}}]
@@ -2224,7 +2226,7 @@ class SmartIndexer(HighThroughputProcessor):
         """Get the content ID currently visible for this file in this branch."""
         try:
             # Query for content points for this file that are NOT hidden in this branch
-            points, _ = self.qdrant_client.scroll_points(
+            points, _ = self.vector_store_client.scroll_points(
                 filter_conditions={
                     "must": [
                         {"key": "type", "match": {"value": "content"}},
@@ -2294,7 +2296,7 @@ class SmartIndexer(HighThroughputProcessor):
                     # This is committed content
                     # CRITICAL: Use git_commit_hash because that's what BranchAwareIndexer stores in payload
                     # (see branch_aware_indexer.py line 798: "git_commit_hash": commit)
-                    # The ContentMetadata.git_commit field gets stored as git_commit_hash in Qdrant
+                    # The ContentMetadata.git_commit field gets stored as git_commit_hash in Filesystem
                     commit = payload.get(
                         "git_commit_hash", payload.get("commit_hash", "unknown")
                     )
@@ -2321,7 +2323,7 @@ class SmartIndexer(HighThroughputProcessor):
             # Try absolute path first (what's actually stored in /tmp directories)
             absolute_path = str(self.config.codebase_dir / file_path)
 
-            points, _ = self.qdrant_client.scroll_points(
+            points, _ = self.vector_store_client.scroll_points(
                 filter_conditions={
                     "must": [
                         {"key": "type", "match": {"value": "content"}},
@@ -2335,7 +2337,7 @@ class SmartIndexer(HighThroughputProcessor):
 
             # If not found with absolute, try relative
             if not points:
-                points, _ = self.qdrant_client.scroll_points(
+                points, _ = self.vector_store_client.scroll_points(
                     filter_conditions={
                         "must": [
                             {"key": "type", "match": {"value": "content"}},
@@ -2377,7 +2379,7 @@ class SmartIndexer(HighThroughputProcessor):
         """
         try:
             # Get all content points visible in current branch
-            all_points, _ = self.qdrant_client.scroll_points(
+            all_points, _ = self.vector_store_client.scroll_points(
                 filter_conditions={
                     "must": [
                         {"key": "type", "match": {"value": "content"}},
@@ -2459,7 +2461,7 @@ class SmartIndexer(HighThroughputProcessor):
 
                     # Apply the updates
                     if points_to_update:
-                        success = self.qdrant_client._batch_update_points(
+                        success = self.vector_store_client._batch_update_points(
                             points_to_update,
                             collection_name,
                         )
@@ -2491,7 +2493,7 @@ class SmartIndexer(HighThroughputProcessor):
 
         Args:
             file_path: Relative path of file to delete
-            collection_name: Qdrant collection name
+            collection_name: Filesystem collection name
             watch_mode: If True, use verification for reliable watch mode deletion
 
         Returns:
@@ -2517,7 +2519,7 @@ class SmartIndexer(HighThroughputProcessor):
             # DEADLOCK FIX: Use hard delete without verification
             # Trust synchronous operations - verification was causing 5+ minute hangs
             success = bool(
-                self.qdrant_client.delete_by_filter(
+                self.vector_store_client.delete_by_filter(
                     {"must": [{"key": "path", "match": {"value": file_path}}]},
                     collection_name,
                 )
@@ -2537,7 +2539,7 @@ class SmartIndexer(HighThroughputProcessor):
         """Detect and handle files that exist in database but were deleted from filesystem."""
         try:
             # Get collection name
-            collection_name = self.qdrant_client.resolve_collection_name(
+            collection_name = self.vector_store_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
 
@@ -2557,7 +2559,7 @@ class SmartIndexer(HighThroughputProcessor):
 
             while True:
                 try:
-                    points, next_offset = self.qdrant_client.scroll_points(
+                    points, next_offset = self.vector_store_client.scroll_points(
                         filter_conditions={
                             "should": [
                                 {"key": "type", "match": {"value": "content"}},

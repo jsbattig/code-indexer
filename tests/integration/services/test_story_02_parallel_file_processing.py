@@ -40,17 +40,17 @@ class TestStory02ParallelFileProcessing:
         self.embedding_provider.get_embedding.return_value = [0.1] * 768
         self.embedding_provider.get_current_model.return_value = "test-model"
 
-        # Create mock Qdrant client
-        self.qdrant_client = MagicMock()
-        self.qdrant_client.create_point.return_value = {"id": "test-point"}
-        self.qdrant_client.upsert_points_batched.return_value = True
+        # Create mock Filesystem client
+        self.filesystem_client = MagicMock()
+        self.filesystem_client.create_point.return_value = {"id": "test-point"}
+        self.filesystem_client.upsert_points_batched.return_value = True
 
     def test_should_fail_uses_file_chunking_manager_for_parallel_processing(self):
         """FAILING TEST: Verify FileChunkingManager is used for parallel processing."""
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
         )
 
         # Create test files
@@ -153,7 +153,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
         )
 
         # Create test files
@@ -289,7 +289,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
         )
 
         # Create test files
@@ -382,7 +382,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
         )
 
         # Create test files
@@ -497,7 +497,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
         )
 
         # Create test files

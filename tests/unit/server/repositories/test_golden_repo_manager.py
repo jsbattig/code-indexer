@@ -231,9 +231,7 @@ class TestGoldenRepoManager:
         )
         golden_repo_manager.golden_repos["test-repo"] = test_repo
 
-        with patch.object(
-            golden_repo_manager, "_cleanup_repository_files"
-        ) as mock_cleanup:
+        with patch.object(golden_repo_manager, "_cleanup_repository_files"):
             result = golden_repo_manager.remove_golden_repo("test-repo")
 
             # Should return job_id string
@@ -424,7 +422,7 @@ class TestGoldenRepoManager:
             golden_repo_manager, "_cleanup_repository_files"
         ) as mock_cleanup:
             permission_error = PermissionError(
-                "Permission denied: /root/.local/share/qdrant"
+                "Permission denied: /root/.local/share/filesystem"
             )
             mock_cleanup.side_effect = GitOperationError(
                 f"Failed to clean up repository files: {str(permission_error)}"

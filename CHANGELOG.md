@@ -5,6 +5,168 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2025-11-20
+
+### BREAKING CHANGES
+
+This is a major architectural release focused on simplification and removing legacy infrastructure. Users must migrate existing projects to the new architecture.
+
+#### Removed Features
+
+**Qdrant Backend Support (Removed)**
+- The Qdrant vector database backend has been completely removed
+- Only the filesystem backend is supported in v8.0+
+- Users must re-index codebases after upgrading
+- Container management infrastructure eliminated
+
+**Container Infrastructure (Removed)**
+- All Docker/Podman container management code removed
+- No more container orchestration, port management, or health checks
+- Code-indexer now runs entirely container-free
+- Instant setup with no container runtime dependency
+
+**Ollama Embedding Provider (Removed)**
+- Ollama local embeddings provider has been removed
+- VoyageAI is the only supported embedding provider in v8.0+
+- Focus on production-quality cloud-based embeddings
+- Users must obtain VoyageAI API key and re-index
+
+### Migration Required
+
+All users must migrate to v8.0:
+1. Backup existing index: `cp -r .code-indexer .code-indexer.backup`
+2. Upgrade code-indexer: `pipx upgrade code-indexer`
+3. Remove legacy config fields (qdrant_config, ollama_config, containers_config)
+4. Set VoyageAI API key: `export VOYAGE_API_KEY="your-key"`
+5. Re-initialize: `cidx init`
+6. Re-index: `cidx index`
+
+See [Migration Guide](docs/migration-to-v8.md) for complete instructions.
+
+### Removed
+
+**Code Removal (~15,000 lines)**
+- QdrantContainerBackend class and all integration code
+- DockerManager and ContainerManager infrastructure
+- Port registry system and dynamic port allocation
+- OllamaClient and local embedding infrastructure
+- Container-related CLI commands and configuration options
+- Container health monitoring and management code
+
+**Test Removal (~135 files)**
+- All Qdrant backend tests
+- All container management tests
+- All Ollama provider tests
+- Legacy integration tests for removed features
+
+**Configuration Removal**
+- QdrantConfig class removed from models.py
+- OllamaConfig class removed from models.py
+- ProjectContainersConfig class removed from models.py
+- Container-related configuration fields removed
+
+**CLI Changes**
+- Removed `--backend qdrant` option (filesystem only)
+- Removed `--embedding-provider ollama` option (voyageai only)
+- Removed container-related flags from all commands
+- Simplified start/stop/restart commands (daemon-only)
+
+### Changed
+
+**Simplified Architecture**
+- Two operational modes (was three): CLI Mode and Daemon Mode
+- Filesystem backend is now the only option (no configuration needed)
+- VoyageAI embeddings are now the only option
+- Container-free architecture throughout
+
+**Configuration Schema**
+- Simplified to essential fields only
+- Default configuration works out-of-box
+- No backend or provider selection needed
+- Legacy configuration detection with helpful error messages
+
+**Documentation Updates**
+- README.md updated for v8.0 architecture
+- CLAUDE.md simplified for two-mode operation
+- New migration guide created (docs/migration-to-v8.md)
+- Architecture documentation updated (docs/architecture.md)
+- All examples updated to reflect v8.0 changes
+
+### Improved
+
+**Performance Benefits**
+- Test suite runs ~30% faster without container overhead
+- Faster startup with no container initialization
+- Simpler deployment without container runtime
+- Reduced memory footprint
+
+**Operational Benefits**
+- No container runtime required (works on any system with Python)
+- Instant setup with zero external dependencies
+- Simpler troubleshooting with fewer components
+- Cleaner error messages with migration guidance
+
+**Development Benefits**
+- Reduced codebase size (~15,000 lines removed)
+- Faster CI/CD pipelines
+- Clearer architecture focused on core functionality
+- Easier onboarding for new contributors
+
+### Fixed
+
+**Legacy Detection**
+- Configuration validator detects legacy Qdrant config with helpful error
+- Configuration validator detects legacy Ollama config with migration steps
+- Configuration validator detects legacy container config with guidance
+- All errors reference migration guide for detailed instructions
+
+### Technical Details
+
+**Files Modified (Documentation)**
+- README.md - Updated for v8.0, removed legacy references
+- CLAUDE.md - Simplified operational modes, removed Mode 3
+- CHANGELOG.md - Added v8.0.0 breaking changes entry
+- docs/architecture.md - Updated for two-mode operation
+- docs/migration-to-v8.md - NEW: Comprehensive migration guide
+
+**Version Updates**
+- src/code_indexer/__init__.py - Bumped to 8.0.0
+- All installation examples updated to v8.0.0
+- All documentation references updated to v8.0.0
+
+### Migration Notes
+
+**Breaking Changes Summary**
+- Qdrant backend removed - must use filesystem backend
+- Ollama provider removed - must use VoyageAI
+- Container infrastructure removed - runs container-free
+- Must re-index all codebases after upgrade
+
+**Migration Time Estimate**
+- Small codebase (<1K files): 5-10 minutes
+- Medium codebase (1K-10K files): 10-30 minutes
+- Large codebase (>10K files): 30-60 minutes
+
+**Zero Backward Compatibility**
+- v8.0 cannot read v7.x Qdrant indexes
+- Fresh indexing required for all projects
+- Configuration files must be updated
+- No automatic migration available
+
+### Contributors
+
+- Seba Battig <seba.battig@lightspeeddms.com>
+- Claude (AI Assistant) <noreply@anthropic.com>
+
+### Links
+
+- [GitHub Repository](https://github.com/jsbattig/code-indexer)
+- [Migration Guide](docs/migration-to-v8.md)
+- [Documentation](https://github.com/jsbattig/code-indexer/blob/master/README.md)
+- [Issue Tracker](https://github.com/jsbattig/code-indexer/issues)
+
+---
+
 ## [7.2.1] - 2025-11-12
 
 ### Fixed

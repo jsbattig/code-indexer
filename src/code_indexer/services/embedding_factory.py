@@ -6,7 +6,6 @@ from rich.console import Console
 
 from ..config import Config
 from .embedding_provider import EmbeddingProvider
-from .ollama import OllamaClient
 from .voyage_ai import VoyageAIClient
 
 
@@ -18,14 +17,14 @@ class EmbeddingProviderFactory:
         """Convert model names to filesystem-safe collection name components.
 
         Args:
-            provider_name: Name of the embedding provider (e.g., 'ollama', 'voyage-ai')
-            model_name: Name of the model (e.g., 'nomic-embed-text', 'voyage-code-3')
+            provider_name: Name of the embedding provider (e.g., 'voyage-ai')
+            model_name: Name of the model (e.g., 'voyage-code-2', 'voyage-code-3')
 
         Returns:
             Filesystem-safe slug for use in collection names
 
         Examples:
-            generate_model_slug('ollama', 'nomic-embed-text') -> 'ollama_nomic_embed_text'
+            generate_model_slug('voyage-ai', 'voyage-code-2') -> 'voyage_ai_voyage_code_2'
             generate_model_slug('voyage-ai', 'voyage-code-3') -> 'voyage_ai_voyage_code_3'
         """
         # Normalize provider name (replace hyphens with underscores)
@@ -59,8 +58,8 @@ class EmbeddingProviderFactory:
             Full collection name for the provider, model, and project
 
         Examples:
-            generate_collection_name('code_index', 'ollama', 'nomic-embed-text')
-            -> 'code_index_ollama_nomic_embed_text'
+            generate_collection_name('code_index', 'voyage', 'nomic-embed-text')
+            -> 'code_index_voyage_nomic_embed_text'
 
             generate_collection_name('code_index', 'voyage-ai', 'voyage-code-3', 'abc123')
             -> 'code_index_abc123_voyage_code_3'
@@ -106,15 +105,15 @@ class EmbeddingProviderFactory:
         """
         provider_name = config.embedding_provider
 
-        # Create provider instance to get model info
-        provider: EmbeddingProvider
-        if provider_name == "ollama":
-            provider = OllamaClient(config.ollama, None)
-        elif provider_name == "voyage-ai":
-            provider = VoyageAIClient(config.voyage_ai, None)
-        else:
-            raise ValueError(f"Unsupported embedding provider: {provider_name}")
+        # Only VoyageAI is supported in v8.0+
+        if provider_name != "voyage-ai":
+            raise ValueError(
+                f"Embedding provider '{provider_name}' is no longer supported.\n"
+                "Code-indexer v8.0+ only supports VoyageAI embeddings.\n"
+                "Please update your configuration to use VoyageAI."
+            )
 
+        provider = VoyageAIClient(config.voyage_ai, None)
         model_name = provider.get_current_model()
         model_info = provider.get_model_info()
 
@@ -144,33 +143,31 @@ class EmbeddingProviderFactory:
         """
         provider_name = config.embedding_provider
 
-        if provider_name == "ollama":
-            return OllamaClient(config.ollama, console)
-        elif provider_name == "voyage-ai":
-            return VoyageAIClient(config.voyage_ai, console)
-        else:
+        # Only VoyageAI is supported in v8.0+
+        if provider_name != "voyage-ai":
             raise ValueError(
-                f"Unsupported embedding provider: {provider_name}. "
-                f"Supported providers: ollama, voyage-ai"
+                f"Embedding provider '{provider_name}' is no longer supported.\n"
+                "Code-indexer v8.0+ only supports VoyageAI embeddings.\n"
+                "Please update your configuration to use VoyageAI."
             )
+
+        return VoyageAIClient(config.voyage_ai, console)
 
     @staticmethod
     def get_available_providers() -> List[str]:
-        """Get list of available embedding providers."""
-        return ["ollama", "voyage-ai"]
+        """Get list of available embedding providers.
+
+        As of v8.0+, only VoyageAI is supported.
+        """
+        return ["voyage-ai"]
 
     @staticmethod
     def get_provider_info() -> Dict[str, Dict[str, Any]]:
-        """Get information about available providers."""
+        """Get information about available providers.
+
+        As of v8.0+, only VoyageAI is supported.
+        """
         return {
-            "ollama": {
-                "name": "Ollama",
-                "description": "Local AI models via Ollama",
-                "type": "local",
-                "requires_api_key": False,
-                "supports_batch": False,
-                "parallel_capable": False,
-            },
             "voyage-ai": {
                 "name": "VoyageAI",
                 "description": "High-quality embeddings via VoyageAI API",

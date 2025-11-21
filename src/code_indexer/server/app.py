@@ -2664,7 +2664,7 @@ def create_app() -> FastAPI:
         current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
     ):
         """Get job statistics for admin dashboard."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # Get all jobs from the background job manager
         all_jobs = list(background_job_manager.jobs.values())
@@ -2803,7 +2803,6 @@ def create_app() -> FastAPI:
             if any(
                 service_term in error_msg
                 for service_term in [
-                    "qdrant connection refused",
                     "service unavailable",
                     "connection timeout",
                 ]
@@ -3952,8 +3951,14 @@ def create_app() -> FastAPI:
                             limit=request.limit,
                             language_filter=request.language,
                             path_filter=request.path_filter,
-                            exclude_languages=[request.exclude_language] if request.exclude_language else None,  # Story #503 Phase 1
-                            exclude_paths=[request.exclude_path] if request.exclude_path else None,  # Story #503 Phase 1
+                            exclude_languages=(
+                                [request.exclude_language]
+                                if request.exclude_language
+                                else None
+                            ),  # Story #503 Phase 1
+                            exclude_paths=(
+                                [request.exclude_path] if request.exclude_path else None
+                            ),  # Story #503 Phase 1
                             use_regex=request.regex,  # Story #503 Phase 1
                         )
 
@@ -4962,7 +4967,7 @@ def create_app() -> FastAPI:
         """
         Perform semantic search in repository.
 
-        Executes semantic search using real vector embeddings and Qdrant
+        Executes semantic search using real vector embeddings and Filesystem
         following CLAUDE.md Foundation #1: No mocks.
         """
         try:
@@ -5370,9 +5375,9 @@ def create_app() -> FastAPI:
                     "recommendations": [],
                 }
 
-                # Try to get real container status
+                # Container status check removed (Story #506: container management deprecated)
+                # Filesystem backend is always ready
                 try:
-                    from ...services.docker_manager import DockerManager
                     from ...config import ConfigManager
 
                     config_manager = ConfigManager.create_with_backtrack(
@@ -5380,24 +5385,22 @@ def create_app() -> FastAPI:
                     )
                     config = config_manager.get_config()
 
-                    docker_manager = DockerManager(config_manager)
-                    containers_running = docker_manager.are_containers_running()
+                    # Check if using filesystem backend
+                    is_filesystem = (
+                        hasattr(config, "vector_store")
+                        and config.vector_store
+                        and config.vector_store.provider == "filesystem"
+                    )
 
-                    if containers_running:
-                        health_info["container_status"] = "running"
+                    if is_filesystem:
+                        health_info["container_status"] = "not_applicable"
                         health_info["query_ready"] = True
 
-                        # Check individual services
-                        health_info["services"]["qdrant"] = {
+                        # Filesystem backend doesn't have service dependencies
+                        health_info["services"]["vector_store"] = {
                             "status": "healthy",
-                            "port": config.qdrant.port,
+                            "type": "filesystem",
                         }
-
-                        if hasattr(config, "ollama"):
-                            health_info["services"]["ollama"] = {
-                                "status": "healthy",
-                                "port": config.ollama.port,
-                            }
                     else:
                         health_info["container_status"] = "stopped"
                         health_info["recommendations"].append(

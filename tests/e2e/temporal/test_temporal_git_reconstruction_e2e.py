@@ -96,7 +96,6 @@ class TestTemporalGitReconstructionE2E:
 
         # Setup components
         config_manager = ConfigManager.create_with_backtrack(repo_dir)
-        config = config_manager.get_config()
 
         vector_store = FilesystemVectorStore(
             base_path=repo_dir / ".code-indexer" / "index",
@@ -106,7 +105,7 @@ class TestTemporalGitReconstructionE2E:
         # Mock embedding provider to avoid API calls
         from unittest.mock import Mock, MagicMock, patch
 
-        # Use default embedding dimension (768 for ollama)
+        # Use default embedding dimension (768 for voyage)
         embedding_dim = 768
 
         mock_embedding_provider = Mock()

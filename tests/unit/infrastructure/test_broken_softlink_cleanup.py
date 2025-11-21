@@ -27,10 +27,10 @@ class TestBrokenSoftlinkCleanup:
             # Create port allocations file
             allocations_file = registry_path / "port-allocations.json"
             allocations = {
-                "6333": {"project_hash": "broken1", "service": "qdrant"},
-                "6334": {"project_hash": "broken2", "service": "qdrant"},
-                "6335": {"project_hash": "valid1", "service": "qdrant"},
-                "11434": {"project_hash": "broken1", "service": "ollama"},
+                "6333": {"project_hash": "broken1", "service": "filesystem"},
+                "6334": {"project_hash": "broken2", "service": "filesystem"},
+                "6335": {"project_hash": "valid1", "service": "filesystem"},
+                "11434": {"project_hash": "broken1", "service": "voyage"},
             }
             allocations_file.write_text(json.dumps(allocations, indent=2))
             (registry_path / "registry.log").touch()
@@ -61,7 +61,7 @@ class TestBrokenSoftlinkCleanup:
             config_dir3.mkdir()
             config_file3 = config_dir3 / "config.json"
             config_file3.write_text(
-                '{"project_containers": {"project_hash": "valid1"}, "project_ports": {"qdrant_port": 6335}}'
+                '{"project_containers": {"project_hash": "valid1"}, "project_ports": {"filesystem_port": 6335}}'
             )
             valid_link = active_projects / "proj-valid1"
             valid_link.symlink_to(config_dir3)

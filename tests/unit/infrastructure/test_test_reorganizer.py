@@ -34,7 +34,7 @@ class TestTestReorganizer:
             "test_config.py",
             "test_cancellation_handling.py",
             "test_cancellation_integration.py",
-            "test_qdrant_service_config_integration.py",
+            "test_filesystem_service_config_integration.py",
             "test_docker_manager.py",
             "test_cli_flag_validation.py",
             "test_git_aware_processor.py",
@@ -95,7 +95,7 @@ class TestTestReorganizer:
 
         # Service integration tests
         service_tests = reorganizer.categorize_test_file(
-            "test_qdrant_service_config_integration.py"
+            "test_filesystem_service_config_integration.py"
         )
         assert service_tests["category"] == "integration"
         assert service_tests["subcategory"] == "services"

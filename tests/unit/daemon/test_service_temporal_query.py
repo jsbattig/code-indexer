@@ -236,7 +236,7 @@ class TestExposedQueryTemporal(TestCase):
                     )
 
                     # Call exposed_query_temporal
-                    result = service.exposed_query_temporal(
+                    service.exposed_query_temporal(
                         project_path=str(self.project_path),
                         query="authentication",
                         time_range="last-7-days",

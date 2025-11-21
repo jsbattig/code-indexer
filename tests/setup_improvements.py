@@ -80,14 +80,14 @@ def fast_service_startup(
     if status_result.returncode == 0:
         stdout = status_result.stdout.lower()
         # Check if required services are healthy
-        if "qdrant" in stdout and ("healthy" in stdout or "✅" in stdout):
+        if "filesystem" in stdout and ("healthy" in stdout or "✅" in stdout):
             if embedding_provider == "voyage-ai":
-                # For voyage-ai, we don't need ollama
+                # For voyage-ai, we don't need voyage
                 if "not needed" in stdout or "voyage" in stdout:
                     return True, "Services already running and healthy"
             else:
-                # For ollama provider, check if ollama is healthy
-                if "ollama" in stdout and ("healthy" in stdout or "✅" in stdout):
+                # For voyage provider, check if voyage is healthy
+                if "voyage" in stdout and ("healthy" in stdout or "✅" in stdout):
                     return True, "Services already running and healthy"
 
     # 2. Initialize if needed
@@ -149,6 +149,9 @@ def ensure_test_collection(
     """
     Ensure a test collection is ready for use.
 
+    Note: This function is deprecated as Filesystem container backend has been removed.
+    Tests should use FilesystemVectorStore directly.
+
     Args:
         project_path: Project directory
         collection_name: Name of the collection
@@ -157,52 +160,11 @@ def ensure_test_collection(
     Returns:
         Tuple of (success, message)
     """
-    from code_indexer.config import ConfigManager
-    from code_indexer.services.qdrant import QdrantClient
-    from code_indexer.services.embedding_factory import EmbeddingProviderFactory
-
-    try:
-        # Load configuration
-        config_manager = ConfigManager.create_with_backtrack(project_path)
-        config = config_manager.load()
-
-        # Create clients
-        embedding_provider = EmbeddingProviderFactory.create(config)
-        qdrant_client = QdrantClient(config.qdrant)
-
-        # Check if collection exists
-        resolved_name = qdrant_client.resolve_collection_name(
-            config, embedding_provider
-        )
-
-        if qdrant_client.collection_exists(resolved_name):
-            if clear_if_exists:
-                # Clear the collection
-                qdrant_client.clear_collection(resolved_name)
-                return True, f"Collection {resolved_name} cleared"
-            else:
-                # Verify it's compatible
-                info = qdrant_client.get_collection_info(resolved_name)
-                expected_dim = embedding_provider.dimension
-                actual_dim = info.config.params.vectors.size
-
-                if actual_dim != expected_dim:
-                    # Dimension mismatch - need to recreate
-                    qdrant_client.delete_collection(resolved_name)
-                    qdrant_client.ensure_collection(resolved_name, expected_dim)
-                    return (
-                        True,
-                        f"Collection {resolved_name} recreated with correct dimensions",
-                    )
-
-                return True, f"Collection {resolved_name} exists and is compatible"
-        else:
-            # Create collection
-            qdrant_client.ensure_collection(resolved_name, embedding_provider.dimension)
-            return True, f"Collection {resolved_name} created"
-
-    except Exception as e:
-        return False, f"Failed to ensure collection: {str(e)}"
+    # Deprecated: Filesystem container backend removed in Story #505
+    return (
+        False,
+        "Filesystem container backend removed - use FilesystemVectorStore instead",
+    )
 
 
 def improved_adaptive_setup(

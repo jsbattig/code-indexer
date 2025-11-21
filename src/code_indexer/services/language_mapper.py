@@ -31,7 +31,7 @@ class LanguageMapper:
     Maps friendly language names to file extensions for query filtering.
 
     This class provides a centralized mapping between user-friendly language names
-    (like "python", "javascript") and the file extensions stored in Qdrant (like "py", "js").
+    (like "python", "javascript") and the file extensions stored in Filesystem (like "py", "js").
 
     Features:
     - Case-insensitive language matching
@@ -279,13 +279,13 @@ class LanguageMapper:
 
     def build_language_filter(self, language: str) -> Dict[str, Any]:
         """
-        Build Qdrant filter for language filtering with OR semantics.
+        Build Filesystem filter for language filtering with OR semantics.
 
         Args:
             language: Language name or extension
 
         Returns:
-            Qdrant filter dict with proper OR logic for multiple extensions
+            Filesystem filter dict with proper OR logic for multiple extensions
 
         Examples:
             >>> mapper = LanguageMapper()

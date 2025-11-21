@@ -63,7 +63,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
             patch("src.code_indexer.services.file_identifier.FileIdentifier"),
             patch(
                 "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
-            ) as mock_diff_scanner_class,
+            ),
             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
             patch(
                 "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
@@ -505,7 +505,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
             commits = [Mock(hash=f"commit{i}") for i in range(20)]
 
             # Mock the ThreadPoolExecutor.submit() to count calls
-            original_process = indexer._process_commits_parallel
 
             submit_calls = []
 
@@ -1318,9 +1317,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
 
                 # Find get_diffs calls that happened BEFORE this update
                 # (This would be WRONG - update should come first)
-                diffs_before_update = [
-                    d for d in get_diffs_timeline if d["elapsed_ms"] < update_time
-                ]
+                [d for d in get_diffs_timeline if d["elapsed_ms"] < update_time]
 
                 # For THIS slot, we expect the update to happen BEFORE get_diffs
                 # So there should be NO get_diffs calls before the first update for this slot

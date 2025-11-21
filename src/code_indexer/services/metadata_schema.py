@@ -527,7 +527,7 @@ class MetadataValidator:
     @staticmethod
     def validate_point_payload(payload: Dict[str, Any]) -> bool:
         """
-        Quick validation for Qdrant point payloads.
+        Quick validation for Filesystem point payloads.
 
         Args:
             payload: Point payload dictionary

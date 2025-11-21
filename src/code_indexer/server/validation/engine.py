@@ -19,9 +19,9 @@ from .models import (
 )
 from .exceptions import ValidationFailedError, IndexCorruptionError
 from .health_checker import IndexHealthChecker
-from ...services.qdrant import QdrantClient
 from ...config import Config
 from ...indexing.file_finder import FileFinder
+from ...storage.filesystem_vector_store import FilesystemVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class IndexValidationEngine:
     def __init__(
         self,
         config: Config,
-        qdrant_client: QdrantClient,
+        vector_store_client: FilesystemVectorStore,
         health_checker: Optional[IndexHealthChecker] = None,
     ):
         """
@@ -45,16 +45,16 @@ class IndexValidationEngine:
 
         Args:
             config: CIDX configuration
-            qdrant_client: Qdrant client for index operations
+            vector_store_client: Vector store client for index operations
             health_checker: Optional health checker (will create if not provided)
         """
         self.config = config
-        self.qdrant_client = qdrant_client
+        self.vector_store_client = vector_store_client
         self.repository_path = Path(config.codebase_dir)
 
         # Initialize health checker
         self.health_checker = health_checker or IndexHealthChecker(
-            config=config, qdrant_client=qdrant_client
+            config=config, vector_store_client=vector_store_client
         )
 
         # File finder for repository scanning
@@ -93,7 +93,7 @@ class IndexValidationEngine:
                     0, 0, Path(""), "Retrieving indexed files from database..."
                 )
 
-            # Get all indexed files from Qdrant
+            # Get all indexed files from Filesystem
             indexed_files = self._get_indexed_files()
 
             if progress_callback:
@@ -618,20 +618,20 @@ class IndexValidationEngine:
             return []
 
     def _get_indexed_files(self) -> List[str]:
-        """Get all indexed files from Qdrant database."""
+        """Get all indexed files from Filesystem database."""
         try:
-            # This would typically query Qdrant for all indexed file paths
-            # For now, we'll mock this since we need the Qdrant client implementation
-            return self.qdrant_client.get_all_indexed_files()
+            # This would typically query Filesystem for all indexed file paths
+            # For now, we'll mock this since we need the Filesystem client implementation
+            return self.vector_store_client.get_all_indexed_files()
 
         except Exception as e:
             logger.error(f"Failed to get indexed files from database: {e}")
             return []
 
     def _get_file_index_timestamps(self) -> Dict[str, datetime]:
-        """Get file index timestamps from Qdrant database."""
+        """Get file index timestamps from Filesystem database."""
         try:
-            return self.qdrant_client.get_file_index_timestamps()
+            return self.vector_store_client.get_file_index_timestamps()
 
         except Exception as e:
             logger.error(f"Failed to get file index timestamps: {e}")

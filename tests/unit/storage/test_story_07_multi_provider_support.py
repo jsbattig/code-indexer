@@ -2,12 +2,12 @@
 
 USER STORY:
 As a developer using different embedding providers, I want to use filesystem backend
-with VoyageAI, Ollama, and other providers, so that I can choose the best embedding
+with VoyageAI, Voyage, and other providers, so that I can choose the best embedding
 model without container dependencies.
 
 ACCEPTANCE CRITERIA:
 1. VoyageAI embeddings (1024-dim) work with filesystem backend
-2. Ollama embeddings (768-dim) work with filesystem backend
+2. Voyage embeddings (768-dim) work with filesystem backend
 3. Projection matrices adapt to different vector dimensions
 4. Collection names include provider/model identifier
 5. Multiple provider collections coexist
@@ -92,29 +92,29 @@ class TestVoyageAISupport:
         ), f"Projection matrix should be {voyageai_dims}x64 for VoyageAI"
 
 
-class TestOllamaSupport:
-    """Test Ollama (768-dim) embeddings work with filesystem backend."""
+class TestVoyageSupport:
+    """Test Voyage (768-dim) embeddings work with filesystem backend."""
 
-    def test_ollama_768_dim_vectors_stored_correctly(self, tmp_path: Path):
-        """AC2: Ollama embeddings (768-dim) work with filesystem backend."""
+    def test_voyage_768_dim_vectors_stored_correctly(self, tmp_path: Path):
+        """AC2: Voyage embeddings (768-dim) work with filesystem backend."""
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         base_path = tmp_path / "vectors"
         store = FilesystemVectorStore(base_path=base_path, project_root=tmp_path)
 
-        # Create collection for Ollama nomic-embed-text (768 dimensions)
-        collection_name = "ollama_nomic_embed_text"
-        ollama_dims = 768
+        # Create collection for Voyage nomic-embed-text (768 dimensions)
+        collection_name = "voyage_nomic_embed_text"
+        voyage_dims = 768
 
-        created = store.create_collection(collection_name, ollama_dims)
+        created = store.create_collection(collection_name, voyage_dims)
         assert created is True, "Collection creation should succeed"
 
-        # Store Ollama vector
-        ollama_vector = np.random.randn(ollama_dims).tolist()
+        # Store Voyage vector
+        voyage_vector = np.random.randn(voyage_dims).tolist()
         points = [
             {
-                "id": "ollama_test_1",
-                "vector": ollama_vector,
+                "id": "voyage_test_1",
+                "vector": voyage_vector,
                 "payload": {
                     "path": "test.py",
                     "content": "def hello(): pass",
@@ -132,28 +132,28 @@ class TestOllamaSupport:
 
         # Verify storage
         count = store.count_points(collection_name)
-        assert count == 1, "Ollama vector should be stored"
+        assert count == 1, "Voyage vector should be stored"
 
-    def test_ollama_projection_matrix_correct_dimensions(self, tmp_path: Path):
+    def test_voyage_projection_matrix_correct_dimensions(self, tmp_path: Path):
         """AC6: Each provider has correct projection matrix for their dimensions."""
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         base_path = tmp_path / "vectors"
         store = FilesystemVectorStore(base_path=base_path, project_root=tmp_path)
 
-        collection_name = "ollama_nomic_embed_text"
-        ollama_dims = 768
+        collection_name = "voyage_nomic_embed_text"
+        voyage_dims = 768
 
-        store.create_collection(collection_name, ollama_dims)
+        store.create_collection(collection_name, voyage_dims)
 
         # Load projection matrix and verify dimensions
         collection_path = base_path / collection_name
         projection_matrix = store.matrix_manager.load_matrix(collection_path)
 
         assert projection_matrix.shape == (
-            ollama_dims,
+            voyage_dims,
             64,
-        ), f"Projection matrix should be {ollama_dims}x64 for Ollama"
+        ), f"Projection matrix should be {voyage_dims}x64 for Voyage"
 
 
 class TestProjectionMatrixAdaptation:
@@ -169,7 +169,7 @@ class TestProjectionMatrixAdaptation:
         # Test various input dimensions
         test_cases = [
             ("test_384", 384),  # Smaller embedding
-            ("test_768", 768),  # Ollama
+            ("test_768", 768),  # Voyage
             ("test_1024", 1024),  # VoyageAI voyage-code-3
             ("test_1536", 1536),  # VoyageAI voyage-large-2
             ("test_2048", 2048),  # Hypothetical larger model
@@ -220,15 +220,15 @@ class TestProviderAwareNaming:
 
         # Create collections with provider-aware names
         voyageai_collection = "voyage_ai_voyage_code_3"
-        ollama_collection = "ollama_nomic_embed_text"
+        voyage_collection = "voyage_nomic_embed_text"
 
         store.create_collection(voyageai_collection, 1024)
-        store.create_collection(ollama_collection, 768)
+        store.create_collection(voyage_collection, 768)
 
         # Verify both collections exist with correct names
         collections = store.list_collections()
         assert voyageai_collection in collections, "VoyageAI collection should exist"
-        assert ollama_collection in collections, "Ollama collection should exist"
+        assert voyage_collection in collections, "Voyage collection should exist"
 
     def test_resolve_collection_name_uses_model_name(self, tmp_path: Path):
         """AC8: Provider-aware collection naming uses model name."""
@@ -264,14 +264,14 @@ class TestMultipleProviderCoexistence:
 
         # Create collections for different providers
         voyageai_collection = "voyage_ai_voyage_code_3"
-        ollama_collection = "ollama_nomic_embed_text"
+        voyage_collection = "voyage_nomic_embed_text"
 
         store.create_collection(voyageai_collection, 1024)
-        store.create_collection(ollama_collection, 768)
+        store.create_collection(voyage_collection, 768)
 
         # Store vectors in both collections
         voyageai_vector = np.random.randn(1024).tolist()
-        ollama_vector = np.random.randn(768).tolist()
+        voyage_vector = np.random.randn(768).tolist()
 
         store.upsert_points(
             voyageai_collection,
@@ -289,11 +289,11 @@ class TestMultipleProviderCoexistence:
         )
 
         store.upsert_points(
-            ollama_collection,
+            voyage_collection,
             [
                 {
                     "id": "o1",
-                    "vector": ollama_vector,
+                    "vector": voyage_vector,
                     "payload": {
                         "path": "test2.py",
                         "content": "code",
@@ -305,13 +305,13 @@ class TestMultipleProviderCoexistence:
 
         # Verify both collections have data
         assert store.count_points(voyageai_collection) == 1
-        assert store.count_points(ollama_collection) == 1
+        assert store.count_points(voyage_collection) == 1
 
         # Verify isolation (no cross-contamination)
         collections = store.list_collections()
         assert len(collections) == 2
         assert voyageai_collection in collections
-        assert ollama_collection in collections
+        assert voyage_collection in collections
 
     def test_same_file_indexed_with_different_providers(self, tmp_path: Path):
         """AC5: Same file can be indexed with different providers in separate collections."""
@@ -322,17 +322,17 @@ class TestMultipleProviderCoexistence:
 
         # Create collections for different providers
         voyageai_collection = "voyage_ai_voyage_code_3"
-        ollama_collection = "ollama_nomic_embed_text"
+        voyage_collection = "voyage_nomic_embed_text"
 
         store.create_collection(voyageai_collection, 1024)
-        store.create_collection(ollama_collection, 768)
+        store.create_collection(voyage_collection, 768)
 
         # Index same file with both providers (different embeddings)
         file_path = "src/example.py"
         content = "def calculate(): return 42"
 
         voyageai_vector = np.random.randn(1024).tolist()
-        ollama_vector = np.random.randn(768).tolist()
+        voyage_vector = np.random.randn(768).tolist()
 
         store.upsert_points(
             voyageai_collection,
@@ -350,11 +350,11 @@ class TestMultipleProviderCoexistence:
         )
 
         store.upsert_points(
-            ollama_collection,
+            voyage_collection,
             [
                 {
-                    "id": "example_py_ollama",
-                    "vector": ollama_vector,
+                    "id": "example_py_voyage",
+                    "vector": voyage_vector,
                     "payload": {
                         "path": file_path,
                         "content": content,
@@ -366,10 +366,10 @@ class TestMultipleProviderCoexistence:
 
         # Verify both collections have the file
         voyageai_files = store.get_all_indexed_files(voyageai_collection)
-        ollama_files = store.get_all_indexed_files(ollama_collection)
+        voyage_files = store.get_all_indexed_files(voyage_collection)
 
         assert file_path in voyageai_files
-        assert file_path in ollama_files
+        assert file_path in voyage_files
 
 
 class TestQuantizationAdaptation:
@@ -383,7 +383,7 @@ class TestQuantizationAdaptation:
 
         # Test quantization for different input dimensions
         test_cases = [
-            768,  # Ollama
+            768,  # Voyage
             1024,  # VoyageAI voyage-code-3
             1536,  # VoyageAI voyage-large-2
         ]
@@ -541,9 +541,9 @@ class TestProviderAgnosticImplementation:
         # Should NOT contain provider-specific logic
         forbidden_terms = [
             "voyage",
-            "ollama",
+            "voyage",
             "VoyageAI",
-            "Ollama",
+            "Voyage",
             # Allow mentions in comments/docstrings but not in code logic
         ]
 
@@ -572,7 +572,7 @@ class TestProviderAgnosticImplementation:
         store = FilesystemVectorStore(base_path=base_path, project_root=tmp_path)
 
         # Test with arbitrary dimension (not tied to any specific provider)
-        arbitrary_dims = 512  # Not VoyageAI, not Ollama
+        arbitrary_dims = 512  # Not VoyageAI, not Voyage
         collection_name = "arbitrary_provider"
 
         store.create_collection(collection_name, arbitrary_dims)
@@ -608,7 +608,7 @@ class TestCollectionMetadata:
         # Create collections with different dimensions
         test_cases = [
             ("voyage_ai_1024", 1024),
-            ("ollama_768", 768),
+            ("voyage_768", 768),
         ]
 
         for collection_name, vector_size in test_cases:
@@ -635,16 +635,16 @@ class TestEndToEndMultiProvider:
         base_path = tmp_path / "vectors"
         store = FilesystemVectorStore(base_path=base_path, project_root=tmp_path)
 
-        # Setup: Create collections for VoyageAI and Ollama
+        # Setup: Create collections for VoyageAI and Voyage
         voyageai_collection = "voyage_ai_voyage_code_3"
-        ollama_collection = "ollama_nomic_embed_text"
+        voyage_collection = "voyage_nomic_embed_text"
 
         store.create_collection(voyageai_collection, 1024)
-        store.create_collection(ollama_collection, 768)
+        store.create_collection(voyage_collection, 768)
 
         # Index: Add vectors to both collections
         voyageai_vectors = [np.random.randn(1024).tolist() for _ in range(5)]
-        ollama_vectors = [np.random.randn(768).tolist() for _ in range(5)]
+        voyage_vectors = [np.random.randn(768).tolist() for _ in range(5)]
 
         store.begin_indexing(voyageai_collection)
         for i, vector in enumerate(voyageai_vectors):
@@ -664,13 +664,13 @@ class TestEndToEndMultiProvider:
             )
         store.end_indexing(voyageai_collection)
 
-        store.begin_indexing(ollama_collection)
-        for i, vector in enumerate(ollama_vectors):
+        store.begin_indexing(voyage_collection)
+        for i, vector in enumerate(voyage_vectors):
             store.upsert_points(
-                ollama_collection,
+                voyage_collection,
                 [
                     {
-                        "id": f"ollama_{i}",
+                        "id": f"voyage_{i}",
                         "vector": vector,
                         "payload": {
                             "path": f"file_{i}.py",
@@ -680,15 +680,15 @@ class TestEndToEndMultiProvider:
                     }
                 ],
             )
-        store.end_indexing(ollama_collection)
+        store.end_indexing(voyage_collection)
 
         # Verify: Both collections have correct counts
         assert store.count_points(voyageai_collection) == 5
-        assert store.count_points(ollama_collection) == 5
+        assert store.count_points(voyage_collection) == 5
 
         # Search: Perform semantic search in each collection
         query_voyageai = np.random.randn(1024).tolist()
-        query_ollama = np.random.randn(768).tolist()
+        query_voyage = np.random.randn(768).tolist()
 
         voyageai_mock_embedding_provider = Mock()
         voyageai_mock_embedding_provider.get_embedding.return_value = query_voyageai
@@ -700,19 +700,19 @@ class TestEndToEndMultiProvider:
             limit=3,
         )
 
-        ollama_mock_embedding_provider = Mock()
-        ollama_mock_embedding_provider.get_embedding.return_value = query_ollama
+        voyage_mock_embedding_provider = Mock()
+        voyage_mock_embedding_provider.get_embedding.return_value = query_voyage
 
-        ollama_results = store.search(
+        voyage_results = store.search(
             query="test query",
-            embedding_provider=ollama_mock_embedding_provider,
-            collection_name=ollama_collection,
+            embedding_provider=voyage_mock_embedding_provider,
+            collection_name=voyage_collection,
             limit=3,
         )
 
         # Verify search results
         assert len(voyageai_results) == 3, "Should return 3 VoyageAI results"
-        assert len(ollama_results) == 3, "Should return 3 Ollama results"
+        assert len(voyage_results) == 3, "Should return 3 Voyage results"
 
         # Verify results contain correct metadata
         assert all("embedding_model" in r["payload"] for r in voyageai_results)
@@ -720,10 +720,10 @@ class TestEndToEndMultiProvider:
             r["payload"]["embedding_model"] == "voyage-code-3" for r in voyageai_results
         )
 
-        assert all("embedding_model" in r["payload"] for r in ollama_results)
+        assert all("embedding_model" in r["payload"] for r in voyage_results)
         assert all(
             r["payload"]["embedding_model"] == "nomic-embed-text"
-            for r in ollama_results
+            for r in voyage_results
         )
 
         # Cleanup: Delete one collection
@@ -733,7 +733,7 @@ class TestEndToEndMultiProvider:
         # Verify other collection still exists
         collections = store.list_collections()
         assert voyageai_collection not in collections
-        assert ollama_collection in collections
+        assert voyage_collection in collections
         assert (
-            store.count_points(ollama_collection) == 5
+            store.count_points(voyage_collection) == 5
         ), "Deleting one collection should not affect others"

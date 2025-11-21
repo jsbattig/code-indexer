@@ -42,13 +42,13 @@ class TestCancellationMinimal:
         config.exclude_patterns = []
         config.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
         # Create instance
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            vector_store_client=qdrant_client,
+            vector_store_client=filesystem_client,
         )
 
         # Check that the instance has the cancelled attribute

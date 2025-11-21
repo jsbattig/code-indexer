@@ -31,13 +31,13 @@ class TestCancellationIntegration:
 
         # Create mock providers
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
         # Create processor instance
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            vector_store_client=qdrant_client,
+            vector_store_client=filesystem_client,
         )
 
         # Should have cancelled attribute set to False initially
@@ -62,13 +62,13 @@ class TestCancellationIntegration:
 
         # Create mock providers
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
         # Create processor instance
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            vector_store_client=qdrant_client,
+            vector_store_client=filesystem_client,
         )
 
         # Initially not cancelled

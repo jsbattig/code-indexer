@@ -23,7 +23,7 @@ class TestDaemonExceptionLoggerIntegration:
             ExceptionLogger._instance = None
 
             # Create daemon service instance
-            service = CIDXDaemonService()
+            CIDXDaemonService()
 
             # Verify ExceptionLogger was initialized
             # ExceptionLogger uses singleton pattern, so we can check if it's initialized

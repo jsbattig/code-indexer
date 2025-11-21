@@ -8,7 +8,7 @@ from datetime import datetime
 # Import after mocking modules that may not exist
 with patch.dict(
     "sys.modules",
-    {"tantivy": MagicMock(), "qdrant_client": MagicMock(), "voyageai": MagicMock()},
+    {"tantivy": MagicMock(), "filesystem_client": MagicMock(), "voyageai": MagicMock()},
 ):
     from code_indexer.server.app import create_app
 

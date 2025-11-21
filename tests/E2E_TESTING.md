@@ -24,7 +24,7 @@ tests/e2e/
 
 - **`e2e/git_workflows/`** - Git-aware incremental indexing, branch management, reconciliation
 - **`e2e/payload_indexes/`** - Comprehensive payload indexing validation with real data
-- **`e2e/providers/`** - VoyageAI and Ollama provider switching and configuration
+- **`e2e/providers/`** - VoyageAI provider configuration
 - **`e2e/semantic_search/`** - Semantic search capabilities across languages
 - **`e2e/claude_integration/`** - Claude CLI integration and prompt generation
 - **`e2e/display/`** - Progress bars, line numbers, and user interface
@@ -39,12 +39,9 @@ tests/e2e/
    - Tests: Connection, embedding generation, batch processing, rate limiting
 
 2. **TestE2EProviderSwitching** - Provider compatibility tests
-   - Tests: Factory pattern, provider switching, configuration
+   - Tests: Factory pattern, provider configuration
 
-3. **TestE2EQdrantIntegration** - Database integration tests
-   - Tests: Model metadata, filtering, multi-provider coexistence
-
-4. **TestE2EFullWorkflow** - Complete workflow scenarios
+3. **TestE2EFullWorkflow** - Complete workflow scenarios
    - Tests: End-to-end functionality with real code samples
 
 ## Setup and Usage
@@ -89,7 +86,6 @@ The tests use pytest markers for categorization and container requirements:
 - `@pytest.mark.e2e` - All E2E tests
 - `@pytest.mark.voyage_ai` - Tests requiring VoyageAI API
 - `@pytest.mark.real_api` - Tests making real API calls
-- `@pytest.mark.qdrant` - Tests requiring Qdrant service
 - `@pytest.mark.slow` - Tests that take longer to run
 
 #### Container Safety Markers
@@ -132,12 +128,6 @@ source ~/.zshrc
 ### Optional Environment Variables
 
 ```bash
-# Ollama server URL (default: http://localhost:11434)
-export OLLAMA_HOST="http://localhost:11434"
-
-# Qdrant server URL (default: http://localhost:6333)
-export QDRANT_HOST="http://localhost:6333"
-
 # Test environment flag
 export CODE_INDEXER_ENV="test"
 ```
@@ -149,8 +139,6 @@ export CODE_INDEXER_ENV="test"
 Tests are designed to skip gracefully when required services or API keys are not available:
 
 - VoyageAI tests skip if `VOYAGE_API_KEY` is not set
-- Ollama tests skip if Ollama service is not reachable
-- Qdrant tests skip if Qdrant service is not reachable
 
 ### Real API Usage
 
@@ -215,8 +203,6 @@ For local development, you can set up a `.env` file (not tracked in git):
 ```bash
 # .env file (add to .gitignore)
 VOYAGE_API_KEY=your_api_key_here
-OLLAMA_HOST=http://localhost:11434
-QDRANT_HOST=http://localhost:6333
 ```
 
 Then load it before running tests:

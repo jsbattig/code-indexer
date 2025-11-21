@@ -93,7 +93,7 @@ class TestBranchChangeVisibility:
 
         # Step 1: Initialize and index on master branch
         result = subprocess.run(
-            ["cidx", "init", "--embedding-provider", "ollama"],
+            ["cidx", "init", "--embedding-provider", "voyage-ai"],
             cwd=repo_dir,
             capture_output=True,
             text=True,
@@ -199,7 +199,7 @@ class TestBranchChangeVisibility:
 
         # Initialize and index on master
         subprocess.run(
-            ["cidx", "init", "--embedding-provider", "ollama"],
+            ["cidx", "init", "--embedding-provider", "voyage-ai"],
             cwd=repo_dir,
             check=True,
         )

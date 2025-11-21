@@ -5,12 +5,7 @@ Verifies that indexing works without permission errors when running as non-root 
 Tests that debug logs are written to .code-indexer/.tmp instead of /tmp.
 """
 
-import pytest
-import tempfile
-import shutil
-from pathlib import Path
 import subprocess
-import os
 
 from code_indexer.config import ConfigManager
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore

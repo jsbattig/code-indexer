@@ -52,9 +52,9 @@ def mock_config():
         indexing_config.max_file_size = 1000000
         config.indexing = indexing_config
 
-        # Mock qdrant config
-        config.qdrant = Mock()
-        config.qdrant.vector_size = 768
+        # Mock filesystem config
+        config.filesystem = Mock()
+        config.filesystem.vector_size = 768
 
         yield config
 
@@ -70,8 +70,8 @@ def mock_embedding_provider():
 
 
 @pytest.fixture
-def mock_qdrant_client():
-    """Create a mock Qdrant client."""
+def mock_filesystem_client():
+    """Create a mock Filesystem client."""
     client = Mock()
     client.ensure_provider_aware_collection.return_value = "test-collection"
     client.resolve_collection_name.return_value = "test-collection"
@@ -86,7 +86,7 @@ class TestIncrementalHighThroughputMigration:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         FAILING TEST: _do_incremental_index should use self.process_files_high_throughput()
@@ -96,7 +96,7 @@ class TestIncrementalHighThroughputMigration:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -136,7 +136,7 @@ class TestIncrementalHighThroughputMigration:
                         return_value=modified_files,
                     ):
                         with patch.object(
-                            indexer.qdrant_client, "count_points", return_value=100
+                            indexer.filesystem_client, "count_points", return_value=100
                         ):
                             with patch.object(
                                 indexer.git_topology_service,
@@ -263,7 +263,7 @@ class TestIncrementalHighThroughputMigration:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         FAILING TEST: _do_resume_interrupted should use self.process_files_high_throughput()
@@ -273,7 +273,7 @@ class TestIncrementalHighThroughputMigration:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -396,7 +396,7 @@ class TestIncrementalHighThroughputMigration:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that incremental processing shows significant performance improvement
@@ -408,7 +408,7 @@ class TestIncrementalHighThroughputMigration:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -498,7 +498,7 @@ class TestIncrementalHighThroughputMigration:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that git commit tracking works correctly during parallel incremental processing.
@@ -510,7 +510,7 @@ class TestIncrementalHighThroughputMigration:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -552,7 +552,7 @@ class TestIncrementalHighThroughputMigration:
                         return_value=modified_files,
                     ):
                         with patch.object(
-                            indexer.qdrant_client, "count_points", return_value=100
+                            indexer.filesystem_client, "count_points", return_value=100
                         ):
                             with patch.object(
                                 indexer.git_topology_service,
@@ -666,7 +666,7 @@ class TestIncrementalHighThroughputMigration:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that only modified files are queued for processing during incremental operations.
@@ -678,7 +678,7 @@ class TestIncrementalHighThroughputMigration:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -730,7 +730,9 @@ class TestIncrementalHighThroughputMigration:
                             return_value=modified_files,
                         ):
                             with patch.object(
-                                indexer.qdrant_client, "count_points", return_value=5000
+                                indexer.filesystem_client,
+                                "count_points",
+                                return_value=5000,
                             ):  # Large existing index
                                 with patch.object(
                                     indexer.git_topology_service,

@@ -12,7 +12,6 @@ from ...conftest import get_local_tmp_dir
 
 from code_indexer.config import Config
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
-from code_indexer.services import QdrantClient
 from code_indexer.services.file_chunking_manager import FileProcessingResult
 from ..services.test_vector_calculation_manager import MockEmbeddingProvider
 
@@ -44,8 +43,8 @@ class TestCancellationHandling:
         self.config.file_extensions = ["py"]
 
         # Mock nested config attributes
-        self.config.qdrant = Mock()
-        self.config.qdrant.vector_size = 768
+        self.config.filesystem = Mock()
+        self.config.filesystem.vector_size = 768
 
         self.config.indexing = Mock()
         self.config.indexing.chunk_size = 200
@@ -53,10 +52,10 @@ class TestCancellationHandling:
         self.config.indexing.max_file_size = 1000000
         self.config.indexing.min_file_size = 1
 
-        # Mock Qdrant client
-        self.mock_qdrant = Mock(spec=QdrantClient)
-        self.mock_qdrant.upsert_points.return_value = True
-        self.mock_qdrant.create_point.return_value = {"id": "test-point"}
+        # Mock vector store client
+        self.mock_vector_store = Mock()
+        self.mock_vector_store.upsert_points.return_value = True
+        self.mock_vector_store.create_point.return_value = {"id": "test-point"}
 
         # Mock embedding provider with NO delays for fast testing
         self.mock_embedding_provider = MockEmbeddingProvider(delay=0.0)
@@ -99,7 +98,7 @@ class TestCancellationHandling:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.mock_embedding_provider,
-                vector_store_client=self.mock_qdrant,
+                vector_store_client=self.mock_vector_store,
             )
 
             # Track progress calls and simulate cancellation after processing 3 files
@@ -232,7 +231,7 @@ class TestCancellationHandling:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.mock_embedding_provider,
-                vector_store_client=self.mock_qdrant,
+                vector_store_client=self.mock_vector_store,
             )
 
             # Track progress calls without cancellation

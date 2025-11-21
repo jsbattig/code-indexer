@@ -53,9 +53,9 @@ def mock_config():
         indexing_config.max_file_size = 1000000
         config.indexing = indexing_config
 
-        # Mock qdrant config
-        config.qdrant = Mock()
-        config.qdrant.vector_size = 768
+        # Mock filesystem config
+        config.filesystem = Mock()
+        config.filesystem.vector_size = 768
 
         yield config
 
@@ -71,8 +71,8 @@ def mock_embedding_provider():
 
 
 @pytest.fixture
-def mock_qdrant_client():
-    """Create a mock Qdrant client."""
+def mock_filesystem_client():
+    """Create a mock Filesystem client."""
     client = Mock()
     client.ensure_provider_aware_collection.return_value = None
     return client
@@ -86,7 +86,7 @@ class TestIndexResumeRoutingLogicBug:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that interrupted operations correctly resume instead of restarting.
@@ -98,7 +98,7 @@ class TestIndexResumeRoutingLogicBug:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -195,7 +195,7 @@ class TestIndexResumeRoutingLogicBug:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that completed operations correctly use timestamp-based incremental indexing.
@@ -206,7 +206,7 @@ class TestIndexResumeRoutingLogicBug:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -248,7 +248,7 @@ class TestIndexResumeRoutingLogicBug:
                 ):
                     # Mock all the file finding logic to return empty (focus on routing logic)
                     with patch.object(
-                        indexer.qdrant_client, "ensure_provider_aware_collection"
+                        indexer.filesystem_client, "ensure_provider_aware_collection"
                     ):
                         with patch.object(
                             indexer.progressive_metadata, "start_indexing"
@@ -290,7 +290,7 @@ class TestIndexResumeRoutingLogicBug:
         temp_metadata_path,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that fresh projects (no metadata) correctly do full index.
@@ -301,7 +301,7 @@ class TestIndexResumeRoutingLogicBug:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_filesystem_client,
             metadata_path=temp_metadata_path,
         )
 

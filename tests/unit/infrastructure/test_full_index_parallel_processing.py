@@ -14,7 +14,6 @@ import pytest
 
 from code_indexer.config import Config
 from code_indexer.services.smart_indexer import SmartIndexer
-from code_indexer.services import QdrantClient
 from code_indexer.services.embedding_provider import EmbeddingProvider
 from code_indexer.indexing.processor import ProcessingStats
 
@@ -54,9 +53,9 @@ def mock_embedding_provider():
 
 
 @pytest.fixture
-def mock_qdrant_client():
-    """Create a mock Qdrant client."""
-    client = Mock(spec=QdrantClient)
+def mock_filesystem_client():
+    """Create a mock vector store client."""
+    client = Mock()
     client.collection_exists.return_value = True
     client.ensure_provider_aware_collection.return_value = "test_collection"
     client.resolve_collection_name.return_value = "test_collection"
@@ -84,7 +83,7 @@ class TestFullIndexParallelProcessing:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -101,7 +100,10 @@ class TestFullIndexParallelProcessing:
             test_files.append(file_path)
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Track method calls to verify direct high-throughput usage
@@ -150,7 +152,7 @@ class TestFullIndexParallelProcessing:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -167,7 +169,10 @@ class TestFullIndexParallelProcessing:
             test_files.append(file_path)
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (
@@ -215,7 +220,7 @@ class TestFullIndexParallelProcessing:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -232,7 +237,10 @@ class TestFullIndexParallelProcessing:
             test_files.append(file_path)
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Mock git-aware environment
@@ -281,7 +289,7 @@ class TestFullIndexParallelProcessing:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -298,7 +306,10 @@ class TestFullIndexParallelProcessing:
             test_files.append(file_path)
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Create a progress callback
@@ -347,7 +358,7 @@ class TestFullIndexParallelProcessing:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -366,7 +377,10 @@ class TestFullIndexParallelProcessing:
             file_path.write_text("print('test')")
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (

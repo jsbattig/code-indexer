@@ -46,8 +46,8 @@ class TestResumeAndIncrementalBugs:
             config.file_extensions = ["py"]
 
             # Add missing config attributes
-            config.qdrant = Mock()
-            config.qdrant.vector_size = 768
+            config.filesystem = Mock()
+            config.filesystem.vector_size = 768
             config.chunking = Mock()
             config.chunking.chunk_size = 1000
             config.chunking.overlap_size = 100
@@ -64,17 +64,20 @@ class TestResumeAndIncrementalBugs:
             mock_embedding_provider.get_embedding.return_value = [0.1] * 768
             mock_embedding_provider.get_model_info.return_value = {"dimensions": 768}
 
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.create_point.return_value = {"id": "test-id"}
-            mock_qdrant_client.upsert_points.return_value = True
-            mock_qdrant_client.scroll_points.return_value = ([], None)
+            mock_filesystem_client = Mock()
+            mock_filesystem_client.create_point.return_value = {"id": "test-id"}
+            mock_filesystem_client.upsert_points.return_value = True
+            mock_filesystem_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
 
             try:
                 indexer = SmartIndexer(
-                    config, mock_embedding_provider, mock_qdrant_client, metadata_path
+                    config,
+                    mock_embedding_provider,
+                    mock_filesystem_client,
+                    metadata_path,
                 )
 
                 # Create test files
@@ -195,8 +198,8 @@ class TestResumeAndIncrementalBugs:
             config.file_extensions = ["py"]
 
             # Add missing config attributes
-            config.qdrant = Mock()
-            config.qdrant.vector_size = 768
+            config.filesystem = Mock()
+            config.filesystem.vector_size = 768
             config.chunking = Mock()
             config.chunking.chunk_size = 1000
             config.chunking.overlap_size = 100
@@ -213,17 +216,20 @@ class TestResumeAndIncrementalBugs:
             mock_embedding_provider.get_embedding.return_value = [0.1] * 768
             mock_embedding_provider.get_model_info.return_value = {"dimensions": 768}
 
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.create_point.return_value = {"id": "test-id"}
-            mock_qdrant_client.upsert_points.return_value = True
-            mock_qdrant_client.scroll_points.return_value = ([], None)
+            mock_filesystem_client = Mock()
+            mock_filesystem_client.create_point.return_value = {"id": "test-id"}
+            mock_filesystem_client.upsert_points.return_value = True
+            mock_filesystem_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
 
             try:
                 indexer = SmartIndexer(
-                    config, mock_embedding_provider, mock_qdrant_client, metadata_path
+                    config,
+                    mock_embedding_provider,
+                    mock_filesystem_client,
+                    metadata_path,
                 )
 
                 # Create test files
@@ -360,8 +366,8 @@ class TestResumeAndIncrementalBugs:
             config.file_extensions = ["py"]
 
             # Add missing config attributes
-            config.qdrant = Mock()
-            config.qdrant.vector_size = 768
+            config.filesystem = Mock()
+            config.filesystem.vector_size = 768
             config.chunking = Mock()
             config.chunking.chunk_size = 1000
             config.chunking.overlap_size = 100
@@ -378,17 +384,20 @@ class TestResumeAndIncrementalBugs:
             mock_embedding_provider.get_embedding.return_value = [0.1] * 768
             mock_embedding_provider.get_model_info.return_value = {"dimensions": 768}
 
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.create_point.return_value = {"id": "test-id"}
-            mock_qdrant_client.upsert_points.return_value = True
-            mock_qdrant_client.scroll_points.return_value = ([], None)
+            mock_filesystem_client = Mock()
+            mock_filesystem_client.create_point.return_value = {"id": "test-id"}
+            mock_filesystem_client.upsert_points.return_value = True
+            mock_filesystem_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
 
             try:
                 indexer = SmartIndexer(
-                    config, mock_embedding_provider, mock_qdrant_client, metadata_path
+                    config,
+                    mock_embedding_provider,
+                    mock_filesystem_client,
+                    metadata_path,
                 )
 
                 # Create test files

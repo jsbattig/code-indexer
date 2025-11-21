@@ -3,9 +3,8 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from code_indexer.daemon.socket_helper import (
     generate_repo_hash,
@@ -15,7 +14,6 @@ from code_indexer.daemon.socket_helper import (
     create_mapping_file,
     get_repo_from_mapping,
     cleanup_old_socket,
-    SocketMode,
 )
 
 

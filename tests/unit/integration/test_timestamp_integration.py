@@ -74,8 +74,8 @@ class TestTimestampIntegrationWorkflow:
             }
         ]
 
-        mock_qdrant_client = Mock()
-        mock_qdrant_client.upsert_points.return_value = True
+        mock_filesystem_client = Mock()
+        mock_filesystem_client.upsert_points.return_value = True
 
         mock_slot_tracker = Mock()
         mock_slot_tracker.acquire_slot.return_value = "integration-slot"
@@ -84,15 +84,15 @@ class TestTimestampIntegrationWorkflow:
         return {
             "vector_manager": mock_vector_manager,
             "chunker": mock_chunker,
-            "qdrant_client": mock_qdrant_client,
+            "filesystem_client": mock_filesystem_client,
             "slot_tracker": mock_slot_tracker,
         }
 
-    def test_end_to_end_timestamp_workflow_file_to_qdrant(
+    def test_end_to_end_timestamp_workflow_file_to_filesystem(
         self, test_file_with_timestamps, mock_dependencies
     ):
         """
-        Test complete workflow from file processing to Qdrant point creation.
+        Test complete workflow from file processing to Filesystem point creation.
 
         Verifies timestamps are collected and flow through entire system.
         """
@@ -102,7 +102,7 @@ class TestTimestampIntegrationWorkflow:
         with FileChunkingManager(
             mock_dependencies["vector_manager"],
             mock_dependencies["chunker"],
-            mock_dependencies["qdrant_client"],
+            mock_dependencies["filesystem_client"],
             4,
             mock_dependencies["slot_tracker"],
             codebase_dir=file_path.parent,
@@ -124,8 +124,10 @@ class TestTimestampIntegrationWorkflow:
             assert result.chunks_processed == 1
 
             # Verify upsert_points was called with timestamps
-            mock_dependencies["qdrant_client"].upsert_points.assert_called_once()
-            call_args = mock_dependencies["qdrant_client"].upsert_points.call_args[1]
+            mock_dependencies["filesystem_client"].upsert_points.assert_called_once()
+            call_args = mock_dependencies["filesystem_client"].upsert_points.call_args[
+                1
+            ]
             points = call_args["points"]
 
             assert len(points) == 1
@@ -229,13 +231,13 @@ class TestTimestampIntegrationWorkflow:
         """
         Test legacy SearchResult class compatibility with new timestamp fields.
 
-        Verifies existing SearchResult.from_qdrant_result still works.
+        Verifies existing SearchResult.from_backend_result still works.
         """
         file_path, expected_mtime = test_file_with_timestamps
         indexed_time = time.time()
 
-        # Simulate Qdrant result with universal timestamp fields
-        qdrant_result = {
+        # Simulate backend result with universal timestamp fields
+        backend_result = {
             "score": 0.88,
             "payload": {
                 "path": str(file_path),
@@ -251,7 +253,7 @@ class TestTimestampIntegrationWorkflow:
         }
 
         # Test SearchResult can handle enhanced payload
-        search_result = SearchResult.from_qdrant_result(qdrant_result)
+        search_result = SearchResult.from_backend_result(backend_result)
 
         # Verify existing fields work
         assert search_result.file_path == str(file_path)
@@ -275,7 +277,7 @@ class TestTimestampIntegrationWorkflow:
         with FileChunkingManager(
             mock_dependencies["vector_manager"],
             mock_dependencies["chunker"],
-            mock_dependencies["qdrant_client"],
+            mock_dependencies["filesystem_client"],
             4,
             mock_dependencies["slot_tracker"],
             codebase_dir=file_path.parent,
@@ -298,7 +300,7 @@ class TestTimestampIntegrationWorkflow:
                 "git_available": False,
             }
 
-            non_git_point = manager._create_qdrant_point(
+            non_git_point = manager._create_filesystem_point(
                 chunk, embedding, non_git_metadata, file_path
             )
 
@@ -311,7 +313,7 @@ class TestTimestampIntegrationWorkflow:
                 "branch": "main",
             }
 
-            git_point = manager._create_qdrant_point(
+            git_point = manager._create_filesystem_point(
                 chunk, embedding, git_metadata, file_path
             )
 
@@ -350,7 +352,7 @@ class TestTimestampIntegrationWorkflow:
             with FileChunkingManager(
                 mock_dependencies["vector_manager"],
                 mock_dependencies["chunker"],
-                mock_dependencies["qdrant_client"],
+                mock_dependencies["filesystem_client"],
                 4,
                 mock_dependencies["slot_tracker"],
                 codebase_dir=tmp_path,
@@ -375,7 +377,7 @@ class TestTimestampIntegrationWorkflow:
                 start_time = time.time()
 
                 for file_path in test_files:
-                    point = manager._create_qdrant_point(
+                    point = manager._create_filesystem_point(
                         chunk, embedding, metadata, file_path
                     )
                     # Verify timestamp collection worked
@@ -408,7 +410,7 @@ class TestTimestampIntegrationWorkflow:
         with FileChunkingManager(
             mock_dependencies["vector_manager"],
             mock_dependencies["chunker"],
-            mock_dependencies["qdrant_client"],
+            mock_dependencies["filesystem_client"],
             4,
             mock_dependencies["slot_tracker"],
             codebase_dir=tmp_path,
@@ -431,7 +433,7 @@ class TestTimestampIntegrationWorkflow:
             }
 
             # Should handle error gracefully and continue processing
-            point = manager._create_qdrant_point(
+            point = manager._create_filesystem_point(
                 chunk, embedding, metadata, non_existent_file
             )
 

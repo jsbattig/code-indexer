@@ -18,12 +18,12 @@ class TestErrorMessage:
         error = ErrorMessage(
             repository="backend/auth-service",
             command="query 'authentication'",
-            error_text="Cannot connect to Qdrant service",
+            error_text="Cannot connect to Filesystem service",
             exit_code=1,
         )
         assert error.repository == "backend/auth-service"
         assert error.command == "query 'authentication'"
-        assert error.error_text == "Cannot connect to Qdrant service"
+        assert error.error_text == "Cannot connect to Filesystem service"
         assert error.exit_code == 1
         assert error.hint is None
 
@@ -71,7 +71,7 @@ class TestFormatError:
         error = ErrorMessage(
             repository="backend/auth-service",
             command="query 'authentication'",
-            error_text="Cannot connect to Qdrant service",
+            error_text="Cannot connect to Filesystem service",
             exit_code=1,
         )
 
@@ -87,7 +87,7 @@ class TestFormatError:
         assert "Command: cidx query 'authentication'" in formatted
 
         # Verify error text shown
-        assert "Error: Cannot connect to Qdrant service" in formatted
+        assert "Error: Cannot connect to Filesystem service" in formatted
 
         # Verify exit code shown
         assert "Exit code: 1" in formatted
@@ -195,10 +195,10 @@ class TestFormatInlineError:
         """Verify inline error formatting."""
         formatter = ErrorMessageFormatter()
         formatted = formatter.format_inline_error(
-            "backend/auth-service", "Cannot connect to Qdrant"
+            "backend/auth-service", "Cannot connect to Filesystem"
         )
 
-        assert formatted == "✗ backend/auth-service: Cannot connect to Qdrant"
+        assert formatted == "✗ backend/auth-service: Cannot connect to Filesystem"
 
     def test_format_inline_error_single_line(self):
         """Verify inline error is single line."""

@@ -60,7 +60,6 @@ def _get_inventory_config(inventory: ProjectInventory) -> Dict[str, Any]:
         "embedding_provider": "voyage",
         "embedding_model": "voyage-code-2",
         "segment_size": 100,
-        "ollama_model": "all-minilm:l6-v2",
         "ignore_patterns": ["*.log", "__pycache__", ".git", "*.pyc"],
     }
 
@@ -77,7 +76,6 @@ def _get_inventory_config(inventory: ProjectInventory) -> Dict[str, Any]:
         "project_name": "multiproject_test_2",
         "multiproject_enabled": True,
         "project_id": "proj2",
-        "embedding_provider": "ollama",  # Use different provider for diversity
     }
 
     # Inventory-specific configurations

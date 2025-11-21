@@ -47,7 +47,7 @@ class TestRPyCDaemonIntegration(TestCase):
                         "auto_shutdown_on_idle": False,
                     },
                     "embedding_provider": "voyage",
-                    "qdrant": {"mode": "filesystem"},
+                    "filesystem": {"mode": "filesystem"},
                 }
             )
         )
@@ -340,7 +340,7 @@ def format_response(status, message):
                         "auto_shutdown_on_idle": False,
                     },
                     "embedding_provider": "voyage",
-                    "qdrant": {"mode": "filesystem"},
+                    "filesystem": {"mode": "filesystem"},
                 }
             )
         )

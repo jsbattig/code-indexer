@@ -11,7 +11,6 @@ from ...conftest import get_local_tmp_dir
 
 from code_indexer.config import Config
 from code_indexer.services.smart_indexer import SmartIndexer
-from code_indexer.services import QdrantClient
 from ..services.test_vector_calculation_manager import MockEmbeddingProvider
 
 
@@ -57,8 +56,8 @@ class TestClass_{i}:
         self.config.file_extensions = ["py"]
 
         # Mock nested config attributes
-        self.config.qdrant = Mock()
-        self.config.qdrant.vector_size = 1024  # Voyage AI typical size
+        self.config.filesystem = Mock()
+        self.config.filesystem.vector_size = 1024  # Voyage AI typical size
 
         self.config.indexing = Mock()
         self.config.indexing.chunk_size = 200
@@ -74,17 +73,17 @@ class TestClass_{i}:
         self.config.voyage_ai = Mock()
         self.config.voyage_ai.parallel_requests = 8  # Standard config.json setting
 
-        # Mock Qdrant client
-        self.mock_qdrant = Mock(spec=QdrantClient)
-        self.mock_qdrant.upsert_points.return_value = True
-        self.mock_qdrant.create_point.return_value = {"id": "test-point"}
-        self.mock_qdrant.ensure_provider_aware_collection.return_value = (
+        # Mock vector store client
+        self.mock_filesystem = Mock()
+        self.mock_filesystem.upsert_points.return_value = True
+        self.mock_filesystem.create_point.return_value = {"id": "test-point"}
+        self.mock_filesystem.ensure_provider_aware_collection.return_value = (
             "test_collection"
         )
-        self.mock_qdrant.clear_collection.return_value = True
-        self.mock_qdrant.resolve_collection_name.return_value = "test_collection"
-        self.mock_qdrant.collection_exists.return_value = True
-        self.mock_qdrant.scroll_points.return_value = ([], None)
+        self.mock_filesystem.clear_collection.return_value = True
+        self.mock_filesystem.resolve_collection_name.return_value = "test_collection"
+        self.mock_filesystem.collection_exists.return_value = True
+        self.mock_filesystem.scroll_points.return_value = ([], None)
 
         # Mock embedding provider (simulating Voyage AI)
         self.mock_embedding_provider = MockEmbeddingProvider(
@@ -107,7 +106,7 @@ class TestClass_{i}:
         smart_indexer = SmartIndexer(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            vector_store_client=self.mock_qdrant,
+            vector_store_client=self.mock_filesystem,
             metadata_path=self.metadata_path,
         )
 
@@ -160,7 +159,7 @@ class TestClass_{i}:
         smart_indexer = SmartIndexer(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            vector_store_client=self.mock_qdrant,
+            vector_store_client=self.mock_filesystem,
             metadata_path=self.metadata_path,
         )
 
@@ -213,7 +212,7 @@ class TestClass_{i}:
         smart_indexer = SmartIndexer(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            vector_store_client=self.mock_qdrant,
+            vector_store_client=self.mock_filesystem,
             metadata_path=self.metadata_path,
         )
 

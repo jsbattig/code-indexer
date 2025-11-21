@@ -84,7 +84,7 @@ class TestDiffTypeParameter:
                 "diff_type": "added,modified",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify diff_type parameter was passed
             call_kwargs = (
@@ -115,10 +115,12 @@ class TestDiffTypeParameter:
                     "diff_type": value,
                 }
 
-                result = await search_code(params, mock_user)
+                await search_code(params, mock_user)
 
                 # Verify diff_type parameter was passed
-                call_kwargs = mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs
+                call_kwargs = (
+                    mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs
+                )
                 assert call_kwargs["diff_type"] == value
 
     @pytest.mark.asyncio
@@ -141,7 +143,7 @@ class TestDiffTypeParameter:
                 "time_range": "2024-01-01..2024-12-31",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify diff_type defaults to None
             call_kwargs = (
@@ -174,7 +176,7 @@ class TestAuthorParameter:
                 "author": "dev@example.com",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify author parameter was passed
             call_kwargs = (
@@ -203,7 +205,7 @@ class TestAuthorParameter:
                 "author": "John Doe",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify author parameter was passed
             call_kwargs = (
@@ -231,7 +233,7 @@ class TestAuthorParameter:
                 "time_range": "2024-01-01..2024-12-31",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify author defaults to None
             call_kwargs = (
@@ -264,7 +266,7 @@ class TestChunkTypeParameter:
                 "chunk_type": "commit_message",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify chunk_type parameter was passed
             call_kwargs = (
@@ -293,7 +295,7 @@ class TestChunkTypeParameter:
                 "chunk_type": "commit_diff",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify chunk_type parameter was passed
             call_kwargs = (
@@ -321,7 +323,7 @@ class TestChunkTypeParameter:
                 "time_range": "2024-01-01..2024-12-31",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify chunk_type defaults to None
             call_kwargs = (
@@ -356,7 +358,7 @@ class TestParameterCombinations:
                 "chunk_type": "commit_diff",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify all Phase 3 parameters were passed
             call_kwargs = (
@@ -399,7 +401,7 @@ class TestParameterCombinations:
                 "chunk_type": "commit_diff",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify all parameters were passed correctly
             call_kwargs = (
@@ -441,7 +443,7 @@ class TestParameterCombinations:
                 "chunk_type": "commit_message",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify parameters were passed correctly
             call_kwargs = (

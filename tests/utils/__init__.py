@@ -12,7 +12,6 @@ This package provides comprehensive testing infrastructure including:
 from .test_data_factory import TestDataFactory, TestRepository, TestUser
 from .server_test_helpers import ServerTestHelper, ServerLifecycleManager
 from .auth_test_helpers import AuthTestHelper, JWTTokenManager
-from .container_test_helpers import ContainerTestManager, EnvironmentManager
 
 __all__ = [
     "TestDataFactory",
@@ -22,6 +21,4 @@ __all__ = [
     "ServerLifecycleManager",
     "AuthTestHelper",
     "JWTTokenManager",
-    "ContainerTestManager",
-    "EnvironmentManager",
 ]

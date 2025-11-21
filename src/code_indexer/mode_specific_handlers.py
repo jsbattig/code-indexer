@@ -179,12 +179,11 @@ async def display_remote_status(project_root: Path) -> None:
         return
 
 
-def display_local_status(project_root: Path, force_docker: bool = False) -> None:
+def display_local_status(project_root: Path) -> None:
     """Display local mode status information (delegates to existing implementation).
 
     Args:
         project_root: Path to the project root directory
-        force_docker: Force use of Docker even if Podman is available
     """
     # Import existing status implementation
     from .cli import cli, _status_impl
@@ -197,7 +196,7 @@ def display_local_status(project_root: Path, force_docker: bool = False) -> None
     ctx = click.Context(cli)
     ctx.obj = {"config_manager": ConfigManager.create_with_backtrack(project_root)}
 
-    _status_impl(ctx, force_docker)
+    _status_impl(ctx)
 
 
 def display_uninitialized_status(project_root: Path) -> None:
@@ -258,18 +257,16 @@ def uninstall_remote_mode(project_root: Path, confirm: bool = False) -> None:
 
 def uninstall_local_mode(
     project_root: Path,
-    force_docker: bool = False,
     wipe_all: bool = False,
     confirm: bool = False,
 ) -> None:
     """Uninstall local mode configuration using backend abstraction.
 
     For filesystem backend: Removes .code-indexer/index/ directory via backend.cleanup()
-    For Qdrant backend: Uses Docker cleanup with data-cleaner for root-owned files
+    For Filesystem backend: Uses Docker cleanup with data-cleaner for root-owned files
 
     Args:
         project_root: Path to the project root directory
-        force_docker: Force use of Docker even if Podman is available
         wipe_all: Perform complete system wipe
         confirm: Skip confirmation prompt if True
     """
@@ -323,7 +320,7 @@ def uninstall_local_mode(
             backend_type = (
                 config.vector_store.provider
                 if config.vector_store
-                else "qdrant"  # Default
+                else "filesystem"  # Default
             )
             console.print(f"   • Current backend: {backend_type}", style="blue")
             console.print()
@@ -355,43 +352,15 @@ def uninstall_local_mode(
                 size_mb = storage_size / (1024 * 1024)
                 console.print(f"💾 Storage reclaimed: {size_mb:.2f} MB", style="green")
         else:
-            # Qdrant backend: Use Docker cleanup (legacy behavior)
-            from .services.docker_manager import DockerManager
-
-            project_name = project_root.name
-            docker_manager = DockerManager(
-                console=console,
-                project_name=project_name,
-                force_docker=force_docker,
-                project_config_dir=project_root / ".code-indexer",
+            # Filesystem backend: Legacy container backend is no longer supported (Story #506)
+            console.print(
+                "⚠️  Filesystem container backend is deprecated and no longer supported",
+                style="yellow",
             )
-
-            # Stop running containers first
-            console.print("⏹️  Stopping containers...", style="blue")
-            docker_manager.stop()
-
-            # Use data-cleaner to remove root-owned files
-            console.print("🧹 Cleaning root-owned data files...", style="blue")
-            qdrant_path = str(project_root / ".code-indexer" / "qdrant")
-            docker_manager.clean_with_data_cleaner(paths=[qdrant_path])
-
-            # Perform comprehensive cleanup
-            console.print("🔧 Removing containers and volumes...", style="blue")
-            if wipe_all:
-                # Aggressive cleanup including volumes and images
-                cleanup_success = docker_manager.cleanup_with_final_guidance(
-                    remove_data=True, force=True, verbose=True, validate=True
-                )
-            else:
-                # Standard cleanup
-                cleanup_success = docker_manager.cleanup(
-                    remove_data=True, force=True, verbose=True, validate=True
-                )
-
-            if not cleanup_success:
-                console.print(
-                    "⚠️  Container cleanup completed with some issues", style="yellow"
-                )
+            console.print(
+                "💡 Please migrate to filesystem backend: Run 'cidx init --vector-store filesystem'",
+                style="blue",
+            )
 
         # Remove .code-indexer directory
         code_indexer_dir = project_root / ".code-indexer"

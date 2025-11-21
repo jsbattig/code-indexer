@@ -392,9 +392,7 @@ class TestReconcileTemporalIndex:
         with patch(
             "src.code_indexer.services.temporal.temporal_reconciliation.logger"
         ) as mock_logger:
-            missing_commits = reconcile_temporal_index(
-                vector_store, all_commits, "code-indexer-temporal"
-            )
+            reconcile_temporal_index(vector_store, all_commits, "code-indexer-temporal")
 
         # Assert: Only deletable metadata files deleted
         for meta_file in metadata_files_to_delete:

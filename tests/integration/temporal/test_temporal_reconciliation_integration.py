@@ -94,7 +94,7 @@ class TestTemporalReconciliationIntegration:
         """
         # Arrange: Create real collection and vectors for first 2 commits
         vector_store.create_collection("code-indexer-temporal", 1024)
-        collection_path = vector_store.base_path / "code-indexer-temporal"
+        vector_store.base_path / "code-indexer-temporal"
 
         # Get actual commit hashes from repo
         result = subprocess.run(
@@ -192,7 +192,7 @@ class TestTemporalReconciliationIntegration:
         # Check HNSW index metadata
         assert "hnsw_index" in metadata
         assert metadata["hnsw_index"]["vector_count"] == 3
-        assert metadata["hnsw_index"]["is_stale"] == False
+        assert not metadata["hnsw_index"]["is_stale"]
 
     def test_ac5_idempotent_operation(
         self, temp_git_repo, config_manager, vector_store
@@ -278,7 +278,7 @@ class TestTemporalReconciliationIntegration:
         """
         # Arrange: Create empty real collection
         vector_store.create_collection("code-indexer-temporal", 1024)
-        collection_path = vector_store.base_path / "code-indexer-temporal"
+        vector_store.base_path / "code-indexer-temporal"
 
         # Act: Get commit hashes and create commit objects
         result = subprocess.run(
@@ -367,7 +367,7 @@ class TestTemporalReconciliationIntegration:
 
         # Reload config so TemporalIndexer can load it properly
         config_manager._config = None  # Force reload
-        loaded_config = config_manager.load()
+        config_manager.load()
 
         temporal_indexer = TemporalIndexer(config_manager, vector_store)
 

@@ -1,7 +1,7 @@
 """
 Filter builder for path exclusion conditions.
 
-Constructs Qdrant-compatible filter conditions for path exclusions:
+Constructs Filesystem-compatible filter conditions for path exclusions:
 - must_not filter construction
 - Filter combination and merging
 - Filter validation
@@ -12,9 +12,9 @@ from typing import Dict, List, Any
 
 class PathFilterBuilder:
     """
-    Builds Qdrant filter conditions for path exclusions.
+    Builds Filesystem filter conditions for path exclusions.
 
-    This class constructs filter dictionaries that work with both Qdrant
+    This class constructs filter dictionaries that work with both Filesystem
     and filesystem vector stores for path-based exclusions.
 
     Examples:
@@ -150,7 +150,7 @@ class PathFilterBuilder:
         if not isinstance(filter_dict, dict):
             return False
 
-        # Valid keys for Qdrant filters
+        # Valid keys for Filesystem filters
         valid_keys = {"must", "must_not", "should"}
 
         # Check that all keys are valid

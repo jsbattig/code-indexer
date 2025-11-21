@@ -61,7 +61,7 @@ class TestDeleteEndpointErrorHandling:
         mock_manager = MagicMock()
         # Mock GitOperationError (permission/cleanup failure)
         mock_manager.remove_golden_repo.side_effect = GitOperationError(
-            "Failed to clean up repository files: Permission denied: /root/.local/share/qdrant"
+            "Failed to clean up repository files: Permission denied: /root/.local/share/filesystem"
         )
         monkeypatch.setattr(
             "src.code_indexer.server.app.golden_repo_manager", mock_manager

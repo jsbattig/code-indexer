@@ -49,7 +49,7 @@ class RAGContextExtractor:
         """Extract code context from semantic search results.
 
         Args:
-            search_results: List of search results from Qdrant
+            search_results: List of search results from Filesystem
             context_lines: Number of lines to extract around each match
             max_total_lines: Maximum total lines across all contexts
             ensure_all_files: If True, adjust context size to include all files

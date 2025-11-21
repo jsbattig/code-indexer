@@ -232,7 +232,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
             patch("src.code_indexer.services.file_identifier.FileIdentifier"),
             patch(
                 "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
-            ) as mock_diff_scanner_class,
+            ),
             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
             patch(
                 "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
@@ -268,7 +268,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
             ]
 
             # Call the method
-            result = indexer._process_commits_parallel(
+            indexer._process_commits_parallel(
                 commits=commits, embedding_provider=Mock(), vector_manager=Mock()
             )
 

@@ -175,7 +175,7 @@ class TestBatchRetryLogic:
 
                 # Process commit (should retry and succeed)
                 try:
-                    result = indexer._process_commits_parallel(
+                    indexer._process_commits_parallel(
                         commits=[commit],
                         embedding_provider=mock_provider,
                         vector_manager=mock_vcm_instance,

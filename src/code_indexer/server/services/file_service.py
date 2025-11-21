@@ -228,7 +228,7 @@ class FileListingService:
             Whether file is indexed
         """
         # For now, consider text files as potentially indexed
-        # In real implementation, query Qdrant or index database
+        # In real implementation, query vector store or index database
         extension = file_path.suffix.lower()
         indexable_extensions = {
             ".py",

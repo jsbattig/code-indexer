@@ -56,7 +56,7 @@ class TestFilterParsingPerformance:
             patch(
                 "code_indexer.storage.hnsw_index_manager.HNSWIndexManager"
             ) as mock_hnsw_manager_class,
-            patch("builtins.open", create=True) as mock_open,
+            patch("builtins.open", create=True),
             patch("json.load") as mock_json_load,
             patch(
                 "code_indexer.services.path_filter_builder.PathFilterBuilder"

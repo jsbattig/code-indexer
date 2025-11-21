@@ -32,7 +32,7 @@ class TestErrorFormatterHintDisplay:
         error = ErrorMessage(
             repository="backend/auth",
             command="query",
-            error_text="Cannot connect to Qdrant",
+            error_text="Cannot connect to Filesystem",
             exit_code=1,
             hint=hint,
         )
@@ -207,13 +207,13 @@ class TestErrorFormatterHintVisualStructure:
                 "grep -r 'term' backend/auth",
                 "rg 'term' backend/auth",
             ],
-            explanation="Qdrant service not available",
+            explanation="Filesystem service not available",
         )
 
         error = ErrorMessage(
             repository="backend/auth",
             command="query",
-            error_text="Cannot connect to Qdrant",
+            error_text="Cannot connect to Filesystem",
             exit_code=1,
             hint=hint,
         )
@@ -225,7 +225,7 @@ class TestErrorFormatterHintVisualStructure:
         # ✗ FAILED: backend/auth
         # ============================================================
         # Command: cidx query
-        # Error: Cannot connect to Qdrant
+        # Error: Cannot connect to Filesystem
         # Exit code: 1
         #
         # Hint: Use grep to search manually
@@ -234,7 +234,7 @@ class TestErrorFormatterHintVisualStructure:
         #   • grep -r 'term' backend/auth
         #   • rg 'term' backend/auth
         #
-        # Explanation: Qdrant service not available
+        # Explanation: Filesystem service not available
         # ============================================================
 
         lines = formatted.split("\n")
@@ -242,11 +242,11 @@ class TestErrorFormatterHintVisualStructure:
         # Verify key sections exist
         assert any("FAILED: backend/auth" in line for line in lines)
         assert any("Command: cidx query" in line for line in lines)
-        assert any("Error: Cannot connect to Qdrant" in line for line in lines)
+        assert any("Error: Cannot connect to Filesystem" in line for line in lines)
         assert any("Exit code: 1" in line for line in lines)
         assert any("Hint: Use grep to search manually" in line for line in lines)
         assert any("Try these commands:" in line for line in lines)
         assert any("grep -r 'term' backend/auth" in line for line in lines)
         assert any(
-            "Explanation: Qdrant service not available" in line for line in lines
+            "Explanation: Filesystem service not available" in line for line in lines
         )

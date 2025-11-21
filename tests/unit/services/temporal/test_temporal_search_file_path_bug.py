@@ -35,7 +35,7 @@ class TestTemporalSearchFilePathBug(unittest.TestCase):
 
     def test_binary_file_detection_with_path_field(self):
         """Test that binary file detection works with 'path' field (line 430 bug)."""
-        # Create mock Qdrant result with 'path' field (NOT 'file_path')
+        # Create mock Filesystem result with 'path' field (NOT 'file_path')
         mock_result = Mock()
         mock_result.id = "point1"
         mock_result.score = 0.85

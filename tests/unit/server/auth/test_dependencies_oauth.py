@@ -10,8 +10,6 @@ Following CLAUDE.md principles: Real implementations, no mocks.
 import pytest
 import hashlib
 import base64
-from pathlib import Path
-from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
 from code_indexer.server.auth.dependencies import get_current_user

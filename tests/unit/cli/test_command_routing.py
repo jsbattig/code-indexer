@@ -52,12 +52,12 @@ class TestCommandRouting:
             import json
 
             config_data = {
-                "ollama": {
+                "voyage": {
                     "host": "http://localhost:11434",
                     "model": "nomic-embed-text",
                 },
-                "qdrant": {"host": "http://localhost:6333"},
-                "ports": {"ollama_port": 11434, "qdrant_port": 6333},
+                "filesystem": {"host": "http://localhost:6333"},
+                "ports": {"voyage_port": 11434, "filesystem_port": 6333},
             }
             config_path = config_dir / "config.json"
             with open(config_path, "w") as f:
@@ -127,7 +127,7 @@ class TestCommandRouting:
             # Create valid local config
             import json
 
-            config_data = {"ollama": {"host": "http://localhost:11434"}}
+            config_data = {"voyage": {"host": "http://localhost:11434"}}
             config_path = config_dir / "config.json"
             with open(config_path, "w") as f:
                 json.dump(config_data, f)
@@ -151,7 +151,7 @@ class TestCommandRouting:
             # Create valid local config
             import json
 
-            config_data = {"ollama": {"host": "http://localhost:11434"}}
+            config_data = {"voyage": {"host": "http://localhost:11434"}}
             config_path = config_dir / "config.json"
             with open(config_path, "w") as f:
                 json.dump(config_data, f)

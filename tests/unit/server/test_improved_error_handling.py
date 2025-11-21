@@ -244,7 +244,7 @@ class TestImprovedRefreshErrorHandling:
         recoverable_errors = [
             "Port 6333 already in use",
             "Service already running",
-            "Container qdrant already exists",
+            "Container filesystem already exists",
             "bind: address already in use",
         ]
 

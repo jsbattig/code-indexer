@@ -57,7 +57,7 @@ class FileChunkingManager:
         self,
         vector_manager: VectorCalculationManager,
         chunker: FixedSizeChunker,
-        vector_store_client,  # Vector storage client (QdrantClient or FilesystemVectorStore)
+        vector_store_client,  # Vector storage client (FilesystemVectorStore)
         thread_count: int,
         slot_tracker: CleanSlotTracker,
         codebase_dir: Path,  # CRITICAL FOR COW CLONING: Needed for path normalization
@@ -69,7 +69,7 @@ class FileChunkingManager:
         Args:
             vector_manager: Existing VectorCalculationManager (unchanged)
             chunker: Existing FixedSizeChunker (unchanged)
-            vector_store_client: Vector storage client for atomic writes (QdrantClient or FilesystemVectorStore)
+            vector_store_client: Vector storage client for atomic writes (FilesystemVectorStore)
             thread_count: Number of worker threads (thread_count + 2 per specs)
             slot_tracker: CleanSlotTracker for progress tracking and slot management
             codebase_dir: Repository root directory for path normalization
@@ -116,7 +116,7 @@ class FileChunkingManager:
         """
         Normalize file path to relative for portable database storage.
 
-        CRITICAL FOR COW CLONING: All paths stored in Qdrant must be relative
+        CRITICAL FOR COW CLONING: All paths stored in vector store must be relative
         to codebase_dir to ensure database portability across different filesystem
         locations (CoW clones, repository moves, etc.).
 
@@ -206,7 +206,7 @@ class FileChunkingManager:
         """Count tokens using provider-specific token counting.
 
         For VoyageAI: Use official count_tokens API
-        For Ollama: Estimate based on character count (rough approximation)
+        For Voyage: Estimate based on character count (rough approximation)
         """
         # Get the model name from the embedding provider
         model = self.vector_manager.embedding_provider.get_current_model()
@@ -277,7 +277,7 @@ class FileChunkingManager:
 
         return future
 
-    def _create_qdrant_point(
+    def _create_vector_point(
         self,
         chunk: Dict[str, Any],
         embedding: List[float],
@@ -285,9 +285,9 @@ class FileChunkingManager:
         file_path: Path,
     ) -> Dict[str, Any]:
         """
-        Create Qdrant point from chunk and embedding.
+        Create vector point from chunk and embedding.
 
-        This method creates the point structure expected by Qdrant
+        This method creates the point structure expected by the vector store
         using the existing metadata patterns from HighThroughputProcessor.
 
         UNIVERSAL TIMESTAMP COLLECTION: Always collects file_last_modified
@@ -300,7 +300,7 @@ class FileChunkingManager:
             file_path: Path to source file
 
         Returns:
-            Qdrant point dictionary
+            Vector point dictionary
         """
         # Use existing metadata creation logic pattern
         # Import here to avoid circular imports
@@ -371,10 +371,10 @@ class FileChunkingManager:
         payload["point_id"] = point_id
         payload["unique_key"] = point_id_data
 
-        # Create Qdrant point
-        qdrant_point = {"id": point_id, "vector": embedding, "payload": payload}
+        # Create vector point
+        vector_point = {"id": point_id, "vector": embedding, "payload": payload}
 
-        return qdrant_point
+        return vector_point
 
     def _process_file_clean_lifecycle(
         self,
@@ -627,7 +627,7 @@ class FileChunkingManager:
                 try:
                     points_data = []
                     for i, point in enumerate(file_points):
-                        # Create proper Qdrant point using existing method
+                        # Create proper Filesystem point using existing method
                         chunk_data = {
                             "text": point["text"],
                             "chunk_index": i,
@@ -637,11 +637,11 @@ class FileChunkingManager:
                             "file_extension": file_path.suffix.lstrip(".") or "txt",
                         }
 
-                        # Use the existing _create_qdrant_point method to ensure proper formatting
-                        qdrant_point = self._create_qdrant_point(
+                        # Use the existing _create_vector_point method to ensure proper formatting
+                        vector_point = self._create_vector_point(
                             chunk_data, point["vector"], point["metadata"], file_path
                         )
-                        points_data.append(qdrant_point)
+                        points_data.append(vector_point)
 
                     # Atomic write to vector storage
                     success = self.vector_store_client.upsert_points(

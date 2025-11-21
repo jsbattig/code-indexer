@@ -49,8 +49,8 @@ class TestUniversalTimestampCollection:
         return mock
 
     @pytest.fixture
-    def mock_qdrant_client(self):
-        """Mock Qdrant client for tests."""
+    def mock_filesystem_client(self):
+        """Mock Filesystem client for tests."""
         mock = Mock()
         mock.upsert_points.return_value = True
         return mock
@@ -82,16 +82,16 @@ class TestUniversalTimestampCollection:
             # Cleanup
             file_path.unlink(missing_ok=True)
 
-    def test_create_qdrant_point_includes_file_last_modified_timestamp(
+    def test_create_filesystem_point_includes_file_last_modified_timestamp(
         self,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
         test_file,
     ):
         """
-        Test that _create_qdrant_point includes file_last_modified timestamp.
+        Test that _create_filesystem_point includes file_last_modified timestamp.
 
         This test MUST FAIL initially because the field doesn't exist yet.
         """
@@ -100,7 +100,7 @@ class TestUniversalTimestampCollection:
         with FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             4,
             mock_slot_tracker,
             codebase_dir=file_path.parent,
@@ -123,22 +123,24 @@ class TestUniversalTimestampCollection:
             }
 
             # This should collect file mtime and add to payload
-            point = manager._create_qdrant_point(chunk, embedding, metadata, file_path)
+            point = manager._create_filesystem_point(
+                chunk, embedding, metadata, file_path
+            )
 
             # MUST FAIL: file_last_modified field doesn't exist yet
             assert "file_last_modified" in point["payload"]
             assert point["payload"]["file_last_modified"] == expected_mtime
 
-    def test_create_qdrant_point_includes_indexed_timestamp(
+    def test_create_filesystem_point_includes_indexed_timestamp(
         self,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
         test_file,
     ):
         """
-        Test that _create_qdrant_point includes indexed_timestamp.
+        Test that _create_filesystem_point includes indexed_timestamp.
 
         This test MUST FAIL initially because the field doesn't exist yet.
         """
@@ -148,7 +150,7 @@ class TestUniversalTimestampCollection:
         with FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             4,
             mock_slot_tracker,
             codebase_dir=file_path.parent,
@@ -170,7 +172,9 @@ class TestUniversalTimestampCollection:
                 "git_available": False,
             }
 
-            point = manager._create_qdrant_point(chunk, embedding, metadata, file_path)
+            point = manager._create_filesystem_point(
+                chunk, embedding, metadata, file_path
+            )
             end_time = time.time()
 
             # MUST FAIL: indexed_timestamp field doesn't exist yet
@@ -182,7 +186,7 @@ class TestUniversalTimestampCollection:
         self,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
         test_file,
     ):
@@ -196,7 +200,7 @@ class TestUniversalTimestampCollection:
         with FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             4,
             mock_slot_tracker,
             codebase_dir=file_path.parent,
@@ -220,7 +224,9 @@ class TestUniversalTimestampCollection:
                 "branch": "main",
             }
 
-            point = manager._create_qdrant_point(chunk, embedding, metadata, file_path)
+            point = manager._create_filesystem_point(
+                chunk, embedding, metadata, file_path
+            )
 
             # MUST FAIL: Universal timestamp fields don't exist yet
             assert "file_last_modified" in point["payload"]
@@ -229,7 +235,11 @@ class TestUniversalTimestampCollection:
             assert isinstance(point["payload"]["indexed_timestamp"], float)
 
     def test_timestamp_collection_handles_permission_errors_gracefully(
-        self, mock_vector_manager, mock_chunker, mock_qdrant_client, mock_slot_tracker
+        self,
+        mock_vector_manager,
+        mock_chunker,
+        mock_filesystem_client,
+        mock_slot_tracker,
     ):
         """
         Test that permission errors during stat() don't break indexing.
@@ -242,7 +252,7 @@ class TestUniversalTimestampCollection:
         with FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             4,
             mock_slot_tracker,
             codebase_dir=file_path.parent,
@@ -265,7 +275,9 @@ class TestUniversalTimestampCollection:
             }
 
             # Should handle stat() failure gracefully
-            point = manager._create_qdrant_point(chunk, embedding, metadata, file_path)
+            point = manager._create_filesystem_point(
+                chunk, embedding, metadata, file_path
+            )
 
             # MUST FAIL: Error handling doesn't exist yet
             assert "file_last_modified" in point["payload"]
@@ -277,7 +289,7 @@ class TestUniversalTimestampCollection:
         self,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
         test_file,
     ):
@@ -317,7 +329,7 @@ class TestUniversalTimestampCollection:
         with FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             4,
             mock_slot_tracker,
             codebase_dir=file_path.parent,
@@ -337,8 +349,8 @@ class TestUniversalTimestampCollection:
             assert result.success
 
             # Verify upsert_points was called with timestamps in all chunks
-            mock_qdrant_client.upsert_points.assert_called_once()
-            call_args = mock_qdrant_client.upsert_points.call_args[1]
+            mock_filesystem_client.upsert_points.assert_called_once()
+            call_args = mock_filesystem_client.upsert_points.call_args[1]
             points = call_args["points"]
 
             # MUST FAIL: Timestamp fields don't exist in payloads yet
@@ -354,7 +366,7 @@ class TestUniversalTimestampCollection:
         self,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
         test_file,
     ):
@@ -373,7 +385,7 @@ class TestUniversalTimestampCollection:
             with FileChunkingManager(
                 mock_vector_manager,
                 mock_chunker,
-                mock_qdrant_client,
+                mock_filesystem_client,
                 4,
                 mock_slot_tracker,
                 codebase_dir=Path(temp_dir),
@@ -395,7 +407,7 @@ class TestUniversalTimestampCollection:
                     "git_available": False,
                 }
 
-                point = manager._create_qdrant_point(
+                point = manager._create_filesystem_point(
                     chunk, embedding, metadata, link_path
                 )
 
@@ -408,7 +420,7 @@ class TestUniversalTimestampCollection:
         self,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
         test_file,
     ):
@@ -422,7 +434,7 @@ class TestUniversalTimestampCollection:
         with FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             4,
             mock_slot_tracker,
             codebase_dir=file_path.parent,
@@ -447,7 +459,9 @@ class TestUniversalTimestampCollection:
                 "git_hash": "blob123",
             }
 
-            point = manager._create_qdrant_point(chunk, embedding, metadata, file_path)
+            point = manager._create_filesystem_point(
+                chunk, embedding, metadata, file_path
+            )
             payload = point["payload"]
 
             # MUST FAIL: New timestamp fields don't exist yet
@@ -467,7 +481,7 @@ class TestUniversalTimestampCollection:
         self,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
         test_file,
     ):
@@ -481,7 +495,7 @@ class TestUniversalTimestampCollection:
         with FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             4,
             mock_slot_tracker,
             codebase_dir=file_path.parent,
@@ -506,7 +520,7 @@ class TestUniversalTimestampCollection:
             # Measure time for multiple timestamp collections
             start_time = time.time()
             for _ in range(100):
-                point = manager._create_qdrant_point(
+                point = manager._create_filesystem_point(
                     chunk, embedding, metadata, file_path
                 )
                 # MUST FAIL: Timestamp fields don't exist yet

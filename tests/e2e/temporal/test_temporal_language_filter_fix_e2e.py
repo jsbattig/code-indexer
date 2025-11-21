@@ -115,16 +115,7 @@ function calculateProduct(a, b) {
         # The actual E2E test would require real services
 
         # Instead, let's verify the metadata is correct using internal APIs
-        from src.code_indexer.config import ConfigManager
-        from src.code_indexer.storage.filesystem_vector_store import (
-            FilesystemVectorStore,
-        )
-
-        config_manager = ConfigManager.create_with_backtrack(repo_path)
         index_path = repo_path / ".code-indexer/index"
-        vector_store = FilesystemVectorStore(
-            base_path=index_path, project_root=repo_path
-        )
 
         # Check if temporal collection exists
         temporal_collection = "code-indexer-temporal"

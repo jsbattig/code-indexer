@@ -38,7 +38,7 @@ class TestAPITimeoutArchitecture:
 
         try:
             # Create a simple task
-            task = VectorTask.create_immutable(
+            VectorTask.create_immutable(
                 task_id="test_1",
                 chunk_texts=["test content"],
                 metadata={},

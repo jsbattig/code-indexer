@@ -95,7 +95,7 @@ class TestBug8ProgressiveResume(unittest.TestCase):
                     indexer.vector_store.load_id_index = MagicMock(return_value=set())
 
                     # Index commits - should skip already completed ones
-                    result = indexer.index_commits(
+                    indexer.index_commits(
                         all_branches=False, max_commits=None, since_date=None
                     )
 

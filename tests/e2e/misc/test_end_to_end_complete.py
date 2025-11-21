@@ -361,15 +361,15 @@ def test_multi_project_isolation_and_search():
 
         assert project1_success > 0, "Project 1 should find calculator-related content"
 
-    # Project 2: Web Server with Ollama for true isolation
+    # Project 2: Web Server with VoyageAI for true isolation
     with shared_container_test_environment(
-        "test_multi_project_isolation_web", EmbeddingProvider.OLLAMA
+        "test_multi_project_isolation_web", EmbeddingProvider.VOYAGE_AI
     ) as project2_path:
         create_test_files_webserver(project2_path)
 
-        print("🔧 Multi-project test: Setup Project 2 (Web Server + Ollama)...")
+        print("🔧 Multi-project test: Setup Project 2 (Web Server + VoyageAI)...")
         init_result2 = subprocess.run(
-            ["cidx", "init", "--force", "--embedding-provider", "ollama"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project2_path,
             capture_output=True,
             text=True,

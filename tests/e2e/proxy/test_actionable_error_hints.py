@@ -172,7 +172,7 @@ class TestActionableErrorHints:
         # Should mention service unavailability or similar reason
         # Looking for keywords that explain WHY grep is needed
         explanation_keywords = [
-            "qdrant",
+            "filesystem",
             "service",
             "unavailable",
             "not available",
@@ -194,7 +194,7 @@ class TestActionableErrorHints:
           • grep -r 'term' repo
           • rg 'term' repo
 
-        Explanation: Qdrant service not available
+        Explanation: Filesystem service not available
         """
         result = subprocess.run(
             ["cidx", "query", "hello"],

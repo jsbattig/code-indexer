@@ -68,7 +68,7 @@ class TemporalSearchService:
         Args:
             config_manager: ConfigManager instance
             project_root: Project root directory
-            vector_store_client: Vector store client (FilesystemVectorStore or QdrantClient), optional for checking index
+            vector_store_client: Vector store client (FilesystemVectorStore or FilesystemClient), optional for checking index
             embedding_provider: Embedding provider for generating query embeddings, optional for checking index
             collection_name: Collection name for vector search, optional for checking index
         """
@@ -427,7 +427,7 @@ class TemporalSearchService:
             # Type: Tuple[List[Dict[str, Any]], Dict[str, Any]] when return_timing=True
             raw_results, _timing_info = search_result  # type: ignore
         else:
-            # QdrantClient: pre-compute embedding (no parallel support yet)
+            # FilesystemVectorStore: pre-compute embedding (no parallel support yet)
             query_embedding = self.embedding_provider.get_embedding(query)
             raw_results = self.vector_store_client.search(
                 query_vector=query_embedding,

@@ -11,186 +11,54 @@ import time
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Generator, Optional
-from contextlib import contextmanager
+from typing import Generator
 
 import pytest
-import requests  # type: ignore
 
 from code_indexer.config import Config
-from code_indexer.services.docker_manager import DockerManager
 
 # Load environment variables from .env files
 from . import load_env  # noqa: F401 - Used for side effects
 
 
-def detect_running_qdrant_port() -> Optional[int]:
-    """Detect the port of a running Qdrant service.
-
-    Returns:
-        Port number if found, None otherwise
-    """
-    # Common Qdrant ports including the current project's assigned port
-    qdrant_ports = [
-        7221,
-        7249,
-        6560,
-        6333,
-        6334,
-        6335,
-        6902,
-    ]  # Add current project port first
-
-    for port in qdrant_ports:
-        try:
-            response = requests.get(f"http://localhost:{port}/cluster", timeout=2)
-            if response.status_code == 200 and "status" in response.json():
-                return port
-        except Exception:
-            continue
-
-    return None
-
-
-def get_test_qdrant_config() -> dict:
-    """Get Qdrant configuration for tests that auto-detects running service.
-
-    Returns:
-        Qdrant config dict with detected host or default
-    """
-    detected_port = detect_running_qdrant_port()
-    if detected_port:
-        return {
-            "host": f"http://localhost:{detected_port}",
-            "collection": "test_collection",
-            "vector_size": 1024,
-        }
-    else:
-        # Fallback to default
-        return {
-            "host": "http://localhost:6333",
-            "collection": "test_collection",
-            "vector_size": 1024,
-        }
-
-
 # Global helper functions for local tmp directory management
 def get_local_tmp_dir() -> Path:
-    """Get the ~/.tmp directory (outside git context, accessible to containers)."""
+    """Get the ~/.tmp directory for test temporary files."""
     home_dir = Path.home()
     tmp_dir = home_dir / ".tmp"
     tmp_dir.mkdir(exist_ok=True)
     return tmp_dir
 
 
-@contextmanager
-def local_temporary_directory(prefix: str = "test_", force_docker: bool = False):
-    """Context manager that creates a temporary directory in ~/.tmp (outside git context).
+def local_temporary_directory(prefix: str = "test_"):
+    """Context manager that creates a temporary directory in ~/.tmp.
 
     Args:
-        prefix: Prefix for the directory name (unused for shared directories)
-        force_docker: If True, use Docker-specific shared directory
-    """
-    # Import here to avoid circular dependency
-    from code_indexer.services.container_manager import get_shared_test_directory
-
-    # Use shared test directory to avoid creating multiple container sets
-    # Docker and Podman get separate directories to avoid permission conflicts
-    temp_path = get_shared_test_directory(force_docker)
-
-    # Ensure directory exists but DON'T delete it if containers are using it
-    temp_path.mkdir(parents=True, exist_ok=True)
-
-    # Only clean up test files, not the entire directory structure
-    # This preserves .code-indexer/qdrant that containers might be using
-    for item in temp_path.iterdir():
-        if item.name != ".code-indexer":
-            if item.is_dir():
-                shutil.rmtree(item, ignore_errors=True)
-            else:
-                item.unlink(missing_ok=True)
-
-    try:
-        yield temp_path
-    finally:
-        # Don't clean up here - let the next test clean it up
-        # This ensures container reuse between tests
-        pass
-
-
-@contextmanager
-def isolated_temporary_directory(test_name: str):
-    """Create completely isolated temp directory per test.
-
-    This fixture provides complete test isolation with zero shared state.
-    Each test gets a unique directory with timestamp and UUID.
-
-    DEPRECATED: Use shared_container_test_environment for better performance.
-
-    Args:
-        test_name: Name of the test (will be made unique)
+        prefix: Prefix for the directory name
 
     Yields:
-        Path: Unique temporary directory for this test
+        Path: Temporary directory path
     """
-    import uuid
-    import time
+    from contextlib import contextmanager
 
-    test_id = f"{test_name}_{uuid.uuid4().hex[:8]}_{int(time.time())}"
-    temp_path = Path.home() / ".tmp" / "isolated_tests" / test_id
-    temp_path.mkdir(parents=True, exist_ok=True)
+    @contextmanager
+    def _context():
+        tmp_dir = get_local_tmp_dir()
+        test_dir = tmp_dir / f"{prefix}{int(time.time() * 1000)}"
+        test_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        yield temp_path
-    finally:
-        # Complete cleanup - no sharing
-        if temp_path.exists():
-            shutil.rmtree(temp_path, ignore_errors=True)
+        try:
+            yield test_dir
+        finally:
+            if test_dir.exists():
+                shutil.rmtree(test_dir, ignore_errors=True)
 
-
-@contextmanager
-def shared_container_test_environment(test_name: str, embedding_provider=None):
-    """Create shared container test environment with complete state cleanup.
-
-    This is the preferred approach for test isolation that provides:
-    - Container reuse for performance (same provider = same containers)
-    - Complete state cleanup between tests (collections + files)
-    - Containers stay running for next test
-
-    Args:
-        test_name: Name of the test (for debugging)
-        embedding_provider: EmbeddingProvider enum (default: VOYAGE_AI)
-
-    Yields:
-        Path: Shared test directory for this embedding provider
-    """
-    # Import here to avoid circular imports
-    from .unit.infrastructure.infrastructure import (
-        SharedContainerManager,
-        EmbeddingProvider,
-    )
-
-    if embedding_provider is None:
-        embedding_provider = EmbeddingProvider.VOYAGE_AI
-
-    manager = SharedContainerManager()
-    test_folder = manager.get_shared_folder_for_provider(embedding_provider, test_name)
-
-    # Complete cleanup BEFORE test runs (not after)
-    manager.complete_cleanup_between_tests(test_folder)
-
-    # Setup shared environment (reuses containers if available)
-    manager.setup_shared_test_environment(test_folder, embedding_provider)
-
-    yield test_folder
-
-    # Note: No cleanup in finally block - leave environment for next test
-    # The next test will clean up before it starts
+    return _context()
 
 
 @pytest.fixture
 def local_tmp_path() -> Generator[Path, None, None]:
-    """Pytest fixture that provides a temporary directory in local .tmp (accessible to containers)."""
+    """Pytest fixture that provides a temporary directory in local .tmp."""
     with local_temporary_directory() as tmp_path:
         yield tmp_path
 
@@ -202,37 +70,10 @@ class E2EServiceManager:
         self.config_dir = config_dir
         self.services_started = False
 
-    def clean_legacy_containers(self, force_docker: bool = False) -> bool:
-        """Clean any legacy containers that might interfere with CoW tests."""
-        try:
-            print("🧹 Cleaning legacy containers...")
-            docker_manager = DockerManager(
-                project_name="test_shared", force_docker=force_docker
-            )
-            # Import here to avoid circular dependency
-            from .unit.infrastructure.infrastructure import get_shared_test_directory
-
-            # Use a consistent path for all test containers to avoid creating multiple container sets
-            shared_test_path = get_shared_test_directory(force_docker)
-            shared_test_path.mkdir(parents=True, exist_ok=True)
-            docker_manager.set_indexing_root(shared_test_path)
-            success = docker_manager.remove_containers(remove_volumes=True)
-            if success:
-                print("✅ Legacy containers cleaned")
-            else:
-                print("⚠️  Failed to clean legacy containers")
-            return bool(success)
-        except Exception as e:
-            print(f"⚠️  Error cleaning legacy containers: {e}")
-            return False
-
     def ensure_services_running(self) -> bool:
         """Ensure services are running, start them if needed."""
         if self.services_started:
             return True
-
-        # Clean legacy containers first to avoid CoW conflicts
-        self.clean_legacy_containers()
 
         # Check if services are already running
         if self._check_services_running():
@@ -324,56 +165,60 @@ def e2e_environment() -> Generator[E2EServiceManager, None, None]:
     Sets up a temporary directory, initializes configuration, and manages
     service lifecycle for all E2E tests in the session.
     """
-    # Skip if we're in automated testing environment or if Docker is not available
+    # Skip if we're in automated testing environment
     if os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
         pytest.skip(
-            "E2E tests require Docker services which are not available in automated testing"
+            "E2E tests require services which are not available in automated testing"
         )
 
     # Create temporary directory for E2E tests in local .tmp
-    with local_temporary_directory("code_indexer_e2e_") as config_dir:
+    tmp_dir = get_local_tmp_dir()
+    config_dir = tmp_dir / f"e2e_test_{int(time.time() * 1000)}"
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    original_cwd = Path.cwd()
+    try:
+        # Change to the temp directory
+        os.chdir(config_dir)
+
+        # Create some basic files for testing
+        (config_dir / "test_file.py").write_text(
+            "def hello_world():\n    return 'Hello, World!'\n"
+        )
+
+        # Initialize configuration
+        print(f"🔧 Setting up E2E environment in {config_dir}")
+        init_result = subprocess.run(
+            ["python3", "-m", "code_indexer.cli", "init", "--force"],
+            cwd=config_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if init_result.returncode != 0:
+            pytest.skip(f"Failed to initialize E2E environment: {init_result.stderr}")
+
+        # Create service manager
+        service_manager = E2EServiceManager(config_dir)
+
+        yield service_manager
+
+    finally:
+        # Cleanup
         try:
-            # Change to the temp directory
-            original_cwd = Path.cwd()
-            os.chdir(config_dir)
+            service_manager.stop_services()
+        except Exception:
+            pass
 
-            # Create some basic files for testing
-            (config_dir / "test_file.py").write_text(
-                "def hello_world():\n    return 'Hello, World!'\n"
-            )
+        try:
+            os.chdir(original_cwd)
+        except Exception:
+            pass
 
-            # Initialize configuration
-            print(f"🔧 Setting up E2E environment in {config_dir}")
-            init_result = subprocess.run(
-                ["python3", "-m", "code_indexer.cli", "init", "--force"],
-                cwd=config_dir,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-
-            if init_result.returncode != 0:
-                pytest.skip(
-                    f"Failed to initialize E2E environment: {init_result.stderr}"
-                )
-
-            # Create service manager and clean legacy containers
-            service_manager = E2EServiceManager(config_dir)
-            service_manager.clean_legacy_containers()
-
-            yield service_manager
-
-        finally:
-            # Cleanup
-            try:
-                service_manager.stop_services()
-            except Exception:
-                pass
-
-            try:
-                os.chdir(original_cwd)
-            except Exception:
-                pass
+        # Clean up temporary directory
+        if config_dir.exists():
+            shutil.rmtree(config_dir, ignore_errors=True)
 
 
 @pytest.fixture
@@ -386,7 +231,7 @@ def e2e_config(e2e_environment: E2EServiceManager) -> Config:
     # Create config for the test environment
     config = Config(
         codebase_dir=e2e_environment.config_dir,
-        embedding_provider="ollama",  # Use Ollama by default for E2E tests
+        embedding_provider="voyage-ai",  # Use VoyageAI for E2E tests
     )
 
     return config
@@ -397,12 +242,12 @@ def e2e_temp_repo() -> Generator[Path, None, None]:
     """Fixture that creates a temporary git repository for E2E testing in local .tmp directory."""
     import shutil
 
-    # Create .tmp directory in the project root (accessible to container)
+    # Create .tmp directory in the project root
     project_root = Path(__file__).parent.parent  # Go up from tests/ to project root
     tmp_dir = project_root / ".tmp"
     tmp_dir.mkdir(exist_ok=True)
 
-    # Use shared test repo directory for container sharing
+    # Use shared test repo directory
     repo_name = "shared_test_repo"
     repo_path = tmp_dir / repo_name
 

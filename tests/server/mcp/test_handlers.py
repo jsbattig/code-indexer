@@ -5,7 +5,7 @@ Tests the MCP tool handler implementations that wrap existing REST endpoints.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 from datetime import datetime, timezone
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.server.mcp import handlers

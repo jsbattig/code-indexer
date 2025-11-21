@@ -161,7 +161,7 @@ def test_reconciliation_uses_collection_path(temp_git_repo):
     index_dir = project_root / ".code-indexer" / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
 
-    vector_store = FilesystemVectorStore(base_path=index_dir, project_root=project_root)
+    FilesystemVectorStore(base_path=index_dir, project_root=project_root)
     collection_name = TemporalIndexer.TEMPORAL_COLLECTION_NAME
     collection_path = index_dir / collection_name
 

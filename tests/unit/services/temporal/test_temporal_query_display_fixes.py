@@ -75,7 +75,7 @@ class TestTemporalQuerySorting:
         }
 
         # Mock vector store to return results in random order
-        # For non-FilesystemVectorStore path (QdrantClient behavior)
+        # For non-FilesystemVectorStore path (FilesystemClient behavior)
         vector_store.search.return_value = [
             result1,
             result2,

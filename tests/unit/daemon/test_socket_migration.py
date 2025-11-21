@@ -3,7 +3,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from code_indexer.daemon.socket_helper import cleanup_old_socket
 

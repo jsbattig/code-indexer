@@ -6,7 +6,7 @@ to 1 API call per file, providing 10-50x throughput improvement.
 
 Tests verify:
 1. Single batch submission replaces individual chunk processing loop
-2. Qdrant point creation from batch results with proper chunk-to-embedding mapping
+2. Filesystem point creation from batch results with proper chunk-to-embedding mapping
 3. File atomicity and error handling (atomic failure, no partial results)
 4. Order preservation and metadata consistency across all chunks
 5. API call reduction measurement (N chunks → 1 API call)
@@ -79,8 +79,8 @@ def mock_vector_manager():
 
 
 @pytest.fixture
-def mock_qdrant_client():
-    """Mock Qdrant client for point storage."""
+def mock_filesystem_client():
+    """Mock Filesystem client for point storage."""
     client = Mock()
     client.upsert_points.return_value = True
     return client
@@ -97,13 +97,17 @@ def mock_slot_tracker():
 
 @pytest.fixture
 def file_chunking_manager(
-    mock_chunker, mock_vector_manager, mock_qdrant_client, mock_slot_tracker, tmp_path
+    mock_chunker,
+    mock_vector_manager,
+    mock_filesystem_client,
+    mock_slot_tracker,
+    tmp_path,
 ):
     """Create FileChunkingManager with mocked dependencies."""
     manager = FileChunkingManager(
         vector_manager=mock_vector_manager,
         chunker=mock_chunker,
-        vector_store_client=mock_qdrant_client,
+        vector_store_client=mock_filesystem_client,
         thread_count=4,
         slot_tracker=mock_slot_tracker,
         codebase_dir=tmp_path,
@@ -180,16 +184,16 @@ class TestFileChunkBatchingOptimization:
         assert result.success is True
         assert result.chunks_processed == 3
 
-    def test_qdrant_point_creation_from_batch_results(
+    def test_filesystem_point_creation_from_batch_results(
         self,
         file_chunking_manager,
-        mock_qdrant_client,
+        mock_filesystem_client,
         standard_metadata,
         tmp_path,
         mock_slot_tracker,
     ):
         """
-        Verify Qdrant points created from batch results with proper chunk-to-embedding mapping.
+        Verify Filesystem points created from batch results with proper chunk-to-embedding mapping.
 
         Critical: chunks[i] ↔ embeddings[i] ↔ points[i] mapping must be preserved.
         """
@@ -206,11 +210,11 @@ class TestFileChunkBatchingOptimization:
             )
             result = future.result()
 
-        # Verify Qdrant upsert was called
-        assert mock_qdrant_client.upsert_points.called
+        # Verify Filesystem upsert was called
+        assert mock_filesystem_client.upsert_points.called
 
         # Analyze the points that were created
-        upsert_call = mock_qdrant_client.upsert_points.call_args
+        upsert_call = mock_filesystem_client.upsert_points.call_args
         points_data = upsert_call.kwargs["points"]
 
         # Verify correct number of points
@@ -263,7 +267,7 @@ class TestFileChunkBatchingOptimization:
         self,
         file_chunking_manager,
         mock_vector_manager,
-        mock_qdrant_client,
+        mock_filesystem_client,
         tmp_path,
         mock_slot_tracker,
     ):
@@ -314,15 +318,15 @@ class TestFileChunkBatchingOptimization:
             or result.error == "No valid embeddings"
         )
 
-        # Verify no partial data written to Qdrant
+        # Verify no partial data written to Filesystem
         assert (
-            not mock_qdrant_client.upsert_points.called
-        ), "No data should be written to Qdrant on batch failure"
+            not mock_filesystem_client.upsert_points.called
+        ), "No data should be written to Filesystem on batch failure"
 
     def test_order_preservation_and_metadata_consistency(
         self,
         file_chunking_manager,
-        mock_qdrant_client,
+        mock_filesystem_client,
         standard_metadata,
         tmp_path,
         mock_slot_tracker,
@@ -345,7 +349,7 @@ class TestFileChunkBatchingOptimization:
             result = future.result()
 
         # Extract created points
-        points_data = mock_qdrant_client.upsert_points.call_args.kwargs["points"]
+        points_data = mock_filesystem_client.upsert_points.call_args.kwargs["points"]
 
         # Verify strict order preservation
         for i, point in enumerate(points_data):

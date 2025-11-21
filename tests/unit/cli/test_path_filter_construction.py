@@ -1,7 +1,7 @@
 """
 Test-driven development for filter construction with path exclusions.
 
-Tests the construction of Qdrant filter conditions for path exclusions:
+Tests the construction of Filesystem filter conditions for path exclusions:
 - Single exclusion pattern
 - Multiple exclusion patterns
 - Combining with must conditions

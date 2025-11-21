@@ -23,11 +23,10 @@ class FixedSizeChunker:
     4. No boundary detection - cuts at exact character positions
     5. No parsing - pure arithmetic operations
 
-    Model-specific chunk sizes:
+    Model-specific chunk sizes (VoyageAI only in v8.0+):
     - voyage-code-3: 4096 characters (1024 tokens, research optimal)
     - voyage-code-2: 4096 characters (1024 tokens, research optimal)
     - voyage-large-2: 4096 characters (1024 tokens, research optimal)
-    - nomic-embed-text: 2048 characters (512 tokens, Ollama limitation)
     - default: 1000 characters (conservative fallback)
     """
 
@@ -38,7 +37,6 @@ class FixedSizeChunker:
         "voyage-large-2": 4096,  # Large context models, 1024 tokens optimal
         "voyage-3": 4096,  # General purpose, 1024 tokens optimal
         "voyage-3-large": 4096,  # Large model, 1024 tokens optimal
-        "nomic-embed-text": 2048,  # Ollama 2K token limitation, 512 tokens safe
         "default": 1000,  # Conservative fallback for unknown models
     }
 
@@ -56,16 +54,11 @@ class FixedSizeChunker:
         # Determine chunk size based on embedding model
         if hasattr(config, "embedding_provider"):
             # Full Config passed - can determine model-aware chunk size
+            # Only VoyageAI supported in v8.0+
             embedding_provider = config.embedding_provider
             if embedding_provider == "voyage-ai":
                 # Get specific VoyageAI model
                 model_name = config.voyage_ai.model
-                self.chunk_size = self.MODEL_CHUNK_SIZES.get(
-                    model_name, self.MODEL_CHUNK_SIZES["default"]
-                )
-            elif embedding_provider == "ollama":
-                # Get specific Ollama model
-                model_name = config.ollama.model
                 self.chunk_size = self.MODEL_CHUNK_SIZES.get(
                     model_name, self.MODEL_CHUNK_SIZES["default"]
                 )

@@ -74,7 +74,7 @@ class TestTemporalIndexerLockContention:
         # Track whether deepcopy is called while lock is held
         deepcopy_called_with_lock = []
         callback_called_with_lock = []
-        locks_held = threading.local()  # Track locks per thread
+        threading.local()  # Track locks per thread
 
         # Wrap copy.deepcopy to detect if called with lock
         original_deepcopy = copy.deepcopy

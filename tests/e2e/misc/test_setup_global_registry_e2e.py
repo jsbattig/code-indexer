@@ -276,7 +276,7 @@ class TestSetupGlobalRegistryCommand:
         """Test that error messages reference both init --setup-global-registry and setup-global-registry."""
         # This test needs container services since it runs 'start' command
         with shared_container_test_environment(
-            "test_error_messages_mention_both_commands", EmbeddingProvider.OLLAMA
+            "test_error_messages_mention_both_commands", EmbeddingProvider.VOYAGE
         ) as project_path:
             # Now try to start services (this should mention registry setup)
             result = subprocess.run(

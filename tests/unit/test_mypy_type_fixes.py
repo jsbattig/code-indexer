@@ -25,11 +25,11 @@ class TestServerAppTypeErrors(unittest.TestCase):
         }
 
         # These operations should work with proper typing
-        health_info["services"]["qdrant"] = {
+        health_info["services"]["filesystem"] = {
             "status": "healthy",
             "port": 6333,
         }
-        health_info["services"]["ollama"] = {
+        health_info["services"]["voyage"] = {
             "status": "healthy",
             "port": 11434,
         }

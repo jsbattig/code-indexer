@@ -280,12 +280,12 @@ class FileFinder:
             except OSError:
                 continue
 
-    def find_indexed_files(self, qdrant_client) -> set:
+    def find_indexed_files(self, vector_store_client) -> set:
         """Get set of all file paths currently in the index."""
         try:
             # Get all points from the collection
-            response = qdrant_client.client.post(
-                f"/collections/{qdrant_client.config.collection}/points/scroll",
+            response = vector_store_client.client.post(
+                f"/collections/{vector_store_client.config.collection}/points/scroll",
                 json={
                     "limit": 10000,  # Large number to get all points
                     "with_payload": True,
@@ -305,9 +305,9 @@ class FileFinder:
         except Exception:
             return set()
 
-    def find_deleted_files(self, qdrant_client) -> set:
+    def find_deleted_files(self, vector_store_client) -> set:
         """Find files that are indexed but no longer exist on filesystem."""
-        indexed_files = self.find_indexed_files(qdrant_client)
+        indexed_files = self.find_indexed_files(vector_store_client)
         current_files = set()
 
         # Get current files as relative paths

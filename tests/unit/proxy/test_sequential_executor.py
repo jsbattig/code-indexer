@@ -420,7 +420,7 @@ class TestFormattedErrorOutput:
     def test_formatted_error_for_failure(self, mock_print, mock_run):
         """Verify formatted error shown for failed repository."""
         mock_run.return_value = Mock(
-            stdout="", stderr="Cannot connect to Qdrant", returncode=1
+            stdout="", stderr="Cannot connect to Filesystem", returncode=1
         )
 
         executor = SequentialCommandExecutor(["backend/auth-service"])
@@ -539,7 +539,7 @@ class TestDetailedErrorReporting:
     def test_detailed_error_format_at_end(self, mock_print, mock_run):
         """Verify detailed errors shown at end with formatting."""
         mock_run.return_value = Mock(
-            stdout="", stderr="Cannot connect to Qdrant service", returncode=1
+            stdout="", stderr="Cannot connect to Filesystem service", returncode=1
         )
 
         executor = SequentialCommandExecutor(["backend/auth-service"])

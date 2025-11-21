@@ -27,7 +27,7 @@ class GitAwareDocumentProcessor(DocumentProcessor):
         self,
         config: Config,
         embedding_provider: EmbeddingProvider,
-        vector_store_client: Any,  # QdrantClient or FilesystemVectorStore
+        vector_store_client: Any,  # FilesystemVectorStore (vector store backend)
     ):
         super().__init__(config, embedding_provider, vector_store_client)
         self.file_identifier = FileIdentifier(config.codebase_dir, config)
@@ -37,7 +37,7 @@ class GitAwareDocumentProcessor(DocumentProcessor):
         """
         Normalize file path to relative for portable database storage.
 
-        CRITICAL FOR COW CLONING: All paths stored in Qdrant must be relative
+        CRITICAL FOR COW CLONING: All paths stored in Filesystem must be relative
         to codebase_dir to ensure database portability across different filesystem
         locations (CoW clones, repository moves, etc.).
 
@@ -100,7 +100,7 @@ class GitAwareDocumentProcessor(DocumentProcessor):
                 future = vector_manager.submit_chunk(chunk["text"], chunk_metadata)
                 chunk_futures.append(future)
 
-            # Step 3: Collect results and create Qdrant points (main thread)
+            # Step 3: Collect results and create Filesystem points (main thread)
             points = []
             for future in chunk_futures:
                 try:
@@ -185,8 +185,8 @@ class GitAwareDocumentProcessor(DocumentProcessor):
                         file_metadata, chunk["chunk_index"]
                     )
 
-                    # Create Qdrant point with the calculated embedding
-                    point = self.qdrant_client.create_point(
+                    # Create Filesystem point with the calculated embedding
+                    point = self.vector_store_client.create_point(
                         point_id=point_id,
                         vector=vector_result.embedding,
                         payload=payload,
@@ -250,7 +250,9 @@ class GitAwareDocumentProcessor(DocumentProcessor):
         if not embedding:
             return False
 
-        expected_size = self.config.qdrant.vector_size
+        # Get expected dimensions from embedding provider
+        model_info = self.embedding_provider.get_model_info()
+        expected_size = model_info.get("dimensions", 1024)
         actual_size = len(embedding)
 
         if actual_size != expected_size:

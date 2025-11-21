@@ -209,7 +209,6 @@ class {prefix.capitalize()}Class{i}:
         assert result.returncode == 0
 
         # Check for incremental update in output
-        output = result.stdout
         # Should be fast for incremental temporal (adjusted for CI)
         assert (
             incremental_time < 15

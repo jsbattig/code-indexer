@@ -36,9 +36,9 @@ class TestAdaptedStatusCommand:
         """Test that status command routes to local mode implementation when in local mode."""
         # Create valid local config
         local_config = {
-            "ollama": {"host": "http://localhost:11434", "model": "nomic-embed-text"},
-            "qdrant": {"host": "http://localhost:6333"},
-            "ports": {"ollama_port": 11434, "qdrant_port": 6333},
+            "voyage": {"host": "http://localhost:11434", "model": "nomic-embed-text"},
+            "filesystem": {"host": "http://localhost:6333"},
+            "ports": {"voyage_port": 11434, "filesystem_port": 6333},
         }
         config_path = temp_project_root / ".code-indexer" / "config.json"
         with open(config_path, "w") as f:
@@ -119,7 +119,7 @@ class TestAdaptedStatusCommand:
     ):
         """Test that status command preserves existing CLI flags when routing."""
         # Create valid local config
-        local_config = {"ollama": {"host": "http://localhost:11434"}}
+        local_config = {"voyage": {"host": "http://localhost:11434"}}
         config_path = temp_project_root / ".code-indexer" / "config.json"
         with open(config_path, "w") as f:
             json.dump(local_config, f)
@@ -169,8 +169,8 @@ class TestAdaptedUninstallCommand:
         """Test that uninstall command routes to local mode implementation when in local mode."""
         # Create valid local config
         local_config = {
-            "ollama": {"host": "http://localhost:11434"},
-            "qdrant": {"host": "http://localhost:6333"},
+            "voyage": {"host": "http://localhost:11434"},
+            "filesystem": {"host": "http://localhost:6333"},
         }
         config_path = temp_project_root / ".code-indexer" / "config.json"
         with open(config_path, "w") as f:
@@ -229,7 +229,7 @@ class TestAdaptedUninstallCommand:
     ):
         """Test that uninstall command preserves existing CLI flags when routing."""
         # Create valid local config
-        local_config = {"ollama": {"host": "http://localhost:11434"}}
+        local_config = {"voyage": {"host": "http://localhost:11434"}}
         config_path = temp_project_root / ".code-indexer" / "config.json"
         with open(config_path, "w") as f:
             json.dump(local_config, f)
@@ -311,7 +311,7 @@ class TestModeDetectionIntegration:
     def test_command_routing_uses_mode_detection(self, temp_project_root):
         """Test that command routing integrates with mode detection system."""
         # Create conflicting configs to test precedence
-        local_config = {"ollama": {"host": "http://localhost:11434"}}
+        local_config = {"voyage": {"host": "http://localhost:11434"}}
         local_config_path = temp_project_root / ".code-indexer" / "config.json"
         with open(local_config_path, "w") as f:
             json.dump(local_config, f)

@@ -114,10 +114,8 @@ class TestConfigurationCleanness:
         # Check main config fields
         all_field_names.update(Config.model_fields.keys())
 
-        # Check nested config fields
+        # Check nested config fields (v8.0+: VoyageAI only, filesystem backend only)
         all_field_names.update(type(config.indexing).model_fields.keys())
-        all_field_names.update(type(config.qdrant).model_fields.keys())
-        all_field_names.update(type(config.ollama).model_fields.keys())
         all_field_names.update(type(config.voyage_ai).model_fields.keys())
 
         # Should not have any semantic-related fields
@@ -221,17 +219,17 @@ class TestModelAwareChunking:
         assert chunker.overlap_size == 614  # 15% of 4096
         assert chunker.step_size == 3482  # 4096 - 614
 
-    def test_nomic_embed_text_uses_2048_chunk_size(self):
-        """Verify nomic-embed-text uses 2048 character chunks."""
+    def test_voyage_large_2_uses_4096_chunk_size(self):
+        """Verify voyage-large-2 uses 4096 character chunks."""
         config = Config()
-        config.embedding_provider = "ollama"
-        config.ollama.model = "nomic-embed-text"
+        config.embedding_provider = "voyage-ai"
+        config.voyage_ai.model = "voyage-large-2"
 
         chunker = FixedSizeChunker(config)
 
-        assert chunker.chunk_size == 2048  # Optimized for nomic-embed-text
-        assert chunker.overlap_size == 307  # 15% of 2048
-        assert chunker.step_size == 1741  # 2048 - 307
+        assert chunker.chunk_size == 4096  # Optimized for voyage-large-2
+        assert chunker.overlap_size == 614  # 15% of 4096
+        assert chunker.step_size == 3482  # 4096 - 614
 
     def test_unknown_model_uses_default_size(self):
         """Verify unknown models use default 1000 character chunks."""
@@ -255,28 +253,28 @@ class TestModelAwareChunking:
         assert chunker.step_size == 850  # 1000 - 150
 
     def test_model_aware_chunking_actually_produces_different_sizes(self):
-        """Verify that different models actually produce different chunk sizes."""
+        """Verify that different VoyageAI models produce expected chunk sizes."""
         test_text = "a" * 10000  # Large enough for multiple chunks
 
-        # VoyageAI config
-        config_voyage = Config()
-        config_voyage.embedding_provider = "voyage-ai"
-        config_voyage.voyage_ai.model = "voyage-code-3"
-        chunker_voyage = FixedSizeChunker(config_voyage)
+        # voyage-code-3 config (4096 chunk size)
+        config_voyage_code = Config()
+        config_voyage_code.embedding_provider = "voyage-ai"
+        config_voyage_code.voyage_ai.model = "voyage-code-3"
+        chunker_voyage_code = FixedSizeChunker(config_voyage_code)
 
-        # Ollama config
-        config_ollama = Config()
-        config_ollama.embedding_provider = "ollama"
-        config_ollama.ollama.model = "nomic-embed-text"
-        chunker_ollama = FixedSizeChunker(config_ollama)
+        # Unknown model config (1000 default chunk size)
+        config_unknown = Config()
+        config_unknown.embedding_provider = "voyage-ai"
+        config_unknown.voyage_ai.model = "unknown-model-xyz"
+        chunker_unknown = FixedSizeChunker(config_unknown)
 
         # Get chunks from both
-        voyage_chunks = chunker_voyage.chunk_text(test_text)
-        ollama_chunks = chunker_ollama.chunk_text(test_text)
+        voyage_chunks = chunker_voyage_code.chunk_text(test_text)
+        unknown_chunks = chunker_unknown.chunk_text(test_text)
 
-        # VoyageAI should produce larger chunks
+        # voyage-code-3 should produce larger chunks
         assert len(voyage_chunks[0]["text"]) == 4096
-        assert len(ollama_chunks[0]["text"]) == 2048
+        assert len(unknown_chunks[0]["text"]) == 1000
 
-        # VoyageAI should produce fewer total chunks (larger chunk size)
-        assert len(voyage_chunks) < len(ollama_chunks)
+        # voyage-code-3 should produce fewer total chunks (larger chunk size)
+        assert len(voyage_chunks) < len(unknown_chunks)

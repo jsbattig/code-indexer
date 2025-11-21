@@ -156,8 +156,8 @@ class FileReorganizer:
                 ],
                 "services": [
                     r"test_.*service.*integration.*\.py$",
-                    r"test_qdrant.*integration.*\.py$",
-                    r"test_qdrant_service_config_integration\.py$",
+                    r"test_filesystem.*integration.*\.py$",
+                    r"test_filesystem_service_config_integration\.py$",
                 ],
             },
             # E2E test patterns

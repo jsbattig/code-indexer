@@ -2,7 +2,7 @@
 Structured indexing progress logging for reliable cancellation and resume.
 
 This module provides detailed logging of indexing progress within the .code-indexer
-folder to enable efficient resume operations without expensive Qdrant scans.
+folder to enable efficient resume operations without expensive Filesystem scans.
 """
 
 import json
@@ -37,11 +37,11 @@ class FileIndexingRecord:
     error_message: Optional[str] = None
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
-    qdrant_point_ids: Optional[List[str]] = None  # Track Qdrant vector record IDs
+    vector_point_ids: Optional[List[str]] = None  # Track vector store record IDs
 
     def __post_init__(self):
-        if self.qdrant_point_ids is None:
-            self.qdrant_point_ids = []
+        if self.vector_point_ids is None:
+            self.vector_point_ids = []
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -89,7 +89,7 @@ class IndexingProgressLog:
     Structured indexing progress logger for reliable cancellation and resume.
 
     Maintains detailed file-by-file progress in .code-indexer/indexing_progress.json
-    to enable efficient resume operations without scanning Qdrant.
+    to enable efficient resume operations without scanning Filesystem.
     """
 
     def __init__(self, config_dir: Path):
@@ -159,17 +159,17 @@ class IndexingProgressLog:
         self,
         file_path: str,
         chunks_created: int = 0,
-        qdrant_point_ids: Optional[List[str]] = None,
+        vector_point_ids: Optional[List[str]] = None,
     ) -> None:
-        """Mark a file as successfully completed with Qdrant record IDs."""
+        """Mark a file as successfully completed with vector store record IDs."""
         if file_path in self.file_records:
             record = self.file_records[file_path]
             record.status = FileIndexingStatus.COMPLETED
             record.chunks_created = chunks_created
             record.completed_at = time.time()
 
-            if qdrant_point_ids:
-                record.qdrant_point_ids = qdrant_point_ids
+            if vector_point_ids:
+                record.vector_point_ids = vector_point_ids
 
             if record.started_at:
                 record.processing_time = record.completed_at - record.started_at
@@ -180,13 +180,13 @@ class IndexingProgressLog:
 
             self._save_progress()
 
-            qdrant_info = (
-                f" -> Qdrant IDs: {qdrant_point_ids[:3]}{'...' if len(qdrant_point_ids) > 3 else ''}"
-                if qdrant_point_ids
+            vector_info = (
+                f" -> Vector IDs: {vector_point_ids[:3]}{'...' if len(vector_point_ids) > 3 else ''}"
+                if vector_point_ids
                 else ""
             )
             logger.debug(
-                f"Completed file: {file_path} ({chunks_created} chunks){qdrant_info}"
+                f"Completed file: {file_path} ({chunks_created} chunks){vector_info}"
             )
 
     def mark_file_failed(self, file_path: str, error_message: str) -> None:

@@ -1,4 +1,4 @@
-"""Tests for CLI init command --qdrant-segment-size option."""
+"""Tests for CLI init command --filesystem-segment-size option."""
 
 import json
 import subprocess
@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 class TestCLIInitSegmentSize:
-    """Test CLI init command --qdrant-segment-size option."""
+    """Test CLI init command --filesystem-segment-size option."""
 
     def run_init_command(self, args, cwd=None, expect_failure=False):
         """Run init command and return result."""
@@ -32,8 +32,8 @@ class TestCLIInitSegmentSize:
 
         return result
 
-    def test_init_with_qdrant_segment_size_option_exists(self):
-        """Test that --qdrant-segment-size option exists in init command help."""
+    def test_init_with_filesystem_segment_size_option_exists(self):
+        """Test that --filesystem-segment-size option exists in init command help."""
         result = subprocess.run(
             [sys.executable, "-m", "code_indexer.cli", "init", "--help"],
             capture_output=True,
@@ -42,11 +42,11 @@ class TestCLIInitSegmentSize:
         )
 
         assert result.returncode == 0
-        assert "--qdrant-segment-size" in result.stdout
-        assert "Qdrant segment size in MB" in result.stdout
+        assert "--filesystem-segment-size" in result.stdout
+        assert "Filesystem segment size in MB" in result.stdout
 
-    def test_init_qdrant_segment_size_default_100mb(self):
-        """Test that --qdrant-segment-size has default of 100 MB."""
+    def test_init_filesystem_segment_size_default_100mb(self):
+        """Test that --filesystem-segment-size has default of 100 MB."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_dir = Path(tmp_dir)
             self.run_init_command(["--force"], cwd=test_dir)
@@ -58,16 +58,16 @@ class TestCLIInitSegmentSize:
             with open(config_file) as f:
                 config = json.load(f)
 
-            assert config["qdrant"]["max_segment_size_kb"] == 102400
+            assert config["filesystem"]["max_segment_size_kb"] == 102400
 
-    def test_init_qdrant_segment_size_custom_value(self):
+    def test_init_filesystem_segment_size_custom_value(self):
         """Test setting custom segment size via CLI option."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_dir = Path(tmp_dir)
 
             # Test 50 MB = 51200 KB
             self.run_init_command(
-                ["--qdrant-segment-size", "50", "--force"], cwd=test_dir
+                ["--filesystem-segment-size", "50", "--force"], cwd=test_dir
             )
 
             config_file = test_dir / ".code-indexer" / "config.json"
@@ -76,9 +76,9 @@ class TestCLIInitSegmentSize:
             with open(config_file) as f:
                 config = json.load(f)
 
-            assert config["qdrant"]["max_segment_size_kb"] == 51200
+            assert config["filesystem"]["max_segment_size_kb"] == 51200
 
-    def test_init_qdrant_segment_size_mb_to_kb_conversion(self):
+    def test_init_filesystem_segment_size_mb_to_kb_conversion(self):
         """Test conversion from MB input to KB storage."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_dir = Path(tmp_dir)
@@ -95,7 +95,7 @@ class TestCLIInitSegmentSize:
                 subdir.mkdir()
 
                 self.run_init_command(
-                    ["--qdrant-segment-size", str(mb_input), "--force"], cwd=subdir
+                    ["--filesystem-segment-size", str(mb_input), "--force"], cwd=subdir
                 )
 
                 config_file = subdir / ".code-indexer" / "config.json"
@@ -104,37 +104,37 @@ class TestCLIInitSegmentSize:
                 with open(config_file) as f:
                     config = json.load(f)
 
-                assert config["qdrant"]["max_segment_size_kb"] == expected_kb
+                assert config["filesystem"]["max_segment_size_kb"] == expected_kb
 
-    def test_init_qdrant_segment_size_validation_positive(self):
+    def test_init_filesystem_segment_size_validation_positive(self):
         """Test that segment size must be positive."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_dir = Path(tmp_dir)
 
             # Zero should be rejected
             result = self.run_init_command(
-                ["--qdrant-segment-size", "0", "--force"],
+                ["--filesystem-segment-size", "0", "--force"],
                 cwd=test_dir,
                 expect_failure=True,
             )
-            assert "Qdrant segment size must be positive" in result.stdout
+            assert "Filesystem segment size must be positive" in result.stdout
 
             # Negative should be rejected
             result = self.run_init_command(
-                ["--qdrant-segment-size", "-5", "--force"],
+                ["--filesystem-segment-size", "-5", "--force"],
                 cwd=test_dir,
                 expect_failure=True,
             )
-            assert "Qdrant segment size must be positive" in result.stdout
+            assert "Filesystem segment size must be positive" in result.stdout
 
-    def test_init_qdrant_segment_size_combines_with_other_options(self):
-        """Test that --qdrant-segment-size works with other init options."""
+    def test_init_filesystem_segment_size_combines_with_other_options(self):
+        """Test that --filesystem-segment-size works with other init options."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_dir = Path(tmp_dir)
 
             self.run_init_command(
                 [
-                    "--qdrant-segment-size",
+                    "--filesystem-segment-size",
                     "75",
                     "--embedding-provider",
                     "voyage-ai",
@@ -152,7 +152,7 @@ class TestCLIInitSegmentSize:
                 config = json.load(f)
 
             # Check segment size was set
-            assert config["qdrant"]["max_segment_size_kb"] == 76800  # 75 MB
+            assert config["filesystem"]["max_segment_size_kb"] == 76800  # 75 MB
 
             # Check other options were also applied
             assert config["embedding_provider"] == "voyage-ai"

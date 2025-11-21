@@ -253,10 +253,10 @@ class TestLineNumbersInProcessorMetadata:
         config.include_patterns = ["*"]
 
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
         # Test that DocumentProcessor can be instantiated with line tracking
-        DocumentProcessor(config, embedding_provider, qdrant_client)
+        DocumentProcessor(config, embedding_provider, filesystem_client)
 
 
 class TestMultiLanguageLineNumberAccuracy:

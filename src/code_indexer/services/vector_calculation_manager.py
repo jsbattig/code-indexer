@@ -2,7 +2,7 @@
 Multi-threaded vector calculation manager for parallel embedding computation.
 
 Provides thread pool management for calculating embeddings in parallel while keeping
-file I/O, chunking, and Qdrant operations in the main thread.
+file I/O, chunking, and Filesystem operations in the main thread.
 """
 
 import logging

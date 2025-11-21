@@ -46,10 +46,10 @@ class TestRealWorldPathWalking:
         parent_config_dir.mkdir(exist_ok=True)
         parent_config = {
             "codebase_dir": ".",
-            "embedding_provider": "ollama",
+            "embedding_provider": "voyage",
             "project_ports": {
-                "qdrant_port": 6333,
-                "ollama_port": 11434,
+                "filesystem_port": 6333,
+                "voyage_port": 11434,
                 "data_cleaner_port": 8091,
             },
         }
@@ -63,10 +63,10 @@ class TestRealWorldPathWalking:
         micro_config_dir.mkdir(exist_ok=True)
         micro_config = {
             "codebase_dir": ".",
-            "embedding_provider": "ollama",
+            "embedding_provider": "voyage",
             "project_ports": {
-                "qdrant_port": 7333,
-                "ollama_port": 12434,
+                "filesystem_port": 7333,
+                "voyage_port": 12434,
                 "data_cleaner_port": 9091,
             },
         }
@@ -114,9 +114,9 @@ class TestRealWorldPathWalking:
                 config = config_manager.load()
 
                 # This should be microservice config (port 7333), not parent config (port 6333)
-                assert config.project_ports.qdrant_port == 7333, (
+                assert config.project_ports.filesystem_port == 7333, (
                     f"CLI should use microservice config (port 7333), but manual load shows "
-                    f"port {config.project_ports.qdrant_port}. This means CLI and manual loading "
+                    f"port {config.project_ports.filesystem_port}. This means CLI and manual loading "
                     f"found different configs!"
                 )
 
@@ -159,8 +159,8 @@ class TestRealWorldPathWalking:
             config = config_manager.load()
 
             assert (
-                config.project_ports.qdrant_port == 7333
-            ), f"Should load microservice config (port 7333), got {config.project_ports.qdrant_port}"
+                config.project_ports.filesystem_port == 7333
+            ), f"Should load microservice config (port 7333), got {config.project_ports.filesystem_port}"
 
         finally:
             os.chdir(original_cwd)
@@ -189,7 +189,7 @@ class TestRealWorldPathWalking:
             # Load and verify
             config = config_manager.load()
             assert (
-                config.project_ports.qdrant_port == 7333
+                config.project_ports.filesystem_port == 7333
             ), "Should find microservice config from deeply nested directory"
 
         finally:

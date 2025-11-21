@@ -7,7 +7,7 @@ to CLI argument construction for diff_type, author, and chunk_type.
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 import pytest
 
 from src.code_indexer.server.query.semantic_query_manager import SemanticQueryManager

@@ -158,9 +158,9 @@ class TestRestAPIPhase1ParameterWiring:
         sig = inspect.signature(SemanticQueryManager.query_user_repositories)
         params = sig.parameters
 
-        assert 'exclude_language' in params, (
-            "SemanticQueryManager.query_user_repositories must accept exclude_language parameter"
-        )
+        assert (
+            "exclude_language" in params
+        ), "SemanticQueryManager.query_user_repositories must accept exclude_language parameter"
 
     def test_semantic_query_manager_accepts_exclude_path(self):
         """
@@ -173,9 +173,9 @@ class TestRestAPIPhase1ParameterWiring:
         sig = inspect.signature(SemanticQueryManager.query_user_repositories)
         params = sig.parameters
 
-        assert 'exclude_path' in params, (
-            "SemanticQueryManager.query_user_repositories must accept exclude_path parameter"
-        )
+        assert (
+            "exclude_path" in params
+        ), "SemanticQueryManager.query_user_repositories must accept exclude_path parameter"
 
     def test_semantic_query_manager_accepts_accuracy(self):
         """
@@ -188,9 +188,9 @@ class TestRestAPIPhase1ParameterWiring:
         sig = inspect.signature(SemanticQueryManager.query_user_repositories)
         params = sig.parameters
 
-        assert 'accuracy' in params, (
-            "SemanticQueryManager.query_user_repositories must accept accuracy parameter"
-        )
+        assert (
+            "accuracy" in params
+        ), "SemanticQueryManager.query_user_repositories must accept accuracy parameter"
 
     def test_tantivy_index_manager_accepts_use_regex(self):
         """
@@ -203,9 +203,9 @@ class TestRestAPIPhase1ParameterWiring:
         sig = inspect.signature(TantivyIndexManager.search)
         params = sig.parameters
 
-        assert 'use_regex' in params, (
-            "TantivyIndexManager.search must accept use_regex parameter"
-        )
+        assert (
+            "use_regex" in params
+        ), "TantivyIndexManager.search must accept use_regex parameter"
 
     def test_tantivy_index_manager_accepts_exclude_languages(self):
         """
@@ -218,9 +218,9 @@ class TestRestAPIPhase1ParameterWiring:
         sig = inspect.signature(TantivyIndexManager.search)
         params = sig.parameters
 
-        assert 'exclude_languages' in params, (
-            "TantivyIndexManager.search must accept exclude_languages parameter"
-        )
+        assert (
+            "exclude_languages" in params
+        ), "TantivyIndexManager.search must accept exclude_languages parameter"
 
     def test_tantivy_index_manager_accepts_exclude_paths(self):
         """
@@ -233,9 +233,9 @@ class TestRestAPIPhase1ParameterWiring:
         sig = inspect.signature(TantivyIndexManager.search)
         params = sig.parameters
 
-        assert 'exclude_paths' in params, (
-            "TantivyIndexManager.search must accept exclude_paths parameter"
-        )
+        assert (
+            "exclude_paths" in params
+        ), "TantivyIndexManager.search must accept exclude_paths parameter"
 
     def test_rest_api_query_request_schema_has_phase1_parameters(self):
         """
@@ -247,10 +247,10 @@ class TestRestAPIPhase1ParameterWiring:
         schema = SemanticQueryRequest.model_fields
 
         # Verify Phase 1 parameters exist
-        assert 'exclude_language' in schema, "exclude_language must be in schema"
-        assert 'exclude_path' in schema, "exclude_path must be in schema"
-        assert 'accuracy' in schema, "accuracy must be in schema"
-        assert 'regex' in schema, "regex must be in schema"
+        assert "exclude_language" in schema, "exclude_language must be in schema"
+        assert "exclude_path" in schema, "exclude_path must be in schema"
+        assert "accuracy" in schema, "accuracy must be in schema"
+        assert "regex" in schema, "regex must be in schema"
 
 
 class TestRestAPIPhase1FunctionalBehavior:
@@ -317,9 +317,9 @@ class TestRestAPIPhase1FunctionalBehavior:
             # Verify exclude_language was passed to query manager
             mock_query.assert_called_once()
             call_kwargs = mock_query.call_args[1]
-            assert call_kwargs["exclude_language"] == "javascript", (
-                "exclude_language parameter not passed correctly"
-            )
+            assert (
+                call_kwargs["exclude_language"] == "javascript"
+            ), "exclude_language parameter not passed correctly"
 
     def test_exclude_path_filters_test_directories(self, test_client: TestClient):
         """
@@ -368,9 +368,9 @@ class TestRestAPIPhase1FunctionalBehavior:
             # Verify exclude_path was passed to query manager
             mock_query.assert_called_once()
             call_kwargs = mock_query.call_args[1]
-            assert call_kwargs["exclude_path"] == "*/tests/*", (
-                "exclude_path parameter not passed correctly"
-            )
+            assert (
+                call_kwargs["exclude_path"] == "*/tests/*"
+            ), "exclude_path parameter not passed correctly"
 
     def test_accuracy_parameter_passed_to_semantic_search(
         self, test_client: TestClient
@@ -420,9 +420,9 @@ class TestRestAPIPhase1FunctionalBehavior:
             # Verify accuracy was passed to query manager
             mock_query.assert_called_once()
             call_kwargs = mock_query.call_args[1]
-            assert call_kwargs["accuracy"] == "high", (
-                "accuracy parameter not passed correctly"
-            )
+            assert (
+                call_kwargs["accuracy"] == "high"
+            ), "accuracy parameter not passed correctly"
 
     def test_regex_enables_pattern_matching_in_fts(self, test_client: TestClient):
         """
@@ -482,9 +482,9 @@ class TestRestAPIPhase1FunctionalBehavior:
                 # Verify use_regex was passed to Tantivy
                 if mock_tantivy.search.called:
                     call_kwargs = mock_tantivy.search.call_args[1]
-                    assert call_kwargs.get("use_regex") is True, (
-                        "use_regex parameter not passed correctly to Tantivy"
-                    )
+                    assert (
+                        call_kwargs.get("use_regex") is True
+                    ), "use_regex parameter not passed correctly to Tantivy"
 
     def test_combined_phase1_parameters(self, test_client: TestClient):
         """

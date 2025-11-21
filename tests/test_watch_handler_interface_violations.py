@@ -190,7 +190,7 @@ class TestDaemonWatchManagerRaceConditions:
 
     def test_efficient_wait_loop(self):
         """Test that wait loop uses efficient wait instead of busy wait."""
-        manager = DaemonWatchManager()
+        DaemonWatchManager()
 
         # Mock handler that stops after 0.5 seconds
         mock_handler = MagicMock()

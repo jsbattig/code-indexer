@@ -187,8 +187,6 @@ filterwarnings = [
 markers = [
     "e2e: End-to-end tests",
     "voyage_ai: Tests requiring VoyageAI API key",
-    "ollama: Tests requiring Ollama service",
-    "qdrant: Tests requiring Qdrant service",
     "real_api: Tests that make real API calls",
     "slow: Tests that take longer to run",
     "integration: Integration tests requiring multiple services",

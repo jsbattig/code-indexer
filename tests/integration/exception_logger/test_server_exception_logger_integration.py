@@ -17,7 +17,7 @@ class TestServerExceptionLoggerIntegration:
         ExceptionLogger._instance = None
 
         # Create FastAPI app (should initialize ExceptionLogger)
-        app = create_app()
+        create_app()
 
         # Verify ExceptionLogger was initialized
         assert (

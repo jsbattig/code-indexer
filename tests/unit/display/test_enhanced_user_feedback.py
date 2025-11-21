@@ -203,7 +203,7 @@ class TestConfigurationSourceTransparency:
             collection_name="test_collection",
             thread_count=8,
             thread_count_source="auto_detected",
-            provider_name="ollama",
+            provider_name="voyage",
         )
 
         display_message = generator.get_thread_count_message(context)
@@ -213,7 +213,7 @@ class TestConfigurationSourceTransparency:
             "auto-detected" in display_message
         ), "Should clearly indicate auto-detection"
         assert (
-            "ollama" in display_message
+            "voyage" in display_message
         ), "Should show which provider was used for detection"
         assert "🧵" in display_message, "Should use thread emoji"
         assert "8" in display_message, "Should show thread count"
@@ -240,7 +240,7 @@ class TestConfigurationSourceTransparency:
             collection_name="test_collection",
             thread_count=16,
             thread_count_source="user_specified",
-            provider_name="ollama",
+            provider_name="voyage",
         )
 
         display_message = generator.get_thread_count_message(context)
@@ -274,7 +274,7 @@ class TestConfigurationSourceTransparency:
             collection_name="test_collection",
             thread_count=12,
             thread_count_source="config_file",
-            provider_name="ollama",
+            provider_name="voyage",
         )
 
         display_message = generator.get_thread_count_message(context)
@@ -328,7 +328,7 @@ class TestHelpfulErrorMessages:
         )
 
         # Test service unavailable error message
-        service_name = "Qdrant"
+        service_name = "Filesystem"
         error_message = get_service_unavailable_message(service_name, "cidx start")
 
         # Should provide actionable error message
@@ -360,7 +360,7 @@ class TestHelpfulErrorMessages:
                 "suggestion": "Ensure the codebase directory exists and is accessible",
             },
             {
-                "field": "qdrant.host",
+                "field": "filesystem.host",
                 "error": "Invalid host format",
                 "suggestion": "Use a valid hostname or IP address",
             },

@@ -24,9 +24,9 @@ from src.code_indexer.services.temporal.temporal_search_service import (
 def mock_config_manager():
     """Mock ConfigManager for tests."""
     config = Mock()
-    config.qdrant = Mock()
-    config.qdrant.host = "localhost"
-    config.qdrant.port = 6333
+    config.filesystem = Mock()
+    config.filesystem.host = "localhost"
+    config.filesystem.port = 6333
     return config
 
 

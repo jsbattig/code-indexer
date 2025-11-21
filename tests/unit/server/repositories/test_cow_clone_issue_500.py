@@ -6,7 +6,6 @@ including all indexes, ensuring search works without manual indexing.
 """
 
 import json
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -297,10 +296,10 @@ def authenticate_user(username, password):
 
         # CRITICAL ASSERTION: No tracked files should be modified
         assert len(modified_files) == 0, (
-            f"FAILURE: git status shows modified tracked files after CoW clone!\n"
-            f"Modified files:\n" + "\n".join(modified_files) + "\n"
-            f"Must run 'git update-index --refresh' and 'git restore .' after CoW clone.\n"
-            f"Note: .code-indexer/ being untracked is OK (it's gitignored)."
+            "FAILURE: git status shows modified tracked files after CoW clone!\n"
+            "Modified files:\n" + "\n".join(modified_files) + "\n"
+            "Must run 'git update-index --refresh' and 'git restore .' after CoW clone.\n"
+            "Note: .code-indexer/ being untracked is OK (it's gitignored)."
         )
 
     def test_cidx_fix_config_updates_paths(self, activated_repo_manager, temp_data_dir):

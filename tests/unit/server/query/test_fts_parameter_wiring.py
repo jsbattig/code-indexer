@@ -10,12 +10,11 @@ requiring actual search infrastructure.
 """
 
 import tempfile
-from unittest.mock import patch, MagicMock, Mock, call
+from unittest.mock import patch, MagicMock
 import pytest
 
 from src.code_indexer.server.query.semantic_query_manager import (
     SemanticQueryManager,
-    QueryResult,
 )
 
 
@@ -31,11 +30,14 @@ class TestFTSParameterWiring:
     @pytest.fixture
     def query_manager(self, temp_data_dir):
         """Create SemanticQueryManager instance with mocked dependencies."""
-        with patch(
-            "src.code_indexer.server.query.semantic_query_manager.ActivatedRepoManager"
-        ) as mock_activated_manager, patch(
-            "src.code_indexer.server.query.semantic_query_manager.BackgroundJobManager"
-        ) as mock_job_manager:
+        with (
+            patch(
+                "src.code_indexer.server.query.semantic_query_manager.ActivatedRepoManager"
+            ) as mock_activated_manager,
+            patch(
+                "src.code_indexer.server.query.semantic_query_manager.BackgroundJobManager"
+            ) as mock_job_manager,
+        ):
             # Configure activated repo manager mock
             mock_activated_instance = MagicMock()
             mock_activated_instance.list_activated_repositories.return_value = [
@@ -92,13 +94,17 @@ class TestFTSParameterWiring:
                 call_kwargs["case_sensitive"] is True
             ), "case_sensitive value not preserved"
 
-            assert "fuzzy" in call_kwargs, "fuzzy parameter not passed to _perform_search"
+            assert (
+                "fuzzy" in call_kwargs
+            ), "fuzzy parameter not passed to _perform_search"
             assert call_kwargs["fuzzy"] is True, "fuzzy value not preserved"
 
             assert (
                 "edit_distance" in call_kwargs
             ), "edit_distance parameter not passed to _perform_search"
-            assert call_kwargs["edit_distance"] == 2, "edit_distance value not preserved"
+            assert (
+                call_kwargs["edit_distance"] == 2
+            ), "edit_distance value not preserved"
 
             assert (
                 "snippet_lines" in call_kwargs
@@ -107,7 +113,9 @@ class TestFTSParameterWiring:
                 call_kwargs["snippet_lines"] == 10
             ), "snippet_lines value not preserved"
 
-            assert "regex" in call_kwargs, "regex parameter not passed to _perform_search"
+            assert (
+                "regex" in call_kwargs
+            ), "regex parameter not passed to _perform_search"
             assert call_kwargs["regex"] is False, "regex value not preserved"
 
     def test_fts_parameters_passed_to_search_single_repository(self, query_manager):
@@ -174,7 +182,9 @@ class TestFTSParameterWiring:
             assert (
                 "edit_distance" in call_kwargs
             ), "edit_distance parameter not passed to _search_single_repository"
-            assert call_kwargs["edit_distance"] == 2, "edit_distance value not preserved"
+            assert (
+                call_kwargs["edit_distance"] == 2
+            ), "edit_distance value not preserved"
 
             assert (
                 "snippet_lines" in call_kwargs

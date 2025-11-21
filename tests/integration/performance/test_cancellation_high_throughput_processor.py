@@ -40,17 +40,17 @@ class TestHighThroughputProcessorCancellation:
         )
         self.embedding_provider._get_model_token_limit.return_value = 8192
 
-        # Create mock Qdrant client
-        self.qdrant_client = MagicMock()
-        self.qdrant_client.create_point.return_value = {"id": "test-point"}
-        self.qdrant_client.upsert_points_batched.return_value = True
+        # Create mock Filesystem client
+        self.filesystem_client = MagicMock()
+        self.filesystem_client.create_point.return_value = {"id": "test-point"}
+        self.filesystem_client.upsert_points_batched.return_value = True
 
     def test_request_cancellation_sets_flag(self):
         """Test that request_cancellation sets the cancelled flag."""
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
         )
 
         # Initially not cancelled
@@ -72,7 +72,7 @@ class TestHighThroughputProcessorCancellation:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
-                vector_store_client=self.qdrant_client,
+                vector_store_client=self.filesystem_client,
             )
 
             # Create test files
@@ -168,7 +168,7 @@ class TestHighThroughputProcessorCancellation:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
-                vector_store_client=self.qdrant_client,
+                vector_store_client=self.filesystem_client,
             )
 
             # Create test files
@@ -277,7 +277,7 @@ class TestHighThroughputProcessorCancellation:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
-                vector_store_client=self.qdrant_client,
+                vector_store_client=self.filesystem_client,
             )
 
             # Create test files
@@ -329,7 +329,7 @@ class TestHighThroughputProcessorCancellation:
                             return True
 
                         with patch.object(
-                            processor.qdrant_client,
+                            processor.filesystem_client,
                             "upsert_points_batched",
                             side_effect=track_upsert,
                         ):
@@ -372,7 +372,7 @@ class TestHighThroughputProcessorCancellation:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
         )
 
         # Initially not cancelled

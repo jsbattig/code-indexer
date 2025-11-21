@@ -1,10 +1,20 @@
-# Code Indexer Architecture
+# Code Indexer Architecture (v8.0+)
 
-This document describes the high-level architecture and design decisions for Code Indexer (CIDX).
+This document describes the high-level architecture and design decisions for Code Indexer (CIDX) version 8.0 and later.
+
+## Version 8.0 Architectural Changes
+
+Version 8.0 represents a major architectural simplification:
+- **Removed**: Qdrant backend, container infrastructure, Ollama embeddings
+- **Consolidated**: Filesystem-only backend, VoyageAI-only embeddings
+- **Simplified**: Two operational modes (was three in v7.x)
+- **Result**: Container-free, instant setup, reduced complexity
+
+See [Migration Guide](migration-to-v8.md) for upgrading from v7.x.
 
 ## Operating Modes
 
-CIDX has **three operational modes**, each optimized for different use cases.
+CIDX has **two operational modes** (simplified from three in v7.x), each optimized for different use cases.
 
 ### Mode 1: CLI Mode (Direct, Local)
 
@@ -19,6 +29,7 @@ CIDX has **three operational modes**, each optimized for different use cases.
 - No daemon, no server, no network
 - Vectors stored as JSON files on filesystem
 - Each query loads indexes from disk
+- Container-free, instant setup
 
 ### Mode 2: Daemon Mode (Local, Cached)
 
@@ -34,23 +45,7 @@ CIDX has **three operational modes**, each optimized for different use cases.
 - Unix socket communication (`.code-indexer/daemon.sock`)
 - Faster queries (~5ms cached vs ~1s from disk)
 - Watch mode for real-time file change indexing
-
-### Mode 3: Server Mode (Multi-User, Team)
-
-**Purpose**: FastAPI-based team server for multi-user semantic search
-
-**Storage**: Golden Repos (shared) + Activated Repos (per-user CoW clones)
-
-**Use Case**: Team collaboration, centralized code search
-
-**Characteristics**:
-- **Golden Repositories**: Shared source repos indexed once (`~/.cidx-server/data/golden-repos/`)
-- **Activated Repositories**: User-specific workspaces via CoW cloning (`~/.cidx-server/data/activated-repos/<user>/`)
-- REST API with JWT authentication
-- Background job system for indexing/sync
-- Multi-user access control
-
-**IMPORTANT**: Golden/Activated repos are SERVER MODE ONLY. CLI and Daemon modes don't use these concepts.
+- Container-free, runs as local process
 
 ## Vector Storage Architecture (v7.0+)
 

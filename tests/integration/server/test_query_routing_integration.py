@@ -29,7 +29,7 @@ class TestQueryEndpointRouting:
         config_dir.mkdir()
         config_file = config_dir / "config.json"
 
-        config_data = {"proxy_mode": False, "embedding_provider": "ollama"}
+        config_data = {"proxy_mode": False, "embedding_provider": "voyage"}
         config_file.write_text(json.dumps(config_data))
 
         return repo_path

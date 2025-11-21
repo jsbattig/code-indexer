@@ -117,7 +117,6 @@ class TestTemporalIndexerPointerPayloads:
 
         # Track what gets upserted
         upserted_points = []
-        original_upsert = vector_store.upsert_points
 
         def capture_upsert(collection_name, points, **kwargs):
             upserted_points.extend(points)
@@ -182,7 +181,7 @@ class TestTemporalIndexerPointerPayloads:
                     mock_vm.submit_batch_task.return_value = mock_future
 
                     # Run indexing
-                    result = indexer.index_commits(all_branches=False)
+                    indexer.index_commits(all_branches=False)
 
         # Verify: at least one point was created for the added file
         assert len(upserted_points) > 0, "Should have created at least one point"

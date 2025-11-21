@@ -43,7 +43,6 @@ class ErrorCategoryDetector:
             r"cannot connect",
             r"connection refused",
             r"no.*service.*found",
-            r"qdrant.*not.*running",
             r"not responding",
         ],
         "port_conflict": [
@@ -157,7 +156,7 @@ class HintGenerator:
                     f"rg 'your-search-term' {repository}",
                     f"cd {repository} && cidx status",
                 ],
-                explanation="Qdrant service not available - alternative search methods can still find code",
+                explanation="Vector store service not available - alternative search methods can still find code",
             )
         else:
             # Generic query failure - still suggest grep as fallback

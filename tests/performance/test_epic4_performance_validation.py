@@ -621,8 +621,8 @@ class TestEpic4PerformanceValidation:
         config.chunking = Mock()
         config.chunking.chunk_size = 1000
         config.chunking.overlap_size = 150
-        config.qdrant = Mock()
-        config.qdrant.vector_size = 768
+        config.filesystem = Mock()
+        config.filesystem.vector_size = 768
         return config
 
     @pytest.fixture
@@ -631,8 +631,8 @@ class TestEpic4PerformanceValidation:
         return MockEmbeddingProvider(delay=0.02)  # 20ms per embedding (realistic)
 
     @pytest.fixture
-    def mock_qdrant_client(self):
-        """Create mock Qdrant client."""
+    def mock_filesystem_client(self):
+        """Create mock Filesystem client."""
         client = Mock()
         client.create_point.return_value = {"id": "test-point"}
         client.upsert_points.return_value = True
@@ -643,7 +643,7 @@ class TestEpic4PerformanceValidation:
         return client
 
     def test_branch_change_operations_4x_speedup(
-        self, framework, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, framework, mock_config, mock_embedding_provider, mock_filesystem_client
     ):
         """Test branch change operations achieve minimum 4x speedup."""
 
@@ -656,13 +656,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             # Measure baseline (sequential) performance
@@ -793,7 +793,7 @@ class TestEpic4PerformanceValidation:
             framework.cleanup_test_codebase(temp_path)
 
     def test_full_index_operations_4x_speedup(
-        self, framework, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, framework, mock_config, mock_embedding_provider, mock_filesystem_client
     ):
         """Test full index operations achieve minimum 4x speedup."""
 
@@ -806,13 +806,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             # Measure baseline performance (sequential full index)
@@ -937,7 +937,7 @@ class TestEpic4PerformanceValidation:
             framework.cleanup_test_codebase(temp_path)
 
     def test_incremental_operations_4x_speedup(
-        self, framework, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, framework, mock_config, mock_embedding_provider, mock_filesystem_client
     ):
         """Test incremental operations achieve minimum 4x speedup."""
 
@@ -953,13 +953,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             # Measure baseline performance (sequential incremental)
@@ -1084,7 +1084,7 @@ class TestEpic4PerformanceValidation:
             framework.cleanup_test_codebase(temp_path)
 
     def test_thread_utilization_validation_8_workers(
-        self, framework, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, framework, mock_config, mock_embedding_provider, mock_filesystem_client
     ):
         """Test that thread utilization metrics confirm 8 workers are active."""
 
@@ -1098,7 +1098,7 @@ class TestEpic4PerformanceValidation:
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             # Track worker activity with more detailed monitoring
@@ -1214,7 +1214,7 @@ class TestEpic4PerformanceValidation:
             framework.cleanup_test_codebase(temp_path)
 
     def test_git_awareness_functionality_preservation(
-        self, framework, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, framework, mock_config, mock_embedding_provider, mock_filesystem_client
     ):
         """Test that git-awareness functionality remains identical between baseline and optimized."""
 
@@ -1227,13 +1227,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
             )
 
             # Test git-aware operations - content ID generation
@@ -1273,14 +1273,14 @@ class TestEpic4PerformanceValidation:
             test_collection = "test_collection"
             test_branch = "test_branch"
 
-            # Mock Qdrant responses for visibility tests
+            # Mock Filesystem responses for visibility tests
             mock_points = [
                 {
                     "id": "point1",
                     "payload": {"path": test_file_path, "hidden_branches": []},
                 }
             ]
-            mock_qdrant_client.scroll_points.return_value = (mock_points, None)
+            mock_filesystem_client.scroll_points.return_value = (mock_points, None)
 
             # Test hide operation consistency
             baseline_hide_result = baseline_processor._hide_file_in_branch_thread_safe(
@@ -1316,9 +1316,9 @@ class TestEpic4PerformanceValidation:
                 baseline_visible_result == optimized_visible_result
             ), f"Visible operation results differ: baseline={baseline_visible_result} vs optimized={optimized_visible_result}"
 
-            # Test batch update consistency (verify same calls made to Qdrant)
-            baseline_calls = mock_qdrant_client._batch_update_points.call_count
-            mock_qdrant_client.reset_mock()
+            # Test batch update consistency (verify same calls made to Filesystem)
+            baseline_calls = mock_filesystem_client._batch_update_points.call_count
+            mock_filesystem_client.reset_mock()
 
             # Run same operations with optimized processor
             optimized_processor._hide_file_in_branch_thread_safe(
@@ -1328,7 +1328,7 @@ class TestEpic4PerformanceValidation:
                 test_file_path, test_branch, test_collection
             )
 
-            optimized_calls = mock_qdrant_client._batch_update_points.call_count
+            optimized_calls = mock_filesystem_client._batch_update_points.call_count
 
             # Validate same number of database operations
             assert (

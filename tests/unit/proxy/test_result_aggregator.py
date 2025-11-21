@@ -269,7 +269,7 @@ class TestFormattedErrorOutput(unittest.TestCase):
     def test_formatted_error_includes_repository_name(self):
         """Verify formatted error includes repository name at start."""
         results = {
-            "backend/auth-service": ("", "Cannot connect to Qdrant", 1),
+            "backend/auth-service": ("", "Cannot connect to Filesystem", 1),
         }
 
         output, exit_code = self.aggregator.aggregate(results)
@@ -402,7 +402,7 @@ class TestFormattedErrorIntegration(unittest.TestCase):
         results = {
             "backend/auth-service": (
                 "",
-                "Cannot connect to Qdrant service at port 6333",
+                "Cannot connect to Filesystem service at port 6333",
                 1,
             ),
         }
@@ -412,7 +412,7 @@ class TestFormattedErrorIntegration(unittest.TestCase):
         # Verify complete error format
         assert "=" * 60 in output
         assert "✗ FAILED: backend/auth-service" in output
-        assert "Cannot connect to Qdrant service at port 6333" in output
+        assert "Cannot connect to Filesystem service at port 6333" in output
         assert "Exit code: 1" in output
 
     def test_aggregate_formats_partial_success(self):

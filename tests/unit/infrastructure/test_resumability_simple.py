@@ -221,7 +221,7 @@ class TestDatabaseReconciliationResumability:
         2. Checks what files are already in the database with timestamps
         3. Indexes missing files and files with newer timestamps
         """
-        # This test would require mocking the Qdrant client and SmartIndexer
+        # This test would require mocking the Filesystem client and SmartIndexer
         # For now, we'll create a conceptual test structure
 
         # Simulate the logic: files on disk vs files in database with timestamps
@@ -236,7 +236,7 @@ class TestDatabaseReconciliationResumability:
         ]
 
         # This test validates the logic but would need full integration
-        # to test with real Qdrant client and SmartIndexer
+        # to test with real Filesystem client and SmartIndexer
         assert len(expected_files_to_index) == 3
         assert Path("src/utils.py") in expected_files_to_index  # Modified file
         assert Path("src/config.py") in expected_files_to_index  # Missing file

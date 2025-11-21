@@ -44,7 +44,7 @@ class TestCLIOptionConflictFix:
                             # Setup mocks to avoid execution failures
                             mock_config_instance = Mock()
                             mock_config_instance.get_config.return_value = Mock(
-                                mode="local", qdrant=Mock(), embedding=Mock()
+                                mode="local", filesystem=Mock(), embedding=Mock()
                             )
                             mock_config.create_with_backtrack.return_value = (
                                 mock_config_instance
@@ -137,7 +137,7 @@ class TestCLIOptionConflictFix:
                             # Setup mocks
                             mock_config_instance = Mock()
                             mock_config_instance.get_config.return_value = Mock(
-                                mode="local", qdrant=Mock(), embedding=Mock()
+                                mode="local", filesystem=Mock(), embedding=Mock()
                             )
                             mock_config.create_with_backtrack.return_value = (
                                 mock_config_instance

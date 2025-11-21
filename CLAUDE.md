@@ -35,7 +35,7 @@
 
 ## 2. Operational Modes Overview
 
-CIDX has **three operational modes**. Understanding which mode you're working in is critical.
+CIDX has **two operational modes** (simplified from three in v7.x). Understanding which mode you're working in is critical.
 
 ### Mode 1: CLI Mode (Direct, Local)
 
@@ -49,6 +49,7 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 - No daemon, no server, no network
 - Vectors stored as JSON files on filesystem
 - Each query loads indexes from disk
+- Container-free, instant setup
 
 ### Mode 2: Daemon Mode (Local, Cached)
 
@@ -63,22 +64,7 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 - Unix socket communication (`.code-indexer/daemon.sock`)
 - Faster queries (~5ms cached vs ~1s from disk)
 - Watch mode for real-time file change indexing
-
-### Mode 3: Server Mode (Multi-User, Team)
-
-**What**: FastAPI-based team server for multi-user semantic search
-**Storage**: Golden Repos (shared) + Activated Repos (per-user CoW clones)
-**Use Case**: Team collaboration, centralized code search
-**Commands**: Server runs separately, CLI uses `--remote` flag
-
-**Characteristics**:
-- **Golden Repositories**: Shared source repos indexed once (`~/.cidx-server/data/golden-repos/`)
-- **Activated Repositories**: User-specific workspaces via CoW cloning (`~/.cidx-server/data/activated-repos/<user>/`)
-- REST API with JWT authentication
-- Background job system for indexing/sync
-- Multi-user access control
-
-**IMPORTANT**: Golden/Activated repos are SERVER MODE ONLY. CLI and Daemon modes don't use these concepts.
+- Container-free, runs as local process
 
 ---
 
@@ -88,28 +74,17 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 
 ### Vector Storage (All Modes)
 
-**Current Architecture**: **FilesystemVectorStore** - Container-free, filesystem-based
+**Current Architecture**: **FilesystemVectorStore** - Container-free, filesystem-based (only backend in v8.0+)
 
 **Key Points**:
 - Vectors as JSON files in `.code-indexer/index/{collection}/`
-- Quantization: Model dims (1024/1536/768) → 64-dim → 2-bit → filesystem path
+- Quantization: Model dims (1024/1536) → 64-dim → 2-bit → filesystem path
 - Git-aware: Blob hashes (clean files), text content (dirty files)
 - Performance: <1s query, <20ms incremental HNSW updates
 - Thread-safe with atomic writes
-- Supports multiple embedding dimensions (VoyageAI: 1024/1536, Ollama: 768)
-
-**Backend Options**:
-- **FilesystemBackend** (Production, Default): No containers, instant
-- **QdrantContainerBackend** (Legacy, Deprecated): Backward compatibility only
+- Supports VoyageAI embedding dimensions (1024 for voyage-3, 1536 for voyage-3-large)
 
 ### Key Architecture Topics (See Docs)
-
-**From `/docs/v5.0.0-architecture-summary.md`**:
-- Client-Server architecture (Server Mode)
-- Golden/Activated repository system (Server Mode)
-- Authentication & security (JWT, rate limiting)
-- Background job system (Server Mode)
-- Git sync integration (Server Mode)
 
 **From `/docs/v7.2.0-architecture-incremental-updates.md`**:
 - Incremental HNSW updates (All Modes)
@@ -117,30 +92,11 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 - Real-time vs batch updates
 - Performance optimizations
 
-### MCP Protocol (Server Mode)
-
-**Protocol Version**: `2024-11-05` (Model Context Protocol)
-
-**Initialize Handshake** (CRITICAL for Claude Code connection):
-- Method: `initialize` - MUST be first client-server interaction
-- Server Response: `{ "protocolVersion": "2024-11-05", "capabilities": { "tools": {} }, "serverInfo": { "name": "CIDX", "version": "7.3.0" } }`
-- Implemented in: `src/code_indexer/server/mcp/protocol.py` (process_jsonrpc_request)
-- Required for OAuth flow completion - Claude Code calls `initialize` after authentication
-
-**Key Points**:
-- Without `initialize` method, Claude Code fails with "Method not found: initialize"
-- Must return protocolVersion, capabilities (with tools), and serverInfo (name + version)
-- Tests in: `tests/unit/server/mcp/test_protocol.py::TestInitializeMethod`
-
-**Tool Response Format** (CRITICAL for Claude Code compatibility):
-- All tool results MUST return `content` as an **array of content blocks**, NOT a string
-- Each content block must have: `{ "type": "text", "text": "actual content here" }`
-- Empty content should be `[]`, NOT `""` or missing
-- Error responses must also include `content: []` (empty array is valid)
-- Example: `{ "success": true, "content": [{"type": "text", "text": "file contents"}], "metadata": {...} }`
-- Violating this format causes Claude Code to fail with "Expected array, received string"
-- Implemented in: `src/code_indexer/server/mcp/handlers.py` (all tool handlers)
-- Tests in: `tests/unit/server/mcp/test_handlers.py::TestFileHandlers::test_get_file_content`
+**From `/docs/architecture.md`**:
+- Filesystem vector storage architecture
+- HNSW graph-based indexing
+- Git-aware storage strategies
+- Query performance optimization
 
 ---
 
@@ -157,7 +113,7 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 
 **Testing Principles**:
 - Tests don't clean state (performance optimization)
-- NO container start/stop (filesystem backend is instant)
+- Container-free architecture (instant setup, no overhead)
 - E2E tests use `cidx` CLI directly
 - Slow tests excluded from fast suites
 
@@ -320,8 +276,7 @@ When working on smart indexer, always consider `--reconcile` (non git-aware) and
 ### Configuration
 
 - **Temporary Files**: Use `~/.tmp` (NOT `/tmp`)
-- **Ports** (Legacy Qdrant only): Dynamic per-project, NEVER hardcoded
-- **Containers** (Legacy): Support podman/docker for backward compatibility only
+- **Container-free**: No ports, no containers, instant setup
 
 ---
 
@@ -361,9 +316,9 @@ if enable_fts:
 
 ## 7. Embedding Provider
 
-### VoyageAI (PRODUCTION ONLY)
+### VoyageAI (ONLY PROVIDER)
 
-**ONLY production provider** - Focus EXCLUSIVELY on VoyageAI
+**ONLY supported provider in v8.0+** - Focus EXCLUSIVELY on VoyageAI
 
 **Token Counting**:
 - Use `embedded_voyage_tokenizer.py`, NOT voyageai library
@@ -377,9 +332,9 @@ if enable_fts:
 - Automatic token-aware batching
 - Transparent batch splitting
 
-### Ollama (EXPERIMENTAL)
-
-**NOT for production** - Too slow, testing/dev only
+**Models**:
+- **voyage-3** (default): 1024-dimensional embeddings, best balance of quality and speed
+- **voyage-3-large**: 1536-dimensional embeddings, highest quality
 
 ---
 
@@ -419,10 +374,6 @@ cidx watch-stop           # Stop watch
 cidx stop                 # Stop daemon
 ```
 
-### Server Mode (Team Usage)
-
-See server documentation - involves server setup, user management, golden/activated repos.
-
 ---
 
 ## 9. Mode-Specific Concepts
@@ -431,21 +382,14 @@ See server documentation - involves server setup, user management, golden/activa
 - `.code-indexer/` - Project config and index storage
 - FilesystemVectorStore - Vector storage
 - Direct disk I/O per query
+- Container-free, instant setup
 
 ### Daemon Mode Concepts
 - RPyC service on Unix socket
 - In-memory HNSW/FTS cache
 - Watch mode for real-time updates
 - `.code-indexer/daemon.sock`
-
-### Server Mode Concepts (ONLY)
-- **Golden Repositories** - Shared indexed repos
-- **Activated Repositories** - User-specific CoW clones
-- REST API with JWT auth
-- Background job system
-- Multi-user access control
-
-**IMPORTANT**: Don't reference golden/activated repos outside Server Mode context.
+- Container-free, runs as local process
 
 ---
 

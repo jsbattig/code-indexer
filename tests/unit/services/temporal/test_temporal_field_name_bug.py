@@ -144,7 +144,7 @@ class TestTemporalFieldNameBug:
                     mock_manager.submit_batch_task.side_effect = mock_submit_batch
 
                     # Run temporal indexing
-                    result = temporal_indexer.index_commits(max_commits=1)
+                    temporal_indexer.index_commits(max_commits=1)
 
                     # Verify points were captured
                     assert len(captured_points) > 0, "No points were created"

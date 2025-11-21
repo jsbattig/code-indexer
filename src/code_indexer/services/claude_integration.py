@@ -1381,7 +1381,6 @@ Remember: You have read-only access. You cannot modify, edit, or execute files."
         # Common ignore patterns (always applied)
         common_ignore_patterns = {
             ".git",
-            ".qdrant_data",
             ".pytest_cache",
             ".mypy_cache",
             ".ruff_cache",

@@ -71,7 +71,7 @@ class TestRebuildFTSIndexE2E:
                     "processing_time": 0.5,
                     "started_at": 1234567890.0,
                     "completed_at": 1234567891.0,
-                    "qdrant_point_ids": ["id1", "id2"],
+                    "vector_point_ids": ["id1", "id2"],
                 },
                 str(project_dir / "utils.py"): {
                     "file_path": str(project_dir / "utils.py"),
@@ -80,7 +80,7 @@ class TestRebuildFTSIndexE2E:
                     "processing_time": 0.3,
                     "started_at": 1234567892.0,
                     "completed_at": 1234567893.0,
-                    "qdrant_point_ids": ["id3"],
+                    "vector_point_ids": ["id3"],
                 },
                 str(project_dir / "README.md"): {
                     "file_path": str(project_dir / "README.md"),
@@ -89,7 +89,7 @@ class TestRebuildFTSIndexE2E:
                     "processing_time": 0.2,
                     "started_at": 1234567894.0,
                     "completed_at": 1234567895.0,
-                    "qdrant_point_ids": ["id4"],
+                    "vector_point_ids": ["id4"],
                 },
             },
         }

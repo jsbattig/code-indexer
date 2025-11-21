@@ -89,7 +89,7 @@ class TestProgressiveSaveIntegration(unittest.TestCase):
                             mock_process.side_effect = simulate_processing
 
                             # Index commits
-                            result = indexer.index_commits(
+                            indexer.index_commits(
                                 all_branches=False, max_commits=None, since_date=None
                             )
 

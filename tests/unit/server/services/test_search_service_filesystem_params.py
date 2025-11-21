@@ -99,7 +99,7 @@ class TestSearchServiceFilesystemParameters:
 
                 try:
                     search_service.search_repository_path(repo_path, search_request)
-                except Exception as e:
+                except Exception:
                     # Some exceptions are expected (index may not exist, etc.)
                     # But we still capture the search() call parameters before the exception
                     pass

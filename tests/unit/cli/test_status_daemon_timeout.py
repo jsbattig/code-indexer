@@ -44,7 +44,7 @@ class TestStatusDaemonTimeout:
                     "auto_shutdown_on_idle": True,
                 },
                 "embedding_provider": "voyageai",
-                "qdrant": {"mode": "filesystem"},
+                "filesystem": {"mode": "filesystem"},
             }
             config_file.write_text(json.dumps(config, indent=2))
 

@@ -35,8 +35,6 @@ from .api_clients.admin_client import AdminAPIClient  # noqa: F401
 from .api_clients.repos_client import ReposAPIClient  # noqa: F401
 from .backends.backend_factory import BackendFactory  # noqa: F401
 from .services.embedding_factory import EmbeddingProviderFactory  # noqa: F401
-from .services.docker_manager import DockerManager  # noqa: F401
-from .services.qdrant import QdrantClient  # noqa: F401
 from .remote.credential_manager import ProjectCredentialManager  # noqa: F401
 
 # Daemon delegation imports (lazy loaded when daemon enabled)
@@ -234,159 +232,6 @@ force_exclude_patterns: []
 
     override_path.write_text(default_content)
     return True
-
-
-def _needs_docker_manager(config):
-    """Determine if DockerManager is needed based on backend type."""
-    if hasattr(config, "vector_store") and config.vector_store:
-        if hasattr(config.vector_store, "provider"):
-            return config.vector_store.provider != "filesystem"
-    return True  # Default to True for backward compatibility
-
-
-def _setup_global_registry(quiet: bool = False, test_access: bool = False) -> None:
-    """Setup the global port registry with proper permissions.
-
-    Args:
-        quiet: Suppress non-essential output
-        test_access: Also test registry access after setup
-
-    Raises:
-        SystemExit: If setup fails or access test fails
-    """
-    if not quiet:
-        console.print("🔧 Setting up Code Indexer Global Port Registry", style="blue")
-
-    registry_dir = "/var/lib/code-indexer/port-registry"
-    if not quiet:
-        console.print(f"Location: {registry_dir}")
-        console.print()
-
-    try:
-
-        def setup_registry():
-            """Setup the global port registry with proper permissions."""
-            if not quiet:
-                console.print("🔧 Using sudo for system-wide setup", style="blue")
-
-            # Create the directory
-            result = subprocess.run(
-                ["sudo", "mkdir", "-p", registry_dir],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                raise Exception(
-                    f"Cannot create directory {registry_dir}: {result.stderr}"
-                )
-
-            # Set permissions for multi-user access (world-writable without sticky bit)
-            # The sticky bit can interfere with atomic file operations across users
-            subprocess.run(["sudo", "chmod", "777", registry_dir], check=True)
-
-            # Test write access (without sudo to verify regular users can access)
-            test_file = Path(registry_dir) / "test-access"
-            try:
-                test_file.write_text("test")
-                test_file.unlink()
-            except Exception:
-                raise Exception(f"Cannot write to {registry_dir} (even after setup)")
-
-            # Create subdirectories
-            active_projects_dir = Path(registry_dir) / "active-projects"
-            subprocess.run(
-                ["sudo", "mkdir", "-p", str(active_projects_dir)],
-                check=True,
-            )
-
-            # Set permissions on subdirectories (no sticky bit for atomic operations)
-            subprocess.run(
-                ["sudo", "chmod", "777", str(active_projects_dir)],
-                check=True,
-            )
-
-            # Create initial files with proper ownership
-            port_alloc_file = Path(registry_dir) / "port-allocations.json"
-            registry_log_file = Path(registry_dir) / "registry.log"
-
-            # Create files as root but with world-writable permissions
-            subprocess.run(["sudo", "touch", str(port_alloc_file)], check=True)
-            subprocess.run(["sudo", "touch", str(registry_log_file)], check=True)
-
-            # Set permissions for multi-user access
-            subprocess.run(["sudo", "chmod", "666", str(port_alloc_file)], check=True)
-            subprocess.run(["sudo", "chmod", "666", str(registry_log_file)], check=True)
-
-            # Initialize with empty JSON object
-            subprocess.run(
-                ["sudo", "tee", str(port_alloc_file)],
-                input="{}",
-                text=True,
-                capture_output=True,
-                check=True,
-            )
-
-            if not quiet:
-                console.print("✅ Global port registry setup complete", style="green")
-
-        # Run the setup
-        setup_registry()
-
-        # Test registry access if requested or if not quiet
-        if test_access or not quiet:
-            if not quiet:
-                console.print("🔍 Testing registry access...", style="blue")
-            test_file = Path(registry_dir) / "test-access-final"
-            try:
-                test_file.write_text("test")
-                test_file.unlink()
-                if not quiet:
-                    console.print("✅ Registry access test passed", style="green")
-            except Exception:
-                console.print("❌ Registry access test failed", style="red")
-                sys.exit(1)
-
-        # Test registry functionality
-        try:
-            from .services.global_port_registry import GlobalPortRegistry
-
-            GlobalPortRegistry()
-            if not quiet:
-                console.print(
-                    "✅ Global port registry setup successful!", style="green"
-                )
-                console.print()
-                console.print("Usage Instructions:", style="bold")
-                console.print("==================")
-                console.print("The global port registry is now configured for cidx.")
-                console.print(
-                    "All cidx commands will automatically coordinate port allocation."
-                )
-                console.print()
-                console.print(f"Registry Location: {registry_dir}")
-                console.print()
-                console.print("Location Details:")
-                console.print(
-                    "  ✅ System location - optimal for multi-user access, persistent across reboots"
-                )
-                console.print()
-                console.print(
-                    "No further action required - cidx will handle everything automatically."
-                )
-        except Exception as setup_ex:
-            console.print(
-                f"❌ Registry still not accessible after setup: {setup_ex}",
-                style="red",
-            )
-            sys.exit(1)
-
-    except Exception as setup_ex:
-        console.print(f"❌ Failed to setup global registry: {setup_ex}", style="red")
-        console.print(
-            "This command MUST be run with sudo access for proper system-wide setup",
-            style="red",
-        )
-        sys.exit(1)
 
 
 def _format_claude_response(response: str) -> str:
@@ -642,7 +487,7 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
             "git_filter_ms": "Git-aware filtering",
         }
     else:
-        # Sequential execution path (QdrantClient or legacy)
+        # Sequential execution path (FilesystemClient or legacy)
         high_level_steps = {
             "embedding_ms": "Embedding generation",
             "vector_search_ms": "Vector search (total)",
@@ -1283,7 +1128,7 @@ def _execute_semantic_search(
                     return_timing=True,
                 )
             else:
-                # QdrantClient: pre-compute embedding
+                # FilesystemVectorStore: pre-compute embedding
                 query_embedding = embedding_provider.get_embedding(query)
                 raw_results_list = vector_store_client.search(
                     query_vector=query_embedding,
@@ -1341,7 +1186,7 @@ def _execute_semantic_search(
                 )
                 timing_info.update(search_timing)
             else:
-                # Qdrant backend: pre-compute embedding
+                # Filesystem backend: pre-compute embedding
                 search_start = time.time()
                 query_embedding = embedding_provider.get_embedding(query)
                 raw_results_list = vector_store_client.search_with_model_filter(
@@ -1748,7 +1593,7 @@ def cli(
 
       OR for custom configuration (init is optional):
       1. code-indexer init      # OPTIONAL: Initialize with custom settings
-      2. code-indexer start     # Start services (Ollama + Qdrant)
+      2. code-indexer start     # Start services (VoyageAI)
       3. code-indexer index     # Smart incremental indexing
       4. code-indexer query "search term"  # Search your code
 
@@ -1768,7 +1613,7 @@ def cli(
     DATA MANAGEMENT:
       • Git-aware: Tracks branches, commits, and file changes
       • Project isolation: Each project gets its own collection
-      • Storage: Vector data stored in .code-indexer/qdrant/ (per-project)
+      • Storage: Vector data stored in .code-indexer/index/ (per-project)
       • Cleanup: Use 'clean-data' (fast) or 'uninstall' (complete removal)
 
     \b
@@ -1887,9 +1732,9 @@ def cli(
 )
 @click.option(
     "--embedding-provider",
-    type=click.Choice(["ollama", "voyage-ai"]),
+    type=click.Choice(["voyage-ai"]),
     default="voyage-ai",
-    help="Embedding provider to use (default: voyage-ai)",
+    help="Embedding provider to use (VoyageAI only in v8.0+)",
 )
 @click.option(
     "--voyage-model",
@@ -1904,20 +1749,9 @@ def cli(
     help="Interactive configuration prompt",
 )
 @click.option(
-    "--setup-global-registry",
-    is_flag=True,
-    help="Setup global port registry (requires sudo)",
-)
-@click.option(
     "--create-override-file",
     is_flag=True,
     help="Create .code-indexer-override.yaml file for project-level file filtering rules",
-)
-@click.option(
-    "--qdrant-segment-size",
-    type=int,
-    default=100,
-    help="Qdrant segment size in MB (default: 100MB for optimal performance)",
 )
 @click.option(
     "--remote",
@@ -1941,9 +1775,9 @@ def cli(
 )
 @click.option(
     "--vector-store",
-    type=click.Choice(["filesystem", "qdrant"], case_sensitive=False),
+    type=click.Choice(["filesystem"], case_sensitive=False),
     default="filesystem",
-    help="Vector storage backend: 'filesystem' (container-free) or 'qdrant' (containers required)",
+    help="Vector storage backend: 'filesystem' (container-free, only supported option)",
 )
 @click.option(
     "--daemon",
@@ -1965,9 +1799,7 @@ def init(
     embedding_provider: str,
     voyage_model: str,
     interactive: bool,
-    setup_global_registry: bool,
     create_override_file: bool,
-    qdrant_segment_size: int,
     remote: Optional[str],
     username: Optional[str],
     password: Optional[str],
@@ -2006,25 +1838,13 @@ def init(
     \b
     EMBEDDING PROVIDERS:
       • voyage-ai: VoyageAI API (default, requires VOYAGE_API_KEY environment variable)
-      • ollama: Local AI models (experimental, no API key required)
-
-    \b
-    QDRANT SEGMENT SIZE:
-      Controls Qdrant storage segment size (default: 100MB for optimal performance):
-      • 10MB: Git-friendly for small projects, faster indexing, more files
-      • 50MB: Balanced approach for medium projects
-      • 100MB: Default - optimal performance while staying Git-compatible
-      • 200MB: Large repositories prioritizing search performance
 
     \b
     EXAMPLES:
       code-indexer init                                    # Basic initialization with VoyageAI
       code-indexer init --interactive                     # Interactive configuration
-      code-indexer init --embedding-provider ollama       # Use Ollama (experimental)
       code-indexer init --voyage-model voyage-large-2     # Specify VoyageAI model
       code-indexer init --max-file-size 2000000          # 2MB file limit
-      code-indexer init --qdrant-segment-size 50         # Git-friendly 50MB segments
-      code-indexer init --qdrant-segment-size 200        # Large repos 200MB segments
       code-indexer init --force                          # Overwrite existing config
 
     \b
@@ -2036,7 +1856,7 @@ def init(
       echo 'export VOYAGE_API_KEY=your_api_key_here' >> ~/.bashrc
 
     After initialization, edit .code-indexer/config.json to customize:
-    • embedding_provider: "ollama" or "voyage-ai"
+    • embedding_provider: "voyage-ai" (VoyageAI only in v8.0+)
     • exclude_dirs: ["node_modules", "dist", "my_temp_folder"]
     • file_extensions: ["py", "js", "ts", "java", "cpp"]
     """
@@ -2175,52 +1995,14 @@ def init(
     project_config_path = target_dir / ".code-indexer" / "config.json"
     config_manager = ConfigManager(project_config_path)
 
-    # CRITICAL: Check global port registry writeability before proceeding
-    # But ONLY for backends that need containers (qdrant)
+    # Port registry check removed (Story #506: container management deprecated)
+    # Filesystem backend doesn't need port coordination
     if vector_store != "filesystem":
-        try:
-            from .services.global_port_registry import GlobalPortRegistry
-
-            # This will test registry writeability during initialization
-            GlobalPortRegistry()
-            console.print("✅ Global port registry accessible")
-        except Exception as e:
-            if "Global port registry not accessible" in str(e):
-                if setup_global_registry:
-                    _setup_global_registry(quiet=False, test_access=True)
-                else:
-                    console.print("❌ Global port registry not accessible", style="red")
-                    console.print(
-                        "📋 The global port registry requires write access to system directories.",
-                        style="yellow",
-                    )
-                    console.print(
-                        "🔧 Setup options (choose one):",
-                        style="yellow",
-                    )
-                    console.print("")
-                    console.print(
-                        "   cidx init --setup-global-registry", style="bold cyan"
-                    )
-                    console.print("   cidx setup-global-registry", style="bold cyan")
-                    console.print("")
-                    console.print(
-                        "   No manual setup required - use either command above.",
-                        style="yellow",
-                    )
-                    console.print("")
-                    console.print(
-                        "💡 This creates /var/lib/code-indexer/port-registry with proper permissions",
-                        style="yellow",
-                    )
-                    console.print(
-                        "   for multi-user port coordination across projects.",
-                        style="yellow",
-                    )
-                    sys.exit(1)
-            else:
-                # Re-raise other registry errors
-                raise
+        console.print("⚠️  Filesystem container backend is deprecated", style="yellow")
+        console.print(
+            "💡 Please use filesystem backend: cidx init --vector-store filesystem",
+            style="blue",
+        )
 
     # Check if config already exists
     if config_manager.config_path.exists():
@@ -2229,7 +2011,7 @@ def init(
         existing_backend = (
             existing_config.vector_store.provider
             if existing_config.vector_store
-            else "qdrant"  # Default if not set
+            else "filesystem"  # Default if not set
         )
 
         # Check if switching backends with --force
@@ -2306,21 +2088,15 @@ def init(
                         f"    Requires API key: {info.get('api_key_env', 'N/A')}"
                     )
 
-            # Prompt for provider selection
-            if click.confirm(
-                "\nUse Ollama instead of VoyageAI? (experimental, slower)",
-                default=False,
-            ):
-                embedding_provider = "ollama"
-            else:
-                embedding_provider = "voyage-ai"
-                if not os.getenv("VOYAGE_API_KEY"):
-                    console.print(
-                        "⚠️  Warning: VOYAGE_API_KEY environment variable not set!",
-                        style="yellow",
-                    )
-                    console.print("You'll need to set it before using VoyageAI:")
-                    console.print("export VOYAGE_API_KEY=your_api_key_here")
+            # Only VoyageAI is supported in v8.0+
+            embedding_provider = "voyage-ai"
+            if not os.getenv("VOYAGE_API_KEY"):
+                console.print(
+                    "⚠️  Warning: VOYAGE_API_KEY environment variable not set!",
+                    style="yellow",
+                )
+                console.print("You'll need to set it before using VoyageAI:")
+                console.print("export VOYAGE_API_KEY=your_api_key_here")
 
                 # Prompt for VoyageAI model
                 voyage_model = click.prompt("VoyageAI model", default="voyage-code-3")
@@ -2349,16 +2125,8 @@ def init(
                 1000000  # Set default to avoid rate limiting
             )
             updates["voyage_ai"] = voyage_ai_config
-
-            # Set correct vector size for VoyageAI (1024 dimensions)
-            qdrant_config = config.qdrant.model_dump()
-            qdrant_config["vector_size"] = 1024
-            updates["qdrant"] = qdrant_config
-        elif embedding_provider == "ollama":
-            # Set correct vector size for Ollama (768 dimensions)
-            qdrant_config = config.qdrant.model_dump()
-            qdrant_config["vector_size"] = 768
-            updates["qdrant"] = qdrant_config
+            # Note: Vector size is determined dynamically by embedding provider
+            # voyage-code-3: 1024 dimensions, voyage-large-2: 1536 dimensions
 
         # Indexing configuration updates
         if max_file_size is not None:
@@ -2366,33 +2134,12 @@ def init(
             indexing_config["max_file_size"] = max_file_size
             updates["indexing"] = indexing_config
 
-        # Validate and process Qdrant segment size
-        if qdrant_segment_size <= 0:
-            console.print("❌ Qdrant segment size must be positive", style="red")
-            sys.exit(1)
-
-        # Convert MB to KB for internal storage and apply to configuration
-        segment_size_kb = qdrant_segment_size * 1024
-        if "qdrant" not in updates:
-            updates["qdrant"] = config.qdrant.model_dump()
-
-        # Ensure we have a dict type for mypy
-        qdrant_config = updates["qdrant"]
-        if isinstance(qdrant_config, dict):
-            qdrant_config["max_segment_size_kb"] = segment_size_kb
+        # filesystem_segment_size parameter removed in v8.0 (Filesystem backend removed)
+        # FilesystemVectorStore doesn't require segment size configuration
 
         # Conditionally allocate ports based on vector store backend
         # Filesystem backend doesn't need containers, so no port allocation
-        if vector_store == "filesystem":
-            # Create ProjectPortsConfig with all None values for filesystem backend
-            # Don't set to None directly as that causes Pydantic validation errors
-            from .config import ProjectPortsConfig
-
-            updates["project_ports"] = ProjectPortsConfig(
-                qdrant_port=None, ollama_port=None, data_cleaner_port=None
-            )
-
-        # Apply updates if any
+        # Apply updates if any (project_ports/project_containers removed in v8.0)
         if updates:
             config = config_manager.update_config(**updates)
 
@@ -2412,11 +2159,13 @@ def init(
                 f"⚠️  Warning: Failed to initialize backend: {e}", style="yellow"
             )
 
-        # Create qdrant storage directory proactively during init to prevent race condition
-        # Only needed for qdrant backend
-        if config.vector_store and config.vector_store.provider == "qdrant":  # type: ignore
-            project_qdrant_dir = config.codebase_dir / ".code-indexer" / "qdrant"
-            project_qdrant_dir.mkdir(parents=True, exist_ok=True)
+        # Create filesystem storage directory proactively during init to prevent race condition
+        # Only needed for filesystem backend
+        if config.vector_store and config.vector_store.provider == "filesystem":  # type: ignore
+            project_filesystem_dir = (
+                config.codebase_dir / ".code-indexer" / "filesystem"
+            )
+            project_filesystem_dir.mkdir(parents=True, exist_ok=True)
 
         # Create override file (by default or if explicitly requested)
         project_root = config.codebase_dir
@@ -2462,10 +2211,6 @@ def init(
                     "⚠️  Remember to set VOYAGE_API_KEY environment variable!",
                     style="yellow",
                 )
-        else:
-            console.print(
-                f"🤖 Embedding provider: Ollama (model: {config.ollama.model})"
-            )
 
         console.print("🔧 Run 'code-indexer start' to start services")
 
@@ -2681,430 +2426,10 @@ def config(
     return 0
 
 
-@cli.command()
-@click.option("--model", "-m", help="Ollama model to use (default: nomic-embed-text)")
-@click.option("--force-recreate", "-f", is_flag=True, help="Force recreate containers")
-@click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
-@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
-@click.option(
-    "--parallel-requests",
-    type=int,
-    default=1,
-    help="Number of concurrent requests Ollama server accepts (default: 1)",
-)
-@click.option(
-    "--max-models",
-    type=int,
-    default=1,
-    help="Maximum models to keep loaded in memory (default: 1)",
-)
-@click.option(
-    "--queue-size",
-    type=int,
-    default=512,
-    help="Maximum request queue size (default: 512)",
-)
-@click.pass_context
-@require_mode("local", "proxy")
-def start(
-    ctx,
-    model: Optional[str],
-    force_recreate: bool,
-    force_docker: bool,
-    quiet: bool,
-    parallel_requests: int,
-    max_models: int,
-    queue_size: int,
-):
-    """Intelligently start required services, performing setup if needed.
-
-    In proxy mode, starts services sequentially across all configured repositories.
-
-    \b
-    SMART BEHAVIOR - automatically handles different scenarios:
-    • If containers don't exist: performs full setup + start
-    • If containers exist but stopped: starts existing containers
-    • If containers already running: verifies health and reports status
-
-    \b
-    SERVICES (started based on embedding provider):
-    • Qdrant: Vector database (always required)
-    • Ollama: Local embedding models (only if using ollama provider)
-    • Data Cleaner: Text processing service (always required)
-
-    \b
-    WHAT HAPPENS (when full setup is needed):
-      1. Creates default configuration (.code-indexer/config.json + README.md)
-      2. Detects required services based on embedding provider
-      3. Creates Docker Compose configuration for only required services
-      4. Pulls required container images (idempotent)
-      5. Starts only required services (Qdrant always, Ollama only if needed)
-      6. Downloads embedding model (only for Ollama provider)
-      7. Waits for services to be ready
-      8. Creates vector database collection
-
-    \b
-    REQUIREMENTS:
-      • Docker or Podman installed and running
-      • Sufficient disk space (~4GB for models/images)
-      • Network access to download images/models
-
-    \b
-    SERVICE ENDPOINTS (provider-dependent):
-      • Qdrant: http://localhost:6333 (vector database, always started)
-      • Ollama: http://localhost:11434 (local AI embeddings, only if provider=ollama)
-      • Data Cleaner: Text processing service (always started)
-      • Data: .code-indexer/ (per-project persistent storage)
-
-    \b
-    PERFORMANCE OPTIONS (Ollama Environment Variables):
-      --parallel-requests N   Number of concurrent requests Ollama server accepts (default: 1)
-                             Maps to OLLAMA_NUM_PARALLEL (Ollama default: 4 or 1 based on memory)
-      --max-models N         Maximum models kept in memory (default: 1)
-                             Maps to OLLAMA_MAX_LOADED_MODELS (Ollama default: 3×GPU count or 3 for CPU)
-      --queue-size N         Maximum request queue size (default: 512)
-                             Maps to OLLAMA_MAX_QUEUE (Ollama default: 512)
-
-    Reference: https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server
-
-    \b
-    EXAMPLES:
-      code-indexer start                     # Smart start (detects what's needed)
-      code-indexer start --quiet            # Silent mode
-      code-indexer start --force-recreate   # Force recreate containers
-      code-indexer start --force-docker     # Force use Docker instead of Podman
-      code-indexer start -m all-minilm-l6-v2  # Different Ollama model
-      code-indexer start --parallel-requests 2 --max-models 1  # Multi-client Ollama setup
-      code-indexer start --queue-size 1024  # Larger Ollama request queue
-
-    \b
-    The command is fully idempotent - running it multiple times is safe and will only
-    start missing services or perform setup if needed.
-    """
-    # Handle proxy mode (Story 2.3 - Sequential Execution)
-    project_root, mode = ctx.obj["project_root"], ctx.obj["mode"]
-    if mode == "proxy":
-        from .proxy import execute_proxy_command
-
-        # Build args list from options
-        args = []
-        if force_docker:
-            args.append("--force-docker")
-        if force_recreate:
-            args.append("--force-recreate")
-        if quiet:
-            args.append("--quiet")
-
-        exit_code = execute_proxy_command(project_root, "start", args)
-        sys.exit(exit_code)
-
-    config_manager = ctx.obj["config_manager"]
-
-    try:
-        # Lazy imports for start command
-
-        # Use quiet console if requested
-        setup_console = Console(quiet=quiet) if quiet else console
-
-        # Only create a local config if NO config exists anywhere in the directory tree
-        if not config_manager.config_path.exists():
-            setup_console.print("📝 Creating default configuration...")
-            # Use relative path for CoW clone compatibility
-            config = config_manager.create_default_config(Path("."))
-            config_manager.save_with_documentation(config)
-            setup_console.print(
-                f"✅ Configuration created at {config_manager.config_path}"
-            )
-            setup_console.print(
-                f"📖 Documentation created at {config_manager.config_path.parent / 'README.md'}"
-            )
-            setup_console.print(
-                "💡 You can edit .code-indexer/config.json to customize exclusions before indexing"
-            )
-        else:
-            # Load existing config (found via backtracking)
-            config = config_manager.load()
-
-        # Provider-specific configuration and validation
-        if config.embedding_provider == "ollama":
-            # Update model if specified (only valid for Ollama)
-            if model:
-                config.ollama.model = model
-
-            # Update performance settings from command line parameters
-            config.ollama.num_parallel = parallel_requests
-            config.ollama.max_loaded_models = max_models
-            config.ollama.max_queue = queue_size
-
-            setup_console.print(
-                f"🤖 Ollama provider selected with model: {config.ollama.model}"
-            )
-
-        elif config.embedding_provider == "voyage-ai":
-            # Validate API key for VoyageAI
-            import os
-
-            if not os.getenv("VOYAGE_API_KEY"):
-                setup_console.print(
-                    "❌ VoyageAI provider requires VOYAGE_API_KEY environment variable",
-                    style="red",
-                )
-                setup_console.print(
-                    "💡 Get your API key at: https://www.voyageai.com/", style="yellow"
-                )
-                sys.exit(1)
-
-            # Model parameter not applicable for VoyageAI
-            if model:
-                setup_console.print(
-                    "⚠️ --model parameter is ignored for VoyageAI provider",
-                    style="yellow",
-                )
-
-            # Performance parameters not applicable for cloud providers
-            if parallel_requests != 1 or max_models != 1 or queue_size != 512:
-                setup_console.print(
-                    "⚠️ Performance parameters (--parallel-requests, --max-models, --queue-size) are ignored for cloud providers",
-                    style="yellow",
-                )
-
-            setup_console.print(
-                f"🌐 VoyageAI provider selected with model: {config.voyage_ai.model}"
-            )
-
-        else:
-            setup_console.print(
-                f"❌ Unsupported embedding provider: {config.embedding_provider}",
-                style="red",
-            )
-            sys.exit(1)
-
-        # Save updated configuration
-        config_manager.save(config)
-
-        # Create backend based on configuration
-        backend = BackendFactory.create(config, Path(config.codebase_dir))
-        backend_info = backend.get_service_info()
-
-        # Check if backend requires containers
-        requires_containers = backend_info.get("requires_containers", False)
-
-        if requires_containers:
-            # Qdrant backend - use existing Docker flow
-            setup_console.print("🔧 Using Qdrant vector store (containers required)")
-
-            # Check Docker availability (auto-detect project name)
-            project_config_dir = config_manager.config_path.parent
-            docker_manager = DockerManager(
-                setup_console,
-                force_docker=force_docker,
-                project_config_dir=project_config_dir,
-            )
-
-            # Ensure project has container names and ports configured
-            project_root = config.codebase_dir
-            project_config = docker_manager.ensure_project_configuration(
-                config_manager, project_root
-            )
-
-            setup_console.print(
-                f"📋 Project containers: {project_config['qdrant_name'][:12]}...",
-                style="dim",
-            )
-            # Display assigned ports for active services only
-            port_display = []
-            if "qdrant_port" in project_config:
-                port_display.append(f"Qdrant={project_config['qdrant_port']}")
-            if "ollama_port" in project_config:
-                port_display.append(f"Ollama={project_config['ollama_port']}")
-            if "data_cleaner_port" in project_config:
-                port_display.append(
-                    f"DataCleaner={project_config['data_cleaner_port']}"
-                )
-
-            if port_display:
-                setup_console.print(
-                    f"🔌 Assigned ports: {', '.join(port_display)}",
-                    style="dim",
-                )
-        else:
-            # Filesystem backend - no containers needed
-            setup_console.print("📁 Using filesystem vector store (container-free)")
-            setup_console.print(
-                f"💾 Index directory: {backend_info.get('vectors_dir', 'N/A')}"
-            )
-
-            # Call backend start (no-op for filesystem)
-            if backend.start():
-                setup_console.print("✅ Filesystem backend ready")
-                return
-            else:
-                setup_console.print(
-                    "❌ Failed to start filesystem backend", style="red"
-                )
-                sys.exit(1)
-
-        # Continue with Docker checks only for Qdrant backend
-        if not docker_manager.is_docker_available():
-            if force_docker:
-                setup_console.print(
-                    "❌ Docker is not available but --force-docker was specified. Please install Docker first.",
-                    style="red",
-                )
-            else:
-                setup_console.print(
-                    "❌ Neither Podman nor Docker is available. Please install either Podman or Docker first.",
-                    style="red",
-                )
-            sys.exit(1)
-
-        if not docker_manager.is_compose_available():
-            if force_docker:
-                setup_console.print(
-                    "❌ Docker Compose is not available but --force-docker was specified. Please install Docker Compose first.",
-                    style="red",
-                )
-            else:
-                setup_console.print(
-                    "❌ Neither Podman Compose nor Docker Compose is available. Please install either Podman or Docker Compose first.",
-                    style="red",
-                )
-            sys.exit(1)
-
-        # Check current service states for intelligent startup
-        required_services = docker_manager.get_required_services(config.model_dump())
-        setup_console.print(
-            f"🔍 Checking required services: {', '.join(required_services)}"
-        )
-
-        # Get current service states
-        all_healthy = True
-        for service in required_services:
-            state = docker_manager.get_service_state(service, project_config)
-            if not (state["running"] and state["healthy"]):
-                all_healthy = False
-                break
-
-        if all_healthy and not force_recreate:
-            setup_console.print(
-                "✅ All required services are already running and healthy"
-            )
-        else:
-            # Start only required services
-            if not docker_manager.start_services(recreate=force_recreate):
-                sys.exit(1)
-
-            # Wait for services to be ready (only required ones)
-            if not docker_manager.wait_for_services(project_config=project_config):
-                setup_console.print("❌ Services failed to start properly", style="red")
-                sys.exit(1)
-
-        # Reload config to get updated ports after service startup
-        config = config_manager.load()
-
-        # Small delay to ensure port updates are fully written to config file
-        import time
-
-        time.sleep(0.5)
-
-        # Test connections and setup based on provider
-        with setup_console.status("Testing service connections..."):
-            embedding_provider = EmbeddingProviderFactory.create(config, setup_console)
-            qdrant_client = QdrantClient(
-                config.qdrant, setup_console, Path(config.codebase_dir)
-            )
-
-            # Test embedding provider (only if required)
-            if config.embedding_provider == "ollama":
-                if not embedding_provider.health_check():
-                    setup_console.print(
-                        f"❌ {embedding_provider.get_provider_name().title()} service is not accessible",
-                        style="red",
-                    )
-                    sys.exit(1)
-            elif config.embedding_provider == "voyage-ai":
-                # For cloud providers, test connectivity without starting Docker services
-                try:
-                    if not embedding_provider.health_check():
-                        setup_console.print(
-                            f"❌ {embedding_provider.get_provider_name().title()} API is not accessible. Check your API key.",
-                            style="red",
-                        )
-                        sys.exit(1)
-                except Exception as e:
-                    setup_console.print(
-                        f"❌ Failed to connect to {embedding_provider.get_provider_name().title()}: {e}",
-                        style="red",
-                    )
-                    sys.exit(1)
-
-            # Always test Qdrant (required for all providers)
-            # Retry mechanism for Qdrant accessibility to handle port configuration propagation
-            qdrant_accessible = False
-            max_retries = 3
-            for retry in range(max_retries):
-                if qdrant_client.health_check():
-                    qdrant_accessible = True
-                    break
-                if retry < max_retries - 1:  # Don't sleep on last retry
-                    setup_console.print(
-                        f"⏳ Qdrant not yet accessible, retrying in 2s... (attempt {retry + 1}/{max_retries})",
-                        style="yellow",
-                    )
-                    time.sleep(2)
-                    # Force config reload for next retry
-                    config = config_manager.load()
-                    qdrant_client = QdrantClient(
-                        config.qdrant, setup_console, Path(config.codebase_dir)
-                    )
-
-            if not qdrant_accessible:
-                setup_console.print("❌ Qdrant service is not accessible", style="red")
-                sys.exit(1)
-
-        # Provider-specific model setup
-        if config.embedding_provider == "ollama":
-            setup_console.print(f"🤖 Checking Ollama model: {config.ollama.model}")
-            if hasattr(embedding_provider, "model_exists") and hasattr(
-                embedding_provider, "pull_model"
-            ):
-                if not embedding_provider.model_exists(config.ollama.model):
-                    if not embedding_provider.pull_model(config.ollama.model):
-                        setup_console.print(
-                            f"❌ Failed to pull model {config.ollama.model}",
-                            style="red",
-                        )
-                        sys.exit(1)
-        elif config.embedding_provider == "voyage-ai":
-            setup_console.print(
-                f"🤖 Using {embedding_provider.get_provider_name()} with model: {embedding_provider.get_current_model()}"
-            )
-            setup_console.print(
-                "💡 No local model download required for cloud provider"
-            )
-        else:
-            setup_console.print(
-                f"🤖 Using {embedding_provider.get_provider_name()} provider with model: {embedding_provider.get_current_model()}"
-            )
-
-        # Ensure collection exists - use new fixed collection naming (base_name + model_slug)
-        provider_info = EmbeddingProviderFactory.get_provider_model_info(config)
-        model_slug = EmbeddingProviderFactory.generate_model_slug(
-            "", provider_info["model_name"]
-        )
-        collection_name = f"{config.qdrant.collection_base_name}_{model_slug}"
-        if not qdrant_client.ensure_collection(collection_name):
-            setup_console.print("❌ Failed to create Qdrant collection", style="red")
-            sys.exit(1)
-
-        setup_console.print("✅ Services started successfully!", style="green")
-        setup_console.print(f"🔧 Ready to index codebase at: {config.codebase_dir}")
-
-    except Exception as e:
-        setup_console.print(f"❌ Start failed: {e}", style="red")
-        sys.exit(1)
+# NOTE: Legacy Filesystem container 'start' command removed (Story #505)
+# Daemon start command is now at line ~15776: @cli.command("start")
+# The old start() function with Filesystem container setup has been removed
+# as it was dead code (overridden by daemon start_command)
 
 
 def validate_index_flags(ctx, param, value):
@@ -3293,7 +2618,6 @@ def index(
     PERFORMANCE TUNING:
       • Vector calculations can be parallelized for faster indexing
       • VoyageAI default: 8 threads (API supports parallel requests)
-      • Ollama default: 1 thread (local model, avoid resource contention)
       • Configure thread count in config.json: voyage_ai.parallel_requests
 
     \b
@@ -3309,8 +2633,8 @@ def index(
 
     \b
     STORAGE:
-      Vector data stored in: .code-indexer/qdrant/ (per-project)
-      Each project gets its own collection for isolation.
+      Vector data stored in: .code-indexer/index/ (per-project)
+      Filesystem backend stores vectors as optimized JSON files.
     """
     config_manager = ctx.obj["config_manager"]
 
@@ -3904,7 +3228,9 @@ def index(
             sys.exit(1)
 
         if not backend.health_check():
-            provider = config.vector_store.provider if config.vector_store else "Qdrant"
+            provider = (
+                config.vector_store.provider if config.vector_store else "Filesystem"
+            )
             error_message = get_service_unavailable_message(
                 provider.title(), "cidx start"
             )
@@ -4387,8 +3713,13 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
         if available_indexes["semantic"]:
             # Initialize services (same as index command)
             embedding_provider = EmbeddingProviderFactory.create(config, console)
-            qdrant_client = QdrantClient(
-                config.qdrant, console, Path(config.codebase_dir)
+
+            # Initialize vector store (FilesystemVectorStore - Story #505)
+            from .storage.filesystem_vector_store import FilesystemVectorStore
+
+            index_dir = config.codebase_dir / ".code-indexer" / "index"
+            vector_store_client = FilesystemVectorStore(
+                base_path=index_dir, project_root=config.codebase_dir
             )
 
             # Health checks
@@ -4399,14 +3730,10 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
                 )
                 sys.exit(1)
 
-            if not qdrant_client.health_check():
-                console.print("❌ Qdrant service not available", style="red")
-                sys.exit(1)
-
             # Initialize SmartIndexer (same as index command)
             metadata_path = config_manager.config_path.parent / "metadata.json"
             smart_indexer = SmartIndexer(
-                config, embedding_provider, qdrant_client, metadata_path
+                config, embedding_provider, vector_store_client, metadata_path
             )
 
             # Initialize git topology service
@@ -4438,11 +3765,11 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
             )
 
             # Start watch session
-            collection_name = qdrant_client.resolve_collection_name(
+            collection_name = vector_store_client.resolve_collection_name(
                 config, embedding_provider
             )
             # Ensure payload indexes exist for watch indexing operations
-            qdrant_client.ensure_payload_indexes(collection_name, context="index")
+            vector_store_client.ensure_payload_indexes(collection_name, context="index")
 
             watch_metadata.start_watch_session(
                 provider_name=embedding_provider.get_provider_name(),
@@ -5576,7 +4903,7 @@ def query(
         console.print("To get started, choose one of these initialization options:")
         console.print()
         console.print("🏠 Local Mode (recommended for getting started):")
-        console.print("   cidx init          # Initialize with local Ollama + Qdrant")
+        console.print("   cidx init          # Initialize with VoyageAI embeddings")
         console.print("   cidx start         # Start local services")
         console.print("   cidx index         # Index your codebase")
         console.print()
@@ -6099,7 +5426,7 @@ def query(
 
             # Query vector store (get more results to allow for git filtering)
             # FilesystemVectorStore: parallel execution (query + embedding_provider)
-            # QdrantClient: requires pre-computed query_vector
+            # FilesystemVectorStore: requires pre-computed query_vector
             from .storage.filesystem_vector_store import (
                 FilesystemVectorStore,
             )
@@ -6115,7 +5442,7 @@ def query(
                     return_timing=True,
                 )
             else:
-                # QdrantClient: pre-compute embedding (no parallel support yet)
+                # FilesystemVectorStore: pre-compute embedding (no parallel support yet)
                 query_embedding = embedding_provider.get_embedding(query)
                 raw_results_list = vector_store_client.search(
                     query_vector=query_embedding,
@@ -6124,7 +5451,7 @@ def query(
                     collection_name=collection_name,
                 )
                 raw_results = raw_results_list  # Type compatibility
-                search_timing = {}  # Qdrant doesn't return timing yet
+                search_timing = {}  # Filesystem doesn't return timing yet
             # Merge detailed search timing into main timing info
             timing_info.update(search_timing)
 
@@ -6146,7 +5473,7 @@ def query(
             git_results = query_service.filter_results_by_current_branch(raw_results)  # type: ignore[arg-type]
             timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
 
-            # Apply minimum score filtering (language and path already handled by Qdrant filters)
+            # Apply minimum score filtering (language and path already handled by Filesystem filters)
             if min_score:
                 filtered_results: List[Dict[str, Any]] = []
                 for result in git_results:
@@ -6157,7 +5484,7 @@ def query(
         else:
             # Use model-specific search for non-git projects
             # FilesystemVectorStore: Use regular search (no model filter needed - single provider)
-            # QdrantClient: Use search_with_model_filter for multi-provider support
+            # FilesystemVectorStore: Use search_with_model_filter for multi-provider support
             from .storage.filesystem_vector_store import (
                 FilesystemVectorStore,
             )
@@ -6175,7 +5502,7 @@ def query(
                 )
                 timing_info.update(search_timing)
             else:
-                # Qdrant backend: pre-compute embedding
+                # Filesystem backend: pre-compute embedding
                 search_start = time.time()
                 query_embedding = embedding_provider.get_embedding(query)
                 raw_results_list = vector_store_client.search_with_model_filter(
@@ -6652,20 +5979,17 @@ OUTPUT THE COMPLETE MERGED FILE (raw content only, no markdown wrappers):"""
 
 
 @cli.command()
-@click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
 @click.pass_context
 @require_mode("local", "remote", "proxy", "uninitialized")
-def status(ctx, force_docker: bool):
+def status(ctx):
     """Show status of services and index (adapted for current mode).
     \b
     Displays comprehensive information about your code-indexer installation:
     \b
     LOCAL MODE:
-      • Ollama: AI embedding service status
-      • Qdrant: Vector database status
-      • Docker containers: Running/stopped state
+      • VoyageAI: AI embedding service status
+      • Daemon: Background service status
+      • Index: Filesystem vector store health
       • Project configuration details
       • Git repository information (if applicable)
       • Vector collection statistics
@@ -6696,8 +6020,6 @@ def status(ctx, force_docker: bool):
 
         # Build args list for status command
         args = []
-        if force_docker:
-            args.append("--force-docker")
 
         exit_code = execute_proxy_command(project_root, "status", args)
         sys.exit(exit_code)
@@ -6705,7 +6027,7 @@ def status(ctx, force_docker: bool):
     if mode == "local":
         from .mode_specific_handlers import display_local_status
 
-        display_local_status(project_root, force_docker)
+        display_local_status(project_root)
     elif mode == "remote":
         from .mode_specific_handlers import display_remote_status
 
@@ -6716,7 +6038,7 @@ def status(ctx, force_docker: bool):
         display_uninitialized_status(project_root)
 
 
-def _status_impl(ctx, force_docker: bool):
+def _status_impl(ctx):
     """Show status of services and index.
 
     \b
@@ -6724,9 +6046,8 @@ def _status_impl(ctx, force_docker: bool):
 
     \b
     SERVICE STATUS:
-      • Ollama: AI embedding service status
-      • Qdrant: Vector database status
-      • Docker containers: Running/stopped state
+      • VoyageAI: AI embedding service status
+      • Index: Filesystem vector store health
 
     \b
     INDEX INFORMATION:
@@ -6745,7 +6066,7 @@ def _status_impl(ctx, force_docker: bool):
 
     \b
     EXAMPLE OUTPUT:
-      ✅ Services: Ollama (ready), Qdrant (ready)
+      ✅ Services: VoyageAI (ready)
       📂 Project: my-app (Git: feature-branch)
       📊 Index: 1,234 files, 5,678 chunks
       💾 Storage: 45.2MB, optimized
@@ -6795,37 +6116,17 @@ def _status_impl(ctx, force_docker: bool):
         # Check backend provider first to determine if containers are needed
         backend_provider = getattr(config, "vector_store", None)
         backend_provider = (
-            backend_provider.provider if backend_provider else "qdrant"
-        )  # Default to qdrant for backward compatibility
+            backend_provider.provider if backend_provider else "filesystem"
+        )  # Default to filesystem for backward compatibility
 
-        # Only check Docker services if using Qdrant backend (containers required)
-        service_status: Dict[str, Any] = {"status": "not_configured", "services": {}}
+        # Container status check removed (Story #506: container management deprecated)
+        # Filesystem backend doesn't need container services
         if backend_provider != "filesystem":
-            # Check Docker services (auto-detect project name)
-            project_config_dir = config_manager.config_path.parent
-            docker_manager = DockerManager(
-                force_docker=force_docker, project_config_dir=project_config_dir
+            table.add_row(
+                "Container Backend",
+                "⚠️ Deprecated",
+                "Use filesystem backend instead",
             )
-            try:
-                service_status = docker_manager.get_service_status()
-                docker_status = (
-                    "✅ Running"
-                    if service_status["status"] == "running"
-                    else "❌ Not Running"
-                )
-                table.add_row(
-                    "Docker Services",
-                    docker_status,
-                    f"{len(service_status['services'])} services",
-                )
-            except Exception:
-                # Handle case where containers haven't been created yet
-                table.add_row(
-                    "Docker Services",
-                    "❌ Not Configured",
-                    "Run 'code-indexer start' to create containers",
-                )
-                service_status = {"status": "not_configured", "services": {}}
 
         # Check embedding provider - ALWAYS attempt health check via HTTP
         try:
@@ -6839,19 +6140,7 @@ def _status_impl(ctx, force_docker: bool):
             if provider_ok:
                 provider_details = f"Model: {embedding_provider.get_current_model()}"
             else:
-                # Check if container exists for debugging info
-                if config.embedding_provider == "ollama":
-                    ollama_container_found = any(
-                        "ollama" in name and info["state"] == "running"
-                        for name, info in service_status.get("services", {}).items()
-                    )
-                    provider_details = (
-                        f"Service unreachable at {config.ollama.host}"
-                        if ollama_container_found
-                        else "Service down (container stopped)"
-                    )
-                else:
-                    provider_details = "Service unreachable"
+                provider_details = "Service unreachable"
 
             table.add_row(
                 f"{provider_name} Provider", provider_status, provider_details
@@ -6859,10 +6148,10 @@ def _status_impl(ctx, force_docker: bool):
         except Exception as e:
             table.add_row("Embedding Provider", "❌ Error", str(e))
 
-        # Check Vector Storage Backend (Qdrant or Filesystem)
+        # Check Vector Storage Backend (Filesystem or Filesystem)
         # backend_provider already determined above
-        qdrant_ok = False  # Initialize to False
-        qdrant_client = None  # Initialize to None
+        filesystem_ok = False  # Initialize to False
+        vector_store_client = None  # Initialize to None
 
         # Initialize variables for recovery guidance (both backends need these defined)
         missing_components: List[str] = []
@@ -7051,7 +6340,6 @@ def _status_impl(ctx, force_docker: bool):
                             # Calculate storage size - include ALL files in temporal directory
                             # Use du command for performance (30x faster than iterating files)
                             import subprocess
-                            import platform
 
                             total_size_bytes = 0
                             if temporal_dir.exists():
@@ -7077,16 +6365,26 @@ def _status_impl(ctx, force_docker: bool):
                                             text=True,
                                             timeout=5,
                                         )
-                                        if result.returncode == 0 and result.stdout.strip():
+                                        if (
+                                            result.returncode == 0
+                                            and result.stdout.strip()
+                                        ):
                                             stdout_parts = result.stdout.split()
                                             if stdout_parts:
                                                 total_size_kb = int(stdout_parts[0])
                                                 total_size_bytes = total_size_kb * 1024
                                         else:
                                             # If du command failed, fall back to Python iteration
-                                            raise subprocess.CalledProcessError(result.returncode, result.args)
+                                            raise subprocess.CalledProcessError(
+                                                result.returncode, result.args
+                                            )
 
-                                except (FileNotFoundError, subprocess.CalledProcessError, ValueError, IndexError):
+                                except (
+                                    FileNotFoundError,
+                                    subprocess.CalledProcessError,
+                                    ValueError,
+                                    IndexError,
+                                ):
                                     # Fallback to iteration if du command unavailable or fails
                                     for file_path in temporal_dir.rglob("*"):
                                         if file_path.is_file():
@@ -7140,158 +6438,18 @@ def _status_impl(ctx, force_docker: bool):
             except Exception as e:
                 table.add_row("Vector Storage", "❌ Error", str(e))
 
-        else:
-            # Qdrant backend - original container-based logic
-            try:
-                qdrant_client = QdrantClient(config.qdrant)
-                qdrant_ok = qdrant_client.health_check()
-                qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
-                qdrant_details = ""
-
-                if qdrant_ok:
-                    try:
-                        # Get the correct collection name using the current embedding provider
-                        embedding_provider = EmbeddingProviderFactory.create(
-                            config, console
-                        )
-                        collection_name = qdrant_client.resolve_collection_name(
-                            config, embedding_provider
-                        )
-
-                        # Check collection health before counting points
-                        try:
-                            collection_info = qdrant_client.get_collection_info(
-                                collection_name
-                            )
-                            collection_status = collection_info.get("status", "unknown")
-
-                            if collection_status == "red":
-                                # Collection has errors - show error details
-                                optimizer_status = collection_info.get(
-                                    "optimizer_status", {}
-                                )
-                                error_msg = optimizer_status.get(
-                                    "error", "Unknown error"
-                                )
-
-                                # Translate common errors to user-friendly messages
-                                if "No such file or directory" in error_msg:
-                                    friendly_error = "Storage corruption detected - collection data is damaged"
-                                elif "Permission denied" in error_msg:
-                                    friendly_error = "Storage permission error - check file permissions"
-                                elif "disk space" in error_msg.lower():
-                                    friendly_error = "Insufficient disk space for collection operations"
-                                else:
-                                    friendly_error = f"Collection error: {error_msg}"
-
-                                qdrant_status = "❌ Collection Error"
-                                qdrant_details = f"🚨 {friendly_error}"
-                            elif collection_status == "yellow":
-                                qdrant_status = "⚠️ Collection Warning"
-                                qdrant_details = (
-                                    "Collection has warnings but is functional"
-                                )
-                            else:
-                                # Collection is healthy, proceed with normal status
-                                project_count = qdrant_client.count_points(
-                                    collection_name
-                                )
-
-                                # Get total documents across all collections for context
-                                try:
-                                    import requests  # type: ignore[import-untyped]
-
-                                    response = requests.get(
-                                        f"{config.qdrant.host}/collections", timeout=5
-                                    )
-                                    if response.status_code == 200:
-                                        collections_data = response.json()
-                                        total_count = 0
-                                        for collection_info in collections_data.get(
-                                            "result", {}
-                                        ).get("collections", []):
-                                            coll_name = collection_info["name"]
-                                            coll_count = qdrant_client.count_points(
-                                                coll_name
-                                            )
-                                            total_count += coll_count
-                                        qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
-                                    else:
-                                        qdrant_details = f"Documents: {project_count}"
-                                except Exception:
-                                    qdrant_details = f"Documents: {project_count}"
-
-                                # Add progressive metadata info if available and different from Qdrant count
-                                try:
-                                    metadata_path = (
-                                        config_manager.config_path.parent
-                                        / "metadata.json"
-                                    )
-                                    if metadata_path.exists():
-                                        import json
-
-                                        with open(metadata_path) as f:
-                                            metadata = json.load(f)
-                                        files_processed = metadata.get(
-                                            "files_processed", 0
-                                        )
-                                        chunks_indexed = metadata.get(
-                                            "chunks_indexed", 0
-                                        )
-                                        status = metadata.get("status", "unknown")
-
-                                        # Show progressive info if recent activity or if counts differ
-                                        if files_processed > 0 and (
-                                            status == "in_progress"
-                                            or chunks_indexed != project_count
-                                        ):
-                                            qdrant_details += f" | Progress: {files_processed} files, {chunks_indexed} chunks"
-                                            if status == "in_progress":
-                                                qdrant_details += " (🔄 not complete)"
-                                except Exception:
-                                    pass  # Don't fail status display if metadata reading fails
-                        except Exception as e:
-                            if "doesn't exist" in str(e):
-                                qdrant_details = (
-                                    "Collection not found - run 'cidx index' to create"
-                                )
-                            else:
-                                qdrant_details = (
-                                    f"Error checking collection: {str(e)[:50]}..."
-                                )
-                    except Exception as e:
-                        if "doesn't exist" in str(e):
-                            qdrant_details = (
-                                "Collection not found - run 'cidx index' to create"
-                            )
-                        else:
-                            qdrant_details = f"Error: {str(e)[:50]}..."
-                else:
-                    # Check if container exists for debugging info
-                    qdrant_container_found = any(
-                        "qdrant" in name and info["state"] == "running"
-                        for name, info in service_status.get("services", {}).items()
-                    )
-                    qdrant_details = (
-                        f"Service unreachable at {config.qdrant.host}"
-                        if qdrant_container_found
-                        else "Service down (container stopped)"
-                    )
-
-                table.add_row("Qdrant", qdrant_status, qdrant_details)
-            except Exception as e:
-                table.add_row("Qdrant", "❌ Error", str(e))
-
-        # Add payload index status - only if Qdrant is running and healthy
-        if qdrant_ok and qdrant_client:
+        # Add payload index status - only if Filesystem is running and healthy
+        if filesystem_ok and vector_store_client:
             try:
                 embedding_provider = EmbeddingProviderFactory.create(config, console)
-                collection_name = qdrant_client.resolve_collection_name(
+                collection_name = vector_store_client.resolve_collection_name(
                     config, embedding_provider
                 )
                 # Ensure payload indexes exist (silent for status operations)
-                qdrant_client.ensure_payload_indexes(collection_name, context="status")
-                payload_index_status = qdrant_client.get_payload_index_status(
+                vector_store_client.ensure_payload_indexes(
+                    collection_name, context="status"
+                )
+                payload_index_status = vector_store_client.get_payload_index_status(
                     collection_name
                 )
 
@@ -7321,42 +6479,44 @@ def _status_impl(ctx, force_docker: bool):
                     "Payload Indexes", "❌ Error", f"Check failed: {str(e)[:40]}..."
                 )
 
-        # Add Qdrant storage and collection information - only for Qdrant backend
+        # Add Filesystem storage and collection information - only for Filesystem backend
         if backend_provider != "filesystem":
             try:
                 # Get storage path from configuration instead of container inspection
                 # Use the actual project-specific storage path from config
-                project_qdrant_dir = (
-                    Path(config.codebase_dir).resolve() / ".code-indexer" / "qdrant"
+                project_filesystem_dir = (
+                    Path(config.codebase_dir).resolve() / ".code-indexer" / "filesystem"
                 )
-                table.add_row("Qdrant Storage", "📁", f"Host:\n{project_qdrant_dir}")
+                table.add_row(
+                    "Filesystem Storage", "📁", f"Host:\n{project_filesystem_dir}"
+                )
 
                 # Add current project collection information
-                if qdrant_ok and qdrant_client:
+                if filesystem_ok and vector_store_client:
                     try:
                         embedding_provider = EmbeddingProviderFactory.create(
                             config, console
                         )
-                        collection_name = qdrant_client.resolve_collection_name(
+                        collection_name = vector_store_client.resolve_collection_name(
                             config, embedding_provider
                         )
 
                         # Check if collection exists and get basic info
-                        collection_exists = qdrant_client.collection_exists(
+                        collection_exists = vector_store_client.collection_exists(
                             collection_name
                         )
                         if collection_exists:
-                            collection_count = qdrant_client.count_points(
+                            collection_count = vector_store_client.count_points(
                                 collection_name
                             )
                             collection_status = "✅ Active"
 
-                            # Get local collection path - should be in project's .code-indexer/qdrant_collection/
+                            # Get local collection path - should be in project's .code-indexer/filesystem_collection/
                             project_root = config.codebase_dir
                             local_collection_path = (
                                 project_root
                                 / ".code-indexer"
-                                / "qdrant_collection"
+                                / "filesystem_collection"
                                 / collection_name
                             )
 
@@ -7383,16 +6543,20 @@ def _status_impl(ctx, force_docker: bool):
                         )
                 else:
                     table.add_row(
-                        "Project Collection", "❌ Unavailable", "Qdrant service down"
+                        "Project Collection",
+                        "❌ Unavailable",
+                        "Filesystem service down",
                     )
 
             except Exception as e:
                 table.add_row(
-                    "Qdrant Storage", "⚠️  Error", f"Inspection failed: {str(e)[:30]}"
+                    "Filesystem Storage",
+                    "⚠️  Error",
+                    f"Inspection failed: {str(e)[:30]}",
                 )
 
-        # Check Data Cleaner (Qdrant-only service)
-        # Only show Data Cleaner status for Qdrant backends, not filesystem
+        # Check Data Cleaner (Filesystem-only service)
+        # Only show Data Cleaner status for Filesystem backends, not filesystem
         if backend_provider != "filesystem":
             # CRITICAL IMPLEMENTATION NOTE: This status check was debugged and fixed to handle
             # the data-cleaner's netcat-based HTTP implementation which has specific limitations:
@@ -7425,7 +6589,7 @@ def _status_impl(ctx, force_docker: bool):
             data_cleaner_details = "Service down"
 
             try:
-                import requests
+                import requests  # type: ignore[import-untyped]
                 import subprocess
                 import socket
 
@@ -7573,11 +6737,18 @@ def _status_impl(ctx, force_docker: bool):
         # Add git repository status if available
         try:
             from .services.git_aware_processor import GitAwareDocumentProcessor
+            from .storage.filesystem_vector_store import FilesystemVectorStore
+
+            # Initialize vector store for git processor (Story #505)
+            index_dir = config.codebase_dir / ".code-indexer" / "index"
+            vector_store = FilesystemVectorStore(
+                base_path=index_dir, project_root=config.codebase_dir
+            )
 
             processor = GitAwareDocumentProcessor(
                 config,
                 EmbeddingProviderFactory.create(config, console),
-                QdrantClient(config.qdrant),
+                vector_store,
             )
             # Use fast git status (no file scanning) for status display performance
             git_status = processor.get_git_status_fast()
@@ -7594,14 +6765,14 @@ def _status_impl(ctx, force_docker: bool):
             table.add_row("Git Repository", "⚠️  Error", "Could not check git status")
 
         # Storage information
-        if qdrant_ok and qdrant_client:
+        if filesystem_ok and vector_store_client:
             try:
                 # Use the correct collection name for storage info too
                 embedding_provider = EmbeddingProviderFactory.create(config, console)
-                collection_name = qdrant_client.resolve_collection_name(
+                collection_name = vector_store_client.resolve_collection_name(
                     config, embedding_provider
                 )
-                size_info = qdrant_client.get_collection_size(collection_name)
+                size_info = vector_store_client.get_collection_size(collection_name)
                 if "error" not in size_info:
                     storage_details = f"Size: ~{size_info['estimated_vector_size_mb']}MB | Points: {size_info['points_count']:,}"
                     table.add_row("Storage", "📊", storage_details)
@@ -7686,372 +6857,40 @@ def _status_impl(ctx, force_docker: bool):
 @cli.command()
 @click.pass_context
 def optimize(ctx):
-    """Optimize vector database storage and performance."""
-    config_manager = ctx.obj["config_manager"]
-
-    try:
-        # Lazy imports for optimize command
-
-        config = config_manager.load()
-
-        # Initialize Qdrant client
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
-
-        # Health check
-        if not qdrant_client.health_check():
-            console.print("❌ Qdrant service not available", style="red")
-            sys.exit(1)
-
-        console.print("🔧 Optimizing vector database...")
-
-        # Get current size information
-        size_info = qdrant_client.get_collection_size()
-        if "error" not in size_info:
-            console.print(
-                f"📊 Current size: ~{size_info['estimated_vector_size_mb']}MB"
-            )
-            console.print(f"📦 Points: {size_info['points_count']:,}")
-
-        # Optimize collection
-        if qdrant_client.optimize_collection():
-            console.print("✅ Database optimization completed!", style="green")
-
-            # Show new size information
-            new_size_info = qdrant_client.get_collection_size()
-            if "error" not in new_size_info:
-                console.print(
-                    f"📊 Optimized size: ~{new_size_info['estimated_vector_size_mb']}MB"
-                )
-        else:
-            console.print(
-                "⚠️  Optimization may not have completed successfully", style="yellow"
-            )
-
-    except Exception as e:
-        console.print(f"❌ Optimization failed: {e}", style="red")
-        sys.exit(1)
-
-
-@cli.command()
-@click.option(
-    "--collection",
-    help="Specific collection to flush (flushes all collections if not specified)",
-)
-@click.pass_context
-def force_flush(ctx, collection: Optional[str]):
-    """Force flush collection data from RAM to disk for CoW operations.
-
-    \b
-    ⚠️  DEPRECATED: This command is no longer needed with modern Qdrant and
-    per-project container architecture. Qdrant now handles data persistence
-    automatically without manual flush operations.
-
-    \b
-    Forces Qdrant to flush all collection data from memory to disk
-    using the snapshot API. This ensures data consistency before
-    copy-on-write (CoW) cloning operations.
-
-    \b
-    USAGE SCENARIOS:
-      • Before CoW cloning indexed projects
-      • Ensuring data persistence before system maintenance
-      • Debugging collection data consistency issues
-
-    \b
-    TECHNICAL DETAILS:
-      • Creates temporary snapshots to trigger flush
-      • Automatically cleans up temporary snapshots
-      • Works with both global and local storage modes
-      • Safe to run on active collections
-
-    \b
-    COW CLONING EXAMPLES:
-      # Complete workflow for CoW cloning:
-      code-indexer force-flush              # Flush before cloning
-
-      # BTRFS filesystem (most common):
-      cp --reflink=always -r /path/to/project /path/to/clone
-
-      # ZFS filesystem:
-      zfs snapshot tank/project@clone
-      zfs clone tank/project@clone tank/clone
-
-      # XFS filesystem (requires reflink support):
-      cp --reflink=always -r /path/to/project /path/to/clone
-
-      # After cloning, fix config in clone:
-      cd /path/to/clone && code-indexer fix-config --force
-    """
-    config_manager = ctx.obj["config_manager"]
-
-    # Show deprecation warning
+    """[REMOVED] Optimize vector database - not needed for FilesystemVectorStore."""
     console.print(
-        "⚠️  DEPRECATION WARNING: The 'force-flush' command is deprecated and no longer needed.",
+        "❌ The 'optimize' command has been removed (Story #505).",
+        style="red",
+    )
+    console.print(
+        "💡 FilesystemVectorStore does not require optimization.",
         style="yellow",
     )
     console.print(
-        "   Modern Qdrant handles data persistence automatically. Consider removing this from your workflows.",
+        "   Filesystem container backend has been deprecated and removed.",
+        style="dim",
+    )
+    sys.exit(1)
+
+
+@cli.command("force-flush")
+@click.option("--collection", help="Specific collection to flush (optional)")
+@click.pass_context
+def force_flush(ctx, collection: Optional[str] = None):
+    """[REMOVED] Force flush - not needed for FilesystemVectorStore."""
+    console.print(
+        "❌ The 'force-flush' command has been removed (Story #505).",
+        style="red",
+    )
+    console.print(
+        "💡 FilesystemVectorStore writes are synchronous and don't require flushing.",
         style="yellow",
     )
-    console.print()
-
-    try:
-        # Lazy imports for force_flush command
-
-        config = config_manager.load()
-
-        # Initialize Qdrant client
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
-
-        # Health check
-        if not qdrant_client.health_check():
-            console.print("❌ Qdrant service not available", style="red")
-            sys.exit(1)
-
-        if collection:
-            # Flush specific collection
-            console.print(f"💾 Force flushing collection '{collection}' to disk...")
-            success = qdrant_client.force_flush_to_disk(collection)
-
-            if success:
-                console.print(
-                    f"✅ Successfully flushed collection '{collection}' to disk",
-                    style="green",
-                )
-            else:
-                console.print(
-                    f"❌ Failed to flush collection '{collection}'", style="red"
-                )
-                sys.exit(1)
-        else:
-            # Flush all collections
-            console.print("💾 Force flushing all collections to disk...")
-
-            # Get list of existing collections
-            collections = qdrant_client.list_collections()
-            if not collections:
-                console.print("ℹ️  No collections found to flush", style="yellow")
-                return
-
-            console.print(f"Found {len(collections)} collections to flush...")
-
-            failed_collections = []
-            for coll_name in collections:
-                console.print(f"  💾 Flushing '{coll_name}'...")
-                success = qdrant_client.force_flush_to_disk(coll_name)
-
-                if success:
-                    console.print(
-                        f"  ✅ '{coll_name}' flushed successfully", style="green"
-                    )
-                else:
-                    console.print(f"  ❌ Failed to flush '{coll_name}'", style="red")
-                    failed_collections.append(coll_name)
-
-            if failed_collections:
-                console.print(
-                    f"❌ Failed to flush {len(failed_collections)} collections: {', '.join(failed_collections)}",
-                    style="red",
-                )
-                sys.exit(1)
-            else:
-                console.print(
-                    f"✅ Successfully flushed all {len(collections)} collections to disk",
-                    style="green",
-                )
-
-    except Exception as e:
-        console.print(f"❌ Force flush failed: {e}", style="red")
-        sys.exit(1)
-
-
-# DEPRECATED: The 'clean' command was removed because it was semantically confusing.
-#
-# DO NOT RE-ADD THE 'clean' COMMAND - it created confusion between:
-# - clean (stop services + optionally remove data)
-# - clean-data (remove data, keep services running)
-# - stop (stop services, keep data)
-# - uninstall (remove everything)
-#
-# Instead, use these specific commands:
-# - Use 'stop' to stop services while preserving data
-# - Use 'clean-data' to clear data while keeping containers running (fast for tests)
-# - Use 'uninstall' to completely remove everything
-#
-# The old 'clean' command functionality is now split between 'stop' and 'uninstall'
-# to provide clearer semantics and avoid user confusion.
-#
-# DEPRECATED: The 'setup' command was also removed for similar clarity reasons.
-#
-# DO NOT RE-ADD THE 'setup' COMMAND - it was replaced by the combination of:
-# - 'init' (optional configuration initialization)
-# - 'start' (intelligent service startup with auto-configuration)
-#
-# The 'start' command now handles all setup functionality intelligently:
-# - Creates default config if none exists
-# - Starts only required services for the chosen embedding provider
-# - Handles model downloads and service health checks
-# - Works from any directory (walks up to find .code-indexer)
-#
-# This provides clearer separation of concerns and better user experience.
-
-
-@cli.command()
-@click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
-@click.pass_context
-@require_mode("local", "proxy")
-def stop(ctx, force_docker: bool):
-    """Stop code indexing services while preserving all data.
-
-    In proxy mode, stops services sequentially across all configured repositories.
-
-    \b
-    Stops Docker containers for Ollama and Qdrant services without
-    removing any data or configuration. Can be run from any subfolder
-    of an indexed project.
-
-    \b
-    WHAT IT DOES:
-      • Finds project configuration by walking up directory tree
-      • Stops Docker containers (Ollama + Qdrant)
-      • Preserves all indexed data and configuration
-      • Works from any subfolder within the indexed project
-
-    \b
-    DATA PRESERVATION:
-      • All indexed code vectors remain intact
-      • Project configuration is preserved
-      • Docker volumes and networks are preserved
-      • Models and databases are preserved
-
-    \b
-    PERFORMANCE:
-      • Containers are stopped, not removed
-      • Fast restart with 'start' command (5-10 seconds)
-      • Much faster than 'uninstall' followed by 'start'
-      • Ideal for freeing resources without full cleanup
-
-    \b
-    EXAMPLES:
-      cd /path/to/my/project/src/components
-      code-indexer stop                     # Works from any subfolder
-      code-indexer stop --force-docker      # Force Docker instead of Podman
-
-    \b
-    USE CASES:
-      • Free up system resources when not coding
-      • Prepare for machine shutdown or restart
-      • Stop services before system maintenance
-      • Temporarily disable indexing services
-
-    \b
-    RESTARTING:
-      Use 'code-indexer start' to resume services with all data intact.
-      Much faster than running 'start' again.
-    """
-    # Handle proxy mode (Story 2.3 - Sequential Execution)
-    project_root, mode = ctx.obj["project_root"], ctx.obj["mode"]
-    if mode == "proxy":
-        from .proxy import execute_proxy_command
-
-        # Build args list from options
-        args = []
-        if force_docker:
-            args.append("--force-docker")
-
-        exit_code = execute_proxy_command(project_root, "stop", args)
-        sys.exit(exit_code)
-
-    try:
-        # Lazy imports for stop command
-
-        # Use configuration from CLI context
-        config_manager = ctx.obj["config_manager"]
-        config_path = config_manager.config_path
-
-        if not config_path or not config_path.exists():
-            console.print(
-                "❌ No .code-indexer/config.json found in current directory tree",
-                style="red",
-            )
-            console.print(
-                "💡 Services may not be configured for this project", style="yellow"
-            )
-            sys.exit(1)
-
-        # Load configuration
-        config = config_manager.load()
-        console.print(f"📁 Found configuration: {config_path}")
-        console.print(f"🏗️  Project directory: {config.codebase_dir}")
-
-        # Create backend based on configuration
-        backend = BackendFactory.create(config, Path(config.codebase_dir))
-        backend_info = backend.get_service_info()
-
-        # Check if backend requires containers
-        requires_containers = backend_info.get("requires_containers", False)
-
-        if requires_containers:
-            # Qdrant backend - use existing Docker flow
-            console.print("🔧 Stopping Qdrant vector store containers...")
-
-            # Initialize Docker manager
-            project_config_dir = config_path.parent
-            docker_manager = DockerManager(
-                console,
-                force_docker=force_docker,
-                project_config_dir=project_config_dir,
-            )
-
-            # Check current status
-            status = docker_manager.get_service_status()
-            if status["status"] == "not_configured":
-                console.print(
-                    "ℹ️  Services not configured - nothing to stop", style="blue"
-                )
-                return
-
-            running_services = [
-                svc
-                for svc in status["services"].values()
-                if svc.get("state", "").lower() == "running"
-            ]
-
-            if not running_services:
-                console.print("ℹ️  No services currently running", style="blue")
-                return
-
-            # Stop services
-            console.print("🛑 Stopping code indexing services...")
-            console.print("💾 All data will be preserved for restart")
-
-            if docker_manager.stop_services():
-                console.print("✅ Services stopped successfully!", style="green")
-                console.print(
-                    "💡 Use 'code-indexer start' to resume with all data intact"
-                )
-            else:
-                console.print("❌ Failed to stop some services", style="red")
-                sys.exit(1)
-        else:
-            # Filesystem backend - no containers to stop
-            console.print("📁 Using filesystem vector store (container-free)")
-            console.print(
-                "💾 No containers to stop - filesystem backend is always available"
-            )
-
-            # Call backend stop (no-op for filesystem)
-            if backend.stop():
-                console.print("✅ Filesystem backend stop complete (no-op)")
-            else:
-                console.print("❌ Failed to stop filesystem backend", style="red")
-                sys.exit(1)
-
-    except Exception as e:
-        console.print(f"❌ Stop failed: {e}", style="red")
-        sys.exit(1)
+    console.print(
+        "   Filesystem container backend has been deprecated and removed.",
+        style="dim",
+    )
+    sys.exit(1)
 
 
 @cli.command("clean-data")
@@ -8059,19 +6898,6 @@ def stop(ctx, force_docker: bool):
     "--all-projects",
     is_flag=True,
     help="Clear data for all projects, not just current project",
-)
-@click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
-@click.option(
-    "--all-containers",
-    is_flag=True,
-    help="Reset both Docker and Podman container sets",
-)
-@click.option(
-    "--container-type",
-    type=click.Choice(["docker", "podman"], case_sensitive=False),
-    help="Target specific container type (docker|podman)",
 )
 @click.option(
     "--json",
@@ -8088,32 +6914,21 @@ def stop(ctx, force_docker: bool):
 def clean_data(
     ctx,
     all_projects: bool,
-    force_docker: bool,
-    all_containers: bool,
-    container_type: str,
     json_output: bool,
     verify: bool,
 ):
-    """Clear project data without stopping containers.
+    """Clear project data without stopping daemon.
 
     \b
-    Removes indexed data and configuration while keeping containers
-    running for fast restart. Use this between tests or when switching projects.
-    Supports dual-container architecture with Docker and Podman.
+    Removes indexed data and configuration.
+    Use this between tests or when switching projects.
 
     \b
     WHAT IT DOES:
-      • Clears Qdrant collections (current project or all projects)
+      • Clears vector indexes (current project or all projects)
       • Removes local cache directories
-      • Keeps containers running for fast restart
-      • Preserves container state and networks
-      • Supports targeting specific container types
-
-    \b
-    CONTAINER OPTIONS:
-      --all-containers       Reset both Docker and Podman sets
-      --container-type TYPE  Target specific container type (docker|podman)
-      (default)              Use legacy DockerManager behavior
+      • Removes .code-indexer/index/ directory
+      • Preserves daemon state for fast restart
 
     \b
     DATA OPTIONS:
@@ -8123,8 +6938,8 @@ def clean_data(
 
     \b
     PERFORMANCE:
-      This is much faster than 'uninstall' since containers stay running.
-      Perfect for test cleanup and project switching.
+      This is much faster than 'uninstall' since daemon stays running.
+      Perfect for rapid test cycles and project switching.
     """
     # Check daemon delegation (Story 2.3)
     # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
@@ -8138,9 +6953,6 @@ def clean_data(
                     # Delegate to daemon
                     exit_code = cli_daemon_delegation._clean_data_via_daemon(
                         all_projects=all_projects,
-                        force_docker=force_docker,
-                        all_containers=all_containers,
-                        container_type=container_type,
                         json_output=json_output,
                         verify=verify,
                     )
@@ -8152,19 +6964,8 @@ def clean_data(
     try:
         # Lazy imports for clean_data command
 
-        # Validate mutually exclusive options
-        if all_containers and container_type:
-            console.print(
-                "❌ Cannot use --all-containers with --container-type", style="red"
-            )
-            console.print(
-                "💡 Use either --all-containers OR --container-type", style="yellow"
-            )
-            sys.exit(1)
-
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]
-        project_config_dir = config_manager.config_path.parent
 
         # Initialize result structure for JSON output
         from typing import Dict, Any
@@ -8177,121 +6978,13 @@ def clean_data(
             "errors": [],
         }
 
-        # Use dual-container mode if new options are specified
-        if all_containers or container_type:
-            from .services.container_manager import ContainerManager, ContainerType
-
-            container_manager = ContainerManager(
-                dual_container_mode=True, console=console
-            )
-
-            # Determine which container types to reset
-            if all_containers:
-                target_types = [ContainerType.DOCKER, ContainerType.PODMAN]
-                console.print(
-                    "🔄 Resetting both Docker and Podman container sets", style="blue"
-                )
-            else:
-                target_type = (
-                    ContainerType.DOCKER
-                    if container_type.lower() == "docker"
-                    else ContainerType.PODMAN
-                )
-                target_types = [target_type]
-                console.print(
-                    f"🔄 Resetting {container_type} container set", style="blue"
-                )
-
-            # Process each container type
-            success = True
-            for container_type_enum in target_types:
-                try:
-                    # Check if containers are available (graceful handling)
-                    is_available = container_manager.verify_container_health(
-                        container_type_enum
-                    )
-                    if not is_available:
-                        console.print(
-                            f"⚠️  {container_type_enum.value} containers not running, skipping",
-                            style="yellow",
-                        )
-                        result["containers_processed"].append(
-                            {
-                                "type": container_type_enum.value,
-                                "status": "skipped",
-                                "reason": "containers not running",
-                            }
-                        )
-                        continue
-
-                    # Reset collections with verification if requested
-                    if verify:
-                        # This method doesn't exist yet - will be implemented
-                        reset_success = (
-                            container_manager.reset_collections_with_verification(
-                                container_type_enum
-                            )
-                        )
-                    else:
-                        reset_success = container_manager.reset_collections(
-                            container_type_enum
-                        )
-
-                    if reset_success:
-                        console.print(
-                            f"✅ {container_type_enum.value} container data reset successfully",
-                            style="green",
-                        )
-                        result["containers_processed"].append(
-                            {"type": container_type_enum.value, "status": "success"}
-                        )
-                    else:
-                        console.print(
-                            f"❌ Failed to reset {container_type_enum.value} container data",
-                            style="red",
-                        )
-                        result["errors"].append(
-                            f"Failed to reset {container_type_enum.value} containers"
-                        )
-                        success = False
-
-                except Exception as e:
-                    console.print(
-                        f"❌ Error processing {container_type_enum.value}: {e}",
-                        style="red",
-                    )
-                    result["errors"].append(
-                        f"Error processing {container_type_enum.value}: {str(e)}"
-                    )
-                    success = False
-
-            result["success"] = success
-
-        else:
-            # Use legacy DockerManager approach - but check if containers needed first
-            config = (
-                config_manager.load() if config_manager.config_path.exists() else None
-            )
-            if config and _needs_docker_manager(config):
-                docker_manager = DockerManager(
-                    force_docker=force_docker, project_config_dir=project_config_dir
-                )
-
-                success = docker_manager.clean_data_only(all_projects=all_projects)
-            else:
-                # Filesystem backend - no containers to clean
-                console.print("ℹ️ Filesystem backend - no containers to clean")
-                success = True
-            result["success"] = success
-            result["containers_processed"].append(
-                {
-                    "type": "docker" if force_docker else "auto-detected",
-                    "status": "success" if success else "failed",
-                }
-            )
-
-            if not success:
-                result["errors"].append("Legacy DockerManager clean_data_only failed")
+        # Filesystem backend - no containers to clean
+        console.print("ℹ️ Filesystem backend - no containers to clean")
+        console.print("💡 Use 'cidx uninstall' to remove index data")
+        result["success"] = True
+        result["containers_processed"].append(
+            {"type": "filesystem", "status": "not_applicable"}
+        )
 
         # Output results
         if json_output:
@@ -8601,37 +7294,28 @@ def list_collections_cmd(ctx):
 
 @cli.command("uninstall")
 @click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
-@click.option(
     "--wipe-all",
     is_flag=True,
-    help="DANGEROUS: Perform complete system wipe including all containers, images, cache, and storage directories",
+    help="DANGEROUS: Perform complete system wipe including all index data, cache, and storage directories",
 )
 @click.option("--confirm", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 @require_mode("local", "remote", "proxy")
-def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
+def uninstall(ctx, wipe_all: bool, confirm: bool):
     """Uninstall CIDX configuration (mode-specific behavior).
 
     \b
     LOCAL MODE - STANDARD CLEANUP:
-      • Uses data-cleaner container to remove root-owned files
-      • Orchestrated shutdown: stops qdrant/ollama → cleans data → removes containers
-      • Removes current project's .code-indexer directory and qdrant storage
-      • Removes ollama model cache when applicable
-      • Removes project-specific Docker volumes and networks
-      • Complete cleanup for fresh start with proper permission handling
+      • Removes .code-indexer directory and all indexed data
+      • Removes current project's configuration and indexes
+      • Complete cleanup for fresh start
 
     \b
     LOCAL MODE - WITH --wipe-all (DANGEROUS):
       • All standard cleanup operations above
-      • Removes ALL container images (including cached builds)
-      • Cleans container engine cache and build cache
-      • Removes ~/.qdrant_collections directory (shared CoW collections)
       • Removes ~/.code-indexer-data global directory (if exists)
       • Removes any remaining global storage directories
-      • Performs aggressive system prune
+      • Performs aggressive filesystem cleanup
       • May require sudo for permission-protected files
 
     \b
@@ -8659,8 +7343,6 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
 
         # Build args list from options
         args = []
-        if force_docker:
-            args.append("--force-docker")
         if wipe_all:
             args.append("--wipe-all")
         if confirm:
@@ -8671,7 +7353,7 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
     elif mode == "local":
         from .mode_specific_handlers import uninstall_local_mode
 
-        uninstall_local_mode(project_root, force_docker, wipe_all, confirm)
+        uninstall_local_mode(project_root, wipe_all, confirm)
     elif mode == "remote":
         from .mode_specific_handlers import uninstall_remote_mode
 
@@ -8708,7 +7390,7 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
       • Verifies codebase_dir points to parent of .code-indexer folder
       • Ensures project name matches actual directory name
       • Updates git state to match actual repository
-      • Derives indexing statistics from Qdrant collections
+      • Derives indexing statistics from vector indexes
       • Removes invalid file paths from metadata
 
     \b
@@ -8826,66 +7508,33 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
 @click.option(
     "--test-access",
     is_flag=True,
-    help="Test registry access after setup",
+    help="(deprecated - no longer needed)",
 )
 @click.option(
     "--quiet",
     is_flag=True,
-    help="Suppress non-essential output",
+    help="Suppress output",
 )
 @click.pass_context
 def setup_global_registry(ctx, test_access: bool, quiet: bool):
-    """Setup global port registry (requires sudo).
+    """Setup global port registry (deprecated - no longer needed).
 
-    Sets up the global port registry at /var/lib/code-indexer/port-registry
-    with proper permissions for multi-user access. This is a standalone
-    command that only sets up the registry without initializing any project.
+    This command is deprecated as container management has been removed (Story #506).
+    The filesystem backend doesn't require port coordination or global registry setup.
 
-    \b
-    REQUIREMENTS:
-    • Must be run with sudo access for proper system-wide setup
-    • Creates /var/lib/code-indexer/port-registry directory structure
-    • Sets appropriate permissions for multi-user access
-
-    \b
-    WHAT IT CREATES:
-    • /var/lib/code-indexer/port-registry/ (main directory)
-    • /var/lib/code-indexer/port-registry/port-allocations.json
-    • /var/lib/code-indexer/port-registry/registry.log
-    • /var/lib/code-indexer/port-registry/active-projects/
-
-    \b
-    EXAMPLES:
-      sudo cidx setup-global-registry                    # Setup with full output
-      sudo cidx setup-global-registry --quiet            # Setup with minimal output
-      sudo cidx setup-global-registry --test-access      # Setup and test access
-
-    \b
-    NOTE:
-    This command does NOT initialize any project. Use 'cidx init' if you
-    need to set up a project configuration. The registry setup is global
-    and only needs to be done once per system.
+    Please use filesystem backend: cidx init --vector-store filesystem
     """
-    try:
-        # Clean up any accidentally created project directories since this is a global command
-        current_dir = Path.cwd()
-        accidental_config = current_dir / ".code-indexer"
-        if accidental_config.exists():
-            # Only remove if it's empty (likely created accidentally by ConfigManager)
-            try:
-                accidental_config.rmdir()  # Only works if directory is empty
-            except OSError:
-                pass  # Directory not empty, leave it alone
-
-        _setup_global_registry(quiet=quiet, test_access=test_access)
-    except Exception as e:
-        if not quiet:
-            console.print(f"❌ Setup failed: {e}", style="red")
-        if ctx.obj.get("verbose"):
-            import traceback
-
-            console.print(traceback.format_exc(), style="dim red")
-        sys.exit(1)
+    if not quiet:
+        console.print(
+            "⚠️  This command is deprecated and no longer needed", style="yellow"
+        )
+        console.print(
+            "Container management has been removed - filesystem backend is now default",
+            style="blue",
+        )
+        console.print(
+            "💡 Simply run: cidx init --vector-store filesystem", style="green"
+        )
 
 
 @cli.command("install-server")

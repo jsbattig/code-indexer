@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Code Indexer employs a sophisticated two-phase parallel processing architecture designed to maximize throughput while maintaining file atomicity and providing real-time progress feedback. The system transforms source code files into searchable vector embeddings stored in Qdrant for semantic search capabilities.
+The Code Indexer employs a sophisticated two-phase parallel processing architecture designed to maximize throughput while maintaining file atomicity and providing real-time progress feedback. The system transforms source code files into searchable vector embeddings stored in FilesystemVectorStore for semantic search capabilities.
 
 ## Architecture Components
 
@@ -12,9 +12,9 @@ The Code Indexer employs a sophisticated two-phase parallel processing architect
 2. **HighThroughputProcessor** - Dual-phase parallel processing engine
 3. **FileChunkingManager** - Parallel file processing with lifecycle management
 4. **VectorCalculationManager** - Multi-threaded embedding generation
-5. **VoyageAI/Ollama Clients** - Embedding providers with dynamic batching
+5. **VoyageAI Client** - Embedding provider with dynamic batching
 6. **CleanSlotTracker** - Thread-safe progress tracking and resource management
-7. **Qdrant Client** - Vector database storage layer
+7. **FilesystemVectorStore** - Vector storage layer
 
 ## Two-Phase Processing Architecture
 
@@ -52,7 +52,7 @@ FileChunkingManager (threadcount+2 workers)
 ├── Token-aware batching (90% of model limit)
 ├── Submit to VectorCalculationManager
 ├── Wait for embeddings
-└── Write to Qdrant atomically
+└── Write to vector store atomically
     ↓
     VectorCalculationManager (threadcount workers)
     ├── Receive chunk batches
@@ -62,7 +62,7 @@ FileChunkingManager (threadcount+2 workers)
 ```
 
 **Key Design Principles:**
-- **File Atomicity**: All chunks from a file are written to Qdrant together
+- **File Atomicity**: All chunks from a file are written to vector store together
 - **Token-Aware Batching**: Chunks accumulated until approaching token limit (90% safety margin)
 - **Pipeline Architecture**: Frontend threads stay ahead of backend to ensure continuous utilization
 - **Slot-Based Progress**: Fixed-size array (threadcount+2) for real-time visibility
@@ -73,8 +73,8 @@ FileChunkingManager (threadcount+2 workers)
 ```python
 # SmartIndexer initialization
 - Load configuration (config.json)
-- Initialize embedding provider (VoyageAI or Ollama)
-- Connect to Qdrant vector database
+- Initialize embedding provider (VoyageAI)
+- Connect to FilesystemVectorStore
 - Load progressive metadata for resumability
 - Acquire indexing lock (prevents concurrent indexing)
 ```
@@ -156,10 +156,10 @@ for each file_result in parallel:
     update_slot(WAITING)
     embeddings = wait_for_all_futures(batch_futures)
     
-    # Phase 4: Atomic write to Qdrant
+    # Phase 4: Atomic write to vector store
     update_slot(FINALIZING)
-    points = create_qdrant_points(chunks, embeddings, metadata)
-    qdrant_client.upsert_batch(points)  # Atomic operation
+    points = create_vector_points(chunks, embeddings, metadata)
+    vector_store.upsert_batch(points)  # Atomic operation
     
     update_slot(COMPLETE)
     release_slot(slot_id)
@@ -173,15 +173,11 @@ def calculate_vector(task):
     if not task.chunk_texts:
         return empty_result()
     
-    # Dynamic batching for API providers
+    # Dynamic batching for API provider
     if provider == 'voyage-ai':
         embeddings = voyage_client.get_embeddings_batch(
             texts=task.chunk_texts,
             # Internally handles token-aware sub-batching
-        )
-    elif provider == 'ollama':
-        embeddings = ollama_client.get_embeddings_batch(
-            texts=task.chunk_texts
         )
     
     return VectorResult(
@@ -191,7 +187,7 @@ def calculate_vector(task):
     )
 ```
 
-### 6. Qdrant Storage
+### 6. Vector Storage
 ```python
 # Point creation and storage
 for chunk, embedding in zip(chunks, embeddings):
@@ -214,7 +210,7 @@ for chunk, embedding in zip(chunks, embeddings):
     points.append(point)
 
 # Atomic batch write
-qdrant_client.upsert_batch(collection_name, points)
+vector_store.upsert_batch(collection_name, points)
 ```
 
 ## Performance Optimizations
@@ -312,13 +308,13 @@ The system maintains visibility of all files being processed simultaneously:
 - **Small files (<10KB)**: 50-100 files/second with parallel processing
 - **Medium files (10-100KB)**: 10-50 files/second
 - **Large files (>100KB)**: 1-10 files/second
-- **Bottlenecks**: Network latency (VoyageAI), CPU (Ollama)
+- **Bottlenecks**: Network latency (VoyageAI)
 
 ### Resource Usage
 - **Memory**: ~100MB base + cache for file content
 - **CPU**: Scales with thread count
 - **Network**: Batch requests minimize API calls
-- **Disk I/O**: Sequential reads, batch writes to Qdrant
+- **Disk I/O**: Sequential reads, batch writes to vector store
 
 ## Summary
 

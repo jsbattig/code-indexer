@@ -5,12 +5,6 @@ Tests the functionality of getting debug log paths within .code-indexer/.tmp
 instead of hardcoded /tmp paths.
 """
 
-import pytest
-from pathlib import Path
-import tempfile
-import shutil
-import os
-
 from code_indexer.utils.log_path_helper import get_debug_log_path
 
 
@@ -27,7 +21,7 @@ class TestDebugLogPath:
         assert not tmp_dir.exists()
 
         # Call helper
-        log_path = get_debug_log_path(config_dir, "test_debug.log")
+        get_debug_log_path(config_dir, "test_debug.log")
 
         # .tmp should now exist
         assert tmp_dir.exists()

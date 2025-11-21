@@ -3,7 +3,7 @@ Configuration Fixer
 
 Intelligent validation and repair system for code-indexer configuration files.
 Provides context-aware fixes based on actual file system state, git repository,
-and Qdrant collection contents.
+and Legacy collection contents.
 """
 
 import json
@@ -12,14 +12,12 @@ import subprocess
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional, cast
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
 from code_indexer.config import ConfigManager, Config
 from code_indexer.services.json_validator import JSONSyntaxRepairer
-from code_indexer.services.qdrant import QdrantClient
-from code_indexer.services.embedding_factory import EmbeddingProviderFactory
-from code_indexer.services.docker_manager import DockerManager
+from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
 
 @dataclass
@@ -129,22 +127,24 @@ class GitStateDetector:
 
 
 class CollectionAnalyzer:
-    """Analyzes Qdrant collections to derive indexing statistics."""
+    """Analyzes Legacy collections to derive indexing statistics."""
 
-    def __init__(self, qdrant_client: QdrantClient):
-        self.qdrant_client = qdrant_client
+    def __init__(self, vector_store_client: FilesystemVectorStore):
+        self.vector_store_client = vector_store_client
 
     def derive_stats_from_collection(
         self, collection_name: str
     ) -> Optional[Dict[str, Any]]:
-        """Derive accurate indexing statistics from Qdrant collection."""
+        """Derive accurate indexing statistics from Legacy collection."""
         try:
             # Check if collection exists
-            if not self.qdrant_client.collection_exists(collection_name):
+            if not self.vector_store_client.collection_exists(collection_name):
                 return None
 
             # Get collection info
-            collection_info = self.qdrant_client.get_collection_info(collection_name)
+            collection_info = self.vector_store_client.get_collection_info(
+                collection_name
+            )
             points_count = collection_info.get("points_count", 0)
 
             if points_count == 0:
@@ -178,7 +178,7 @@ class CollectionAnalyzer:
         """Find collections that don't match the correct project name."""
         try:
             # For now, skip this check since we don't have a list collections method
-            # This would need to be implemented in QdrantClient if needed
+            # This would need to be implemented in FilesystemVectorStore if needed
             print(
                 "Note: Collection listing not implemented, skipping wrong collection detection"
             )
@@ -383,7 +383,7 @@ class ConfigurationRepairer:
         self.validator = ConfigurationValidator(config_dir)
 
         # Initialize clients
-        self.qdrant_client: Optional[QdrantClient] = None
+        self.vector_store_client: Optional[FilesystemVectorStore] = None
         self.collection_analyzer: Optional[CollectionAnalyzer] = None
 
     def fix_configuration(self) -> FixResult:
@@ -450,14 +450,14 @@ class ConfigurationRepairer:
 
                 all_fixes.extend(config_fixes)
 
-            # Determine if we're using filesystem backend (skip Qdrant-specific operations)
+            # Determine if we're using filesystem backend (skip Legacy-specific operations)
             is_filesystem_backend = (
                 config.vector_store and config.vector_store.provider == "filesystem"
             )
 
-            # Step 4: Initialize Qdrant client for metadata analysis (Qdrant backend only)
+            # Step 4: Initialize Legacy client for metadata analysis (Legacy backend only)
             if not is_filesystem_backend:
-                self._initialize_qdrant_client(config)
+                self._initialize_vector_store_client(config)
 
             # Step 5: Validate and fix metadata.json
             if self.metadata_file.exists():
@@ -470,21 +470,21 @@ class ConfigurationRepairer:
                     backup_path.write_text(self.metadata_file.read_text())
                     backup_files.append(str(backup_path))
 
-            # Step 6: Check and fix CoW symlink issues (Qdrant backend only)
+            # Step 6: Check and fix CoW symlink issues (Legacy backend only)
             if not is_filesystem_backend:
                 print("🔍 Checking CoW symlinks...")
                 cow_fixes = self._fix_cow_symlinks()
                 all_fixes.extend(cow_fixes)
 
-            # Step 6.5: Check and fix project configuration (Qdrant backend only)
+            # Step 6.5: Check and fix project configuration (Legacy backend only)
             # This is handled by conditional logic inside _fix_project_configuration
             print("🔍 Checking project configuration...")
             project_fixes = self._fix_project_configuration()
             all_fixes.extend(project_fixes)
 
-            # Step 7: Check for wrong collections (Qdrant backend only)
+            # Step 7: Check for wrong collections (Legacy backend only)
             if not is_filesystem_backend:
-                print("🔍 Checking Qdrant collections...")
+                print("🔍 Checking Legacy collections...")
                 collection_warnings = self._check_collections()
                 all_warnings.extend(collection_warnings)
 
@@ -569,17 +569,14 @@ class ConfigurationRepairer:
         # Try to get collection stats
         collection_stats = None
         if self.collection_analyzer:
-            # Use new fixed collection naming: base_name + model_slug
-            base_name = config.qdrant.collection_base_name
+            # Collection name is the model name (filesystem-safe)
             if config.embedding_provider == "voyage-ai":
                 model_name = config.voyage_ai.model
-            elif config.embedding_provider == "ollama":
-                model_name = config.ollama.model
             else:
                 model_name = "unknown"
 
-            model_slug = EmbeddingProviderFactory.generate_model_slug("", model_name)
-            collection_name = f"{base_name}_{model_slug}"
+            # Make filesystem-safe (matching FilesystemVectorStore.resolve_collection_name)
+            collection_name = model_name.replace("/", "_").replace(":", "_")
             collection_stats = self.collection_analyzer.derive_stats_from_collection(
                 collection_name
             )
@@ -612,18 +609,22 @@ class ConfigurationRepairer:
 
         return corrected_metadata
 
-    def _initialize_qdrant_client(self, config: Config):
-        """Initialize Qdrant client for collection analysis."""
+    def _initialize_vector_store_client(self, config: Config):
+        """Initialize vector store client for collection analysis.
+
+        Note: Method name retained for backward compatibility but now initializes FilesystemVectorStore (Story #505).
+        """
         try:
-            self.qdrant_client = QdrantClient(
-                config.qdrant, project_root=Path(config.codebase_dir)
+            index_dir = Path(config.codebase_dir) / ".code-indexer" / "index"
+            self.vector_store_client = FilesystemVectorStore(
+                base_path=index_dir, project_root=Path(config.codebase_dir)
             )
-            if self.qdrant_client.health_check():
-                self.collection_analyzer = CollectionAnalyzer(self.qdrant_client)
+            if self.vector_store_client.health_check():
+                self.collection_analyzer = CollectionAnalyzer(self.vector_store_client)
             else:
-                print("Warning: Qdrant not accessible for collection analysis")
+                print("Warning: Vector store not accessible for collection analysis")
         except Exception as e:
-            print(f"Warning: Could not connect to Qdrant: {e}")
+            print(f"Warning: Could not initialize vector store: {e}")
 
     def _check_collections(self) -> List[str]:
         """Check for collections with wrong names."""
@@ -651,7 +652,7 @@ class ConfigurationRepairer:
 
         try:
             # Check for stale symlinks in global collections directory
-            global_collections_dir = Path.home() / ".qdrant_collections"
+            global_collections_dir = Path.home() / "..collections"
 
             if global_collections_dir.exists():
                 stale_symlinks = []
@@ -683,7 +684,7 @@ class ConfigurationRepairer:
                             symlink.unlink()
 
             # Check for orphaned collection directories in project
-            project_collections_dir = self.config_dir / "qdrant_collection"
+            project_collections_dir = self.config_dir / ".collection"
 
             if project_collections_dir.exists():
                 orphaned_dirs = []
@@ -769,21 +770,18 @@ class ConfigurationRepairer:
                     embedding_provider = metadata.get(
                         "embedding_provider", config.embedding_provider
                     )
-                    base_name = config.qdrant.collection_base_name
 
                     # Get model name from config based on provider
                     if embedding_provider == "voyage-ai":
                         model_name = config.voyage_ai.model
-                    elif embedding_provider == "ollama":
-                        model_name = config.ollama.model
                     else:
                         model_name = "unknown"
 
-                    # Use new fixed collection naming: base_name + model_slug (no project_id)
-                    model_slug = EmbeddingProviderFactory.generate_model_slug(
-                        "", model_name
+                    # Collection name is the model name (filesystem-safe)
+                    # Matches FilesystemVectorStore.resolve_collection_name
+                    expected_collection_name = model_name.replace("/", "_").replace(
+                        ":", "_"
                     )
-                    expected_collection_name = f"{base_name}_{model_slug}"
 
                     expected_local_dir = (
                         project_collections_dir / expected_collection_name
@@ -832,67 +830,29 @@ class ConfigurationRepairer:
         return fixes
 
     def _regenerate_project_configuration(self) -> Dict[str, Any]:
-        """Regenerate project configuration based on current filesystem location."""
-        try:
-            # Get the correct project root (parent of .code-indexer)
-            project_root = self.config_dir.parent.absolute()
+        """Regenerate project configuration (deprecated - containers no longer used).
 
-            # Load current config to get embedding provider and vector store information
-            config_manager = ConfigManager(self.config_file)
-            current_config = config_manager.load()
-
-            # Prepare config dict for DockerManager
-            # CRITICAL: Preserve vector_store configuration to avoid losing filesystem backend setting
-            config_dict = {
-                "embedding_provider": current_config.embedding_provider,
-                "vector_store": current_config.vector_store,
-            }
-
-            # Initialize DockerManager to get project-specific values
-            docker_manager = DockerManager(
-                project_name=project_root.name, project_config_dir=self.config_dir
-            )
-
-            # Generate new project hash and container names
-            container_info = docker_manager._generate_container_names(project_root)
-            project_hash = container_info["project_hash"]
-
-            # Calculate new port assignments using global port registry
-            # CRITICAL: Pass embedding provider config to ensure ollama_port is allocated when needed
-            port_assignments = docker_manager.allocate_project_ports(
-                project_root, config_dict
-            )
-
-            return {
-                "project_hash": project_hash,
-                "container_names": container_info,
-                "port_assignments": port_assignments,
-                "project_root": str(project_root),
-            }
-
-        except Exception as e:
-            print(f"Warning: Could not regenerate project configuration: {e}")
-            return {}
+        Container management is deprecated (Story #506). This method returns empty
+        configuration to maintain compatibility while removal is in progress.
+        """
+        print(
+            "Info: Project configuration regeneration skipped (container management deprecated)"
+        )
+        return {}
 
     def _regenerate_port_assignments(self, project_hash: str) -> Dict[str, int]:
-        """Regenerate port assignments based on project hash."""
-        try:
-            docker_manager = DockerManager(project_config_dir=self.config_dir)
-            ports = docker_manager.get_project_ports(Path(self.config_dir).parent)
-            return cast(Dict[str, int], ports)
-        except Exception as e:
-            print(f"Warning: Could not regenerate port assignments: {e}")
-            return {}
+        """Port assignment regeneration (deprecated - containers no longer used)."""
+        print(
+            "Info: Port assignment regeneration skipped (container management deprecated)"
+        )
+        return {}
 
     def _regenerate_container_names(self, project_root: Path) -> Dict[str, str]:
-        """Regenerate container names based on project root path."""
-        try:
-            docker_manager = DockerManager(project_config_dir=self.config_dir)
-            names = docker_manager._generate_container_names(project_root)
-            return cast(Dict[str, str], names)
-        except Exception as e:
-            print(f"Warning: Could not regenerate container names: {e}")
-            return {}
+        """Container name regeneration (deprecated - containers no longer used)."""
+        print(
+            "Info: Container name regeneration skipped (container management deprecated)"
+        )
+        return {}
 
     def _clear_stale_container_references(
         self, config: Config, project_info: Dict[str, Any]
@@ -948,7 +908,7 @@ class ConfigurationRepairer:
     def _fix_project_configuration(self) -> List[ConfigFix]:
         """Fix project configuration for CoW clones (project hash, ports, container names).
 
-        Only applies to Qdrant backend. Filesystem backend doesn't need container/port configuration.
+        Only applies to Legacy backend. Filesystem backend doesn't need container/port configuration.
         """
         fixes: List[ConfigFix] = []
 
@@ -957,10 +917,10 @@ class ConfigurationRepairer:
             config_manager = ConfigManager(self.config_file)
             config = config_manager.load()
 
-            # Skip Qdrant-specific configuration if using filesystem backend
+            # Skip Legacy-specific configuration if using filesystem backend
             if config.vector_store and config.vector_store.provider == "filesystem":
                 print(
-                    "  ℹ️  Skipping Qdrant container/port configuration (filesystem backend)"
+                    "  ℹ️  Skipping Legacy container/port configuration (filesystem backend)"
                 )
                 return fixes
 
@@ -997,9 +957,11 @@ class ConfigurationRepairer:
             if new_ports and hasattr(config, "project_ports"):
                 # FIXED: Always set ALL required ports, don't check if they exist first
                 # This ensures CoW clones get complete port regeneration
-                # Note: ollama_port is only required for ollama embedding provider
-                ALWAYS_REQUIRED_PORTS = ["qdrant_port", "data_cleaner_port"]
-                CONDITIONAL_PORTS = ["ollama_port"]  # Only needed for ollama provider
+                # Note: secondary_port is only required for secondary embedding provider
+                ALWAYS_REQUIRED_PORTS = ["service_port", "data_cleaner_port"]
+                CONDITIONAL_PORTS = [
+                    "secondary_port"
+                ]  # Only needed for secondary provider
 
                 for port_name in ALWAYS_REQUIRED_PORTS:
                     if port_name in new_ports:
@@ -1019,15 +981,15 @@ class ConfigurationRepairer:
             container_names = project_info.get("container_names", {})
             if container_names and hasattr(config, "project_containers"):
                 # FIXED: Always set ALL required container names, don't check conditionally
-                # Note: ollama_name is only required for ollama embedding provider
+                # Note: secondary_name is only required for secondary embedding provider
                 ALWAYS_REQUIRED_CONTAINERS = [
                     "project_hash",
-                    "qdrant_name",
+                    "service_name",
                     "data_cleaner_name",
                 ]
                 CONDITIONAL_CONTAINERS = [
-                    "ollama_name"
-                ]  # Only needed for ollama provider
+                    "secondary_name"
+                ]  # Only needed for secondary provider
 
                 for container_field in ALWAYS_REQUIRED_CONTAINERS:
                     if container_field in container_names:

@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 import tempfile
 from pathlib import Path
+import pytest
 
 from src.code_indexer.daemon.service import CIDXDaemonService
 
@@ -34,7 +35,7 @@ class TestDaemonAccuracySupport:
                 # Test that accuracy parameter is accepted
                 try:
                     # This should not raise an error
-                    results = service.exposed_query(
+                    service.exposed_query(
                         str(project_path),
                         "test query",
                         limit=10,

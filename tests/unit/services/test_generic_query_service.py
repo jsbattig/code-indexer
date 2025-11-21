@@ -265,21 +265,21 @@ class TestGenericQueryService:
         assert query_service._is_result_current_branch(result1, branch_context) is True
         assert query_service._is_result_current_branch(result2, branch_context) is True
 
-    def test_branch_filtering_uses_correct_qdrant_field_name(self, query_service):
-        """Test that branch filtering uses 'path' field (Qdrant format) not 'file_path'.
+    def test_branch_filtering_uses_correct_filesystem_field_name(self, query_service):
+        """Test that branch filtering uses 'path' field (Filesystem format) not 'file_path'.
 
-        BUG REPRODUCTION: Qdrant stores file paths as 'path' field in payloads,
+        BUG REPRODUCTION: Filesystem stores file paths as 'path' field in payloads,
         but GenericQueryService was looking for 'file_path', causing all results
         to be filtered out on feature branches.
 
-        GIVEN search results with 'path' field (actual Qdrant format)
+        GIVEN search results with 'path' field (actual Filesystem format)
         WHEN filtering by current branch with file in branch_context
         THEN file path correctly extracted and result included
         """
-        # Mock result with ACTUAL Qdrant structure (uses "path" not "file_path")
+        # Mock result with ACTUAL Filesystem structure (uses "path" not "file_path")
         result = {
             "payload": {
-                "path": "src/auth/login.py",  # Qdrant uses "path"
+                "path": "src/auth/login.py",  # Filesystem uses "path"
                 "git_available": True,
                 "content": "test content",
             }
@@ -297,10 +297,10 @@ class TestGenericQueryService:
 
     def test_branch_filtering_path_field_not_in_branch(self, query_service):
         """Test that results with 'path' field are correctly filtered when file NOT in branch."""
-        # Mock result with ACTUAL Qdrant structure
+        # Mock result with ACTUAL Filesystem structure
         result = {
             "payload": {
-                "path": "src/deleted_file.py",  # Qdrant uses "path"
+                "path": "src/deleted_file.py",  # Filesystem uses "path"
                 "git_available": True,
                 "content": "old content",
             }

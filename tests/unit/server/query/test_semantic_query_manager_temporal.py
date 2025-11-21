@@ -8,7 +8,6 @@ Tests temporal query functionality including:
 - Error handling for invalid parameters
 """
 
-import json
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
@@ -16,7 +15,6 @@ import pytest
 
 from src.code_indexer.server.query.semantic_query_manager import (
     SemanticQueryManager,
-    SemanticQueryError,
 )
 
 
@@ -199,7 +197,7 @@ class TestTemporalServiceIntegration:
             )
             MockTemporalService.return_value = mock_temporal_service
 
-            result = semantic_query_manager.query_user_repositories(
+            semantic_query_manager.query_user_repositories(
                 username="testuser",
                 query_text="authentication",
                 time_range="2023-01-01..2024-01-01",
@@ -213,7 +211,6 @@ class TestTemporalServiceIntegration:
         self, semantic_query_manager, activated_repo_manager_mock
     ):
         """Acceptance Criterion 9: Graceful fallback when temporal index missing."""
-        from src.code_indexer.server.query.semantic_query_manager import QueryResult
 
         # Repo path exists but NO temporal index
         repo_path = Path(

@@ -18,7 +18,7 @@ class EmbeddingProvider(Enum):
     """Enumeration of embedding providers for testing."""
 
     VOYAGE_AI = "voyage_ai"
-    OLLAMA = "ollama"
+    VOYAGE = "voyage"
     MOCK = "mock"
 
 
@@ -59,8 +59,8 @@ class SharedContainerManager:
             if config_file.exists():
                 try:
                     config = Config(str(config_file))
-                    # Clean Qdrant collections if configured
-                    if hasattr(config, "qdrant") and config.qdrant:
+                    # Clean Filesystem collections if configured
+                    if hasattr(config, "filesystem") and config.filesystem:
                         # Collection cleanup would happen here
                         pass
                 except Exception:

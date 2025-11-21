@@ -1,14 +1,14 @@
 """
 End-to-end integration tests for filter integration and precedence (Story 3.1).
 
-These tests validate the complete filter integration with real Qdrant filters,
+These tests validate the complete filter integration with real Filesystem filters,
 verifying that:
 1. Filters combine correctly in real queries
 2. Conflict detection works in the CLI
 3. Exclusions override inclusions in actual search results
 4. All filter combinations work end-to-end
 
-Test approach: Zero mocking, real Qdrant filters, actual CLI integration.
+Test approach: Zero mocking, real Filesystem filters, actual CLI integration.
 """
 
 import pytest
@@ -26,7 +26,7 @@ class TestFilterIntegrationE2E:
         """
         GIVEN combined language and path filters (inclusions + exclusions)
         WHEN filters are built
-        THEN the resulting structure should be valid for Qdrant
+        THEN the resulting structure should be valid for Filesystem
         """
         mapper = LanguageMapper()
         path_builder = PathFilterBuilder()
@@ -52,7 +52,7 @@ class TestFilterIntegrationE2E:
         path_exclusion = path_builder.build_exclusion_filter(["*/tests/*"])
         filter_conditions["must_not"].extend(path_exclusion["must_not"])
 
-        # Verify structure is JSON-serializable (required for Qdrant)
+        # Verify structure is JSON-serializable (required for Filesystem)
         try:
             json_str = json.dumps(filter_conditions)
             assert len(json_str) > 0
@@ -184,10 +184,10 @@ class TestFilterIntegrationE2E:
         """
         GIVEN filters where exclusion should override inclusion
         WHEN both are present in filter structure
-        THEN Qdrant will apply exclusion precedence (must_not overrides must)
+        THEN Filesystem will apply exclusion precedence (must_not overrides must)
 
-        Note: This tests the structure is correct for Qdrant to apply precedence.
-        Actual Qdrant behavior is tested separately.
+        Note: This tests the structure is correct for Filesystem to apply precedence.
+        Actual Filesystem behavior is tested separately.
         """
         mapper = LanguageMapper()
 
@@ -209,7 +209,7 @@ class TestFilterIntegrationE2E:
         assert len(filter_conditions["must"]) == 1
         assert len(filter_conditions["must_not"]) == 3  # py, pyw, pyi
 
-        # Qdrant will apply must_not precedence over must
+        # Filesystem will apply must_not precedence over must
         # This structure is correct for precedence to work
 
 

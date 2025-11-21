@@ -147,9 +147,7 @@ class TestDaemonCacheInMemoryUpdates:
         cache_entry.hnsw_index = hnsw_manager.load_index(
             collection_path, max_elements=100000
         )
-        cache_entry.id_mapping = id_manager = IDIndexManager().load_index(
-            collection_path
-        )
+        cache_entry.id_mapping = IDIndexManager().load_index(collection_path)
 
         # Get initial vector count
         initial_count = cache_entry.hnsw_index.get_current_count()

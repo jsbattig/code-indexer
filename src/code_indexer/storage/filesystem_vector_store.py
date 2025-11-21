@@ -1,7 +1,6 @@
 """Filesystem-based vector storage with git-aware optimization.
 
-Implements QdrantClient-compatible interface for storing vectors in filesystem
-with path-as-vector quantization and git-aware chunk storage.
+Stores vectors in filesystem with path-as-vector quantization and git-aware chunk storage.
 Following Story 2 requirements.
 """
 
@@ -25,7 +24,6 @@ class FilesystemVectorStore:
     """Filesystem-based vector storage with git-aware optimization.
 
     Features:
-    - QdrantClient-compatible interface
     - Path-as-vector quantization for efficient storage
     - Git-aware chunk storage (blob hash for clean, text for dirty)
     - Thread-safe atomic writes
@@ -1256,17 +1254,17 @@ class FilesystemVectorStore:
             except (json.JSONDecodeError, KeyError):
                 return None
 
-    def _parse_qdrant_filter(self, filter_conditions: Optional[Dict[str, Any]]) -> Any:
+    def _parse_filter(self, filter_conditions: Optional[Dict[str, Any]]) -> Any:
         """Parse filter to callable that evaluates payload.
 
-        Supports TWO filter formats for backward compatibility:
+        Supports TWO filter formats:
 
-        1. Qdrant-style nested filters (CLI format):
+        1. Nested filters (CLI format):
            {"must": [{"key": "language", "match": {"value": "python"}}]}
            {"should": [{"key": "type", "match": {"value": "test"}}]}
            {"must_not": [{"key": "git_available", "match": {"value": False}}]}
 
-        2. Flat dict filters (legacy format):
+        2. Flat dict filters:
            {"language": "python", "type": "test"}
 
         Args:
@@ -1278,17 +1276,17 @@ class FilesystemVectorStore:
         if not filter_conditions:
             return lambda payload: True
 
-        # Detect filter format: Qdrant-style has "must"/"should"/"must_not" keys
-        is_qdrant_style = any(
+        # Detect filter format: nested has "must"/"should"/"must_not" keys
+        is_nested_style = any(
             key in filter_conditions for key in ["must", "should", "must_not"]
         )
 
-        if is_qdrant_style:
-            # Qdrant-style nested filter
+        if is_nested_style:
+            # Nested filter
             def evaluate_condition(
                 condition: Dict[str, Any], payload: Dict[str, Any]
             ) -> bool:
-                """Evaluate a single Qdrant-style condition against payload.
+                """Evaluate a single condition against payload.
 
                 Supports both simple conditions and nested filters:
                 - Simple: {"key": "language", "match": {"value": "python"}}
@@ -1401,7 +1399,7 @@ class FilesystemVectorStore:
                         return False
 
             def evaluate_filter(payload: Dict[str, Any]) -> bool:
-                """Evaluate full Qdrant-style filter against payload."""
+                """Evaluate full filter against payload."""
                 # Handle "must" conditions (AND)
                 if "must" in filter_conditions:
                     for condition in filter_conditions["must"]:
@@ -1512,10 +1510,10 @@ class FilesystemVectorStore:
                 if with_vectors:
                     point["vector"] = data["vector"]
 
-                # Apply filter conditions using Qdrant filter parser
+                # Apply filter conditions
                 if filter_conditions:
                     payload = point.get("payload", {})
-                    filter_func = self._parse_qdrant_filter(filter_conditions)
+                    filter_func = self._parse_filter(filter_conditions)
                     if not filter_func(payload):
                         continue
 
@@ -1730,7 +1728,7 @@ class FilesystemVectorStore:
                 # Apply filter conditions
                 if filter_conditions:
                     payload = data.get("payload", {})
-                    filter_func = self._parse_qdrant_filter(filter_conditions)
+                    filter_func = self._parse_filter(filter_conditions)
                     if not filter_func(payload):
                         continue
 
@@ -1993,8 +1991,7 @@ class FilesystemVectorStore:
     def resolve_collection_name(self, config: Any, embedding_provider: Any) -> str:
         """Generate collection name based on current provider and model.
 
-        For filesystem backend, use model name as collection name.
-        Compatible with QdrantClient interface.
+        Uses model name as collection name.
         """
         model_name: str = embedding_provider.get_current_model()
         # Replace special characters to make it filesystem-safe
@@ -2153,13 +2150,13 @@ class FilesystemVectorStore:
 
         Args:
             collection_name: Name of the collection
-            filter_conditions: Filter conditions (Qdrant-style filters)
+            filter_conditions: Filter conditions
 
         Returns:
             True if deletion successful
         """
         try:
-            # Scroll through vectors with filter applied (scroll_points now uses Qdrant filter parser)
+            # Scroll through vectors with filter applied
             points, _ = self.scroll_points(
                 collection_name=collection_name,
                 limit=10000,

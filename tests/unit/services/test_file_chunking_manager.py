@@ -162,8 +162,8 @@ class MockFixedSizeChunker:
         )
 
 
-class MockQdrantClient:
-    """Mock QdrantClient for testing."""
+class MockFilesystemClient:
+    """Mock FilesystemClient for testing."""
 
     def __init__(self):
         self.upserted_points = []
@@ -198,7 +198,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         """Setup test environment."""
         self.mock_vector_manager = MockVectorCalculationManager()
         self.mock_chunker = MockFixedSizeChunker()
-        self.mock_qdrant_client = MockQdrantClient()
+        self.mock_filesystem_client = MockFilesystemClient()
         self.slot_tracker = CleanSlotTracker(
             max_slots=10
         )  # Create required slot tracker
@@ -230,7 +230,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         manager = FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=thread_count,
             slot_tracker=CleanSlotTracker(max_slots=thread_count + 2),
             codebase_dir=self.test_file_path.parent,
@@ -253,7 +253,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -280,7 +280,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -316,7 +316,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -343,8 +343,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             # And ALL chunks submitted to existing VectorCalculationManager (unchanged)
             assert len(self.mock_vector_manager.submitted_chunks) > 0
 
-            # And MOVE qdrant_client.upsert_points_batched() from main thread to worker thread
-            assert len(self.mock_qdrant_client.upsert_calls) == 1
+            # And MOVE filesystem_client.upsert_points_batched() from main thread to worker thread
+            assert len(self.mock_filesystem_client.upsert_calls) == 1
 
             # And FileProcessingResult returned with success/failure status
             assert isinstance(result, FileProcessingResult)
@@ -356,7 +356,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -374,8 +374,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             future.result(timeout=10.0)
 
             # Verify atomicity: all chunks from one file written together
-            assert len(self.mock_qdrant_client.upsert_calls) == 1
-            upsert_call = self.mock_qdrant_client.upsert_calls[0]
+            assert len(self.mock_filesystem_client.upsert_calls) == 1
+            upsert_call = self.mock_filesystem_client.upsert_calls[0]
 
             # All points in single atomic operation
             assert upsert_call["point_count"] > 0
@@ -395,7 +395,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=failing_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -450,7 +450,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=failing_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -471,15 +471,15 @@ class TestFileChunkingManagerAcceptanceCriteria:
             assert result.chunks_processed == 0  # No chunks were successfully processed
             assert "Batch processing failed" in str(result.error)
 
-    def test_error_handling_qdrant_write_failure(self):
-        """Test error handling when Qdrant writing fails."""
-        # Mock Qdrant client to fail
-        self.mock_qdrant_client.should_fail = True
+    def test_error_handling_filesystem_write_failure(self):
+        """Test error handling when Filesystem writing fails."""
+        # Mock Filesystem client to fail
+        self.mock_filesystem_client.should_fail = True
 
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -498,14 +498,14 @@ class TestFileChunkingManagerAcceptanceCriteria:
             # FileProcessingResult should indicate failure
             assert result.success is False
             assert result.error is not None
-            assert "Qdrant write failed" in str(result.error)
+            assert "Filesystem write failed" in str(result.error)
 
     def test_thread_pool_management(self):
         """Test ThreadPoolExecutor lifecycle management."""
         manager = FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=3,
             slot_tracker=CleanSlotTracker(max_slots=5),
             codebase_dir=self.test_file_path.parent,
@@ -544,7 +544,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             with FileChunkingManager(
                 vector_manager=self.mock_vector_manager,
                 chunker=self.mock_chunker,
-                vector_store_client=self.mock_qdrant_client,
+                vector_store_client=self.mock_filesystem_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
                 codebase_dir=self.test_file_path.parent,
@@ -598,7 +598,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -631,8 +631,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             # Should call existing vector manager interface
             assert len(self.mock_vector_manager.submitted_chunks) > 0
 
-            # Should call existing Qdrant client interface
-            assert len(self.mock_qdrant_client.upsert_calls) == 1
+            # Should call existing Filesystem client interface
+            assert len(self.mock_filesystem_client.upsert_calls) == 1
 
     def test_addresses_user_problems_efficiency_and_feedback(self):
         """Test that FileChunkingManager addresses the specific user problems.
@@ -644,7 +644,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            vector_store_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -680,13 +680,13 @@ class TestFileChunkingManagerValidation:
         """Test that invalid thread counts raise ValueError."""
         mock_vector_manager = MockVectorCalculationManager()
         mock_chunker = MockFixedSizeChunker()
-        mock_qdrant_client = MockQdrantClient()
+        mock_filesystem_client = MockFilesystemClient()
 
         with pytest.raises(ValueError, match="thread_count must be positive"):
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=mock_chunker,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
                 thread_count=0,
                 slot_tracker=CleanSlotTracker(max_slots=2),
                 codebase_dir=self.test_file_path.parent,
@@ -696,7 +696,7 @@ class TestFileChunkingManagerValidation:
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=mock_chunker,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
                 thread_count=-1,
                 slot_tracker=CleanSlotTracker(max_slots=2),
                 codebase_dir=self.test_file_path.parent,
@@ -706,13 +706,13 @@ class TestFileChunkingManagerValidation:
         """Test that None dependencies raise ValueError."""
         mock_vector_manager = MockVectorCalculationManager()
         mock_chunker = MockFixedSizeChunker()
-        mock_qdrant_client = MockQdrantClient()
+        mock_filesystem_client = MockFilesystemClient()
 
         with pytest.raises(ValueError, match="vector_manager cannot be None"):
             FileChunkingManager(
                 vector_manager=None,
                 chunker=mock_chunker,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
                 codebase_dir=self.test_file_path.parent,
@@ -722,13 +722,13 @@ class TestFileChunkingManagerValidation:
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=None,
-                vector_store_client=mock_qdrant_client,
+                vector_store_client=mock_filesystem_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
                 codebase_dir=self.test_file_path.parent,
             )
 
-        with pytest.raises(ValueError, match="qdrant_client cannot be None"):
+        with pytest.raises(ValueError, match="filesystem_client cannot be None"):
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=mock_chunker,
@@ -743,7 +743,7 @@ class TestFileChunkingManagerValidation:
         manager = FileChunkingManager(
             vector_manager=MockVectorCalculationManager(),
             chunker=MockFixedSizeChunker(),
-            vector_store_client=MockQdrantClient(),
+            vector_store_client=MockFilesystemClient(),
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -763,7 +763,7 @@ class TestFileChunkingManagerValidation:
         with FileChunkingManager(
             vector_manager=MockVectorCalculationManager(),
             chunker=empty_chunker,
-            vector_store_client=MockQdrantClient(),
+            vector_store_client=MockFilesystemClient(),
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,

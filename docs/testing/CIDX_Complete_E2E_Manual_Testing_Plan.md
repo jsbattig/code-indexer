@@ -88,11 +88,6 @@ curl http://localhost:8080/health
       "response_time_ms": 45,
       "message": "Database connection successful"
     },
-    "qdrant": {
-      "status": "healthy",
-      "response_time_ms": 78,
-      "message": "Qdrant service operational"
-    },
     "storage": {
       "status": "healthy",
       "response_time_ms": 12,

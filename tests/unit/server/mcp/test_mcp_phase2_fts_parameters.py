@@ -83,7 +83,7 @@ class TestCaseSensitiveParameter:
                 "search_mode": "fts",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify case_sensitive defaults to False
             call_kwargs = (
@@ -116,7 +116,7 @@ class TestFuzzyParameter:
                 "fuzzy": True,
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify fuzzy parameter was passed
             call_kwargs = (
@@ -144,7 +144,7 @@ class TestFuzzyParameter:
                 "search_mode": "fts",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify fuzzy defaults to False
             call_kwargs = (
@@ -179,10 +179,12 @@ class TestEditDistanceParameter:
                     "edit_distance": distance,
                 }
 
-                result = await search_code(params, mock_user)
+                await search_code(params, mock_user)
 
                 # Verify edit_distance parameter was passed
-                call_kwargs = mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs
+                call_kwargs = (
+                    mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs
+                )
                 assert call_kwargs["edit_distance"] == distance
 
     @pytest.mark.asyncio
@@ -205,7 +207,7 @@ class TestEditDistanceParameter:
                 "search_mode": "fts",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify edit_distance defaults to 0
             call_kwargs = (
@@ -240,10 +242,12 @@ class TestSnippetLinesParameter:
                     "snippet_lines": lines,
                 }
 
-                result = await search_code(params, mock_user)
+                await search_code(params, mock_user)
 
                 # Verify snippet_lines parameter was passed
-                call_kwargs = mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs
+                call_kwargs = (
+                    mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs
+                )
                 assert call_kwargs["snippet_lines"] == lines
 
     @pytest.mark.asyncio
@@ -266,7 +270,7 @@ class TestSnippetLinesParameter:
                 "search_mode": "fts",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify snippet_lines defaults to 5
             call_kwargs = (
@@ -299,7 +303,7 @@ class TestRegexParameter:
                 "regex": True,
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify regex parameter was passed
             call_kwargs = (
@@ -328,7 +332,7 @@ class TestRegexParameter:
                 "regex": True,
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify regex parameter was passed
             call_kwargs = (
@@ -356,7 +360,7 @@ class TestRegexParameter:
                 "search_mode": "fts",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify regex defaults to False
             call_kwargs = (
@@ -394,7 +398,7 @@ class TestParameterCombinations:
                 # regex=False (default, compatible with fuzzy)
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify all parameters were passed
             call_kwargs = (
@@ -430,7 +434,7 @@ class TestParameterCombinations:
                 # fuzzy=False, edit_distance=0 (defaults, compatible with regex)
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify parameters were passed correctly
             call_kwargs = (

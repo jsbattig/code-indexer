@@ -395,8 +395,8 @@ class DataProcessor:
         return provider
 
     @pytest.fixture
-    def mock_qdrant_client(self):
-        """Create a mock Qdrant client."""
+    def mock_vector_store_client(self):
+        """Create a mock vector store client."""
         client = Mock()
         client.upsert_points.return_value = True
 
@@ -409,14 +409,14 @@ class DataProcessor:
         return client
 
     def test_fixed_size_chunker_in_document_processor(
-        self, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, mock_config, mock_embedding_provider, mock_vector_store_client
     ):
         """Test that FixedSizeChunker works correctly within DocumentProcessor."""
         # Create processor with mocked dependencies
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_vector_store_client,
         )
 
         # Verify that the processor uses FixedSizeChunker
@@ -470,13 +470,13 @@ class DataProcessor:
                 assert metadata["total_chunks"] == len(chunks)
 
     def test_end_to_end_chunking_metadata_consistency(
-        self, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, mock_config, mock_embedding_provider, mock_vector_store_client
     ):
         """Test that chunking metadata is consistent throughout the processing pipeline."""
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_vector_store_client,
         )
 
         # Test with Python file
@@ -549,13 +549,13 @@ class DataProcessor:
                 # Note: semantic_chunking field is not set by fixed-size chunker
 
     def test_chunking_overlap_in_processing_pipeline(
-        self, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, mock_config, mock_embedding_provider, mock_vector_store_client
     ):
         """Test that chunk overlap is preserved through the entire processing pipeline."""
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_vector_store_client,
         )
 
         java_file = mock_config.codebase_dir / "TestService.java"
@@ -606,7 +606,7 @@ class DataProcessor:
                     ), f"Overlap mismatch between chunks {i} and {i+1} in processing pipeline"
 
     def test_chunking_performance_in_pipeline(
-        self, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, mock_config, mock_embedding_provider, mock_vector_store_client
     ):
         """Test that chunking performance is acceptable within the full pipeline."""
         import time
@@ -614,7 +614,7 @@ class DataProcessor:
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_vector_store_client,
         )
 
         # Test with both files
@@ -683,13 +683,13 @@ class DataProcessor:
         )
 
     def test_error_handling_in_chunking_pipeline(
-        self, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, mock_config, mock_embedding_provider, mock_vector_store_client
     ):
         """Test error handling when chunking fails within the pipeline."""
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_vector_store_client,
         )
 
         # Create a file that might cause issues
@@ -734,13 +734,13 @@ class DataProcessor:
                 assert "Embedding failed" in str(e) or "processing" in str(e).lower()
 
     def test_chunker_integration_with_file_types(
-        self, mock_config, mock_embedding_provider, mock_qdrant_client
+        self, mock_config, mock_embedding_provider, mock_vector_store_client
     ):
         """Test that the chunker handles different file types correctly in the pipeline."""
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            vector_store_client=mock_qdrant_client,
+            vector_store_client=mock_vector_store_client,
         )
 
         # Test files

@@ -87,7 +87,7 @@ class TestRegularIndexingWithTemporalCollection:
 
             # Test the actual code path - using FileChunkingManager inside HighThroughputProcessor
             # Set up mocks for the actual flow
-            config_manager = ConfigManager.create_with_backtrack(test_repo)
+            ConfigManager.create_with_backtrack(test_repo)
             vector_store = FilesystemVectorStore(
                 base_path=index_dir, project_root=test_repo
             )
@@ -114,7 +114,7 @@ class TestRegularIndexingWithTemporalCollection:
             # Create a mock embedding
             embedding = [0.1] * 1536
 
-            # Create a mock qdrant point
+            # Create a mock filesystem point
             from src.code_indexer.services.file_chunking_manager import (
                 FileChunkingManager,
             )
@@ -133,8 +133,8 @@ class TestRegularIndexingWithTemporalCollection:
                 codebase_dir=test_repo,
             )
 
-            # Create the Qdrant point as the manager would
-            qdrant_point = file_chunking_mgr._create_qdrant_point(
+            # Create the Filesystem point as the manager would
+            filesystem_point = file_chunking_mgr._create_filesystem_point(
                 test_chunk, embedding, metadata, test_file
             )
 
@@ -142,7 +142,7 @@ class TestRegularIndexingWithTemporalCollection:
             # it will fail because multiple collections exist
             with pytest.raises(ValueError) as exc_info:
                 vector_store.upsert_points(
-                    points=[qdrant_point],
+                    points=[filesystem_point],
                     collection_name=metadata.get(
                         "collection_name"
                     ),  # This returns None - the bug!

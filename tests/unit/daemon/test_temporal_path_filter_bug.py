@@ -158,7 +158,7 @@ class TestTemporalPathFilterBug(TestCase):
                                         )
 
                                         # Call with multiple path filters
-                                        result = service.exposed_query_temporal(
+                                        service.exposed_query_temporal(
                                             project_path=str(project_path),
                                             query="authentication",
                                             time_range="2024-01-01..2024-12-31",

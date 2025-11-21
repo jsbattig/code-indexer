@@ -11,7 +11,6 @@ Verifies:
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch, Mock
-import subprocess
 import click
 
 import pytest
@@ -143,8 +142,12 @@ def test_macos_bsd_du_fallback(
     ) as mock_fs:
         mock_fs_instance = MagicMock()
         mock_fs_instance.health_check.return_value = True
-        mock_fs_instance.collection_exists.side_effect = lambda name: name == "code-indexer-temporal"
-        mock_fs_instance.resolve_collection_name.return_value = "code-indexer-voyage-code-3-d1024"
+        mock_fs_instance.collection_exists.side_effect = (
+            lambda name: name == "code-indexer-temporal"
+        )
+        mock_fs_instance.resolve_collection_name.return_value = (
+            "code-indexer-voyage-code-3-d1024"
+        )
         mock_fs_instance.count_points.return_value = 3500
         mock_fs_instance.get_indexed_file_count_fast.return_value = 100
         mock_fs_instance.validate_embedding_dimensions.return_value = True
@@ -238,8 +241,12 @@ def test_empty_stdout_handled_gracefully(
     ) as mock_fs:
         mock_fs_instance = MagicMock()
         mock_fs_instance.health_check.return_value = True
-        mock_fs_instance.collection_exists.side_effect = lambda name: name == "code-indexer-temporal"
-        mock_fs_instance.resolve_collection_name.return_value = "code-indexer-voyage-code-3-d1024"
+        mock_fs_instance.collection_exists.side_effect = (
+            lambda name: name == "code-indexer-temporal"
+        )
+        mock_fs_instance.resolve_collection_name.return_value = (
+            "code-indexer-voyage-code-3-d1024"
+        )
         mock_fs_instance.count_points.return_value = 3500
         mock_fs_instance.get_indexed_file_count_fast.return_value = 100
         mock_fs_instance.validate_embedding_dimensions.return_value = True
@@ -337,8 +344,12 @@ def test_gnu_du_success_path(
     ) as mock_fs:
         mock_fs_instance = MagicMock()
         mock_fs_instance.health_check.return_value = True
-        mock_fs_instance.collection_exists.side_effect = lambda name: name == "code-indexer-temporal"
-        mock_fs_instance.resolve_collection_name.return_value = "code-indexer-voyage-code-3-d1024"
+        mock_fs_instance.collection_exists.side_effect = (
+            lambda name: name == "code-indexer-temporal"
+        )
+        mock_fs_instance.resolve_collection_name.return_value = (
+            "code-indexer-voyage-code-3-d1024"
+        )
         mock_fs_instance.count_points.return_value = 3500
         mock_fs_instance.get_indexed_file_count_fast.return_value = 100
         mock_fs_instance.validate_embedding_dimensions.return_value = True

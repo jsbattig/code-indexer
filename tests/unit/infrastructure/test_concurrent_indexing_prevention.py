@@ -51,8 +51,8 @@ class TestConcurrentIndexingPrevention:
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
 
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.scroll_points.return_value = ([], None)
+            mock_filesystem_client = Mock()
+            mock_filesystem_client.scroll_points.return_value = ([], None)
 
             # Use same metadata path for both indexers (same project)
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
@@ -60,10 +60,16 @@ class TestConcurrentIndexingPrevention:
 
             try:
                 indexer1 = SmartIndexer(
-                    config, mock_embedding_provider, mock_qdrant_client, metadata_path
+                    config,
+                    mock_embedding_provider,
+                    mock_filesystem_client,
+                    metadata_path,
                 )
                 indexer2 = SmartIndexer(
-                    config, mock_embedding_provider, mock_qdrant_client, metadata_path
+                    config,
+                    mock_embedding_provider,
+                    mock_filesystem_client,
+                    metadata_path,
                 )
 
                 # Create test files
@@ -207,15 +213,18 @@ class TestConcurrentIndexingPrevention:
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
 
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.scroll_points.return_value = ([], None)
+            mock_filesystem_client = Mock()
+            mock_filesystem_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
 
             try:
                 indexer = SmartIndexer(
-                    config, mock_embedding_provider, mock_qdrant_client, metadata_path
+                    config,
+                    mock_embedding_provider,
+                    mock_filesystem_client,
+                    metadata_path,
                 )
 
                 # Simulate creating a stale heartbeat file (from crashed process)
@@ -307,15 +316,18 @@ class TestConcurrentIndexingPrevention:
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
 
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.scroll_points.return_value = ([], None)
+            mock_filesystem_client = Mock()
+            mock_filesystem_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
 
             try:
                 indexer = SmartIndexer(
-                    config, mock_embedding_provider, mock_qdrant_client, metadata_path
+                    config,
+                    mock_embedding_provider,
+                    mock_filesystem_client,
+                    metadata_path,
                 )
                 heartbeat_path = metadata_path.parent / "indexing_heartbeat.json"
 

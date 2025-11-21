@@ -11,7 +11,7 @@ from pathlib import Path
 class TestPathFilterTemporalBug:
     """Tests reproducing path filter bug in temporal queries."""
 
-    def test_parse_qdrant_filter_matches_path_field_in_main_collection(self):
+    def test_parse_filesystem_filter_matches_path_field_in_main_collection(self):
         """Test that path filter works with 'path' field (main collection format)."""
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
@@ -28,12 +28,12 @@ class TestPathFilterTemporalBug:
         filter_conditions = {"must": [{"key": "path", "match": {"text": "*.py"}}]}
 
         # Parse filter to callable
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # MUST PASS: Main collection format with 'path' field
         assert filter_func(payload) is True
 
-    def test_parse_qdrant_filter_now_works_with_file_path_field_temporal_collection(
+    def test_parse_filesystem_filter_now_works_with_file_path_field_temporal_collection(
         self,
     ):
         """Test that path filter NOW WORKS with 'file_path' field (temporal collection format).
@@ -57,7 +57,7 @@ class TestPathFilterTemporalBug:
         filter_conditions = {"must": [{"key": "path", "match": {"text": "*.py"}}]}
 
         # Parse filter to callable
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # FIXED: Now returns True by falling back to 'file_path' field
         result = filter_func(payload)
@@ -89,7 +89,7 @@ class TestPathFilterTemporalBug:
         # Build filter for src/*.py pattern
         filter_conditions = {"must": [{"key": "path", "match": {"text": "src/*.py"}}]}
 
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # FIXED: Both should now match
         assert filter_func(payload_main) is True, "Main collection format should match"
@@ -118,7 +118,7 @@ class TestPathFilterTemporalBug:
             ]
         }
 
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # FIXED: Exact path now matches file_path field
         assert filter_func(payload) is True, "Exact path should match file_path field"
@@ -139,7 +139,7 @@ class TestPathFilterTemporalBug:
             "must": [{"key": "path", "match": {"text": "tests/**/*.py"}}]
         }
 
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # FIXED: Wildcard path now matches file_path field
         assert (
@@ -166,7 +166,7 @@ class TestPathFilterTemporalBug:
             ]
         }
 
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # FIXED: Combined filter now works with file_path field
         assert (
@@ -195,7 +195,7 @@ class TestPathFilterFix:
 
         filter_conditions = {"must": [{"key": "path", "match": {"text": "*.py"}}]}
 
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # MUST PASS AFTER FIX: Should fall back to 'file_path'
         # WILL FAIL BEFORE FIX
@@ -219,7 +219,7 @@ class TestPathFilterFix:
             "must": [{"key": "path", "match": {"text": "correct/*.py"}}]
         }
 
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # Should use 'path' field (primary), not 'file_path'
         # WILL FAIL BEFORE FIX
@@ -242,7 +242,7 @@ class TestPathFilterFix:
             "must_not": [{"key": "path", "match": {"text": "tests/*"}}]
         }
 
-        filter_func = store._parse_qdrant_filter(filter_conditions)
+        filter_func = store._parse_filesystem_filter(filter_conditions)
 
         # Should exclude this path
         # WILL FAIL BEFORE FIX

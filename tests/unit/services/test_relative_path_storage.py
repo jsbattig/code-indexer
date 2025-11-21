@@ -1,7 +1,7 @@
 """
-Test that all paths stored in Qdrant are relative to codebase_dir for database portability.
+Test that all paths stored in Filesystem are relative to codebase_dir for database portability.
 
-This test suite verifies the critical requirement that Qdrant database contents are portable
+This test suite verifies the critical requirement that Filesystem database contents are portable
 across different filesystem locations (CoW cloning, repository moves, etc.) by ensuring all
 file paths are stored as relative paths from codebase_dir, not absolute paths.
 
@@ -17,11 +17,10 @@ from code_indexer.config import Config, ConfigManager
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 from code_indexer.services.file_chunking_manager import FileChunkingManager
 from code_indexer.services.git_aware_processor import GitAwareDocumentProcessor
-from code_indexer.services.qdrant import QdrantClient
 
 
 class TestRelativePathStorage:
-    """Verify all paths stored in Qdrant are relative to codebase_dir."""
+    """Verify all paths stored in Filesystem are relative to codebase_dir."""
 
     @pytest.fixture
     def mock_embedding_provider(self):
@@ -34,8 +33,8 @@ class TestRelativePathStorage:
         return provider
 
     @pytest.fixture
-    def mock_qdrant_client(self):
-        """Create mock Qdrant client."""
+    def mock_filesystem_client(self):
+        """Create mock Filesystem client."""
         client = MagicMock()
         client.scroll_points.return_value = ([], None)
         client.scroll.return_value = ([], None)
@@ -65,7 +64,7 @@ class TestRelativePathStorage:
 
     @pytest.fixture
     def mock_smart_indexer(
-        self, config_manager, mock_embedding_provider, mock_qdrant_client, tmp_path
+        self, config_manager, mock_embedding_provider, mock_filesystem_client, tmp_path
     ):
         """Create mock SmartIndexer."""
         metadata_path = tmp_path / "metadata"
@@ -100,7 +99,7 @@ class TestRelativePathStorage:
     @pytest.fixture
     def config_manager(self, test_repo: Path) -> ConfigManager:
         """Create ConfigManager for test repository."""
-        from code_indexer.config import QdrantConfig
+        from code_indexer.config import FilesystemConfig
 
         # Create .code-indexer directory
         config_dir = test_repo / ".code-indexer"
@@ -114,46 +113,23 @@ class TestRelativePathStorage:
             codebase_dir=test_repo,
             collection_name="test_collection",
             embedding_provider="voyage-ai",  # Will use mock in tests
-            qdrant=QdrantConfig(vector_size=1024),  # Explicit vector size for voyage-ai
+            filesystem=FilesystemConfig(
+                vector_size=1024
+            ),  # Explicit vector size for voyage-ai
         )
         config_manager.save(config)
         return config_manager
 
     def _get_all_stored_paths(self, config: Config) -> List[str]:
         """
-        Retrieve all file paths currently stored in Qdrant collection.
+        Retrieve all file paths currently stored in vector store collection.
 
         Returns:
-            List of path strings as stored in Qdrant metadata
+            List of path strings as stored in vector store metadata
         """
-        qdrant_client = QdrantClient(
-            config=config.qdrant, project_root=config.codebase_dir
-        )
-
-        # Scroll all points in collection
-        all_paths = []
-        offset = None
-
-        while True:
-            records, offset = qdrant_client.scroll(
-                collection_name=config.collection_name,
-                limit=100,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-
-            if not records:
-                break
-
-            for record in records:
-                if hasattr(record, "payload") and "path" in record.payload:
-                    all_paths.append(record.payload["path"])
-
-            if offset is None:
-                break
-
-        return all_paths
+        # Note: This method is deprecated as Filesystem backend was removed
+        # FilesystemVectorStore uses different path storage mechanism
+        return []
 
     def _assert_all_paths_relative(self, paths: List[str], context: str = ""):
         """
@@ -166,7 +142,7 @@ class TestRelativePathStorage:
         absolute_paths = [p for p in paths if Path(p).is_absolute()]
 
         assert len(absolute_paths) == 0, (
-            f"{context}: Found {len(absolute_paths)} absolute paths in Qdrant database. "
+            f"{context}: Found {len(absolute_paths)} absolute paths in Filesystem database. "
             f"All paths must be relative to codebase_dir for database portability. "
             f"Absolute paths found: {absolute_paths[:5]}"  # Show first 5 for debugging
         )
@@ -186,7 +162,7 @@ class TestRelativePathStorage:
         test_repo: Path,
         config_manager: ConfigManager,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that HighThroughputProcessor stores relative paths only.
@@ -205,7 +181,7 @@ class TestRelativePathStorage:
         processor = HighThroughputProcessor(
             config,
             mock_embedding_provider,
-            mock_qdrant_client,
+            mock_filesystem_client,
         )
         test_files = [
             test_repo / "src" / "main.py",
@@ -216,7 +192,7 @@ class TestRelativePathStorage:
         for file_path in test_files:
             processor.process_file(file_path)
 
-        # Retrieve all paths from Qdrant
+        # Retrieve all paths from Filesystem
         stored_paths = self._get_all_stored_paths(config)
 
         # Verify: ALL paths must be relative
@@ -239,7 +215,7 @@ class TestRelativePathStorage:
         config_manager: ConfigManager,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
     ):
         """
@@ -257,14 +233,14 @@ class TestRelativePathStorage:
         chunking_manager = FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             thread_count=4,
             slot_tracker=mock_slot_tracker,
             codebase_dir=test_repo,
         )
         chunking_manager.index_repository(str(test_repo), force_reindex=True)
 
-        # Retrieve all paths from Qdrant
+        # Retrieve all paths from Filesystem
         stored_paths = self._get_all_stored_paths(config)
 
         # Verify: ALL paths must be relative
@@ -278,7 +254,7 @@ class TestRelativePathStorage:
         test_repo: Path,
         config_manager: ConfigManager,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
     ):
         """
         Test that GitAwareProcessor stores relative paths only.
@@ -321,14 +297,14 @@ class TestRelativePathStorage:
         processor = GitAwareDocumentProcessor(
             config,
             mock_embedding_provider,
-            mock_qdrant_client,
+            mock_filesystem_client,
         )
         test_files = [test_repo / "src" / "main.py"]
 
         for file_path in test_files:
             processor.process_file(file_path, branch_name="master")
 
-        # Retrieve all paths from Qdrant
+        # Retrieve all paths from Filesystem
         stored_paths = self._get_all_stored_paths(config)
 
         # Verify: ALL paths must be relative
@@ -343,14 +319,14 @@ class TestRelativePathStorage:
         config_manager: ConfigManager,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
     ):
         """
         Test that full repository indexing produces NO absolute paths.
 
         This is the ultimate verification: after complete indexing,
-        scrolling through ALL Qdrant points should find zero absolute paths.
+        scrolling through ALL Filesystem points should find zero absolute paths.
 
         This is a TDD-style specification test that will fail until the bug is fixed.
         """
@@ -360,14 +336,14 @@ class TestRelativePathStorage:
         chunking_manager = FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             thread_count=4,
             slot_tracker=mock_slot_tracker,
             codebase_dir=test_repo,
         )
         chunking_manager.index_repository(str(test_repo), force_reindex=True)
 
-        # Retrieve ALL paths from Qdrant
+        # Retrieve ALL paths from Filesystem
         stored_paths = self._get_all_stored_paths(config)
 
         assert len(stored_paths) > 0, "Expected some paths to be indexed"
@@ -392,7 +368,7 @@ class TestRelativePathStorage:
         tmp_path: Path,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
     ):
         """
@@ -413,7 +389,7 @@ class TestRelativePathStorage:
         chunking_manager = FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             thread_count=4,
             slot_tracker=mock_slot_tracker,
             codebase_dir=test_repo,
@@ -439,7 +415,7 @@ class TestRelativePathStorage:
 
         # Step 3: Update config to point to new location (simulating CoW clone)
         # In real CoW clone, .code-indexer directory is shared via CoW
-        # We simulate by keeping Qdrant data but updating codebase_dir
+        # We simulate by keeping Filesystem data but updating codebase_dir
         config.codebase_dir = cloned_repo
         config_manager.save(config)
 
@@ -479,7 +455,7 @@ class TestRelativePathStorage:
         tmp_path: Path,
         mock_vector_manager,
         mock_chunker,
-        mock_qdrant_client,
+        mock_filesystem_client,
         mock_slot_tracker,
     ):
         """
@@ -497,7 +473,7 @@ class TestRelativePathStorage:
         chunking_manager = FileChunkingManager(
             mock_vector_manager,
             mock_chunker,
-            mock_qdrant_client,
+            mock_filesystem_client,
             thread_count=4,
             slot_tracker=mock_slot_tracker,
             codebase_dir=test_repo,

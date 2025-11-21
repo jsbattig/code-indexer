@@ -19,12 +19,11 @@ from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
 try:
-    from code_indexer.server.app import app, SemanticQueryRequest
+    from code_indexer.server.app import app
     from code_indexer.server.auth import dependencies
     from code_indexer.services.temporal.temporal_search_service import (
         TemporalSearchResult,
         TemporalSearchResults,
-        ALL_TIME_RANGE,
     )
 except ImportError:
     pytest.skip("Server app not available", allow_module_level=True)

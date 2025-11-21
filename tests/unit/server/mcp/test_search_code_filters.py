@@ -10,7 +10,7 @@ Tests comprehensive parameter support for:
 """
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from code_indexer.server.mcp.handlers import search_code
 from code_indexer.server.auth.user_manager import User, UserRole
 
@@ -413,7 +413,7 @@ class TestSearchCodeAccuracy:
                 "accuracy": "fast",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify accuracy parameter was passed
             mock_app.semantic_query_manager.query_user_repositories.assert_called_once()
@@ -442,7 +442,7 @@ class TestSearchCodeAccuracy:
                 "accuracy": "balanced",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify accuracy parameter was passed
             call_kwargs = (
@@ -470,7 +470,7 @@ class TestSearchCodeAccuracy:
                 "accuracy": "high",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify accuracy parameter was passed
             call_kwargs = (
@@ -497,7 +497,7 @@ class TestSearchCodeAccuracy:
                 "query_text": "test",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify accuracy defaults to "balanced"
             call_kwargs = (

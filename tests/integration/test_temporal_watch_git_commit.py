@@ -104,7 +104,6 @@ def test_temporal_watch_handler_detects_git_commit(
 
     # Track if commit detection was triggered
     commit_detected = False
-    original_handle_commit = handler._handle_commit_detected
 
     def tracking_commit_handler():
         nonlocal commit_detected
@@ -175,9 +174,7 @@ def test_temporal_watch_handler_path_matching():
     assert event_relative.src_path == ".git/refs/heads/master"
 
     # Test case 3: Path relative to watched directory
-    event_watched_relative = FileModifiedEvent(
-        str(project_root / ".git/refs/heads/master")
-    )
+    FileModifiedEvent(str(project_root / ".git/refs/heads/master"))
 
     # This demonstrates the problem: handler compares absolute paths
     # but watchdog might provide relative paths depending on how

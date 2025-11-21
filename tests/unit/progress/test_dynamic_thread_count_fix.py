@@ -63,7 +63,7 @@ class TestDynamicThreadCountFix:
             processor.fixed_size_chunker.chunk_file = Mock(return_value=[])
             processor.file_identifier = Mock()
             processor.embedding_provider = Mock()
-            processor.qdrant_client = Mock()
+            processor.filesystem_client = Mock()
 
             # Mock config object (required for codebase_dir parameter)
             processor.config = Mock()

@@ -141,14 +141,6 @@ class TestTemporalReconcileE2E:
             1,
         ]  # May fail on embedding but reconciliation ran
 
-        # Check that discovery happened (logs should show discovered commits)
-        output = result.stdout + result.stderr
-        # Should mention discovery (even if embedding fails later)
-
-        # Verify indexes exist (end_indexing should have been called)
-        hnsw_index = collection_path / "hnsw_index.bin"
-        id_index = collection_path / "id_index.bin"
-
         # Note: Indexes might not exist if embedding failed before end_indexing
         # This test validates the reconciliation path, not successful completion
 
@@ -203,8 +195,6 @@ class TestTemporalReconcileE2E:
             vectors_after = len(list(collection_path.glob("vector_*.json")))
             assert vectors_after == vectors_before, f"Run {run+1}: Duplicates created!"
 
-            # Should log that all commits are already indexed
-            output = result.stdout + result.stderr
             # Even if embedding fails, reconciliation should detect all commits indexed
 
     def test_index_only_rebuild(self, temp_test_repo):
@@ -366,8 +356,6 @@ class TestTemporalReconcileE2E:
         )
 
         # Assert: Should skip corrupted files and process successfully
-        output = result.stdout + result.stderr
-
         # Should discover 5 good commits, skip 2 corrupted files
         # (Exact behavior depends on implementation, but should not crash)
         assert result.returncode in [0, 1]

@@ -45,7 +45,7 @@ class TestFixedSizeChunkingDocumentation:
 
         # Must mention model-aware chunk sizes
         assert "4096" in content, "README.md must mention VoyageAI chunk sizes"
-        assert "2048" in content, "README.md must mention Ollama chunk sizes"
+        assert "2048" in content, "README.md must mention Voyage chunk sizes"
         # Note: Fallback size (1000) may not be mentioned in user documentation
 
         # Should mention overlap functionality

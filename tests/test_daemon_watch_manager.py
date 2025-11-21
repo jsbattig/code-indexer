@@ -300,7 +300,7 @@ class TestDaemonWatchManager:
             mock_create.return_value = mock_handler
 
             # Act
-            result = manager.start_watch(project_path, config)
+            manager.start_watch(project_path, config)
             time.sleep(0.5)  # Let thread fail and clean up
 
             # Assert

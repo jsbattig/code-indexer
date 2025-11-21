@@ -89,7 +89,7 @@ class DatabaseManager:
                         "auto_shutdown_on_idle": False,
                     },
                     "embedding_provider": "voyage",
-                    "qdrant": {"mode": "filesystem"},
+                    "filesystem": {"mode": "filesystem"},
                 }
             )
         )
@@ -380,7 +380,7 @@ class DatabaseManager:
 
         try:
             conn.close()
-        except:
+        except Exception:
             pass  # Connection may close during shutdown
 
         # Wait for shutdown

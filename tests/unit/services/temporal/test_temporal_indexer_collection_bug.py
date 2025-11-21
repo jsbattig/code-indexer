@@ -121,7 +121,7 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
             mock_manager.__exit__ = Mock(return_value=False)
             mock_vcm.return_value = mock_manager
 
-            result = indexer.index_commits(all_branches=False, max_commits=1)
+            indexer.index_commits(all_branches=False, max_commits=1)
 
     # ASSERTION: upsert_points must be called with explicit temporal collection name
     assert len(upsert_calls) > 0, "Expected upsert_points to be called at least once"

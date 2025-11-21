@@ -203,8 +203,8 @@ class TestRepositoryInfoCommand:
             "health": {
                 "container_status": "running",
                 "services": {
-                    "qdrant": {"status": "healthy", "port": 6333},
-                    "ollama": {"status": "healthy", "port": 11434},
+                    "filesystem": {"status": "healthy", "port": 6333},
+                    "voyage": {"status": "healthy", "port": 11434},
                 },
                 "index_status": "complete",
                 "query_ready": True,
@@ -232,8 +232,8 @@ class TestRepositoryInfoCommand:
         assert "Health Information:" in result.output
         assert "Container Status: ✓ running" in result.output
         assert "Services:" in result.output
-        assert "qdrant: ✓ Healthy (port 6333)" in result.output
-        assert "ollama: ✓ Healthy (port 11434)" in result.output
+        assert "filesystem: ✓ Healthy (port 6333)" in result.output
+        assert "voyage: ✓ Healthy (port 11434)" in result.output
         assert "Storage Information:" in result.output
         assert "Disk Usage: 156 MB" in result.output
         assert "Available Space: 45.2 GB" in result.output

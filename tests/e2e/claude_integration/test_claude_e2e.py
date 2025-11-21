@@ -497,7 +497,7 @@ def test_complete_workflow_mock():
 
         assert "codebase_dir" in config
         assert "file_extensions" in config
-        assert "qdrant" in config
+        assert "filesystem" in config
 
         # Test 3: Test status command
         status_result = subprocess.run(
@@ -541,7 +541,7 @@ def test_complete_workflow_mock():
                         "run 'start' first",
                         "run 'code-indexer start' first",  # Exact message variation
                         "not available",
-                        "model not found",  # Ollama model not available
+                        "model not found",  # Voyage model not available
                         "analysis failed",  # Analysis failed due to missing services
                         "no semantic search results found",  # Valid failure if no index
                         "claude cli not available",  # CLI not installed

@@ -43,9 +43,9 @@ class TestChunkTypeFiltering:
         mock_embedding_provider = temporal_search_service.embedding_provider
 
         # Mock vector store to return mixed chunk types
-        # Use QdrantClient-style mocking (returns list directly, not tuple)
+        # Use FilesystemClient-style mocking (returns list directly, not tuple)
         mock_vector_store.collection_exists.return_value = True
-        mock_vector_store.__class__.__name__ = "QdrantClient"
+        mock_vector_store.__class__.__name__ = "FilesystemClient"
         mock_vector_store.search.return_value = [
             MagicMock(
                 id="test:commit:abc123:0",
@@ -108,7 +108,7 @@ class TestChunkTypeFiltering:
 
         # Mock vector store to return mixed chunk types
         mock_vector_store.collection_exists.return_value = True
-        mock_vector_store.__class__.__name__ = "QdrantClient"
+        mock_vector_store.__class__.__name__ = "FilesystemClient"
         mock_vector_store.search.return_value = [
             MagicMock(
                 id="test:commit:abc123:0",
@@ -170,7 +170,7 @@ class TestChunkTypeFiltering:
 
         # Mock vector store to return results from multiple authors
         mock_vector_store.collection_exists.return_value = True
-        mock_vector_store.__class__.__name__ = "QdrantClient"
+        mock_vector_store.__class__.__name__ = "FilesystemClient"
         mock_vector_store.search.return_value = [
             MagicMock(
                 id="test:commit:abc123:0",

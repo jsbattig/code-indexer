@@ -1858,7 +1858,7 @@ class ActivatedRepoManager:
             if os.path.exists(git_dir):
                 # Step 2a: Run git update-index --refresh to sync index with file timestamps
                 self.logger.info(
-                    f"Running git update-index --refresh to fix CoW clone timestamps"
+                    "Running git update-index --refresh to fix CoW clone timestamps"
                 )
                 result = subprocess.run(
                     ["git", "update-index", "--refresh"],
@@ -1875,7 +1875,7 @@ class ActivatedRepoManager:
 
                 # Step 2b: Run git restore . to clean up any remaining modified files
                 self.logger.info(
-                    f"Running git restore . to clean up CoW clone timestamp changes"
+                    "Running git restore . to clean up CoW clone timestamp changes"
                 )
                 result = subprocess.run(
                     ["git", "restore", "."],
@@ -1894,7 +1894,7 @@ class ActivatedRepoManager:
             code_indexer_dir = os.path.join(dest_path, ".code-indexer")
             if os.path.exists(code_indexer_dir):
                 self.logger.info(
-                    f"Running cidx fix-config --force to update cloned config paths"
+                    "Running cidx fix-config --force to update cloned config paths"
                 )
                 result = subprocess.run(
                     ["cidx", "fix-config", "--force"],

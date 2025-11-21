@@ -27,7 +27,7 @@ def test_temporal_service_initialization_includes_vector_store_client():
         config_file = config_dir / "config.json"
         config_data = {
             "codebase_dir": str(project_root),
-            "qdrant": {"port": 6333, "grpc_port": 6334},
+            "filesystem": {"port": 6333, "grpc_port": 6334},
             "voyage_api": {"api_key": "test-key"},
             "embedding_provider": "voyage",
         }
@@ -69,7 +69,7 @@ def test_temporal_service_initialization_includes_vector_store_client():
             mock_config.codebase_dir = project_root
             mock_config.embedding_provider = "voyage"
             mock_config.voyage_api = Mock(api_key="test-key")
-            mock_config.qdrant = Mock(port=6333)
+            mock_config.filesystem = Mock(port=6333)
             # CRITICAL: Force standalone mode (not daemon mode) for this test
             # We're testing service initialization, not daemon delegation
             mock_config.daemon = Mock(enabled=False)
@@ -162,7 +162,7 @@ def test_temporal_query_e2e_with_real_initialization():
         config_file = config_dir / "config.json"
         config_data = {
             "codebase_dir": str(project_root),
-            "qdrant": {"port": 6333, "grpc_port": 6334},
+            "filesystem": {"port": 6333, "grpc_port": 6334},
             "voyage_api": {"api_key": "test-key"},
             "embedding_provider": "voyage",
         }

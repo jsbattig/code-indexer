@@ -325,8 +325,8 @@ class GoldenRepoManager:
             else:
                 # FAIL the operation - don't mask cleanup failures
                 raise GitOperationError(
-                    f"Repository metadata removed but cleanup incomplete. "
-                    f"Resource leak detected: some cleanup operations did not complete fully."
+                    "Repository metadata removed but cleanup incomplete. "
+                    "Resource leak detected: some cleanup operations did not complete fully."
                 )
 
         # Submit to BackgroundJobManager
@@ -502,7 +502,7 @@ class GoldenRepoManager:
         Clean up repository files and directories using orchestrated cleanup.
 
         Uses the same approach as 'cidx uninstall' to properly handle root-owned files
-        created by Qdrant containers through the data-cleaner service.
+        created by previous infrastructure (removed in v8.0).
 
         Args:
             clone_path: Path to repository directory to clean up
@@ -551,88 +551,25 @@ class GoldenRepoManager:
         self, clone_path: str, project_config_dir: Path
     ) -> bool:
         """
-        Perform Docker orchestrated cleanup for repository with cidx services.
+        Docker cleanup is no longer performed (Story #506: container management deprecated).
+
+        Container-based backends are deprecated. Repositories should use filesystem backend.
+        This method now returns True to allow cleanup to proceed.
 
         Args:
             clone_path: Path to repository directory
             project_config_dir: Path to .code-indexer config directory
 
         Returns:
-            bool: True if Docker cleanup successful, False if issues occurred
+            bool: Always returns True (no-op)
 
         Raises:
-            GitOperationError: For critical failures that should prevent deletion
+            GitOperationError: Not raised (legacy compatibility)
         """
-        from ...services.docker_manager import DockerManager
-
-        try:
-            # Use context manager for proper resource management
-            with DockerManager(
-                force_docker=True,  # Use Docker for server operations
-                project_config_dir=project_config_dir,
-            ) as docker_manager:
-                # Perform orchestrated cleanup with data removal (same as uninstall)
-                cleanup_success = docker_manager.cleanup(
-                    remove_data=True, verbose=False
-                )
-                if not cleanup_success:
-                    logging.warning(
-                        f"Docker cleanup reported issues for {clone_path}. "
-                        f"Containers or volumes may still exist but cleanup can proceed."
-                    )
-                    return False
-
-                logging.info(f"Completed orchestrated cleanup for: {clone_path}")
-                return True
-
-        except PermissionError as e:
-            logging.error(f"Permission denied during Docker cleanup: {e}")
-            raise GitOperationError(
-                f"Insufficient permissions for Docker cleanup: {str(e)}"
-            )
-        except OSError as e:
-            if e.errno == errno.ENOENT:  # File not found
-                logging.info(f"Docker resources already cleaned for {clone_path}")
-                return True
-            else:
-                logging.error(f"OS error during Docker cleanup: {e}")
-                raise GitOperationError(
-                    f"File system error during Docker cleanup: {str(e)}"
-                )
-        except ImportError as e:
-            logging.error(f"Missing Docker dependency: {e}")
-            raise GitOperationError(f"Docker system dependency unavailable: {str(e)}")
-        except subprocess.CalledProcessError as e:
-            error_output = getattr(e, "stderr", "") or str(e)
-
-            # Handle broken pipe errors gracefully - these are communication issues, not critical failures
-            if "broken pipe" in error_output.lower() or "pipe" in error_output.lower():
-                logging.warning(
-                    f"Docker cleanup had communication issues but deletion can proceed: {error_output}"
-                )
-                return False  # Non-critical failure
-            else:
-                # Other subprocess errors are more serious
-                logging.error(
-                    f"Docker cleanup process failed for {clone_path}: "
-                    f"Command failed with exit code {e.returncode}, stderr: {error_output}"
-                )
-                raise GitOperationError(
-                    f"Docker cleanup failed with exit code {e.returncode}"
-                )
-        except (
-            RuntimeError,
-            ConnectionError,
-            TimeoutError,
-            ValueError,
-            TypeError,
-        ) as e:
-            # Docker daemon issues that are non-critical for repository deletion
-            logging.warning(
-                f"Docker cleanup failed for {clone_path} but deletion can proceed: "
-                f"Docker daemon error: {type(e).__name__}: {e}"
-            )
-            return False  # Non-critical failure
+        logging.info(
+            f"Docker cleanup skipped for {clone_path} (container management deprecated)"
+        )
+        return True
 
     def _cleanup_filesystem(self, clone_path_obj: Path) -> Optional[bool]:
         """
@@ -676,14 +613,11 @@ class GoldenRepoManager:
             GitOperationError: For critical failures that should prevent deletion
         """
         if isinstance(error, ImportError):
-            # DockerManager import failed - this is a critical system issue
-            logging.error(
-                f"Critical system error during cleanup of {clone_path}: "
-                f"Missing dependency: {error}"
+            # Import errors during cleanup are no longer critical (container management deprecated)
+            logging.warning(
+                f"Import error during cleanup of {clone_path} (non-critical): {error}"
             )
-            raise GitOperationError(
-                f"System dependency unavailable for cleanup: {str(error)}"
-            )
+            return True  # Non-critical, allow cleanup to proceed
         elif isinstance(error, PermissionError):
             logging.error(
                 f"Permission denied during cleanup of {clone_path}: "

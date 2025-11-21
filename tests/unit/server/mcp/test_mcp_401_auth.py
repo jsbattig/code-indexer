@@ -4,8 +4,6 @@ This test file verifies the MCP endpoint returns HTTP 401 for unauthenticated
 requests as required by the MCP Authorization Specification (RFC 9728).
 """
 
-import pytest
-
 
 class TestMCP401Authentication:
     """Test MCP endpoint authentication requirements."""
@@ -16,7 +14,6 @@ class TestMCP401Authentication:
         Per MCP specification (RFC 9728), servers MUST return HTTP 401 for
         requests requiring authorization, with WWW-Authenticate header.
         """
-        from fastapi.testclient import TestClient
         from code_indexer.server.app import create_app
         from starlette.testclient import TestClient as StarletteTestClient
 

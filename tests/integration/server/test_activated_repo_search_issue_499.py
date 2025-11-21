@@ -128,7 +128,7 @@ def execute_query(conn, query):
 
         This is the core integration test for Issue #499 - verifies that the
         config.json created during activation causes backend_factory to select
-        FilesystemBackend instead of defaulting to QdrantContainerBackend.
+        FilesystemBackend instead of defaulting to FilesystemContainerBackend.
         """
         username = "testuser"
         golden_repo_alias = "test-repo"
@@ -183,12 +183,12 @@ def execute_query(conn, query):
             f"but got {type(backend).__name__}. This indicates Issue #499 is NOT fixed."
         )
 
-    def test_config_prevents_qdrant_default_fallback(
+    def test_config_prevents_filesystem_default_fallback(
         self, activated_repo_manager, temp_data_dir
     ):
-        """Test that config.json prevents backend_factory from defaulting to Qdrant.
+        """Test that config.json prevents backend_factory from defaulting to Filesystem.
 
-        Before the fix: config.vector_store was None, backend_factory defaulted to Qdrant
+        Before the fix: config.vector_store was None, backend_factory defaulted to Filesystem
         After the fix: config.vector_store.provider='filesystem', backend_factory uses FilesystemBackend
         """
         username = "testuser"
@@ -225,13 +225,13 @@ def execute_query(conn, query):
         # CRITICAL: Verify config.vector_store is NOT None
         assert config.vector_store is not None, (
             "config.vector_store must NOT be None. "
-            "If None, backend_factory defaults to Qdrant (Issue #499 root cause)."
+            "If None, backend_factory defaults to Filesystem (Issue #499 root cause)."
         )
 
         # Verify provider is filesystem
         assert (
             config.vector_store.provider == "filesystem"
-        ), "vector_store.provider must be 'filesystem' to prevent Qdrant fallback"
+        ), "vector_store.provider must be 'filesystem' to prevent Filesystem fallback"
 
     def test_voyage_ai_configuration_in_activated_repo(
         self, activated_repo_manager, temp_data_dir

@@ -54,7 +54,7 @@ class QueryResult:
     def from_search_result(
         cls, search_result: SearchResult, repository_alias: str
     ) -> "QueryResult":
-        """Create QueryResult from SearchEngine SearchResult."""
+        """Create QueryResult from SearchResult dataclass."""
         return cls(
             file_path=search_result.file_path,
             line_number=1,  # SearchResult doesn't have line numbers, default to 1

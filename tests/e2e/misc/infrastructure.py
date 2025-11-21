@@ -77,7 +77,6 @@ def _get_inventory_config(inventory: TestProjectInventory) -> Dict[str, Any]:
         "embedding_provider": "voyage",
         "embedding_model": "voyage-code-2",
         "segment_size": 100,
-        "ollama_model": "all-minilm:l6-v2",
         "ignore_patterns": ["*.log", "__pycache__", ".git", "*.pyc"],
     }
 
@@ -91,7 +90,6 @@ def _get_inventory_config(inventory: TestProjectInventory) -> Dict[str, Any]:
         TestProjectInventory.END_TO_END_DUAL_ENGINE: {
             **base_config,
             "embedding_provider": "voyage",
-            "fallback_provider": "ollama",
         },
         TestProjectInventory.FILTER_E2E_SUCCESS: {
             **base_config,
@@ -197,9 +195,6 @@ def dual_engine_function():
 
 def voyage_specific():
     return "voyage_result"
-
-def ollama_specific():
-    return "ollama_result"
 """
         )
 

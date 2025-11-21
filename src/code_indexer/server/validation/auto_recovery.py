@@ -448,11 +448,12 @@ class AutoRecoveryEngine:
             smart_indexer = self._get_smart_indexer()
 
             # Clear the collection first
-            qdrant_client = self._get_qdrant_client()
-            collection_name = qdrant_client.resolve_collection_name(
-                self.config.qdrant.collection_base_name
+            vector_store_client = self._get_vector_store_client()
+            embedding_provider = self._get_embedding_provider()
+            collection_name = vector_store_client.resolve_collection_name(
+                self.config, embedding_provider
             )
-            qdrant_client.clear_collection(collection_name)
+            vector_store_client.clear_collection(collection_name)
 
             if progress_callback:
                 progress_callback(
@@ -488,19 +489,20 @@ class AutoRecoveryEngine:
     def _execute_optimization_recovery(
         self, recovery_action: RecoveryAction, progress_callback: Optional[Callable]
     ) -> RecoveryResult:
-        """Execute optimization recovery on Qdrant collection."""
+        """Execute optimization recovery on vector store collection."""
         try:
             if progress_callback:
                 progress_callback(0, 0, Path(""), "Starting index optimization...")
 
-            # Get Qdrant client
-            qdrant_client = self._get_qdrant_client()
+            # Get vector store client
+            vector_store_client = self._get_vector_store_client()
+            embedding_provider = self._get_embedding_provider()
 
             # Optimize the collection
-            collection_name = qdrant_client.resolve_collection_name(
-                self.config.qdrant.collection_base_name
+            collection_name = vector_store_client.resolve_collection_name(
+                self.config, embedding_provider
             )
-            success = qdrant_client.optimize_collection(collection_name)
+            success = vector_store_client.optimize_collection(collection_name)
 
             if not success:
                 raise RecoveryFailedError(
@@ -552,13 +554,16 @@ class AutoRecoveryEngine:
         try:
             from ...services.smart_indexer import SmartIndexer
             from ...services.embedding_factory import EmbeddingProviderFactory
-            from ...services.qdrant import QdrantClient
             from pathlib import Path
+            from ...storage.filesystem_vector_store import FilesystemVectorStore
 
-            # Initialize required services
+            # Initialize required services (Story #505 - FilesystemVectorStore)
             embedding_provider = EmbeddingProviderFactory.create(self.config)
-            qdrant_client = QdrantClient(
-                self.config.qdrant, None, Path(self.config.codebase_dir)
+
+            # Initialize vector store
+            index_dir = Path(self.config.codebase_dir) / ".code-indexer" / "index"
+            vector_store_client = FilesystemVectorStore(
+                base_path=index_dir, project_root=Path(self.config.codebase_dir)
             )
 
             # Create SmartIndexer
@@ -568,7 +573,7 @@ class AutoRecoveryEngine:
             smart_indexer = SmartIndexer(
                 config=self.config,
                 embedding_provider=embedding_provider,
-                vector_store_client=qdrant_client,
+                vector_store_client=vector_store_client,
                 metadata_path=metadata_path,
             )
 
@@ -580,20 +585,33 @@ class AutoRecoveryEngine:
                 f"SmartIndexer creation failed: {str(e)}", "initialization"
             )
 
-    def _get_qdrant_client(self):
-        """Get QdrantClient instance for recovery operations."""
+    def _get_embedding_provider(self):
+        """Get embedding provider instance for recovery operations."""
         try:
-            from ...services.qdrant import QdrantClient
-            from pathlib import Path
+            from ...services.embedding_factory import EmbeddingProviderFactory
 
-            return QdrantClient(
-                self.config.qdrant, None, Path(self.config.codebase_dir)
+            return EmbeddingProviderFactory.create(self.config)
+        except Exception as e:
+            logger.error(f"Failed to create embedding provider: {e}")
+            raise RecoveryFailedError(
+                f"Embedding provider creation failed: {str(e)}", "initialization"
+            )
+
+    def _get_vector_store_client(self):
+        """Get vector store client instance for recovery operations."""
+        try:
+            from pathlib import Path
+            from ...storage.filesystem_vector_store import FilesystemVectorStore
+
+            index_dir = Path(self.config.codebase_dir) / ".code-indexer" / "index"
+            return FilesystemVectorStore(
+                base_path=index_dir, project_root=Path(self.config.codebase_dir)
             )
 
         except Exception as e:
-            logger.error(f"Failed to create QdrantClient: {e}")
+            logger.error(f"Failed to create vector store client: {e}")
             raise RecoveryFailedError(
-                f"QdrantClient creation failed: {str(e)}", "initialization"
+                f"Vector store client creation failed: {str(e)}", "initialization"
             )
 
     def _estimate_full_recovery_duration(self) -> int:

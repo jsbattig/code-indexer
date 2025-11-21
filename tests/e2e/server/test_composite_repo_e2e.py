@@ -64,7 +64,7 @@ class TestCompositeRepositoryE2E:
             config_data = {
                 "embedding_provider": "voyage-ai",
                 "proxy_mode": False,
-                "qdrant": {
+                "filesystem": {
                     "host": "localhost",
                     "port": 6333,
                 },

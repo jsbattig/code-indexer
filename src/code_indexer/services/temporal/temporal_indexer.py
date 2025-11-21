@@ -191,7 +191,7 @@ class TemporalIndexer:
         """Count tokens using provider-specific token counting.
 
         For VoyageAI: Use official tokenizer for accurate counting
-        For Ollama/other providers: Estimate based on character count
+        For Voyage/other providers: Estimate based on character count
         """
         # Check if we're using VoyageAI provider
         provider_name = vector_manager.embedding_provider.__class__.__name__

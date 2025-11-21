@@ -128,7 +128,7 @@ class TestTemporalQueryHandlerIntegration:
                 }
             )
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify handler called query_manager with temporal parameters
             call_kwargs = mock_qm.query_user_repositories.call_args[1]
@@ -157,7 +157,7 @@ class TestTemporalQueryHandlerIntegration:
                 }
             )
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             call_kwargs = mock_qm.query_user_repositories.call_args[1]
             assert "at_commit" in call_kwargs
@@ -185,7 +185,7 @@ class TestTemporalQueryHandlerIntegration:
                 }
             )
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             call_kwargs = mock_qm.query_user_repositories.call_args[1]
             assert "include_removed" in call_kwargs
@@ -213,7 +213,7 @@ class TestTemporalQueryHandlerIntegration:
                 }
             )
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             call_kwargs = mock_qm.query_user_repositories.call_args[1]
             assert "show_evolution" in call_kwargs
@@ -242,7 +242,7 @@ class TestTemporalQueryHandlerIntegration:
                 }
             )
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             call_kwargs = mock_qm.query_user_repositories.call_args[1]
             assert "evolution_limit" in call_kwargs

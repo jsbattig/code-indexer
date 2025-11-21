@@ -53,15 +53,18 @@ class TestParallelProcessingPerformance:
         embedding_provider.get_current_model.return_value = "voyage-3"
         embedding_provider._get_model_token_limit.return_value = 120000
 
-        qdrant_client = Mock()
-        qdrant_client.resolve_collection_name.return_value = "test_collection"
-        qdrant_client.upsert_points_batched.return_value = True
-        qdrant_client.scroll_points.return_value = ([], None)  # Fix the unpack error
+        filesystem_client = Mock()
+        filesystem_client.resolve_collection_name.return_value = "test_collection"
+        filesystem_client.upsert_points_batched.return_value = True
+        filesystem_client.scroll_points.return_value = (
+            [],
+            None,
+        )  # Fix the unpack error
 
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            vector_store_client=qdrant_client,
+            vector_store_client=filesystem_client,
         )
 
         # Mock the chunker to return predictable chunks with all required fields
@@ -241,12 +244,12 @@ class TestParallelProcessingPerformance:
         embedding_provider = Mock()
         embedding_provider.get_current_model.return_value = "voyage-3"
         embedding_provider._get_model_token_limit.return_value = 120000
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            vector_store_client=qdrant_client,
+            vector_store_client=filesystem_client,
         )
 
         # Test thread-safe content ID generation under concurrent access
@@ -323,9 +326,9 @@ class TestParallelProcessingPerformance:
         embedding_provider = Mock()
         embedding_provider.get_current_model.return_value = "voyage-3"
         embedding_provider._get_model_token_limit.return_value = 120000
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        # Mock Qdrant operations to simulate database interactions
+        # Mock Filesystem operations to simulate database interactions
         mock_content_points = [
             {
                 "id": "point1",
@@ -340,13 +343,13 @@ class TestParallelProcessingPerformance:
             },
         ]
 
-        qdrant_client.scroll_points.return_value = (mock_content_points, None)
-        qdrant_client._batch_update_points.return_value = True
+        filesystem_client.scroll_points.return_value = (mock_content_points, None)
+        filesystem_client._batch_update_points.return_value = True
 
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            vector_store_client=qdrant_client,
+            vector_store_client=filesystem_client,
         )
 
         # Test concurrent branch visibility operations

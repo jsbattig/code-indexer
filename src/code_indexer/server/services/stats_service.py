@@ -2,7 +2,7 @@
 Repository Statistics Service.
 
 Provides real repository statistics following CLAUDE.md Foundation #1: No mocks.
-All operations use real file system, database, and Qdrant operations.
+All operations use real file system, database, and Filesystem operations.
 """
 
 import os
@@ -20,7 +20,7 @@ from ..models.api_models import (
     RepositoryHealthInfo,
 )
 from ...config import ConfigManager
-from ...services.qdrant import QdrantClient
+from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +96,10 @@ class RepositoryStatsService:
             config_manager = ConfigManager.create_with_backtrack()
             self.config = config_manager.get_config()
 
-            # Real QdrantClient integration - not injectable, not mockable
-            self.qdrant_client = QdrantClient(
-                config=self.config.qdrant, project_root=Path.cwd()
+            # Real FilesystemVectorStore integration - not injectable, not mockable
+            index_dir = Path(self.config.codebase_dir) / ".code-indexer" / "index"
+            self.vector_store_client = FilesystemVectorStore(
+                base_path=index_dir, project_root=Path(self.config.codebase_dir)
             )
 
             # Repository manager will be instantiated when implemented
@@ -248,26 +249,26 @@ class RepositoryStatsService:
 
     def _is_file_indexed(self, file_path: Path) -> bool:
         """
-        Check if file is currently indexed in Qdrant.
+        Check if file is currently indexed in vector store.
 
-        CLAUDE.md Foundation #1: Real Qdrant check, no extension-based heuristics.
+        CLAUDE.md Foundation #1: Real vector store check, no extension-based heuristics.
 
         Args:
             file_path: Path to file
 
         Returns:
-            Whether file is actually indexed in Qdrant
+            Whether file is actually indexed in vector store
 
         Raises:
-            RuntimeError: If Qdrant check fails
+            RuntimeError: If vector store check fails
         """
         try:
-            # This would query real Qdrant collection to check if file is indexed
+            # This would query real vector store collection to check if file is indexed
             # Implementation requires knowing which collection and search criteria
             # For now, fail clearly to indicate missing real implementation
             raise RuntimeError(
-                "Real Qdrant file indexing check not yet implemented. "
-                "This service requires actual Qdrant query to determine file indexing status."
+                "Real vector store file indexing check not yet implemented. "
+                "This service requires actual vector store query to determine file indexing status."
             )
         except Exception as e:
             logger.warning(f"Cannot check indexing status for {file_path}: {e}")
@@ -340,7 +341,7 @@ class RepositoryStatsService:
         total_size = sum(f.size_bytes for f in file_stats)
 
         # For now, estimate index size as 10% of repository size
-        # In real implementation, query actual index size from Qdrant
+        # In real implementation, query actual index size from Filesystem
         estimated_index_size = int(total_size * 0.1)
 
         # Estimate embedding count based on indexed files
@@ -427,30 +428,32 @@ class RepositoryStatsService:
 
     def get_embedding_count(self, repo_id: str) -> int:
         """
-        Get actual embedding count from Qdrant for repository.
+        Get actual embedding count from vector store for repository.
 
-        CLAUDE.md Foundation #1: Real Qdrant integration, no placeholders.
+        CLAUDE.md Foundation #1: Real vector store integration, no placeholders.
 
         Args:
             repo_id: Repository identifier (user_alias for activated repos)
             username: Username owning the activated repository (for activated repos)
 
         Returns:
-            Number of embeddings in Qdrant collection
+            Number of embeddings in vector store collection
 
         Raises:
             RuntimeError: If unable to retrieve embedding count
-            ConnectionError: If Qdrant is not accessible
+            ConnectionError: If vector store is not accessible
         """
         collection_name = f"repo_{repo_id}"
 
         try:
             # Check if collection exists first
-            if not self.qdrant_client.collection_exists(collection_name):
+            if not self.vector_store_client.collection_exists(collection_name):
                 return 0
 
-            # Get real collection info from Qdrant
-            collection_info = self.qdrant_client.get_collection_info(collection_name)
+            # Get real collection info from vector store
+            collection_info = self.vector_store_client.get_collection_info(
+                collection_name
+            )
             vectors_count = collection_info.get("vectors_count", 0)
             return int(vectors_count) if vectors_count is not None else 0
 

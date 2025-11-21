@@ -4,7 +4,7 @@ Test-driven development for end-to-end path exclusion integration.
 Tests complete integration of path exclusion from CLI to query execution:
 - CLI argument parsing
 - Filter construction and application
-- Integration with both Qdrant and filesystem backends
+- Integration with both Filesystem and filesystem backends
 - Real file filtering
 """
 
@@ -85,8 +85,8 @@ class TestCLIPathExclusionIntegration:
 class TestFilterConstructionIntegration:
     """Test filter construction for backend integration."""
 
-    def test_filter_construction_for_qdrant_backend(self):
-        """Test that path exclusion filters are correctly structured for Qdrant."""
+    def test_filter_construction_for_filesystem_backend(self):
+        """Test that path exclusion filters are correctly structured for Filesystem."""
         from code_indexer.services.path_filter_builder import PathFilterBuilder
 
         builder = PathFilterBuilder()
@@ -95,7 +95,7 @@ class TestFilterConstructionIntegration:
         exclusion_patterns = ["*/tests/*", "*.min.js"]
         filter_conditions = builder.build_exclusion_filter(exclusion_patterns)
 
-        # Verify structure matches Qdrant expectations
+        # Verify structure matches Filesystem expectations
         assert "must_not" in filter_conditions
         assert len(filter_conditions["must_not"]) == 2
 
@@ -110,7 +110,7 @@ class TestFilterConstructionIntegration:
             assert "text" in condition["match"]
             assert condition["match"]["text"] in exclusion_patterns
 
-    def test_filter_construction_for_filesystem_backend(self):
+    def test_filter_evaluation_with_filesystem_backend(self):
         """Test that path exclusion filters work with FilesystemVectorStore filter evaluation.
 
         This test verifies that the filter structure created by PathFilterBuilder
@@ -158,7 +158,7 @@ class TestFilterConstructionIntegration:
         matcher = PathPatternMatcher()
 
         def evaluate_filter(payload, filter_conditions):
-            """Evaluate Qdrant-style filter against payload (simplified)."""
+            """Evaluate Filesystem-style filter against payload (simplified)."""
             if "must_not" in filter_conditions:
                 for condition in filter_conditions["must_not"]:
                     if "key" in condition and "match" in condition:

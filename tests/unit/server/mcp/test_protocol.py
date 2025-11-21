@@ -816,4 +816,4 @@ class TestStreamableHTTPTransport:
         # Must include WWW-Authenticate header
         assert (
             "www-authenticate" in response.headers
-        ), f"Expected WWW-Authenticate header for invalid token"
+        ), "Expected WWW-Authenticate header for invalid token"

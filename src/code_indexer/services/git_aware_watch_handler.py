@@ -345,7 +345,7 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
                 # Use HighThroughputProcessor for proper branch transition
                 collection_name = (
-                    self.smart_indexer.qdrant_client.resolve_collection_name(
+                    self.smart_indexer.vector_store_client.resolve_collection_name(
                         self.config, self.smart_indexer.embedding_provider
                     )
                 )

@@ -341,7 +341,9 @@ class TestDataCleanerIntegration:
 
             mock_run.side_effect = mock_subprocess_calls
 
-            result = self.docker_manager.clean_with_data_cleaner(["/data/qdrant/test"])
+            result = self.docker_manager.clean_with_data_cleaner(
+                ["/data/filesystem/test"]
+            )
 
             assert result is True
             # Note: start_data_cleaner may not be called if container already exists

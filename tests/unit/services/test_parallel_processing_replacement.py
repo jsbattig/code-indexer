@@ -88,9 +88,11 @@ class TestParallelProcessingReplacement:
         # Use only first 2 files for this test
         test_files = test_files[:2]
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
 
@@ -155,7 +157,7 @@ class TestParallelProcessingReplacement:
         call_args = mock_file_chunking_manager.call_args
         assert call_args[1]["vector_manager"] == mock_vector_manager_instance
         assert call_args[1]["chunker"] == processor.fixed_size_chunker
-        assert call_args[1]["vector_store_client"] == qdrant_client
+        assert call_args[1]["vector_store_client"] == filesystem_client
         assert call_args[1]["thread_count"] == 4
         assert "slot_tracker" in call_args[1]  # Verify slot_tracker is included
 
@@ -184,9 +186,11 @@ class TestParallelProcessingReplacement:
         # Use only first file for this test
         test_files = test_files[:1]
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
         processor.file_identifier.get_file_metadata.return_value = {
@@ -242,8 +246,10 @@ class TestParallelProcessingReplacement:
         """Test that process_files_high_throughput method signature is unchanged."""
         config = create_test_config()
         embedding_provider = Mock()
-        qdrant_client = Mock()
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        filesystem_client = Mock()
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
 
         # Verify method exists with correct signature
         method = getattr(processor, "process_files_high_throughput", None)
@@ -283,9 +289,11 @@ class TestParallelProcessingReplacement:
         # Use only first 2 files for this test
         test_files = test_files[:2]
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
         processor.file_identifier.get_file_metadata.return_value = {
@@ -359,9 +367,11 @@ class TestParallelProcessingReplacement:
         # Setup with proper constructor arguments
         config = create_test_config()
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
 
@@ -431,8 +441,10 @@ class TestParallelProcessingReplacement:
         """Test that cancellation behavior is preserved with new implementation."""
         config = create_test_config()
         embedding_provider = Mock()
-        qdrant_client = Mock()
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        filesystem_client = Mock()
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
 
         # Verify cancellation flag exists and works
         assert not processor.cancelled
@@ -455,9 +467,11 @@ class TestParallelProcessingReplacement:
         # Use only first file for this test
         test_files = test_files[:1]
         embedding_provider = Mock()
-        qdrant_client = Mock()
+        filesystem_client = Mock()
 
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
         processor.file_identifier.get_file_metadata.return_value = {
@@ -511,8 +525,10 @@ class TestParallelProcessingReplacement:
         """Test that ProcessingStats return type is preserved."""
         config = create_test_config()
         embedding_provider = Mock()
-        qdrant_client = Mock()
-        processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
+        filesystem_client = Mock()
+        processor = HighThroughputProcessor(
+            config, embedding_provider, filesystem_client
+        )
 
         # Import should work (tests the import exists)
         from code_indexer.indexing.processor import ProcessingStats

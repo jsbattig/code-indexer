@@ -55,12 +55,12 @@ class TestCompleteUserWorkflows:
                 environment_name="e2e_test_env", base_path=base_path / "containers"
             )
 
-            # Create Qdrant environment (for semantic search)
-            qdrant_env = container_manager.create_standard_qdrant_environment()
+            # Create Filesystem environment (for semantic search)
+            filesystem_env = container_manager.create_standard_filesystem_environment()
 
             # Start container services
             containers_started = container_manager.start_environment(
-                "test_env", qdrant_env
+                "test_env", filesystem_env
             )
 
             # Start main server

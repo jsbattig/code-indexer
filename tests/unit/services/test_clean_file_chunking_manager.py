@@ -27,7 +27,7 @@ class TestCleanFileChunkingManagerResourceManagement:
         # Mock dependencies that FileChunkingManager needs
         self.chunker = Mock()
         self.vector_manager = Mock()
-        self.qdrant_client = Mock()
+        self.filesystem_client = Mock()
         self.aggregate_tracker = Mock()
 
         # Mock chunker behavior
@@ -89,7 +89,7 @@ class TestCleanFileChunkingManagerResourceManagement:
         manager = FileChunkingManager(
             chunker=self.chunker,
             vector_manager=self.vector_manager,
-            vector_store_client=self.qdrant_client,
+            vector_store_client=self.filesystem_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=temp_dir,

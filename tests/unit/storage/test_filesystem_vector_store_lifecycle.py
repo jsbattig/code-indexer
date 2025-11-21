@@ -11,7 +11,6 @@ Test Strategy:
 import json
 import numpy as np
 import pytest
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 
@@ -296,73 +295,6 @@ class TestFilesystemVectorStoreLifecycle:
         """
         with pytest.raises(ValueError, match="does not exist"):
             store.end_indexing("nonexistent_collection")
-
-
-class TestQdrantClientLifecycle:
-    """Test lifecycle interface for QdrantClient (no-op implementation)."""
-
-    @pytest.fixture
-    def qdrant_config(self):
-        """Mock Qdrant configuration."""
-        from code_indexer.config import QdrantConfig
-
-        return QdrantConfig(
-            host="localhost",
-            port=6333,
-            collection_base_name="test_collection",
-            url=None,
-            api_key=None,
-        )
-
-    def test_qdrant_begin_indexing_exists(self, qdrant_config):
-        """GIVEN QdrantClient instance
-        WHEN begin_indexing() is called
-        THEN method exists and is a no-op (Qdrant handles indexes internally)
-
-        AC1: begin_indexing() method exists on QdrantClient
-        AC2: Accepts collection_name parameter
-        AC3: Is effectively a no-op (Qdrant manages indexes automatically)
-        """
-        from code_indexer.services.qdrant import QdrantClient
-
-        # Create client (skip container checks for unit test)
-        client = QdrantClient(config=qdrant_config, project_root=Path("/tmp"))
-
-        # This will FAIL initially - method doesn't exist yet (RED phase)
-        assert hasattr(client, "begin_indexing"), "begin_indexing() method must exist"
-
-        # Should not raise exceptions
-        client.begin_indexing("test_collection")
-
-    def test_qdrant_end_indexing_exists(self, qdrant_config):
-        """GIVEN QdrantClient instance
-        WHEN end_indexing() is called
-        THEN method exists and returns status dict
-
-        AC1: end_indexing() method exists on QdrantClient
-        AC2: Accepts collection_name and optional progress_callback
-        AC3: Returns dict with status, vectors_indexed, collection keys
-        AC4: vectors_indexed reflects actual Qdrant collection size
-        """
-        from code_indexer.services.qdrant import QdrantClient
-        from unittest.mock import patch
-
-        # Create client
-        client = QdrantClient(config=qdrant_config, project_root=Path("/tmp"))
-
-        # This will FAIL initially - method doesn't exist yet (RED phase)
-        assert hasattr(client, "end_indexing"), "end_indexing() method must exist"
-
-        # Mock count_points to return known value
-        with patch.object(client, "count_points", return_value=42):
-            result = client.end_indexing("test_collection")
-
-        assert isinstance(result, dict), "end_indexing() must return dict"
-        assert result["status"] == "ok", "Status must be 'ok'"
-        assert (
-            result["vectors_indexed"] == 42
-        ), "Must return accurate vector count from Qdrant"
-        assert result["collection"] == "test_collection", "Must return collection name"
 
 
 class TestVectorSizeCaching:

@@ -101,7 +101,7 @@ class TestTemporalIndexerDiffBasedParallel:
                     mock_vcm.return_value = mock_manager
 
                     # Run indexing
-                    result = indexer.index_commits(all_branches=False, max_commits=1)
+                    indexer.index_commits(all_branches=False, max_commits=1)
 
                     # Verify diff scanner was called
                     assert mock_get_diffs.called
@@ -207,9 +207,7 @@ class TestTemporalIndexerDiffBasedParallel:
                         mock_vcm.return_value = mock_manager
 
                         # Run indexing
-                        result = indexer.index_commits(
-                            all_branches=False, max_commits=1
-                        )
+                        indexer.index_commits(all_branches=False, max_commits=1)
 
                         # Verify diff content was chunked
                         assert (
@@ -315,9 +313,7 @@ class TestTemporalIndexerDiffBasedParallel:
                         mock_vcm.return_value = mock_manager
 
                         # Run indexing
-                        result = indexer.index_commits(
-                            all_branches=False, max_commits=1
-                        )
+                        indexer.index_commits(all_branches=False, max_commits=1)
 
                     # Verify vectors were created
                     assert len(stored_points) > 0, "Should have created vector points"

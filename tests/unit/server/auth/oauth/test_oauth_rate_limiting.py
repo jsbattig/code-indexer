@@ -5,7 +5,6 @@ Following TDD: Write failing tests FIRST, then implement features.
 Following CLAUDE.md: Zero mocking - real rate limiting, real state management.
 """
 
-import pytest
 from code_indexer.server.auth.oauth_rate_limiter import (
     OAuthTokenRateLimiter,
     OAuthRegisterRateLimiter,

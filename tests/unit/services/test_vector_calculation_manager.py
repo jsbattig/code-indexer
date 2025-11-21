@@ -981,9 +981,9 @@ def mock_voyage_provider():
 
 
 @pytest.fixture
-def mock_ollama_provider():
-    """Fixture providing a mock Ollama provider."""
-    provider = MockEmbeddingProvider(provider_name="ollama", delay=0.1, dimensions=768)
+def mock_voyage_provider():
+    """Fixture providing a mock Voyage provider."""
+    provider = MockEmbeddingProvider(provider_name="voyage", delay=0.1, dimensions=768)
     return provider
 
 
@@ -1020,21 +1020,21 @@ class TestProviderSpecificBehavior:
             # Expected: ~0.04s with 8 threads vs ~0.32s sequential
             assert total_time < 0.2
 
-    def test_ollama_single_thread_from_config(self, mock_ollama_provider):
-        """Test that Ollama uses config.json setting."""
-        # With radical simplification, Ollama also uses config.voyage_ai.parallel_requests
+    def test_voyage_single_thread_from_config(self, mock_voyage_provider):
+        """Test that Voyage uses config.json setting."""
+        # With radical simplification, Voyage also uses config.voyage_ai.parallel_requests
         # No more provider-specific defaults - everything from config.json
         mock_config = Mock()
         mock_config.voyage_ai = Mock()
-        mock_config.voyage_ai.parallel_requests = 1  # Config setting for Ollama
+        mock_config.voyage_ai.parallel_requests = 1  # Config setting for Voyage
 
         assert mock_config.voyage_ai.parallel_requests == 1
 
-        with VectorCalculationManager(mock_ollama_provider, thread_count=1) as manager:
+        with VectorCalculationManager(mock_voyage_provider, thread_count=1) as manager:
             futures = []
             for i in range(3):
                 future: Future[Any] = manager.submit_chunk(
-                    f"ollama chunk {i}", {"index": i}
+                    f"voyage chunk {i}", {"index": i}
                 )
                 futures.append(future)
 

@@ -73,7 +73,7 @@ class TestIncrementalCommitDetection:
                 mock_run.return_value = MagicMock(stdout="", returncode=0)
 
                 # Call _get_commit_history
-                commits = indexer._get_commit_history(
+                indexer._get_commit_history(
                     all_branches=False, max_commits=None, since_date=None
                 )
 
@@ -143,7 +143,7 @@ class TestBeginIndexingCall:
                 mock_process.return_value = (1, 2, 3)
 
                 # Run indexing
-                result = indexer.index_commits()
+                indexer.index_commits()
 
                 # Verify begin_indexing was called BEFORE processing
                 # This will FAIL initially as begin_indexing is not called
@@ -267,7 +267,7 @@ class TestPointExistenceFiltering:
 
                 mock_process.side_effect = simulate_processing
 
-                result = indexer.index_commits()
+                indexer.index_commits()
 
                 # Verify that only NEW points were upserted
                 # This will FAIL initially because no filtering is done

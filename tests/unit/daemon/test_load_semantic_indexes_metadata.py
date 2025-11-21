@@ -28,7 +28,7 @@ class TestLoadSemanticIndexesMetadata:
         # Mock filesystem structure
         index_dir = Path("/tmp/test_project/.code-indexer/index")
         collection_name = "voyage-code-3"
-        collection_path = index_dir / collection_name
+        index_dir / collection_name
 
         # Mock collection metadata
         metadata = {

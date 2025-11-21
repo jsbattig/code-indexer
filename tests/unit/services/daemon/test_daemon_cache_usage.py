@@ -185,7 +185,7 @@ class TestDaemonCacheUsage:
         try:
             with patch("tantivy.Index.open") as mock_index_open:
                 # Execute FTS search
-                results = daemon_service._execute_fts_search(
+                daemon_service._execute_fts_search(
                     str(mock_project_path), "test query", limit=10
                 )
 

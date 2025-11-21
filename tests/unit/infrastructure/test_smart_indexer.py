@@ -50,8 +50,8 @@ def mock_embedding_provider():
 
 
 @pytest.fixture
-def mock_qdrant_client():
-    """Create a mock Qdrant client."""
+def mock_filesystem_client():
+    """Create a mock Filesystem client."""
     client = Mock()
     client.collection_exists.return_value = True
     client.create_point.return_value = {"id": "test-id", "vector": [0.1, 0.2, 0.3]}
@@ -232,12 +232,15 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test smart indexing with force_full=True."""
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (
@@ -260,15 +263,17 @@ class TestSmartIndexer:
             mock_stats.chunks_created = 5
             mock_high_throughput.return_value = mock_stats
 
-            mock_qdrant_client.collection_exists.return_value = False
+            mock_filesystem_client.collection_exists.return_value = False
 
             stats = indexer.smart_index(force_full=True)
 
             # Verify full index was performed
             # Note: ensure_provider_aware_collection may be called multiple times
             # (once during setup, once during begin_indexing)
-            assert mock_qdrant_client.ensure_provider_aware_collection.call_count >= 1
-            mock_qdrant_client.clear_collection.assert_called_once()
+            assert (
+                mock_filesystem_client.ensure_provider_aware_collection.call_count >= 1
+            )
+            mock_filesystem_client.clear_collection.assert_called_once()
 
             # Verify high-throughput processor was called directly
             mock_high_throughput.assert_called_once()
@@ -280,12 +285,15 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test smart indexing with no previous index (should do full index)."""
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (
@@ -313,8 +321,10 @@ class TestSmartIndexer:
             # Should fall back to full index since no previous data
             # Note: ensure_provider_aware_collection may be called multiple times
             # (once during setup, once during begin_indexing)
-            assert mock_qdrant_client.ensure_provider_aware_collection.call_count >= 1
-            mock_qdrant_client.clear_collection.assert_called_once()
+            assert (
+                mock_filesystem_client.ensure_provider_aware_collection.call_count >= 1
+            )
+            mock_filesystem_client.clear_collection.assert_called_once()
 
             # Verify high-throughput processor was called directly
             mock_high_throughput.assert_called_once()
@@ -325,7 +335,7 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test smart indexing with previous index and file changes."""
@@ -337,7 +347,10 @@ class TestSmartIndexer:
         metadata.complete_indexing()
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Create a temporary file inside the mock codebase directory
@@ -376,7 +389,7 @@ class TestSmartIndexer:
                 # Mock other required methods
                 mock_embedding_provider.get_provider_name.return_value = "test-provider"
                 mock_embedding_provider.get_current_model.return_value = "test-model"
-                mock_qdrant_client.resolve_collection_name.return_value = (
+                mock_filesystem_client.resolve_collection_name.return_value = (
                     "test_collection"
                 )
                 indexer.git_topology_service.get_current_branch = Mock(
@@ -386,8 +399,8 @@ class TestSmartIndexer:
                 stats = indexer.smart_index(force_full=False)
 
                 # Should do incremental update using high-throughput processing
-                mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
-                mock_qdrant_client.clear_collection.assert_not_called()
+                mock_filesystem_client.ensure_provider_aware_collection.assert_called_once()
+                mock_filesystem_client.clear_collection.assert_not_called()
                 mock_high_throughput_processing.assert_called_once()
                 assert stats.files_processed == 1
                 assert stats.chunks_created == 3
@@ -400,7 +413,7 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test smart indexing when no files need incremental indexing."""
@@ -412,7 +425,10 @@ class TestSmartIndexer:
         metadata.complete_indexing()
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (
@@ -433,12 +449,15 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test getting indexing status."""
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         status = indexer.get_indexing_status()
@@ -452,13 +471,16 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test can_resume functionality."""
         # Create indexer with no previous data
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         assert indexer.can_resume() is False
@@ -474,12 +496,15 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test clearing progress metadata."""
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Add some progress
@@ -497,7 +522,7 @@ class TestSmartIndexer:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """Test that configuration changes force a full index."""
@@ -508,7 +533,10 @@ class TestSmartIndexer:
         metadata.complete_indexing()
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (
@@ -539,7 +567,7 @@ class TestSmartIndexer:
             stats = indexer.smart_index(force_full=False)
 
             # Should force full index due to provider change
-            mock_qdrant_client.clear_collection.assert_called_once()
+            mock_filesystem_client.clear_collection.assert_called_once()
             assert stats.files_processed == 1
 
 
@@ -612,7 +640,7 @@ class TestIndexingExceptionHandling:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -621,7 +649,10 @@ class TestIndexingExceptionHandling:
         This prevents FilesystemVectorStore from being left in unsearchable state.
         """
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (
@@ -641,23 +672,23 @@ class TestIndexingExceptionHandling:
                 "Simulated indexing failure"
             )
 
-            mock_qdrant_client.collection_exists.return_value = False
-            mock_qdrant_client.begin_indexing.return_value = None
-            mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+            mock_filesystem_client.collection_exists.return_value = False
+            mock_filesystem_client.begin_indexing.return_value = None
+            mock_filesystem_client.end_indexing.return_value = {"vectors_indexed": 0}
 
             # Execute and expect exception
             with pytest.raises(RuntimeError, match="Git-aware indexing failed"):
                 indexer.smart_index(force_full=True)
 
             # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
-            mock_qdrant_client.begin_indexing.assert_called_once()
-            mock_qdrant_client.end_indexing.assert_called_once()
+            mock_filesystem_client.begin_indexing.assert_called_once()
+            mock_filesystem_client.end_indexing.assert_called_once()
 
     def test_end_indexing_called_on_incremental_index_exception(
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -673,7 +704,10 @@ class TestIndexingExceptionHandling:
         metadata.complete_indexing()
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Create a temporary file
@@ -698,11 +732,13 @@ class TestIndexingExceptionHandling:
                     "Simulated processing failure"
                 )
 
-                mock_qdrant_client.resolve_collection_name.return_value = (
+                mock_filesystem_client.resolve_collection_name.return_value = (
                     "test_collection"
                 )
-                mock_qdrant_client.begin_indexing.return_value = None
-                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+                mock_filesystem_client.begin_indexing.return_value = None
+                mock_filesystem_client.end_indexing.return_value = {
+                    "vectors_indexed": 0
+                }
                 indexer.git_topology_service.get_current_branch = Mock(
                     return_value="master"
                 )
@@ -714,8 +750,8 @@ class TestIndexingExceptionHandling:
                     indexer.smart_index(force_full=False)
 
                 # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
-                mock_qdrant_client.begin_indexing.assert_called_once()
-                mock_qdrant_client.end_indexing.assert_called_once()
+                mock_filesystem_client.begin_indexing.assert_called_once()
+                mock_filesystem_client.end_indexing.assert_called_once()
         finally:
             if temp_file_path.exists():
                 temp_file_path.unlink()
@@ -724,7 +760,7 @@ class TestIndexingExceptionHandling:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -733,7 +769,10 @@ class TestIndexingExceptionHandling:
         This prevents FilesystemVectorStore from being left in unsearchable state.
         """
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Create a test file in the codebase directory
@@ -761,12 +800,14 @@ class TestIndexingExceptionHandling:
                     "Simulated reconcile failure"
                 )
 
-                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                mock_filesystem_client.ensure_provider_aware_collection.return_value = (
                     "test_collection"
                 )
-                mock_qdrant_client.begin_indexing.return_value = None
-                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
-                mock_qdrant_client.resolve_collection_name.return_value = (
+                mock_filesystem_client.begin_indexing.return_value = None
+                mock_filesystem_client.end_indexing.return_value = {
+                    "vectors_indexed": 0
+                }
+                mock_filesystem_client.resolve_collection_name.return_value = (
                     "test_collection"
                 )
                 indexer.git_topology_service.is_git_available = Mock(return_value=True)
@@ -787,8 +828,8 @@ class TestIndexingExceptionHandling:
                     )
 
                 # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
-                mock_qdrant_client.begin_indexing.assert_called_once()
-                mock_qdrant_client.end_indexing.assert_called_once()
+                mock_filesystem_client.begin_indexing.assert_called_once()
+                mock_filesystem_client.end_indexing.assert_called_once()
         finally:
             if test_file.exists():
                 test_file.unlink()
@@ -797,7 +838,7 @@ class TestIndexingExceptionHandling:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -806,7 +847,10 @@ class TestIndexingExceptionHandling:
         This ensures FilesystemVectorStore indexes are properly rebuilt.
         """
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Create a test file in the codebase directory
@@ -842,12 +886,14 @@ class TestIndexingExceptionHandling:
                     processing_time=1.0,
                 )
 
-                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                mock_filesystem_client.ensure_provider_aware_collection.return_value = (
                     "test_collection"
                 )
-                mock_qdrant_client.begin_indexing.return_value = None
-                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 5}
-                mock_qdrant_client.resolve_collection_name.return_value = (
+                mock_filesystem_client.begin_indexing.return_value = None
+                mock_filesystem_client.end_indexing.return_value = {
+                    "vectors_indexed": 5
+                }
+                mock_filesystem_client.resolve_collection_name.return_value = (
                     "test_collection"
                 )
                 indexer.git_topology_service.is_git_available = Mock(return_value=True)
@@ -867,8 +913,8 @@ class TestIndexingExceptionHandling:
                 )
 
                 # CRITICAL ASSERTION: end_indexing() MUST be called on success
-                mock_qdrant_client.begin_indexing.assert_called_once()
-                mock_qdrant_client.end_indexing.assert_called_once()
+                mock_filesystem_client.begin_indexing.assert_called_once()
+                mock_filesystem_client.end_indexing.assert_called_once()
         finally:
             if test_file.exists():
                 test_file.unlink()
@@ -877,7 +923,7 @@ class TestIndexingExceptionHandling:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -899,7 +945,10 @@ class TestIndexingExceptionHandling:
         # Don't complete - leave it interrupted
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         try:
@@ -917,11 +966,13 @@ class TestIndexingExceptionHandling:
                     "Simulated resume failure"
                 )
 
-                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                mock_filesystem_client.ensure_provider_aware_collection.return_value = (
                     "test_collection"
                 )
-                mock_qdrant_client.begin_indexing.return_value = None
-                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+                mock_filesystem_client.begin_indexing.return_value = None
+                mock_filesystem_client.end_indexing.return_value = {
+                    "vectors_indexed": 0
+                }
 
                 # Execute and expect exception
                 with pytest.raises(RuntimeError, match="Git-aware resume failed"):
@@ -936,8 +987,8 @@ class TestIndexingExceptionHandling:
                     )
 
                 # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
-                mock_qdrant_client.begin_indexing.assert_called_once()
-                mock_qdrant_client.end_indexing.assert_called_once()
+                mock_filesystem_client.begin_indexing.assert_called_once()
+                mock_filesystem_client.end_indexing.assert_called_once()
         finally:
             if temp_file1.exists():
                 temp_file1.unlink()
@@ -948,7 +999,7 @@ class TestIndexingExceptionHandling:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -970,7 +1021,10 @@ class TestIndexingExceptionHandling:
         # Don't complete - leave it interrupted
 
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         try:
@@ -992,11 +1046,13 @@ class TestIndexingExceptionHandling:
                 mock_stats.cancelled = False
                 mock_high_throughput.return_value = mock_stats
 
-                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                mock_filesystem_client.ensure_provider_aware_collection.return_value = (
                     "test_collection"
                 )
-                mock_qdrant_client.begin_indexing.return_value = None
-                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 10}
+                mock_filesystem_client.begin_indexing.return_value = None
+                mock_filesystem_client.end_indexing.return_value = {
+                    "vectors_indexed": 10
+                }
 
                 # Execute
                 indexer._do_resume_interrupted(
@@ -1010,8 +1066,8 @@ class TestIndexingExceptionHandling:
                 )
 
                 # CRITICAL ASSERTION: end_indexing() MUST be called on success
-                mock_qdrant_client.begin_indexing.assert_called_once()
-                mock_qdrant_client.end_indexing.assert_called_once()
+                mock_filesystem_client.begin_indexing.assert_called_once()
+                mock_filesystem_client.end_indexing.assert_called_once()
         finally:
             if temp_file1.exists():
                 temp_file1.unlink()
@@ -1022,7 +1078,7 @@ class TestIndexingExceptionHandling:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -1031,7 +1087,10 @@ class TestIndexingExceptionHandling:
         This prevents FilesystemVectorStore from being left in unsearchable state.
         """
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         # Create test file for branch changes
@@ -1050,9 +1109,11 @@ class TestIndexingExceptionHandling:
                     "Simulated branch change failure"
                 )
 
-                mock_qdrant_client.begin_indexing.return_value = None
-                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
-                mock_qdrant_client.resolve_collection_name.return_value = (
+                mock_filesystem_client.begin_indexing.return_value = None
+                mock_filesystem_client.end_indexing.return_value = {
+                    "vectors_indexed": 0
+                }
+                mock_filesystem_client.resolve_collection_name.return_value = (
                     "test_collection"
                 )
 
@@ -1071,8 +1132,8 @@ class TestIndexingExceptionHandling:
                     )
 
                 # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
-                mock_qdrant_client.begin_indexing.assert_called_once()
-                mock_qdrant_client.end_indexing.assert_called_once()
+                mock_filesystem_client.begin_indexing.assert_called_once()
+                mock_filesystem_client.end_indexing.assert_called_once()
         finally:
             if test_file.exists():
                 test_file.unlink()
@@ -1081,7 +1142,7 @@ class TestIndexingExceptionHandling:
         self,
         mock_config,
         mock_embedding_provider,
-        mock_qdrant_client,
+        mock_filesystem_client,
         temp_metadata_path,
     ):
         """
@@ -1090,7 +1151,10 @@ class TestIndexingExceptionHandling:
         This ensures FilesystemVectorStore indexes are properly rebuilt.
         """
         indexer = SmartIndexer(
-            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+            mock_config,
+            mock_embedding_provider,
+            mock_filesystem_client,
+            temp_metadata_path,
         )
 
         with (
@@ -1108,9 +1172,11 @@ class TestIndexingExceptionHandling:
             mock_stats.cancelled = False
             mock_high_throughput.return_value = mock_stats
 
-            mock_qdrant_client.begin_indexing.return_value = None
-            mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 5}
-            mock_qdrant_client.resolve_collection_name.return_value = "test_collection"
+            mock_filesystem_client.begin_indexing.return_value = None
+            mock_filesystem_client.end_indexing.return_value = {"vectors_indexed": 5}
+            mock_filesystem_client.resolve_collection_name.return_value = (
+                "test_collection"
+            )
 
             # Execute
             indexer.process_branch_changes_high_throughput(
@@ -1124,5 +1190,5 @@ class TestIndexingExceptionHandling:
             )
 
             # CRITICAL ASSERTION: end_indexing() MUST be called on success
-            mock_qdrant_client.begin_indexing.assert_called_once()
-            mock_qdrant_client.end_indexing.assert_called_once()
+            mock_filesystem_client.begin_indexing.assert_called_once()
+            mock_filesystem_client.end_indexing.assert_called_once()

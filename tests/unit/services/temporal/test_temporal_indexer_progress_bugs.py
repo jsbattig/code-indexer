@@ -188,7 +188,7 @@ class TestTemporalIndexerProgressBugs:
                 )
 
                 # Run indexing with progress callback
-                result = indexer.index_commits(progress_callback=progress_callback)
+                indexer.index_commits(progress_callback=progress_callback)
 
                 # Verify we got progress callbacks
                 assert len(progress_calls) > 0, "No progress callbacks received"

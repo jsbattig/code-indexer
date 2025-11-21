@@ -1,5 +1,5 @@
 """Search components."""
 
-from .query import SearchEngine
+from .query import SearchResult
 
-__all__ = ["SearchEngine"]
+__all__ = ["SearchResult"]

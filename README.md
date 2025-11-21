@@ -2,14 +2,14 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-**Version 7.4.0** - [Changelog](docs/CHANGELOG.md) | [Architecture](docs/architecture.md) | [Technical Details](docs/technical-details.md)
+**Version 8.0.0** - [Changelog](CHANGELOG.md) | [Migration Guide](docs/migration-to-v8.md) | [Architecture](docs/architecture.md)
 
 ## Quick Install
 
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v7.4.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v8.0.0
 
 # Setup global registry (required once per system)
 cidx setup-global-registry
@@ -22,7 +22,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v7.4.0
+pip install git+https://github.com/jsbattig/code-indexer.git@v8.0.0
 
 # Setup global registry
 cidx setup-global-registry
@@ -164,30 +164,26 @@ cidx teach-ai --codex --global
 Direct command-line interface for local development:
 - Direct CLI commands: `cidx init`, `cidx index`, `cidx query`
 - Local project indexing in `.code-indexer/`
-- Container-free filesystem storage (or optional Qdrant)
+- Container-free filesystem storage
+- Instant setup, no dependencies
 - Real-time progress tracking
 
-### Server Mode (Team Environments)
+### Daemon Mode (Performance)
 
-Multi-user FastAPI web service for teams:
-- REST API with JWT authentication
-- **MCP (Model Context Protocol) server** - Remote connectivity for AI assistants
-- Golden Repositories for centralized code management
-- User workspaces via Copy-on-Write cloning
-- Background job processing
-- Multi-project support
+Background service for faster queries:
+- In-memory index caching (~5ms queries vs ~1s from disk)
+- Watch mode for real-time file change indexing
+- Unix socket communication
+- Container-free, runs as local process
 
 ```bash
-# Install and start server
-cidx install-server
-cidx server start
+# Enable and start daemon
+cidx config --daemon
+cidx start
 
-# Access API docs at http://localhost:8090/docs
+# Use watch mode for real-time updates
+cidx watch
 ```
-
-**MCP Server Integration**: Connect AI assistants (Claude Code, etc.) to your CIDX server for remote semantic code search. The server implements MCP protocol 2024-11-05, enabling AI tools to query your team's indexed codebases with full authentication and permission controls.
-
-See [Server Architecture](docs/v5.0.0-architecture-summary.md) for detailed server setup and configuration.
 
 ## Common Commands
 
@@ -229,45 +225,41 @@ See [Technical Details - Supported Languages](docs/technical-details.md#supporte
 
 ## Configuration
 
-### Embedding Providers
+### Embedding Provider
 
-**Ollama (Default - Local)**
-```bash
-cidx init --embedding-provider ollama
-```
+Code-indexer uses **VoyageAI embeddings** (cloud-based API). This is the only supported embedding provider in v8.0+.
 
-**VoyageAI (Cloud)**
 ```bash
 export VOYAGE_API_KEY="your-key"
-cidx init --embedding-provider voyage-ai
+cidx init  # VoyageAI is automatically used
 ```
 
-### Vector Storage Backends
+Get your API key from: https://www.voyageai.com/
 
-**Filesystem Backend (Default)** - Container-free, instant setup
+### Vector Storage Backend
+
+Code-indexer uses **filesystem backend** (container-free, local storage). This is the only supported backend in v8.0+.
+
 ```bash
-cidx init --vector-store filesystem
+cidx init  # Filesystem backend is automatically used
 ```
 
-**Qdrant Backend** - Advanced vector database features
-```bash
-cidx init --vector-store qdrant
-```
+Vector data is stored in `.code-indexer/index/` as optimized JSON files.
 
 ### Configuration File
 
 Configuration stored in `.code-indexer/config.json`:
 - `file_extensions`: File types to index
 - `exclude_dirs`: Directories to skip
-- `embedding_provider`: ollama or voyage-ai
+- `embedding_provider`: "voyage-ai" (only supported provider)
 - `max_file_size`: Maximum file size (default: 1MB)
 
 ## Documentation
 
-- **[Changelog](docs/CHANGELOG.md)** - Version history and release notes
+- **[Changelog](CHANGELOG.md)** - Version history and release notes
+- **[Migration Guide](docs/migration-to-v8.md)** - Upgrading from v7.x to v8.0
 - **[Architecture](docs/architecture.md)** - System design and technical decisions
 - **[Technical Details](docs/technical-details.md)** - Deep dives into algorithms and implementation
-- **[Server Architecture](docs/v5.0.0-architecture-summary.md)** - Multi-user server setup and configuration
 - **[Algorithms](docs/algorithms.md)** - Detailed algorithm descriptions and complexity analysis
 
 ## Development

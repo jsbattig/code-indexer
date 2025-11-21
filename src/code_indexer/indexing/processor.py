@@ -44,13 +44,11 @@ class DocumentProcessor:
         self,
         config: Config,
         embedding_provider: EmbeddingProvider,
-        vector_store_client: Any,  # QdrantClient or FilesystemVectorStore
+        vector_store_client: Any,  # FilesystemVectorStore (vector store backend)
     ):
         self.config = config
         self.embedding_provider = embedding_provider
         self.vector_store_client = vector_store_client
-        # Backward compatibility: also set qdrant_client for legacy code
-        self.qdrant_client = vector_store_client
         self.file_finder = FileFinder(config)
         # Use model-aware fixed-size chunker for all processing
         self.fixed_size_chunker = FixedSizeChunker(config)
@@ -85,7 +83,7 @@ class DocumentProcessor:
                     "indexed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "content": chunk[
                         "text"
-                    ],  # Include content for Qdrant point creation
+                    ],  # Include content for vector point creation
                     "line_start": chunk["line_start"],  # Line number metadata
                     "line_end": chunk["line_end"],  # Line number metadata
                 }
@@ -96,7 +94,7 @@ class DocumentProcessor:
                 future = vector_manager.submit_chunk(chunk["text"], chunk_metadata)
                 chunk_futures.append(future)
 
-            # Step 3: Collect results and create Qdrant points (main thread)
+            # Step 3: Collect results and create vector points (main thread)
             points = []
             for future in chunk_futures:
                 try:
@@ -114,7 +112,7 @@ class DocumentProcessor:
                             f"Embedding is None for chunk in {vector_result.metadata.get('path', 'unknown')}"
                         )
 
-                    # Create Qdrant point with the calculated embedding
+                    # Create vector point with calculated embedding
                     payload = {
                         "path": vector_result.metadata["path"],
                         "content": vector_result.metadata["content"],
@@ -129,7 +127,7 @@ class DocumentProcessor:
 
                     # Note: Fixed-size chunking provides consistent metadata only
 
-                    point = self.qdrant_client.create_point(
+                    point = self.vector_store_client.create_point(
                         vector=vector_result.embedding,
                         payload=payload,
                         embedding_model=self.embedding_provider.get_current_model(),
@@ -196,11 +194,13 @@ class DocumentProcessor:
                     # Process batch if full
                     if len(batch_points) >= batch_size:
                         try:
-                            if not self.qdrant_client.upsert_points(batch_points):
-                                raise RuntimeError("Failed to upload batch to Qdrant")
+                            if not self.vector_store_client.upsert_points(batch_points):
+                                raise RuntimeError(
+                                    "Failed to upload batch to vector store"
+                                )
                         except Exception as e:
                             raise RuntimeError(
-                                f"Failed to upload batch to Qdrant (last processed file: {file_path.name}): {e}"
+                                f"Failed to upload batch to vector store (last processed file: {file_path.name}): {e}"
                             )
                         batch_points = []
 
@@ -220,13 +220,15 @@ class DocumentProcessor:
             # Process remaining points
             if batch_points:
                 try:
-                    if not self.qdrant_client.upsert_points(batch_points):
-                        raise RuntimeError("Failed to upload final batch to Qdrant")
+                    if not self.vector_store_client.upsert_points(batch_points):
+                        raise RuntimeError(
+                            "Failed to upload final batch to vector store"
+                        )
                 except Exception as e:
                     # Extract filename from last processed file or batch content
                     last_file = files[-1].name if files else "unknown"
                     raise RuntimeError(
-                        f"Failed to upload final batch to Qdrant (last processed file: {last_file}): {e}"
+                        f"Failed to upload final batch to vector store (last processed file: {last_file}): {e}"
                     )
 
         stats.end_time = time.time()
