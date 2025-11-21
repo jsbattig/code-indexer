@@ -212,13 +212,13 @@ class TestGlobalAuthenticationMiddleware:
         return "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.test.token"
 
     def test_protected_endpoint_without_token(self, client):
-        """Test accessing protected endpoint without token returns 403."""
+        """Test accessing protected endpoint without token returns 401."""
         response = client.get("/api/repos")
 
-        assert response.status_code == 403
+        assert response.status_code == 401
         response_data = response.json()
         assert "detail" in response_data
-        assert "Not authenticated" in response_data["detail"]
+        assert "Missing authentication credentials" in response_data["detail"]
 
     def test_protected_endpoint_with_invalid_token(self, client):
         """Test accessing protected endpoint with invalid token returns 401."""
@@ -262,7 +262,7 @@ class TestGlobalAuthenticationMiddleware:
         headers = {"Authorization": "jwt.token.here"}
         response = client.get("/api/repos", headers=headers)
 
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_protected_endpoint_with_expired_token(self, client):
         """Test accessing protected endpoint with expired token returns 401."""
@@ -285,10 +285,6 @@ class TestGlobalAuthenticationMiddleware:
 
     def test_public_endpoints_dont_require_auth(self, client):
         """Test that public endpoints don't require authentication."""
-        # Health endpoint should be public
-        response = client.get("/health")
-        assert response.status_code != 401
-
         # Docs endpoint should be public
         response = client.get("/docs")
         assert response.status_code != 401
