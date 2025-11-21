@@ -94,15 +94,39 @@ echo "   • Job management and sync orchestration"
 echo "   • Validation and error handling"
 echo "   • Branch operations"
 
-# Run server-specific unit tests
+# Create telemetry directory
+TELEMETRY_DIR=".test-telemetry"
+mkdir -p "$TELEMETRY_DIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+TELEMETRY_LOG="$TELEMETRY_DIR/server-test-${TIMESTAMP}.log"
+DURATIONS_LOG="$TELEMETRY_DIR/server-durations-${TIMESTAMP}.txt"
+
+echo "📊 Telemetry enabled: Results will be saved to $TELEMETRY_LOG"
+echo "⏱️  Duration report: $DURATIONS_LOG"
+
+# Run server-specific unit tests with telemetry
 if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
     tests/unit/server/ \
     -m "not slow and not e2e and not real_api and not integration" \
+    -v \
+    --durations=20 \
+    --tb=short \
     --cov=code_indexer.server \
-    --cov-report=xml --cov-report=term-missing; then
+    --cov-report=xml --cov-report=term-missing \
+    2>&1 | tee "$TELEMETRY_LOG"; then
+
+    # Extract duration information
+    echo "" > "$DURATIONS_LOG"
+    echo "=== Top 20 Slowest Tests ===" >> "$DURATIONS_LOG"
+    grep "slowest durations" -A 25 "$TELEMETRY_LOG" >> "$DURATIONS_LOG" 2>/dev/null || echo "No duration data captured" >> "$DURATIONS_LOG"
+
     print_success "Server unit tests passed"
+    echo "📊 Telemetry saved to: $TELEMETRY_LOG"
+    echo "⏱️  Duration report: $DURATIONS_LOG"
 else
     print_error "Server unit tests failed"
+    echo "📊 Failure telemetry saved to: $TELEMETRY_LOG"
+    echo "⏱️  Check $DURATIONS_LOG for slow/hanging tests"
     exit 1
 fi
 
