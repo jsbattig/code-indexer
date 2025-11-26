@@ -186,9 +186,17 @@ async def async_main():  # pragma: no cover
 
 def main():  # pragma: no cover
     """Synchronous wrapper for CLI entry point with argument parsing."""
+    from code_indexer import __version__
+
     parser = argparse.ArgumentParser(
         description="MCP Stdio Bridge - Forward JSON-RPC requests to CIDX server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     parser.add_argument(
