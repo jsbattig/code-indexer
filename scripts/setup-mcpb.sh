@@ -491,7 +491,8 @@ configure_claude_desktop() {
     # Create the MCP server entry
     local cidx_server_entry=$(jq -n \
         --arg binary_path "$MCPB_BINARY" \
-        '{cidx: {type: "stdio", command: $binary_path}}')
+        --arg home_dir "$HOME" \
+        '{cidx: {type: "stdio", command: $binary_path, env: {HOME: $home_dir}}}')
 
     # Handle existing config file
     if [ -f "$claude_config_file" ]; then
@@ -604,7 +605,10 @@ show_next_steps() {
         echo "    \"mcpServers\": {"
         echo "      \"cidx\": {"
         echo "        \"type\": \"stdio\","
-        echo "        \"command\": \"$MCPB_BINARY\""
+        echo "        \"command\": \"$MCPB_BINARY\","
+        echo "        \"env\": {"
+        echo "          \"HOME\": \"$HOME\""
+        echo "        }"
         echo "      }"
         echo "    }"
         echo "  }"
