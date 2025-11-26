@@ -22,7 +22,6 @@ from ...indexing.fixed_size_chunker import FixedSizeChunker
 from ...services.vector_calculation_manager import VectorCalculationManager
 from ...services.file_identifier import FileIdentifier
 from ...storage.filesystem_vector_store import FilesystemVectorStore
-from ...utils.log_path_helper import get_debug_log_path
 
 from .models import CommitInfo
 from .temporal_diff_scanner import TemporalDiffScanner
@@ -741,16 +740,6 @@ class TemporalIndexer:
                             )
                             all_embeddings = []
 
-                            # DEBUG: Log batch processing
-                            debug_log_path = get_debug_log_path(
-                                self.config_manager.config_path.parent, "cidx_debug.log"
-                            )
-                            with open(debug_log_path, "a") as f:
-                                f.write(
-                                    f"Commit {commit.hash[:8]}: Processing {len(batch_indices_list)} batch(es) with {len(all_chunks_data)} total chunks (max {max_concurrent} concurrent)\n"
-                                )
-                                f.flush()
-
                             # Process batches in waves of max_concurrent
                             for wave_start in range(
                                 0, len(batch_indices_list), max_concurrent
@@ -767,17 +756,6 @@ class TemporalIndexer:
                                     wave_start + max_concurrent, len(batch_indices_list)
                                 )
                                 wave_batches = batch_indices_list[wave_start:wave_end]
-
-                                # DEBUG: Log wave submission
-                                debug_log_path = get_debug_log_path(
-                                    self.config_manager.config_path.parent,
-                                    "cidx_debug.log",
-                                )
-                                with open(debug_log_path, "a") as f:
-                                    f.write(
-                                        f"Commit {commit.hash[:8]}: Submitting wave {wave_start+1}-{wave_end} of {len(batch_indices_list)}\n"
-                                    )
-                                    f.flush()
 
                                 # Submit this wave of batches
                                 wave_futures = []
@@ -878,17 +856,6 @@ class TemporalIndexer:
                                                     filename=f"{commit.hash[:8]} - Vectorizing {progress_pct}% ({chunks_vectorized}/{total_chunks} chunks)",
                                                     file_size=total_commit_size,  # Keep total size consistent
                                                 )
-
-                                                # DEBUG: Log batch completion
-                                                debug_log_path = get_debug_log_path(
-                                                    self.config_manager.config_path.parent,
-                                                    "cidx_debug.log",
-                                                )
-                                                with open(debug_log_path, "a") as f:
-                                                    f.write(
-                                                        f"Commit {commit.hash[:8]}: Wave batch {batch_num}/{len(wave_futures)} completed - {len(batch_result.embeddings)} embeddings\n"
-                                                    )
-                                                    f.flush()
 
                                         except Exception as e:
                                             logger.error(

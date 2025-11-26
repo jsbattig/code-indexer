@@ -72,6 +72,11 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Time range filter for temporal queries (format: YYYY-MM-DD..YYYY-MM-DD, e.g., '2024-01-01..2024-12-31'). Returns only code that existed during this period. Requires temporal index built with 'cidx index --index-commits'.",
                 },
+                "time_range_all": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Query across all git history without time range limit. Requires temporal index built with 'cidx index --index-commits'. Equivalent to querying from first commit to HEAD.",
+                },
                 "at_commit": {
                     "type": "string",
                     "description": "Query code at a specific commit hash or ref (e.g., 'abc123' or 'HEAD~5'). Returns code state as it existed at that commit. Requires temporal index.",

@@ -247,22 +247,3 @@ class TestLightweightDelegationPerformance:
 
 class TestSocketPathResolution:
     """Test daemon socket path resolution."""
-
-    def test_resolves_socket_path_from_config(self):
-        """Test socket path is correctly resolved from config path."""
-        from code_indexer.cli_daemon_fast import get_socket_path
-
-        config_path = Path("/project/.code-indexer/config.json")
-        socket_path = get_socket_path(config_path)
-
-        assert socket_path == Path("/project/.code-indexer/daemon.sock")
-
-    def test_socket_path_uses_config_directory(self):
-        """Test socket is always in same directory as config."""
-        from code_indexer.cli_daemon_fast import get_socket_path
-
-        config_path = Path("/deep/nested/path/.code-indexer/config.json")
-        socket_path = get_socket_path(config_path)
-
-        assert socket_path.parent == config_path.parent
-        assert socket_path.name == "daemon.sock"

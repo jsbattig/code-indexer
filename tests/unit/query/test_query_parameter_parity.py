@@ -57,6 +57,7 @@ ALL_PARAMETERS = {
     "regex",
     # Temporal query parameters (Story #446)
     "time_range",
+    "time_range_all",
     "at_commit",
     "include_removed",
     "show_evolution",
@@ -169,23 +170,26 @@ class TestQueryParameterParity:
 
     def test_total_parameter_count(self):
         """Verify total number of expected query parameters."""
-        # Should have exactly 23 query parameters (excluding repository_alias, async_query)
+        # Should have exactly 24 query parameters (excluding repository_alias, async_query)
+        # Updated from 23 to 24 after adding time_range_all parameter
         assert (
-            len(ALL_PARAMETERS) == 23
-        ), f"Expected 23 parameters, got {len(ALL_PARAMETERS)}: {sorted(ALL_PARAMETERS)}"
+            len(ALL_PARAMETERS) == 24
+        ), f"Expected 24 parameters, got {len(ALL_PARAMETERS)}: {sorted(ALL_PARAMETERS)}"
 
-        # CLI should have 18 parameters (subset of all parameters)
+        # CLI should have 19 parameters (subset of all parameters)
+        # Updated from 18 to 19 after adding time_range_all
         assert (
-            len(CLI_EXPECTED_PARAMETERS) == 18
-        ), f"Expected 18 CLI parameters, got {len(CLI_EXPECTED_PARAMETERS)}: {sorted(CLI_EXPECTED_PARAMETERS)}"
+            len(CLI_EXPECTED_PARAMETERS) == 19
+        ), f"Expected 19 CLI parameters, got {len(CLI_EXPECTED_PARAMETERS)}: {sorted(CLI_EXPECTED_PARAMETERS)}"
 
-        # REST/MCP should have all 23 parameters
+        # REST/MCP should have all 24 parameters
+        # Updated from 23 to 24 after adding time_range_all
         assert (
-            len(API_EXPECTED_PARAMETERS) == 23
-        ), f"Expected 23 API parameters, got {len(API_EXPECTED_PARAMETERS)}: {sorted(API_EXPECTED_PARAMETERS)}"
+            len(API_EXPECTED_PARAMETERS) == 24
+        ), f"Expected 24 API parameters, got {len(API_EXPECTED_PARAMETERS)}: {sorted(API_EXPECTED_PARAMETERS)}"
 
     def test_cli_has_all_parameters(self):
-        """Verify CLI exposes all 18 expected query parameters."""
+        """Verify CLI exposes all 19 expected query parameters (updated from 18 after adding time_range_all)."""
         cli_params = get_cli_parameters()
 
         missing = CLI_EXPECTED_PARAMETERS - cli_params

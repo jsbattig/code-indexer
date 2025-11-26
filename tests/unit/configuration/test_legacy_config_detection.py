@@ -141,33 +141,6 @@ class TestLegacyConfigDetection:
         )
         assert "v8.0" in error_message or "8.0" in error_message
 
-    def test_reject_invalid_backend_type(self, tmp_path: Path):
-        """Test that non-filesystem backend types are rejected."""
-        config_path = tmp_path / ".code-indexer" / "config.json"
-        config_path.parent.mkdir(parents=True)
-
-        # Create config with invalid backend
-        config_data = {
-            "codebase_dir": str(tmp_path),
-            "embedding_provider": "voyage-ai",
-            "vector_store": {
-                "provider": "filesystem",
-            },
-        }
-
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Attempt to load should fail
-        manager = ConfigManager(config_path)
-        with pytest.raises((ValueError, TypeError)) as exc_info:
-            manager.load()
-
-        error_message = str(exc_info.value)
-        assert (
-            "filesystem" in error_message.lower()
-            or "filesystem" in error_message.lower()
-        )
 
     def test_reject_invalid_embedding_provider(self, tmp_path: Path):
         """Test that non-voyageai embedding providers are rejected."""

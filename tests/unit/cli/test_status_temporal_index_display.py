@@ -145,7 +145,7 @@ def test_temporal_index_section_appears_when_exists(
         ctx.obj = {"config_manager": config_manager}
 
         # Call _status_impl directly
-        _status_impl(ctx, force_docker=False)
+        _status_impl(ctx)
 
     # Get all add_row calls
     add_row_calls = [call_args for call_args in mock_table.add_row.call_args_list]
@@ -207,7 +207,7 @@ def test_temporal_metadata_extracted_correctly(
         ctx.obj = {"config_manager": config_manager}
 
         # Call _status_impl directly
-        _status_impl(ctx, force_docker=False)
+        _status_impl(ctx)
 
     # Get all add_row calls
     add_row_calls = [call_args for call_args in mock_table.add_row.call_args_list]
@@ -288,7 +288,7 @@ def test_temporal_index_not_shown_when_missing(
         ctx.obj = {"config_manager": config_manager}
 
         # Call _status_impl directly
-        _status_impl(ctx, force_docker=False)
+        _status_impl(ctx)
 
     # Get all add_row calls
     add_row_calls = [call_args for call_args in mock_table.add_row.call_args_list]

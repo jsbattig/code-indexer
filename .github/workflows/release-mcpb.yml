@@ -1,0 +1,128 @@
+name: Release MCP Bridge Binaries
+
+on:
+  push:
+    tags:
+      - "v*"  # Trigger on version tags (e.g., v1.0.0)
+
+permissions:
+  contents: write  # Required for creating releases and uploading assets
+
+jobs:
+  build-binaries:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: macos-13  # Intel Mac
+            platform: darwin-x64
+          - os: macos-latest  # Apple Silicon Mac (M1/M2)
+            platform: darwin-arm64
+          - os: windows-latest
+            platform: windows-x64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -e .
+
+      - name: Build binary
+        run: |
+          python scripts/build_binary.py build --output-dir dist --platform ${{ matrix.platform }}
+
+      - name: Get version from tag
+        id: get_version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Verify binary
+        run: |
+          python scripts/build_binary.py verify --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '' }} --version ${{ steps.get_version.outputs.version }}
+
+      - name: Create bundle
+        run: |
+          python scripts/build_binary.py create-bundle --platform ${{ matrix.platform }} --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '' }} --version ${{ steps.get_version.outputs.version }} --output-dir dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcpb-${{ matrix.platform }}
+          path: dist/mcpb-${{ matrix.platform }}.zip
+          retention-days: 1
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create release notes
+        run: |
+          cat > release-notes.md <<EOF
+          # MCP Bridge v${{ steps.get_version.outputs.version }}
+
+          Cross-platform binaries for the MCP Stdio Bridge.
+
+          ## Installation
+
+          1. Download the appropriate binary for your platform
+          2. Extract the ZIP file
+          3. Make the binary executable (Unix/macOS): \`chmod +x mcpb-*\`
+          4. Configure \`~/.mcpb/config.json\` with your CIDX server details
+          5. Add to Claude Desktop MCP configuration
+
+          ## Platforms
+
+          - **macOS (Intel)**: mcpb-darwin-x64.zip
+          - **macOS (Apple Silicon)**: mcpb-darwin-arm64.zip
+          - **Linux (x86_64)**: mcpb-linux-x64.zip
+          - **Windows (x86_64)**: mcpb-windows-x64.zip
+
+          ## Configuration
+
+          See README.md for full configuration instructions.
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: MCP Bridge v${{ steps.get_version.outputs.version }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/mcpb-darwin-x64/mcpb-darwin-x64.zip
+            artifacts/mcpb-darwin-arm64/mcpb-darwin-arm64.zip
+            artifacts/mcpb-linux-x64/mcpb-linux-x64.zip
+            artifacts/mcpb-windows-x64/mcpb-windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

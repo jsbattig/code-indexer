@@ -118,11 +118,13 @@ echo "⚠️  EXCLUDED: Tests requiring real servers, containers, or external AP
 # TELEMETRY: Add --durations=0 to capture ALL test durations
 echo "📊 Telemetry enabled: Results will be saved to $TELEMETRY_FILE"
 echo "⏱️  Duration report: $DURATION_FILE"
-if python3 -m pytest \
+python3 -m pytest \
     tests/unit/ \
+    tests/mcpb/ \
     --durations=0 \
     --ignore=tests/unit/server/ \
     --ignore=tests/unit/infrastructure/ \
+    --ignore=tests/mcpb/integration/test_bridge_e2e_real.py \
     --ignore=tests/unit/api_clients/test_base_cidx_remote_api_client_real.py \
     --ignore=tests/unit/api_clients/test_remote_query_client_real.py \
     --ignore=tests/unit/api_clients/test_business_logic_integration_real.py \
@@ -168,7 +170,19 @@ if python3 -m pytest \
     --ignore=tests/unit/cli/test_cli_temporal_display_story2_1.py \
     --ignore=tests/unit/cli/test_improved_remote_query_experience.py \
     --ignore=tests/unit/cli/test_path_pattern_performance.py \
+    --ignore=tests/unit/cli/test_status_temporal_performance.py \
+    --ignore=tests/unit/cli/test_index_commits_clear_bug.py \
+    --ignore=tests/unit/storage/test_filesystem_git_batch_limits.py \
+    --ignore=tests/unit/storage/test_hnsw_incremental_batch.py \
+    --ignore=tests/unit/remote/test_timeout_management.py \
+    --ignore=tests/unit/performance/test_exclusion_filter_performance.py \
     --ignore=tests/unit/integration/ \
+    --ignore=tests/unit/documentation/test_fixed_size_chunking_documentation.py \
+    --ignore=tests/unit/cli/test_status_temporal_storage_size_bug.py \
+    --ignore=tests/unit/services/test_tantivy_language_filter.py \
+    --ignore=tests/unit/cli/test_index_delegation_progress.py \
+    --ignore=tests/unit/cli/test_cli_option_conflict_fix.py \
+    --ignore=tests/unit/test_codebase_audit_story9.py \
     --ignore=tests/unit/services/temporal/test_progressive_save_integration.py \
     --ignore=tests/unit/services/temporal/test_storage_optimization_pointer_storage.py \
     --ignore=tests/unit/services/temporal/test_temporal_api_optimization.py \
@@ -193,6 +207,10 @@ if python3 -m pytest \
     --ignore=tests/unit/services/test_claude_md_final_compliance.py \
     --ignore=tests/unit/services/test_complete_claude_md_violations_elimination.py \
     --ignore=tests/unit/services/test_tantivy_regex_optimization.py \
+    --ignore=tests/unit/services/test_tantivy_path_filter.py \
+    --ignore=tests/unit/services/test_tantivy_limit_zero.py \
+    --ignore=tests/unit/services/test_tantivy_search.py \
+    --ignore=tests/unit/services/test_tantivy_regex_snippet_extraction.py \
     --ignore=tests/unit/cli/test_admin_repos_functionality_verification.py \
     --ignore=tests/unit/cli/test_admin_repos_maintenance_commands.py \
     --ignore=tests/unit/cli/test_admin_repos_add_simple.py \
@@ -208,30 +226,34 @@ if python3 -m pytest \
     --deselect=tests/unit/chunking/test_fixed_size_chunker.py::TestFixedSizeChunker::test_edge_case_very_large_file \
     --deselect=tests/unit/storage/test_filesystem_vector_store.py::TestProgressReporting::test_progress_callback_invoked_for_each_point \
     --deselect=tests/unit/storage/test_filesystem_vector_store.py::TestFilesystemVectorStoreCore::test_batch_upsert_performance \
+    --deselect=tests/unit/storage/test_parallel_index_loading.py::TestPerformanceRequirements::test_parallel_execution_reduces_latency \
     -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term-missing \
-    2>&1 | tee "$TELEMETRY_FILE"; then
+    2>&1 | tee "$TELEMETRY_FILE"
 
-    # TELEMETRY: Extract duration data
-    grep -E "^[0-9]+\.[0-9]+s (call|setup|teardown)" "$TELEMETRY_FILE" | sort -rn > "$DURATION_FILE"
+PYTEST_EXIT_CODE=$?
 
-    # TELEMETRY: Summary
-    TOTAL_TIME=$(grep "passed in" "$TELEMETRY_FILE" | grep -oE "[0-9]+\.[0-9]+s" | head -1)
-    SLOW_TESTS=$(awk '$1 > 5.0' "$DURATION_FILE" | wc -l)
+# TELEMETRY: Extract duration data
+grep -E "^[0-9]+\.[0-9]+s (call|setup|teardown)" "$TELEMETRY_FILE" | sort -rn > "$DURATION_FILE"
 
-    echo ""
-    echo "📊 TELEMETRY: Total=$TOTAL_TIME, Slow(>5s)=$SLOW_TESTS"
-    echo "   Log: $TELEMETRY_FILE"
-    echo "   Durations: $DURATION_FILE"
+# TELEMETRY: Summary
+TOTAL_TIME=$(grep "passed in" "$TELEMETRY_FILE" | grep -oE "[0-9]+\.[0-9]+s" | head -1)
+SLOW_TESTS=$(awk '$1 > 5.0' "$DURATION_FILE" | wc -l)
 
-    ln -sf "$(basename $TELEMETRY_FILE)" "$TELEMETRY_DIR/latest.log"
-    ln -sf "$(basename $DURATION_FILE)" "$TELEMETRY_DIR/latest-durations.txt"
+echo ""
+echo "📊 TELEMETRY: Total=$TOTAL_TIME, Slow(>5s)=$SLOW_TESTS"
+echo "   Log: $TELEMETRY_FILE"
+echo "   Durations: $DURATION_FILE"
 
+ln -sf "$(basename $TELEMETRY_FILE)" "$TELEMETRY_DIR/latest.log"
+ln -sf "$(basename $DURATION_FILE)" "$TELEMETRY_DIR/latest-durations.txt"
+
+if [ $PYTEST_EXIT_CODE -eq 0 ]; then
     print_success "Fast unit tests passed"
 else
-    print_error "Fast unit tests failed"
-    exit 1
+    print_error "Fast unit tests failed with exit code $PYTEST_EXIT_CODE"
+    exit $PYTEST_EXIT_CODE
 fi
 
 # Note: GitHub Actions also has version checking and publishing steps

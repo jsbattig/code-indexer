@@ -973,17 +973,10 @@ class TestVectorCalculationManager:
 
 @pytest.fixture
 def mock_voyage_provider():
-    """Fixture providing a mock VoyageAI provider."""
+    """Fixture providing a mock VoyageAI provider with voyage-3 dimensions."""
     provider = MockEmbeddingProvider(
         provider_name="voyage-ai", delay=0.02, dimensions=1024
     )
-    return provider
-
-
-@pytest.fixture
-def mock_voyage_provider():
-    """Fixture providing a mock Voyage provider."""
-    provider = MockEmbeddingProvider(provider_name="voyage", delay=0.1, dimensions=768)
     return provider
 
 
@@ -1046,7 +1039,7 @@ class TestProviderSpecificBehavior:
             # Verify all processed successfully
             assert len(results) == 3
             assert all(result.error is None for result in results)
-            assert all(len(result.embedding) == 768 for result in results)
+            assert all(len(result.embedding) == 1024 for result in results)
 
     @pytest.mark.unit  # This is a unit test with mocks, not real API
     def test_mixed_chunk_sizes(self, mock_voyage_provider):

@@ -441,16 +441,12 @@ class TestUninstallCommand:
                 return_value=mock_backend,
             ),
         ):
-            with patch(
-                "code_indexer.services.docker_manager.DockerManager"
-            ) as mock_docker:
-                runner.invoke(
-                    cli,
-                    ["--path", str(test_project_root), "uninstall", "--confirm"],
-                )
+            runner.invoke(
+                cli,
+                ["--path", str(test_project_root), "uninstall", "--confirm"],
+            )
 
-                # Should NOT instantiate DockerManager for filesystem backend
-                mock_docker.assert_not_called()
+            # Container-free architecture - no docker manager exists
 
 
 class TestListCollectionsWithMetadata:
