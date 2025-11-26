@@ -22,8 +22,8 @@ src_dir = project_root / "src"
 sys.path.insert(0, str(src_dir))
 
 a = Analysis(
-    # Entry point: mcpb bridge main module
-    [str(src_dir / "code_indexer" / "mcpb" / "bridge.py")],
+    # Entry point: mcpb __main__ module (no relative imports)
+    [str(src_dir / "code_indexer" / "mcpb" / "__main__.py")],
     pathex=[str(src_dir)],
     binaries=[],
     datas=[],
