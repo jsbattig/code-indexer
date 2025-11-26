@@ -440,6 +440,116 @@ create_config() {
     return 0
 }
 
+# Configure Claude Desktop MCP server
+configure_claude_desktop() {
+    print_info "Configuring Claude Desktop MCP server..."
+
+    # Detect platform-specific config file location
+    local claude_config_dir=""
+    local claude_config_file=""
+
+    local os_type=$(uname -s)
+    case "$os_type" in
+        Darwin)
+            claude_config_dir="$HOME/Library/Application Support/Claude"
+            ;;
+        Linux)
+            claude_config_dir="$HOME/.config/Claude"
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            # Windows - use APPDATA
+            if [ -n "$APPDATA" ]; then
+                claude_config_dir="$APPDATA/Claude"
+            else
+                # Fallback if APPDATA not set
+                claude_config_dir="$HOME/AppData/Roaming/Claude"
+            fi
+            ;;
+        *)
+            print_warning "Unsupported OS for Claude Desktop auto-configuration: $os_type"
+            print_info "You can manually configure Claude Desktop using:"
+            print_info "  Binary path: $MCPB_BINARY"
+            export CLAUDE_DESKTOP_CONFIGURED=false
+            return 0
+            ;;
+    esac
+
+    claude_config_file="$claude_config_dir/claude_desktop_config.json"
+
+    # Create config directory if it doesn't exist
+    if [ ! -d "$claude_config_dir" ]; then
+        print_warning "Claude Desktop config directory not found: $claude_config_dir"
+        print_info "This usually means Claude Desktop is not installed"
+        print_info "You can manually configure Claude Desktop later using:"
+        print_info "  Binary path: $MCPB_BINARY"
+        export CLAUDE_DESKTOP_CONFIGURED=false
+        return 0
+    fi
+
+    print_info "Found Claude Desktop config directory: $claude_config_dir"
+
+    # Create the MCP server entry
+    local cidx_server_entry=$(jq -n \
+        --arg binary_path "$MCPB_BINARY" \
+        '{cidx: {type: "stdio", command: $binary_path}}')
+
+    # Handle existing config file
+    if [ -f "$claude_config_file" ]; then
+        print_info "Updating existing Claude Desktop configuration..."
+
+        # Read existing config and merge with new MCP server
+        local updated_config=$(jq \
+            --argjson new_server "$cidx_server_entry" \
+            '.mcpServers = (.mcpServers // {}) + $new_server' \
+            "$claude_config_file" 2>&1)
+
+        if [ $? -ne 0 ]; then
+            print_error "Failed to merge configuration with jq"
+            print_error "Error: $updated_config"
+            print_warning "You'll need to manually add the CIDX MCP server to: $claude_config_file"
+            print_info "  Binary path: $MCPB_BINARY"
+            export CLAUDE_DESKTOP_CONFIGURED=false
+            return 0
+        fi
+
+        # Write updated config
+        echo "$updated_config" > "$claude_config_file" || {
+            print_error "Failed to write updated config to: $claude_config_file"
+            print_warning "You'll need to manually add the CIDX MCP server"
+            print_info "  Binary path: $MCPB_BINARY"
+            export CLAUDE_DESKTOP_CONFIGURED=false
+            return 0
+        }
+
+        print_success "Updated existing Claude Desktop configuration"
+    else
+        print_info "Creating new Claude Desktop configuration..."
+
+        # Create new config with mcpServers section
+        local new_config=$(jq -n \
+            --argjson servers "$cidx_server_entry" \
+            '{mcpServers: $servers}')
+
+        # Write new config
+        echo "$new_config" > "$claude_config_file" || {
+            print_error "Failed to create config file: $claude_config_file"
+            print_warning "You'll need to manually create the configuration"
+            print_info "  Binary path: $MCPB_BINARY"
+            export CLAUDE_DESKTOP_CONFIGURED=false
+            return 0
+        }
+
+        print_success "Created new Claude Desktop configuration"
+    fi
+
+    print_success "Claude Desktop MCP server configured at: $claude_config_file"
+    print_info "MCP server 'cidx' points to: $MCPB_BINARY"
+    export CLAUDE_DESKTOP_CONFIGURED=true
+    export CLAUDE_DESKTOP_CONFIG_FILE="$claude_config_file"
+
+    return 0
+}
+
 # Display next steps
 show_next_steps() {
     echo ""
@@ -473,6 +583,36 @@ show_next_steps() {
     echo "  2. MCPB uses this configuration automatically"
     echo "  3. If the token expires, run this script again to refresh"
     echo ""
+
+    # Claude Desktop specific instructions
+    if [ "$CLAUDE_DESKTOP_CONFIGURED" = "true" ]; then
+        echo -e "${GREEN}Claude Desktop Configuration:${NC}"
+        echo "  Config file: $CLAUDE_DESKTOP_CONFIG_FILE"
+        echo "  MCP server 'cidx' configured and ready to use"
+        echo ""
+        echo -e "${YELLOW}IMPORTANT: Restart Claude Desktop to activate the MCP server${NC}"
+        echo ""
+        echo "After restarting Claude Desktop:"
+        echo "  1. The CIDX MCP server will be available automatically"
+        echo "  2. You can use semantic code search through Claude"
+        echo "  3. Claude can query your codebase using the 'cidx' MCP server"
+        echo ""
+    elif [ "$CLAUDE_DESKTOP_CONFIGURED" = "false" ]; then
+        echo -e "${YELLOW}Claude Desktop Manual Configuration Required:${NC}"
+        echo "  Add this to your Claude Desktop config file:"
+        echo "  {"
+        echo "    \"mcpServers\": {"
+        echo "      \"cidx\": {"
+        echo "        \"type\": \"stdio\","
+        echo "        \"command\": \"$MCPB_BINARY\""
+        echo "      }"
+        echo "    }"
+        echo "  }"
+        echo ""
+        echo "  Then restart Claude Desktop"
+        echo ""
+    fi
+
     echo "Manual API Usage:"
     echo "  curl -H \"Authorization: Bearer \$(jq -r .bearer_token ~/.mcpb/config.json)\" \\"
     echo "       https://your-server/api/endpoint"
@@ -588,6 +728,10 @@ main() {
         print_error "Setup failed during configuration creation"
         exit 1
     fi
+
+    # Configure Claude Desktop MCP server
+    configure_claude_desktop
+    echo ""
 
     # Show next steps
     show_next_steps
