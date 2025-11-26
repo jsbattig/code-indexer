@@ -217,9 +217,7 @@ def main():  # pragma: no cover
     # Handle --diagnose flag
     if args.diagnose:
         try:
-            result = diagnose_configuration(
-                config_path=args.config, use_env=True
-            )
+            result = diagnose_configuration(config_path=args.config, use_env=True)
             print(result.format_output())
             sys.exit(0)
         except Exception as e:

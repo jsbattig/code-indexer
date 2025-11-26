@@ -6,7 +6,6 @@ and environment variables.
 
 import logging
 import os
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -111,7 +110,6 @@ def load_config(
 
         # Check file permissions (Story #517)
         file_stat = os.stat(path)
-        file_mode = stat.filemode(file_stat.st_mode)
         # Get octal permissions (last 3 digits)
         file_perms = file_stat.st_mode & 0o777
 

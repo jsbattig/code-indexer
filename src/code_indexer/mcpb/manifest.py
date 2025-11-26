@@ -60,9 +60,7 @@ class PlatformManifest(BaseModel):
     name: str = Field(..., description="Package name")
     version: str = Field(..., description="Version string")
     description: str = Field(..., description="Package description")
-    mcp_version: str = Field(
-        default="2024-11-05", description="MCP protocol version"
-    )
+    mcp_version: str = Field(default="2024-11-05", description="MCP protocol version")
     platforms: dict[Platform, BinaryMetadata] = Field(
         default_factory=dict, description="Platform-specific binaries"
     )

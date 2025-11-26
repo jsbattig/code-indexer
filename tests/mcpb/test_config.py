@@ -219,7 +219,9 @@ class TestHTTPSValidation:
     def test_config_requires_https_url(self):
         """Test that non-HTTPS URL raises validation error."""
         with pytest.raises(ValueError, match="server_url must use HTTPS"):
-            BridgeConfig(server_url="http://cidx.example.com", bearer_token="test-token")
+            BridgeConfig(
+                server_url="http://cidx.example.com", bearer_token="test-token"
+            )
 
     def test_config_allows_https_url(self):
         """Test that HTTPS URL is accepted."""

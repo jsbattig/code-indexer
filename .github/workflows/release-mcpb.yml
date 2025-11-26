@@ -17,7 +17,7 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux-x64
-          - os: macos-13  # Intel Mac
+          - os: macos-15-intel  # Intel Mac (was macos-13, now deprecated)
             platform: darwin-x64
           - os: macos-latest  # Apple Silicon Mac (M1/M2)
             platform: darwin-arm64
@@ -52,11 +52,11 @@ jobs:
 
       - name: Verify binary
         run: |
-          python scripts/build_binary.py verify --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '.mcpb' }} --version ${{ steps.get_version.outputs.version }}
+          python scripts/build_binary.py verify --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '' }} --version ${{ steps.get_version.outputs.version }}
 
       - name: Create bundle
         run: |
-          python scripts/build_binary.py create-bundle --platform ${{ matrix.platform }} --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '.mcpb' }} --version ${{ steps.get_version.outputs.version }} --output-dir dist
+          python scripts/build_binary.py create-bundle --platform ${{ matrix.platform }} --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '' }} --version ${{ steps.get_version.outputs.version }} --output-dir dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -7,11 +7,9 @@ including source tracking, token masking, and server connectivity checks.
 import json
 import os
 import tempfile
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
-from code_indexer.mcpb.config import BridgeConfig
 from code_indexer.mcpb.diagnostics import (
     DiagnosticsResult,
     diagnose_configuration,

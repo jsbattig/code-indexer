@@ -217,7 +217,9 @@ def create_bundle(
         )
         command = f"server/mcpb-{platform_id}.exe"
     else:
-        server_binary_name = f"server/mcpb-{platform_id}.mcpb"
+        server_binary_name = (
+            f"server/mcpb-{platform_id}"  # No .mcpb extension inside bundle
+        )
         entry_point = server_binary_name
         command = entry_point
 
@@ -288,8 +290,7 @@ def build_binary(output_dir: Path, platform_id: Optional[str] = None) -> Path:
     binary_name = f"mcpb-{platform_id}"
     if platform_id.startswith("windows"):
         binary_name += ".exe"
-    else:
-        binary_name += ".mcpb"
+    # Don't add .mcpb here - only the bundle gets .mcpb extension
 
     # Find spec file
     spec_file = Path(__file__).parent.parent / "pyinstaller.spec"

@@ -141,7 +141,6 @@ class TestLegacyConfigDetection:
         )
         assert "v8.0" in error_message or "8.0" in error_message
 
-
     def test_reject_invalid_embedding_provider(self, tmp_path: Path):
         """Test that non-voyageai embedding providers are rejected."""
         config_path = tmp_path / ".code-indexer" / "config.json"
