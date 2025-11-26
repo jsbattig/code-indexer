@@ -713,12 +713,29 @@ main() {
             read -p "Do you want to overwrite it? (y/N): " -n 1 -r
             echo ""
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                print_info "Setup cancelled"
+                print_info "Using existing configuration"
+
+                # Configure Claude Desktop with existing config
+                configure_claude_desktop
+                echo ""
+
+                # Show next steps
+                show_next_steps
+
                 exit 0
             fi
         else
-            # Non-interactive mode (piped from curl) - auto-overwrite
-            print_info "Running in non-interactive mode - automatically overwriting config..."
+            # Non-interactive mode (piped from curl) - use existing config
+            print_info "Running in non-interactive mode - using existing configuration..."
+
+            # Configure Claude Desktop with existing config
+            configure_claude_desktop
+            echo ""
+
+            # Show next steps
+            show_next_steps
+
+            exit 0
         fi
     fi
 
