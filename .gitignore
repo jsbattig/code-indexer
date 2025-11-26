@@ -30,6 +30,7 @@ dmypy.json
 # PyInstaller
 *.manifest
 *.spec
+!pyinstaller.spec
 
 # Unit test / coverage reports
 htmlcov/
@@ -91,7 +92,7 @@ ollama-models/
 *.gguf
 
 # Old bash scripts (replaced by Python)
-scripts/
+# scripts/ - NOW CONTAINS build_binary.py for MCPB releases
 code-index
 debug*.sh
 config/
