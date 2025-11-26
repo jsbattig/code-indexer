@@ -215,13 +215,13 @@ def create_bundle(
         entry_point = (
             f"server/mcpb-{platform_id}"  # .exe added automatically by Windows
         )
-        command = f"server/mcpb-{platform_id}.exe"
+        command = f"${{__dirname}}/server/mcpb-{platform_id}.exe"
     else:
         server_binary_name = (
             f"server/mcpb-{platform_id}"  # No .mcpb extension inside bundle
         )
         entry_point = server_binary_name
-        command = entry_point
+        command = f"${{__dirname}}/{entry_point}"
 
     # Extract version from manifest or use default
     version = manifest.get("version", "8.2.0")
