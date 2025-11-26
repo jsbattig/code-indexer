@@ -6,50 +6,74 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 
 ## CIDX MCP Bridge for Claude Desktop
 
-The CIDX MCP Bridge (`cidx-bridge`) enables Claude Desktop to perform semantic code searches through the Model Context Protocol (MCP). This provides product owners and developers with codebase insights directly within Claude Desktop conversations.
+Connect Claude Desktop to your CIDX server for semantic code search directly in conversations.
 
-### Quick Start
+### Quick Setup (3 Steps)
 
-**Installation:**
+**Step 1: Run Setup Script (creates config file)**
+
 ```bash
-# Download binary for your platform from GitHub releases
-# https://github.com/jsbattig/code-indexer/releases
-
-# Or install from source
-pip install code-indexer[dev]
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsbattig/code-indexer/master/scripts/setup-mcpb.sh)"
 ```
 
-**Configuration:**
+This will prompt you for:
+- Server URL (e.g., `https://your-server.com:8383`)
+- Username
+- Password
+
+It creates `~/.mcpb/config.json` with your authentication tokens.
+
+**Step 2: Download MCPB Binary**
+
+Download for your platform from [GitHub Releases](https://github.com/jsbattig/code-indexer/releases/latest):
+
+- macOS (Apple Silicon): `mcpb-darwin-arm64`
+- macOS (Intel): `mcpb-darwin-x64`
+- Linux: `mcpb-linux-x64`
+- Windows: `mcpb-windows-x64.exe`
+
+Make executable (macOS/Linux):
 ```bash
-# Create config file
-mkdir -p ~/.mcpb
-cat > ~/.mcpb/config.json <<EOF
+chmod +x /path/to/mcpb-darwin-arm64
+```
+
+**Step 3: Configure Claude Desktop**
+
+Edit configuration file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+Add this configuration:
+```json
 {
-  "server_url": "https://your-cidx-server.com",
-  "bearer_token": "your-token-here"
+  "mcpServers": {
+    "cidx": {
+      "command": "/absolute/path/to/mcpb-darwin-arm64"
+    }
+  }
 }
-EOF
-chmod 0600 ~/.mcpb/config.json
-
-# Or use environment variables
-export CIDX_SERVER_URL="https://your-cidx-server.com"
-export CIDX_TOKEN="your-token-here"
 ```
 
-**Usage:**
+Replace `/absolute/path/to/mcpb-darwin-arm64` with the actual path to your downloaded binary.
+
+**Restart Claude Desktop** to activate the MCP server.
+
+### Token Management
+
+Tokens expire every 10 minutes. Refresh manually or automate:
+
+**Manual refresh:**
 ```bash
-# Test connection
-cidx-bridge --diagnose
-
-# Query via stdin (JSON-RPC format)
-echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"search_code","arguments":{"query_text":"authentication"}},"id":1}' | cidx-bridge
+python3 -m pip install --break-system-packages code-indexer
+cidx-token-refresh
 ```
 
-**Documentation:**
-- [Setup Guide](docs/mcpb/setup.md) - Installation and configuration
-- [API Reference](docs/mcpb/api-reference.md) - All 22 MCP tools
-- [Query Guide](docs/mcpb/query-guide.md) - Search capabilities
-- [Troubleshooting](docs/mcpb/troubleshooting.md) - Common issues
+**Automatic refresh (cron):**
+```bash
+crontab -e
+# Add: */8 * * * * /usr/local/bin/cidx-token-refresh >> ~/.mcpb/refresh.log 2>&1
+```
 
 ### Features
 - **Full Query Parity**: All 25 search_code parameters available
@@ -57,6 +81,12 @@ echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"search_code","arg
 - **Multi-Platform**: macOS (Intel/Apple Silicon), Linux, Windows
 - **Zero Dependencies**: Single binary, no Python runtime required
 - **Complete Documentation**: 4,000+ lines covering setup, API, queries, troubleshooting
+
+### Documentation
+- [Setup Guide](docs/mcpb/setup.md) - Detailed installation and configuration
+- [API Reference](docs/mcpb/api-reference.md) - All 22 MCP tools
+- [Query Guide](docs/mcpb/query-guide.md) - Search capabilities
+- [Troubleshooting](docs/mcpb/troubleshooting.md) - Common issues
 
 ## Quick Install
 
