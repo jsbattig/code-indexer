@@ -111,8 +111,10 @@ def verify_binary(binary_path: Path, expected_version: str) -> bool:
 
         # Check version string
         output = result.stdout.strip()
-        # Remove 'v' prefix if present
-        version = output.lstrip("v")
+        # Extract version from output (may include program name)
+        # Examples: "mcpb 8.2.0", "mcpb-linux-x64 8.2.0", "v8.2.0", "8.2.0"
+        parts = output.split()
+        version = parts[-1].lstrip("v")  # Get last part, remove 'v' prefix if present
 
         if version != expected_version:
             print(
