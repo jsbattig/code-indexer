@@ -18,7 +18,7 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 INSTALL_DIR="$HOME/.local/bin"
 MCPB_BINARY="$INSTALL_DIR/mcpb"
 GITHUB_REPO="jsbattig/code-indexer"
-MCPB_VERSION="v8.2.6"
+MCPB_VERSION="v8.3.0"
 
 # Print functions
 print_info() {
