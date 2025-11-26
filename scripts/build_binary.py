@@ -230,7 +230,7 @@ def create_bundle(
     import json
 
     mcpb_manifest = {
-        "manifest_version": "0.3",
+        "manifest_version": "0.1",
         "name": "cidx-mcpb",
         "version": version,
         "description": "MCP Stdio Bridge for CIDX - enables Claude Desktop to perform semantic code searches",
