@@ -15,6 +15,10 @@ NC='\033[0m' # No Color
 # Configuration
 CONFIG_DIR="$HOME/.mcpb"
 CONFIG_FILE="$CONFIG_DIR/config.json"
+INSTALL_DIR="$HOME/.local/bin"
+MCPB_BINARY="$INSTALL_DIR/mcpb"
+GITHUB_REPO="jsbattig/code-indexer"
+MCPB_VERSION="v8.3.0"
 
 # Print functions
 print_info() {
@@ -58,6 +62,188 @@ check_dependencies() {
     fi
 
     print_success "All dependencies installed"
+}
+
+# Detect platform
+detect_platform() {
+    local os_type=$(uname -s)
+    local arch=$(uname -m)
+
+    local platform=""
+    local binary_name=""
+
+    case "$os_type" in
+        Darwin)
+            case "$arch" in
+                arm64|aarch64)
+                    platform="darwin-arm64"
+                    binary_name="mcpb-darwin-arm64"
+                    ;;
+                x86_64)
+                    platform="darwin-x64"
+                    binary_name="mcpb-darwin-x64"
+                    ;;
+                *)
+                    print_error "Unsupported macOS architecture: $arch"
+                    return 1
+                    ;;
+            esac
+            ;;
+        Linux)
+            case "$arch" in
+                x86_64)
+                    platform="linux-x64"
+                    binary_name="mcpb-linux-x64"
+                    ;;
+                *)
+                    print_error "Unsupported Linux architecture: $arch"
+                    print_error "Only x86_64 is supported"
+                    return 1
+                    ;;
+            esac
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            case "$arch" in
+                x86_64)
+                    platform="windows-x64"
+                    binary_name="mcpb-windows-x64.exe"
+                    ;;
+                *)
+                    print_error "Unsupported Windows architecture: $arch"
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            print_error "Unsupported operating system: $os_type"
+            return 1
+            ;;
+    esac
+
+    export DETECTED_PLATFORM="$platform"
+    export BINARY_NAME="$binary_name"
+
+    print_info "Detected platform: $platform"
+    return 0
+}
+
+# Download MCPB binary
+download_mcpb_binary() {
+    local binary_name="$BINARY_NAME"
+    local download_url="https://github.com/${GITHUB_REPO}/releases/download/${MCPB_VERSION}/${binary_name}"
+    local temp_file="/tmp/${binary_name}"
+
+    print_info "Downloading MCPB binary from GitHub releases..."
+    print_info "URL: $download_url"
+
+    # Download binary
+    if ! curl -L -f -o "$temp_file" "$download_url" 2>/dev/null; then
+        print_error "Failed to download MCPB binary"
+        print_error "URL: $download_url"
+        print_error "Please check:"
+        print_error "  1. Internet connection is working"
+        print_error "  2. GitHub releases are accessible"
+        print_error "  3. Version $MCPB_VERSION exists"
+        return 1
+    fi
+
+    # Verify download
+    if [ ! -f "$temp_file" ] || [ ! -s "$temp_file" ]; then
+        print_error "Downloaded file is missing or empty"
+        return 1
+    fi
+
+    export TEMP_BINARY="$temp_file"
+    print_success "Binary downloaded successfully"
+    return 0
+}
+
+# Install MCPB binary
+install_mcpb_binary() {
+    local temp_binary="$TEMP_BINARY"
+
+    print_info "Installing MCPB binary..."
+
+    # Create install directory if it doesn't exist
+    if [ ! -d "$INSTALL_DIR" ]; then
+        print_info "Creating installation directory: $INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR" || {
+            print_error "Failed to create directory: $INSTALL_DIR"
+            print_error "Please check directory permissions"
+            return 1
+        }
+    fi
+
+    # Copy binary to install location
+    if ! cp "$temp_binary" "$MCPB_BINARY"; then
+        print_error "Failed to copy binary to: $MCPB_BINARY"
+        print_error "Please check write permissions for: $INSTALL_DIR"
+        return 1
+    fi
+
+    # Make binary executable
+    if ! chmod +x "$MCPB_BINARY"; then
+        print_error "Failed to make binary executable: $MCPB_BINARY"
+        return 1
+    fi
+
+    # Clean up temp file
+    rm -f "$temp_binary"
+
+    print_success "MCPB binary installed to: $MCPB_BINARY"
+
+    # Verify installation
+    if [ -x "$MCPB_BINARY" ]; then
+        local version_output=$("$MCPB_BINARY" --version 2>&1 || echo "unknown")
+        print_success "Installation verified: $version_output"
+    else
+        print_warning "Binary installed but verification failed"
+    fi
+
+    return 0
+}
+
+# Check if install directory is in PATH
+check_path() {
+    print_info "Checking PATH configuration..."
+
+    if echo "$PATH" | grep -q "$INSTALL_DIR"; then
+        print_success "$INSTALL_DIR is in your PATH"
+        export PATH_CONFIGURED=true
+    else
+        print_warning "$INSTALL_DIR is not in your PATH"
+        export PATH_CONFIGURED=false
+
+        echo ""
+        echo "To use the 'mcpb' command from anywhere, add this line to your shell configuration:"
+        echo ""
+
+        # Detect shell and provide appropriate instructions
+        local shell_name=$(basename "$SHELL")
+        case "$shell_name" in
+            bash)
+                echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+                echo "  source ~/.bashrc"
+                ;;
+            zsh)
+                echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
+                echo "  source ~/.zshrc"
+                ;;
+            fish)
+                echo "  fish_add_path ~/.local/bin"
+                ;;
+            *)
+                echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+                echo "  (Add this to your shell configuration file)"
+                ;;
+        esac
+
+        echo ""
+        echo "Or run mcpb using the full path: $MCPB_BINARY"
+        echo ""
+    fi
+
+    return 0
 }
 
 # Prompt for input
@@ -229,18 +415,36 @@ create_config() {
 show_next_steps() {
     echo ""
     echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}  MCPB Configuration Complete!${NC}"
+    echo -e "${GREEN}  MCPB Installation Complete!${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
-    echo "Configuration file: $CONFIG_FILE"
+    echo "Installation Summary:"
+    echo "  Binary:        $MCPB_BINARY"
+    echo "  Configuration: $CONFIG_FILE"
+    echo "  Version:       $MCPB_VERSION"
     echo ""
-    echo "Next steps:"
-    echo "  1. Your bearer token is now stored securely"
-    echo "  2. You can use the MCPB client to interact with the server"
+
+    if [ "$PATH_CONFIGURED" = "true" ]; then
+        echo "You can now use the 'mcpb' command from anywhere!"
+        echo ""
+        echo "Example usage:"
+        echo "  mcpb --version"
+        echo "  mcpb --help"
+    else
+        echo "IMPORTANT: $INSTALL_DIR is not in your PATH"
+        echo ""
+        echo "Use the full path until you add it to PATH:"
+        echo "  $MCPB_BINARY --version"
+        echo "  $MCPB_BINARY --help"
+    fi
+
+    echo ""
+    echo "Additional Information:"
+    echo "  1. Your bearer token is stored securely in $CONFIG_FILE"
+    echo "  2. MCPB uses this configuration automatically"
     echo "  3. If the token expires, run this script again to refresh"
     echo ""
-    echo "Example usage:"
-    echo "  # Query the server"
+    echo "Manual API Usage:"
     echo "  curl -H \"Authorization: Bearer \$(jq -r .bearer_token ~/.mcpb/config.json)\" \\"
     echo "       https://your-server/api/endpoint"
     echo ""
@@ -257,6 +461,52 @@ main() {
     # Check dependencies
     check_dependencies
     echo ""
+
+    # Detect platform
+    if ! detect_platform; then
+        print_error "Platform detection failed"
+        exit 1
+    fi
+    echo ""
+
+    # Check if binary already exists
+    if [ -f "$MCPB_BINARY" ]; then
+        print_warning "MCPB binary already exists: $MCPB_BINARY"
+        read -p "Do you want to reinstall it? (y/N): " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            # Download and install binary
+            if ! download_mcpb_binary; then
+                print_error "Binary download failed"
+                exit 1
+            fi
+
+            if ! install_mcpb_binary; then
+                print_error "Binary installation failed"
+                exit 1
+            fi
+
+            check_path
+            echo ""
+        else
+            print_info "Using existing binary"
+            echo ""
+        fi
+    else
+        # Download and install binary
+        if ! download_mcpb_binary; then
+            print_error "Binary download failed"
+            exit 1
+        fi
+
+        if ! install_mcpb_binary; then
+            print_error "Binary installation failed"
+            exit 1
+        fi
+
+        check_path
+        echo ""
+    fi
 
     # Check if config already exists
     if [ -f "$CONFIG_FILE" ]; then
