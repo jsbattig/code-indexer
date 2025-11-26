@@ -238,11 +238,14 @@ def create_bundle(
             "name": "Seba Battig",
             "url": "https://github.com/jsbattig/code-indexer",
         },
-        "server": {"type": "binary", "entry_point": entry_point},
-        "mcp_config": {
-            "command": command,
-            "args": [],
-            "env": {"CIDX_SERVER_URL": "", "CIDX_TOKEN": ""},
+        "server": {
+            "type": "binary",
+            "entry_point": entry_point,
+            "mcp_config": {
+                "command": command,
+                "args": [],
+                "env": {"CIDX_SERVER_URL": "", "CIDX_TOKEN": ""},
+            },
         },
         "compatibility": {
             "platforms": [platform_id.split("-")[0]]  # "darwin", "linux", or "win32"
