@@ -78,6 +78,7 @@ Issues = "https://github.com/jsbattig/code-indexer/issues"
 code-indexer = "code_indexer.cli_fast_entry:main"
 cidx = "code_indexer.cli_fast_entry:main"
 cidx-bridge = "code_indexer.mcpb.bridge:main"
+cidx-token-refresh = "code_indexer.mcpb.token_refresh:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_indexer"]
