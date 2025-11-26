@@ -488,11 +488,32 @@ configure_claude_desktop() {
 
     print_info "Found Claude Desktop config directory: $claude_config_dir"
 
-    # Create the MCP server entry
-    local cidx_server_entry=$(jq -n \
-        --arg binary_path "$MCPB_BINARY" \
-        --arg home_dir "$HOME" \
-        '{cidx: {type: "stdio", command: $binary_path, env: {HOME: $home_dir}}}')
+    # Create the MCP server entry - platform-specific environment variables
+    local cidx_server_entry
+    if [ "$os_type" = "Darwin" ]; then
+        # macOS: Use direct environment variables (CIDX_SERVER_URL and CIDX_TOKEN)
+        # Read server_url and access_token from config file if not already set
+        local config_server_url="${server_url:-$(jq -r '.server_url // empty' "$CONFIG_FILE" 2>/dev/null)}"
+        local config_access_token="${AUTH_ACCESS_TOKEN:-$(jq -r '.bearer_token // empty' "$CONFIG_FILE" 2>/dev/null)}"
+
+        if [ -z "$config_server_url" ] || [ -z "$config_access_token" ]; then
+            print_error "Failed to retrieve server_url or access_token for macOS configuration"
+            export CLAUDE_DESKTOP_CONFIGURED=false
+            return 0
+        fi
+
+        cidx_server_entry=$(jq -n \
+            --arg binary_path "$MCPB_BINARY" \
+            --arg url "$config_server_url" \
+            --arg token "$config_access_token" \
+            '{cidx: {type: "stdio", command: $binary_path, env: {CIDX_SERVER_URL: $url, CIDX_TOKEN: $token}}}')
+    else
+        # Linux/Windows: Use HOME environment variable (existing behavior)
+        cidx_server_entry=$(jq -n \
+            --arg binary_path "$MCPB_BINARY" \
+            --arg home_dir "$HOME" \
+            '{cidx: {type: "stdio", command: $binary_path, env: {HOME: $home_dir}}}')
+    fi
 
     # Handle existing config file
     if [ -f "$claude_config_file" ]; then
@@ -606,9 +627,24 @@ show_next_steps() {
         echo "      \"cidx\": {"
         echo "        \"type\": \"stdio\","
         echo "        \"command\": \"$MCPB_BINARY\","
-        echo "        \"env\": {"
-        echo "          \"HOME\": \"$HOME\""
-        echo "        }"
+
+        # Platform-specific env instructions
+        local os_type=$(uname -s)
+        if [ "$os_type" = "Darwin" ]; then
+            # macOS: Show CIDX_SERVER_URL and CIDX_TOKEN
+            local config_server_url=$(jq -r '.server_url // empty' "$CONFIG_FILE" 2>/dev/null)
+            local config_access_token=$(jq -r '.bearer_token // empty' "$CONFIG_FILE" 2>/dev/null)
+            echo "        \"env\": {"
+            echo "          \"CIDX_SERVER_URL\": \"${config_server_url:-https://your-server:8383}\","
+            echo "          \"CIDX_TOKEN\": \"${config_access_token:-your-access-token}\""
+            echo "        }"
+        else
+            # Linux/Windows: Show HOME
+            echo "        \"env\": {"
+            echo "          \"HOME\": \"$HOME\""
+            echo "        }"
+        fi
+
         echo "      }"
         echo "    }"
         echo "  }"
