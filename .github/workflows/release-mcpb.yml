@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-20.04
             platform: linux-x64
           - os: macos-15-intel  # Intel Mac (was macos-13, now deprecated)
             platform: darwin-x64
