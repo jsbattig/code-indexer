@@ -9,11 +9,9 @@ Tests cover:
 - CLI argument parsing
 """
 
-import json
-import platform
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -24,7 +22,6 @@ try:
         verify_binary,
         create_manifest,
         create_bundle,
-        main,
     )
 except ImportError:
     pytest.skip("build_binary module not yet implemented", allow_module_level=True)
@@ -258,7 +255,9 @@ class TestBundleCreation:
             # Format: (mode << 16) | file_type
             unix_mode = info.external_attr >> 16
             # Check if executable bit is set (0o111 = executable for user/group/other)
-            assert unix_mode & 0o111, f"Expected executable bit, got mode {oct(unix_mode)}"
+            assert (
+                unix_mode & 0o111
+            ), f"Expected executable bit, got mode {oct(unix_mode)}"
 
 
 class TestCLI:
@@ -283,7 +282,9 @@ class TestCLI:
             mock_run.return_value = Mock(returncode=0)
 
             # Mock platform detection
-            with patch("scripts.build_binary.detect_platform", return_value="linux-x64"):
+            with patch(
+                "scripts.build_binary.detect_platform", return_value="linux-x64"
+            ):
                 # Should not raise
                 # Note: This will fail until build_binary.py is implemented
                 pass

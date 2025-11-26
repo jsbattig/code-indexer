@@ -104,9 +104,7 @@ def verify_binary(binary_path: Path, expected_version: str) -> bool:
         )
 
         if result.returncode != 0:
-            print(
-                f"Binary execution failed: {result.stderr}", file=sys.stderr
-            )
+            print(f"Binary execution failed: {result.stderr}", file=sys.stderr)
             return False
 
         # Check version string
@@ -194,37 +192,74 @@ def create_bundle(
     manifest: dict,
     output_dir: Path,
 ) -> Path:
-    """Create ZIP bundle with binary and manifest.
+    """Create MCPB bundle with binary and manifest.
 
     Args:
         platform_id: Platform identifier (e.g., "darwin-x64")
         binary: Path to binary file
-        manifest: Manifest data as dict
+        manifest: Manifest data as dict (unused - replaced with MCPB spec format)
         output_dir: Output directory for bundle
 
     Returns:
-        Path to created ZIP bundle
+        Path to created MCPB bundle
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create bundle filename
-    bundle_name = f"mcpb-{platform_id}.zip"
+    # Create bundle filename - MCPB extension instead of .zip
+    bundle_name = f"mcpb-{platform_id}.mcpb"
     bundle_path = output_dir / bundle_name
 
-    # Create ZIP with binary and manifest
+    # Determine server/ subdirectory path for binary
+    if platform_id.startswith("windows"):
+        server_binary_name = f"server/mcpb-{platform_id}.exe"
+        entry_point = (
+            f"server/mcpb-{platform_id}"  # .exe added automatically by Windows
+        )
+        command = f"server/mcpb-{platform_id}.exe"
+    else:
+        server_binary_name = f"server/mcpb-{platform_id}.mcpb"
+        entry_point = server_binary_name
+        command = entry_point
+
+    # Extract version from manifest or use default
+    version = manifest.get("version", "8.2.0")
+
+    # Create MCPB spec-compliant manifest
+    import json
+
+    mcpb_manifest = {
+        "manifest_version": "0.3",
+        "name": "cidx-mcpb",
+        "version": version,
+        "description": "MCP Stdio Bridge for CIDX - enables Claude Desktop to perform semantic code searches",
+        "author": {
+            "name": "Seba Battig",
+            "url": "https://github.com/jsbattig/code-indexer",
+        },
+        "server": {"type": "binary", "entry_point": entry_point},
+        "mcp_config": {
+            "command": command,
+            "args": [],
+            "env": {"CIDX_SERVER_URL": "", "CIDX_TOKEN": ""},
+        },
+        "compatibility": {
+            "platforms": [platform_id.split("-")[0]]  # "darwin", "linux", or "win32"
+        },
+    }
+
+    # Create ZIP with binary in server/ subdirectory and manifest
     with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Add binary with executable permissions
-        # We need to create ZipInfo manually to set permissions
-        info = zipfile.ZipInfo(binary.name)
-        info.external_attr = 0o755 << 16 | 0x8000  # Unix permissions + regular file flag
+        # Add binary to server/ subdirectory with executable permissions
+        info = zipfile.ZipInfo(server_binary_name)
+        info.external_attr = (
+            0o755 << 16 | 0x8000
+        )  # Unix permissions + regular file flag
 
         with open(binary, "rb") as f:
             zf.writestr(info, f.read(), zipfile.ZIP_DEFLATED)
 
-        # Add manifest
-        import json
-
-        manifest_json = json.dumps(manifest, indent=2)
+        # Add MCPB spec-compliant manifest
+        manifest_json = json.dumps(mcpb_manifest, indent=2)
         zf.writestr("manifest.json", manifest_json)
 
     print(f"Created bundle: {bundle_path}")
