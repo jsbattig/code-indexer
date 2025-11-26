@@ -77,6 +77,7 @@ Issues = "https://github.com/jsbattig/code-indexer/issues"
 [project.scripts]
 code-indexer = "code_indexer.cli_fast_entry:main"
 cidx = "code_indexer.cli_fast_entry:main"
+cidx-bridge = "code_indexer.mcpb.bridge:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_indexer"]
@@ -186,6 +187,11 @@ filterwarnings = [
 ]
 markers = [
     "e2e: End-to-end tests",
+    "protocol: JSON-RPC and MCP protocol compliance tests",
+    "platform_darwin_x64: macOS Intel tests",
+    "platform_darwin_arm64: macOS Apple Silicon tests",
+    "platform_linux_x64: Linux x64 tests",
+    "platform_windows_x64: Windows x64 tests",
     "voyage_ai: Tests requiring VoyageAI API key",
     "real_api: Tests that make real API calls",
     "slow: Tests that take longer to run",

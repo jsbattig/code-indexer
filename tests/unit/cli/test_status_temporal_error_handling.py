@@ -95,7 +95,7 @@ def test_temporal_index_error_logged_not_silenced(
                     ctx.obj = {"config_manager": config_manager}
 
                     # Should NOT raise exception (graceful degradation)
-                    _status_impl(ctx, force_docker=False)
+                    _status_impl(ctx)
 
                     # Verify error was logged (Anti-Fallback Rule)
                     log_messages = [record.message for record in caplog.records]

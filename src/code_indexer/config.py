@@ -17,6 +17,24 @@ def _validate_no_legacy_config(data: Dict[str, Any]) -> None:
     Raises:
         ValueError: If invalid configuration options are detected.
     """
+    # Check for legacy filesystem_config field (removed in v8.0)
+    if "filesystem_config" in data:
+        raise ValueError(
+            "Filesystem configuration has been removed in v8.0. "
+            "Filesystem is now the only storage backend. "
+            "Please remove 'filesystem_config' from your config.json. "
+            "See migration guide at docs/migration-to-v8.md"
+        )
+
+    # Check for legacy voyage_config field (removed in v8.0)
+    if "voyage_config" in data:
+        raise ValueError(
+            "Voyage configuration has been removed in v8.0. "
+            "VoyageAI is now configured via VOYAGE_API_KEY environment variable only. "
+            "Please remove 'voyage_config' from your config.json. "
+            "See migration guide at docs/migration-to-v8.md"
+        )
+
     # Check for invalid fields
     invalid_fields = []
     if "project_containers" in data and data["project_containers"]:
@@ -32,19 +50,32 @@ def _validate_no_legacy_config(data: Dict[str, Any]) -> None:
             invalid_fields.append("project_ports")
 
     if invalid_fields:
-        raise ValueError(f"Invalid configuration fields: {', '.join(invalid_fields)}")
+        raise ValueError(
+            f"Docker/container configuration removed in v8.0. "
+            f"Use daemon mode or filesystem storage instead. "
+            f"Invalid fields: {', '.join(invalid_fields)}. "
+            f"See migration guide at docs/migration-to-v8.md"
+        )
 
-    # Check for invalid vector store provider
+    # Check for invalid vector store provider (must be filesystem in v8.0+)
     if "vector_store" in data and isinstance(data["vector_store"], dict):
         provider = data["vector_store"].get("provider")
         if provider and provider != "filesystem":
-            raise ValueError(f"Invalid vector store provider: '{provider}'")
+            raise ValueError(
+                f"Vector store provider '{provider}' is not supported in v8.0. "
+                f"Only 'filesystem' backend is supported. "
+                f"See migration guide at docs/migration-to-v8.md"
+            )
 
-    # Check for invalid embedding provider
+    # Check for invalid embedding provider (must be voyage-ai in v8.0+)
     if "embedding_provider" in data:
         provider = data["embedding_provider"]
         if provider != "voyage-ai":
-            raise ValueError(f"Invalid embedding provider: '{provider}'")
+            raise ValueError(
+                f"Embedding provider '{provider}' is not supported in v8.0. "
+                f"Only 'voyage-ai' is supported. "
+                f"See migration guide at docs/migration-to-v8.md"
+            )
 
 
 class VoyageAIConfig(BaseModel):
@@ -88,6 +119,10 @@ class VoyageAIConfig(BaseModel):
     exponential_backoff: bool = Field(
         default=True, description="Use exponential backoff for retries"
     )
+
+
+# Backward compatibility alias (VoyageConfig was renamed to VoyageAIConfig in v8.0)
+VoyageConfig = VoyageAIConfig
 
 
 class IndexingConfig(BaseModel):

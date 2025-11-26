@@ -4,6 +4,60 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 
 **Version 8.0.0** - [Changelog](CHANGELOG.md) | [Migration Guide](docs/migration-to-v8.md) | [Architecture](docs/architecture.md)
 
+## CIDX MCP Bridge for Claude Desktop
+
+The CIDX MCP Bridge (`cidx-bridge`) enables Claude Desktop to perform semantic code searches through the Model Context Protocol (MCP). This provides product owners and developers with codebase insights directly within Claude Desktop conversations.
+
+### Quick Start
+
+**Installation:**
+```bash
+# Download binary for your platform from GitHub releases
+# https://github.com/jsbattig/code-indexer/releases
+
+# Or install from source
+pip install code-indexer[dev]
+```
+
+**Configuration:**
+```bash
+# Create config file
+mkdir -p ~/.mcpb
+cat > ~/.mcpb/config.json <<EOF
+{
+  "server_url": "https://your-cidx-server.com",
+  "bearer_token": "your-token-here"
+}
+EOF
+chmod 0600 ~/.mcpb/config.json
+
+# Or use environment variables
+export CIDX_SERVER_URL="https://your-cidx-server.com"
+export CIDX_TOKEN="your-token-here"
+```
+
+**Usage:**
+```bash
+# Test connection
+cidx-bridge --diagnose
+
+# Query via stdin (JSON-RPC format)
+echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"search_code","arguments":{"query_text":"authentication"}},"id":1}' | cidx-bridge
+```
+
+**Documentation:**
+- [Setup Guide](docs/mcpb/setup.md) - Installation and configuration
+- [API Reference](docs/mcpb/api-reference.md) - All 22 MCP tools
+- [Query Guide](docs/mcpb/query-guide.md) - Search capabilities
+- [Troubleshooting](docs/mcpb/troubleshooting.md) - Common issues
+
+### Features
+- **Full Query Parity**: All 25 search_code parameters available
+- **SSE Streaming**: Progressive results for large queries
+- **Multi-Platform**: macOS (Intel/Apple Silicon), Linux, Windows
+- **Zero Dependencies**: Single binary, no Python runtime required
+- **Complete Documentation**: 4,000+ lines covering setup, API, queries, troubleshooting
+
 ## Quick Install
 
 ### pipx (Recommended)

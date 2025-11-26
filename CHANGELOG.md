@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.2.0] - 2025-11-26
+
+### Added - Epic #514: Claude Desktop MCPB Integration
+
+**MCP Stdio Bridge (Story #515)**
+- JSON-RPC 2.0 protocol handling for stdin/stdout communication
+- HTTP client with Bearer token authentication
+- Complete MCP protocol 2024-11-05 implementation
+- CLI entry point: `cidx-bridge`
+- 96% test coverage with 60 passing tests
+
+**SSE Streaming Support (Story #516)**
+- Server-Sent Events (SSE) streaming for progressive results
+- Accept header negotiation: `text/event-stream, application/json`
+- Graceful fallback to JSON when SSE unavailable
+- Event types: chunk, complete, error
+- 95% test coverage with 85 passing tests
+
+**Enhanced Configuration System (Story #517)**
+- Multi-source configuration (environment, file, defaults)
+- Support for both CIDX_* and MCPB_* environment variables
+- HTTPS validation and file permissions checking
+- Configuration diagnostics command (--diagnose)
+- Log level support with validation
+- 97% test coverage with 121 passing tests
+
+**Cross-Platform Binary Distribution (Story #518)**
+- PyInstaller single-binary builds for 4 platforms
+- Platform support: macOS (x64/arm64), Linux (x64), Windows (x64)
+- Automated GitHub Actions CI/CD workflow
+- Manifest schema with SHA256 checksums
+- Build automation scripts
+- 97% test coverage with 35 passing tests
+
+**E2E Testing and Documentation (Story #519)**
+- 51 comprehensive E2E tests (protocol compliance, workflows, error handling)
+- Setup guide (installation, configuration, verification)
+- API reference (all 22 MCP tools, complete parameter documentation)
+- Query guide (semantic, FTS, regex, temporal search examples)
+- Troubleshooting guide (diagnostics, common issues, FAQ)
+- 94% test coverage, 4,172 lines of documentation
+
+### Features
+- Complete query parity: All 25 search_code parameters accessible via MCP
+- All 22 CIDX MCP tools exposed through stdio bridge
+- Zero Python runtime dependencies (single binary distribution)
+- Cross-platform support with automated releases
+
+### Testing
+- Total test count: 3,992 passing tests
+- MCPB module coverage: 94%
+- Zero failures in automation suites
+- TDD methodology throughout
+
 ## [8.0.0] - 2025-11-20
 
 ### BREAKING CHANGES

@@ -58,7 +58,7 @@ class TestAdaptedStatusCommand:
                 cli_runner.invoke(cli, ["status"])
 
                 # Test should work now that routing is implemented
-                mock_local_status.assert_called_once_with(temp_project_root, False)
+                mock_local_status.assert_called_once_with(temp_project_root)
 
     def test_status_command_routes_to_remote_mode(self, temp_project_root, cli_runner):
         """Test that status command routes to remote mode implementation when in remote mode."""
@@ -114,37 +114,6 @@ class TestAdaptedStatusCommand:
                 # Test should work now that routing is implemented
                 mock_uninit_status.assert_called_once_with(temp_project_root)
 
-    def test_status_command_preserves_existing_flags(
-        self, temp_project_root, cli_runner
-    ):
-        """Test that status command preserves existing CLI flags when routing."""
-        # Create valid local config
-        local_config = {"voyage": {"host": "http://localhost:11434"}}
-        config_path = temp_project_root / ".code-indexer" / "config.json"
-        with open(config_path, "w") as f:
-            json.dump(local_config, f)
-
-        with patch(
-            "code_indexer.mode_specific_handlers.display_local_status"
-        ) as mock_local_status:
-            mock_local_status.return_value = None
-
-            with cli_runner.isolated_filesystem():
-                # Change to project directory
-                import os
-
-                os.chdir(temp_project_root)
-
-                # Test with --force-docker flag
-                cli_runner.invoke(cli, ["status", "--force-docker"])
-
-                # Test should work now that routing is implemented
-                # Verify force_docker flag is passed through
-                mock_local_status.assert_called_once()
-                args, kwargs = mock_local_status.call_args
-                # Check that force_docker=True was passed
-                assert args[1] is True  # Second argument should be force_docker
-
 
 class TestAdaptedUninstallCommand:
     """Test class for mode-adapted uninstall command behavior."""
@@ -190,9 +159,9 @@ class TestAdaptedUninstallCommand:
                 cli_runner.invoke(cli, ["uninstall", "--confirm"])
 
                 # Test should work now that routing is implemented
-                # Parameters: project_root, force_docker, wipe_all, confirm
+                # Parameters: project_root, wipe_all, confirm (no force_docker)
                 mock_local_uninstall.assert_called_once_with(
-                    temp_project_root, False, False, True
+                    temp_project_root, False, True
                 )
 
     def test_uninstall_command_routes_to_remote_mode(
@@ -223,37 +192,6 @@ class TestAdaptedUninstallCommand:
 
                 # Test should work now that routing is implemented
                 mock_remote_uninstall.assert_called_once_with(temp_project_root, True)
-
-    def test_uninstall_command_preserves_existing_flags(
-        self, temp_project_root, cli_runner
-    ):
-        """Test that uninstall command preserves existing CLI flags when routing."""
-        # Create valid local config
-        local_config = {"voyage": {"host": "http://localhost:11434"}}
-        config_path = temp_project_root / ".code-indexer" / "config.json"
-        with open(config_path, "w") as f:
-            json.dump(local_config, f)
-
-        with patch(
-            "code_indexer.mode_specific_handlers.uninstall_local_mode"
-        ) as mock_local_uninstall:
-            mock_local_uninstall.return_value = None
-
-            with cli_runner.isolated_filesystem():
-                # Change to project directory
-                import os
-
-                os.chdir(temp_project_root)
-
-                # Test with existing flags
-                cli_runner.invoke(cli, ["uninstall", "--force-docker", "--wipe-all"])
-
-                # Test should work now that routing is implemented
-                mock_local_uninstall.assert_called_once()
-                args, kwargs = mock_local_uninstall.call_args
-                # Verify flags are passed through (project_root, force_docker, wipe_all)
-                assert args[1] is True  # force_docker=True
-                assert args[2] is True  # wipe_all=True
 
 
 class TestModeDetectionIntegration:

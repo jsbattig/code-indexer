@@ -161,7 +161,7 @@ def test_macos_bsd_du_fallback(
         ctx.obj = {"config_manager": config_manager}
 
         # Call _status_impl directly - should NOT raise IndexError
-        _status_impl(ctx, force_docker=False)
+        _status_impl(ctx)
 
     # Verify both du commands were called
     assert du_sb_called, "du -sb should have been called"
@@ -260,7 +260,7 @@ def test_empty_stdout_handled_gracefully(
         ctx.obj = {"config_manager": config_manager}
 
         # Call _status_impl directly - should NOT raise IndexError
-        _status_impl(ctx, force_docker=False)
+        _status_impl(ctx)
 
     # Verify du commands were called (both du -sb and du -sk fail, triggering Python fallback)
     assert du_call_count == 2, f"Expected 2 du calls, got {du_call_count}"
@@ -363,7 +363,7 @@ def test_gnu_du_success_path(
         ctx.obj = {"config_manager": config_manager}
 
         # Call _status_impl directly
-        _status_impl(ctx, force_docker=False)
+        _status_impl(ctx)
 
     # Verify du -sb was called and succeeded (no fallback needed)
     assert du_sb_called, "du -sb should have been called"

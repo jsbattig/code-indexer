@@ -176,3 +176,4 @@ voyage-code-3/
 # FilesystemVectorStore collection
 code-indexer-temporal/
 .test-telemetry/
+coverage.json
