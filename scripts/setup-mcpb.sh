@@ -18,7 +18,7 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 INSTALL_DIR="$HOME/.local/bin"
 MCPB_BINARY="$INSTALL_DIR/mcpb"
 GITHUB_REPO="jsbattig/code-indexer"
-MCPB_VERSION="v8.3.0"
+MCPB_VERSION="v8.2.6"
 
 # Print functions
 print_info() {
@@ -77,11 +77,11 @@ detect_platform() {
             case "$arch" in
                 arm64|aarch64)
                     platform="darwin-arm64"
-                    binary_name="mcpb-darwin-arm64"
+                    binary_name="mcpb-darwin-arm64.mcpb"
                     ;;
                 x86_64)
                     platform="darwin-x64"
-                    binary_name="mcpb-darwin-x64"
+                    binary_name="mcpb-darwin-x64.mcpb"
                     ;;
                 *)
                     print_error "Unsupported macOS architecture: $arch"
@@ -93,7 +93,7 @@ detect_platform() {
             case "$arch" in
                 x86_64)
                     platform="linux-x64"
-                    binary_name="mcpb-linux-x64"
+                    binary_name="mcpb-linux-x64.mcpb"
                     ;;
                 *)
                     print_error "Unsupported Linux architecture: $arch"
@@ -106,7 +106,7 @@ detect_platform() {
             case "$arch" in
                 x86_64)
                     platform="windows-x64"
-                    binary_name="mcpb-windows-x64.exe"
+                    binary_name="mcpb-windows-x64.mcpb.exe"
                     ;;
                 *)
                     print_error "Unsupported Windows architecture: $arch"
