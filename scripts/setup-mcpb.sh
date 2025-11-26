@@ -645,9 +645,34 @@ main() {
     # Check if binary already exists
     if [ -f "$MCPB_BINARY" ]; then
         print_warning "MCPB binary already exists: $MCPB_BINARY"
-        read -p "Do you want to reinstall it? (y/N): " -n 1 -r
-        echo ""
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+
+        # Check if we're running interactively (stdin is a terminal)
+        if [ -t 0 ]; then
+            # Interactive mode - ask user
+            read -p "Do you want to reinstall it? (y/N): " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                # Download and install binary
+                if ! download_mcpb_binary; then
+                    print_error "Binary download failed"
+                    exit 1
+                fi
+
+                if ! install_mcpb_binary; then
+                    print_error "Binary installation failed"
+                    exit 1
+                fi
+
+                check_path
+                echo ""
+            else
+                print_info "Using existing binary"
+                echo ""
+            fi
+        else
+            # Non-interactive mode (piped from curl) - auto-reinstall
+            print_info "Running in non-interactive mode - automatically reinstalling..."
+
             # Download and install binary
             if ! download_mcpb_binary; then
                 print_error "Binary download failed"
@@ -660,9 +685,6 @@ main() {
             fi
 
             check_path
-            echo ""
-        else
-            print_info "Using existing binary"
             echo ""
         fi
     else
@@ -684,11 +706,19 @@ main() {
     # Check if config already exists
     if [ -f "$CONFIG_FILE" ]; then
         print_warning "Configuration file already exists: $CONFIG_FILE"
-        read -p "Do you want to overwrite it? (y/N): " -n 1 -r
-        echo ""
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_info "Setup cancelled"
-            exit 0
+
+        # Check if we're running interactively (stdin is a terminal)
+        if [ -t 0 ]; then
+            # Interactive mode - ask user
+            read -p "Do you want to overwrite it? (y/N): " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                print_info "Setup cancelled"
+                exit 0
+            fi
+        else
+            # Non-interactive mode (piped from curl) - auto-overwrite
+            print_info "Running in non-interactive mode - automatically overwriting config..."
         fi
     fi
 
