@@ -51,6 +51,10 @@ check_dependencies() {
         missing_deps+=("jq")
     fi
 
+    if ! command -v unzip &> /dev/null; then
+        missing_deps+=("unzip")
+    fi
+
     if [ ${#missing_deps[@]} -ne 0 ]; then
         print_error "Missing required dependencies: ${missing_deps[*]}"
         echo ""
@@ -174,21 +178,46 @@ install_mcpb_binary() {
         }
     fi
 
-    # Copy binary to install location
-    if ! cp "$temp_binary" "$MCPB_BINARY"; then
+    # Create temp extraction directory
+    local temp_extract_dir=$(mktemp -d)
+    print_info "Extracting binary from .mcpb bundle..."
+
+    # Extract the ZIP bundle
+    if ! unzip -q "$temp_binary" -d "$temp_extract_dir"; then
+        print_error "Failed to extract .mcpb bundle"
+        rm -rf "$temp_extract_dir"
+        return 1
+    fi
+
+    # The binary is located at server/mcpb-<platform> inside the ZIP
+    local extracted_binary="$temp_extract_dir/server/mcpb-${DETECTED_PLATFORM}"
+
+    if [ ! -f "$extracted_binary" ]; then
+        print_error "Extracted binary not found at: $extracted_binary"
+        print_error "Bundle contents:"
+        ls -la "$temp_extract_dir" "$temp_extract_dir/server" 2>/dev/null || true
+        rm -rf "$temp_extract_dir"
+        return 1
+    fi
+
+    # Copy extracted binary to install location
+    if ! cp "$extracted_binary" "$MCPB_BINARY"; then
         print_error "Failed to copy binary to: $MCPB_BINARY"
         print_error "Please check write permissions for: $INSTALL_DIR"
+        rm -rf "$temp_extract_dir"
         return 1
     fi
 
     # Make binary executable
     if ! chmod +x "$MCPB_BINARY"; then
         print_error "Failed to make binary executable: $MCPB_BINARY"
+        rm -rf "$temp_extract_dir"
         return 1
     fi
 
-    # Clean up temp file
+    # Clean up temp files
     rm -f "$temp_binary"
+    rm -rf "$temp_extract_dir"
 
     print_success "MCPB binary installed to: $MCPB_BINARY"
 
