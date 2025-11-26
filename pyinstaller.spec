@@ -29,6 +29,14 @@ a = Analysis(
     datas=[],
     # Hidden imports: modules not detected by static analysis
     hiddenimports=[
+        # MCPB modules (required for relative imports)
+        "code_indexer.mcpb",
+        "code_indexer.mcpb.config",
+        "code_indexer.mcpb.diagnostics",
+        "code_indexer.mcpb.http_client",
+        "code_indexer.mcpb.protocol",
+        "code_indexer.mcpb.sse_parser",
+        "code_indexer.mcpb.manifest",
         # HTTP/2 support for httpx
         "httpx",
         "h2",
