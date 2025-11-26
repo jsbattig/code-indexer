@@ -52,11 +52,11 @@ jobs:
 
       - name: Verify binary
         run: |
-          python scripts/build_binary.py verify --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '' }} --version ${{ steps.get_version.outputs.version }}
+          python scripts/build_binary.py verify --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '.mcpb' }} --version ${{ steps.get_version.outputs.version }}
 
       - name: Create bundle
         run: |
-          python scripts/build_binary.py create-bundle --platform ${{ matrix.platform }} --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '' }} --version ${{ steps.get_version.outputs.version }} --output-dir dist
+          python scripts/build_binary.py create-bundle --platform ${{ matrix.platform }} --binary dist/mcpb-${{ matrix.platform }}${{ matrix.platform == 'windows-x64' && '.exe' || '.mcpb' }} --version ${{ steps.get_version.outputs.version }} --output-dir dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
