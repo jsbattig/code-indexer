@@ -62,7 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mcpb-${{ matrix.platform }}
-          path: dist/mcpb-${{ matrix.platform }}.zip
+          path: dist/mcpb-${{ matrix.platform }}.mcpb
           retention-days: 1
 
   create-release:
@@ -120,9 +120,9 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/mcpb-darwin-x64/mcpb-darwin-x64.zip
-            artifacts/mcpb-darwin-arm64/mcpb-darwin-arm64.zip
-            artifacts/mcpb-linux-x64/mcpb-linux-x64.zip
-            artifacts/mcpb-windows-x64/mcpb-windows-x64.zip
+            artifacts/mcpb-darwin-x64/mcpb-darwin-x64.mcpb
+            artifacts/mcpb-darwin-arm64/mcpb-darwin-arm64.mcpb
+            artifacts/mcpb-linux-x64/mcpb-linux-x64.mcpb
+            artifacts/mcpb-windows-x64/mcpb-windows-x64.mcpb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
