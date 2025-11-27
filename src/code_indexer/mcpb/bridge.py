@@ -174,7 +174,7 @@ async def async_main():  # pragma: no cover
             config_path = DEFAULT_CONFIG_PATH
 
         # Load configuration
-        config = load_config(use_env=True)
+        config = load_config(config_path=config_path, use_env=True)
 
         # Create and run bridge
         bridge = Bridge(config, config_path=config_path)
