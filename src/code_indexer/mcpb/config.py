@@ -29,12 +29,14 @@ class BridgeConfig:
     Args:
         server_url: Base URL of CIDX server (must use HTTPS)
         bearer_token: Bearer token for authentication
+        refresh_token: Refresh token for automatic token renewal (optional)
         timeout: Request timeout in seconds (1-300, default: 30)
         log_level: Logging level (debug/info/warning/error, default: info)
     """
 
     server_url: str
     bearer_token: str
+    refresh_token: Optional[str] = None
     timeout: int = DEFAULT_TIMEOUT
     log_level: str = DEFAULT_LOG_LEVEL
 
@@ -95,6 +97,7 @@ def load_config(
     Environment Variables (Story #517 - CIDX_* takes precedence over MCPB_*):
         CIDX_SERVER_URL or MCPB_SERVER_URL: Server URL (overrides file)
         CIDX_TOKEN or MCPB_BEARER_TOKEN: Bearer token (overrides file)
+        CIDX_REFRESH_TOKEN or MCPB_REFRESH_TOKEN: Refresh token (overrides file)
         CIDX_TIMEOUT or MCPB_TIMEOUT: Timeout in seconds (overrides file)
         CIDX_LOG_LEVEL or MCPB_LOG_LEVEL: Log level (overrides file)
     """
@@ -138,6 +141,12 @@ def load_config(
             config_data["bearer_token"] = os.environ["CIDX_TOKEN"]
         elif "MCPB_BEARER_TOKEN" in os.environ:
             config_data["bearer_token"] = os.environ["MCPB_BEARER_TOKEN"]
+
+        # Refresh Token: CIDX_REFRESH_TOKEN > MCPB_REFRESH_TOKEN
+        if "CIDX_REFRESH_TOKEN" in os.environ:
+            config_data["refresh_token"] = os.environ["CIDX_REFRESH_TOKEN"]
+        elif "MCPB_REFRESH_TOKEN" in os.environ:
+            config_data["refresh_token"] = os.environ["MCPB_REFRESH_TOKEN"]
 
         # Timeout: CIDX_TIMEOUT > MCPB_TIMEOUT
         if "CIDX_TIMEOUT" in os.environ:

@@ -5,7 +5,13 @@ Bearer token authentication, SSE streaming, and error handling.
 """
 
 from __future__ import annotations
-from typing import Union
+from typing import Union, Optional
+from pathlib import Path
+import asyncio
+import json
+import os
+import sys
+import tempfile
 
 import httpx
 
@@ -29,13 +35,25 @@ class BridgeHttpClient:
         server_url: Base URL of CIDX server
         bearer_token: Bearer token for authentication
         timeout: Request timeout in seconds
+        refresh_token: Refresh token for automatic token renewal (optional)
+        config_path: Path to config file for persisting updated tokens (optional)
     """
 
-    def __init__(self, server_url: str, bearer_token: str, timeout: int):
+    def __init__(
+        self,
+        server_url: str,
+        bearer_token: str,
+        timeout: int,
+        refresh_token: Optional[str] = None,
+        config_path: Optional[Path] = None,
+    ):
         self.server_url = server_url
         self.bearer_token = bearer_token
         self.timeout = timeout
+        self.refresh_token = refresh_token
+        self.config_path = config_path
         self._client = None
+        self._refresh_lock: Optional[asyncio.Lock] = None
 
     def get_mcp_endpoint_url(self) -> str:
         """Get full URL to MCP endpoint."""
@@ -57,6 +75,7 @@ class BridgeHttpClient:
         """Forward JSON-RPC request to CIDX server.
 
         Supports both SSE streaming and JSON responses.
+        Automatically refreshes token on 401 errors if refresh_token is available.
 
         Args:
             request_data: JSON-RPC request as dictionary
@@ -74,6 +93,9 @@ class BridgeHttpClient:
         url = self.get_mcp_endpoint_url()
         headers = self.get_request_headers()
 
+        # Track if we've already attempted a refresh (prevent infinite loops)
+        refresh_attempted = False
+
         try:
             # _client is guaranteed to be non-None after the check above
             assert self._client is not None
@@ -81,9 +103,29 @@ class BridgeHttpClient:
 
             # Handle authentication errors
             if response.status_code == 401:
-                raise HttpError(
-                    f"Authentication failed: {response.status_code} {response.text}"
-                )
+                # Try to refresh token if available and not already attempted
+                if self.refresh_token and not refresh_attempted:
+                    refresh_attempted = True
+
+                    # Refresh token
+                    await self._refresh_access_token()
+
+                    # Retry request with new token
+                    headers = self.get_request_headers()
+                    response = await self._client.post(
+                        url, json=request_data, headers=headers
+                    )
+
+                    # If still 401 after refresh, raise error
+                    if response.status_code == 401:
+                        raise HttpError(
+                            f"Authentication failed: {response.status_code} {response.text}"
+                        )
+                else:
+                    # No refresh_token available or already attempted refresh
+                    raise HttpError(
+                        f"Authentication failed: {response.status_code} {response.text}"
+                    )
 
             # Handle server errors
             if response.status_code >= 500:
@@ -188,6 +230,135 @@ class BridgeHttpClient:
             request_id, INTERNAL_ERROR, "Unexpected SSE stream termination"
         )
         return error_response.to_dict()
+
+    async def _refresh_access_token(self) -> None:
+        """Refresh access token using refresh token.
+
+        Updates self.bearer_token and self.refresh_token with new values.
+        If config_path is set, persists updated tokens to config file atomically.
+
+        Raises:
+            HttpError: If refresh fails or refresh_token is invalid
+        """
+        if self.refresh_token is None:
+            raise HttpError("Cannot refresh token - no refresh_token available")
+
+        refresh_url = f"{self.server_url}/auth/refresh"
+
+        try:
+            # Use existing client or create new one
+            if self._client is None:
+                self._client = httpx.AsyncClient(timeout=self.timeout)
+
+            assert self._client is not None
+            response = await self._client.post(
+                refresh_url,
+                json={"refresh_token": self.refresh_token},
+                headers={"Content-Type": "application/json"},
+            )
+
+            # Handle 401 - refresh token expired
+            if response.status_code == 401:
+                raise HttpError("Refresh token expired - re-authentication required")
+
+            # Handle other errors
+            if response.status_code >= 500:
+                raise HttpError(
+                    f"Token refresh failed: {response.status_code} {response.text}"
+                )
+
+            if response.status_code != 200:
+                raise HttpError(
+                    f"Token refresh failed: {response.status_code} {response.text}"
+                )
+
+            # Parse response
+            try:
+                result = response.json()
+            except Exception as e:
+                raise HttpError(
+                    f"Token refresh failed: Invalid JSON response: {str(e)}"
+                )
+
+            # Validate response has required fields
+            if "access_token" not in result:
+                raise HttpError("Invalid refresh response: missing access_token")
+
+            # Update tokens in memory
+            new_access_token = result["access_token"]
+            new_refresh_token = result.get("refresh_token", self.refresh_token)
+
+            self.bearer_token = new_access_token
+            self.refresh_token = new_refresh_token
+
+            # Log refresh event to stderr (for Claude Desktop debugging)
+            # Only log first 20 chars of token for security
+            print(f"Token refreshed: {new_access_token[:20]}...", file=sys.stderr)
+
+            # Persist to config file if config_path is set
+            if self.config_path is not None:
+                await self._update_config_file(new_access_token, new_refresh_token)
+
+        except httpx.ConnectError as e:
+            raise HttpError(f"Token refresh failed: Connection error: {str(e)}") from e
+
+        except httpx.NetworkError as e:
+            raise HttpError(f"Token refresh failed: Network error: {str(e)}") from e
+
+        except httpx.HTTPError as e:
+            raise HttpError(f"Token refresh failed: HTTP error: {str(e)}") from e
+
+    async def _update_config_file(
+        self, new_access_token: str, new_refresh_token: str
+    ) -> None:
+        """Update config file with new tokens atomically.
+
+        Args:
+            new_access_token: New access token to persist
+            new_refresh_token: New refresh token to persist
+        """
+        if self.config_path is None:
+            return
+
+        # Lazy-initialize lock if needed
+        if self._refresh_lock is None:
+            self._refresh_lock = asyncio.Lock()
+
+        async with self._refresh_lock:
+            try:
+                # Read existing config
+                with open(self.config_path) as f:
+                    config = json.load(f)
+
+                # Update tokens
+                config["bearer_token"] = new_access_token
+                config["refresh_token"] = new_refresh_token
+
+                # Write atomically: temp file + rename
+                temp_fd, temp_path = tempfile.mkstemp(
+                    suffix=".json", dir=self.config_path.parent
+                )
+                try:
+                    with os.fdopen(temp_fd, "w") as f:
+                        json.dump(config, f, indent=2)
+
+                    # Set secure permissions (owner read/write only)
+                    os.chmod(temp_path, 0o600)
+
+                    # Atomic rename
+                    os.rename(temp_path, self.config_path)
+
+                except Exception:
+                    # Clean up temp file on error
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                    raise
+
+            except Exception as e:
+                # Log error but don't fail the request
+                print(
+                    f"Warning: Failed to update config file: {str(e)}", file=sys.stderr
+                )
 
     async def close(self):
         """Close HTTP client and cleanup resources."""

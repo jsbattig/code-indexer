@@ -7,7 +7,9 @@ forwards them to the CIDX server via HTTP, and writes responses to stdout.
 import argparse
 import asyncio
 import json
+import os
 import sys
+from pathlib import Path
 from typing import TextIO, Optional
 
 from .config import BridgeConfig
@@ -27,14 +29,17 @@ class Bridge:
 
     Args:
         config: Bridge configuration
+        config_path: Path to config file for token persistence (optional)
     """
 
-    def __init__(self, config: BridgeConfig):
+    def __init__(self, config: BridgeConfig, config_path: Optional[Path] = None):
         self.config = config
         self.http_client = BridgeHttpClient(
             server_url=config.server_url,
             bearer_token=config.bearer_token,
             timeout=config.timeout,
+            refresh_token=config.refresh_token,
+            config_path=config_path,
         )
 
     async def process_line(self, line: str) -> dict:
@@ -159,14 +164,20 @@ class Bridge:
 
 async def async_main():  # pragma: no cover
     """Async main entry point for bridge executable."""
-    from .config import load_config
+    from .config import load_config, DEFAULT_CONFIG_PATH
 
     try:
+        # Determine config path (None if using only env vars)
+        config_path = None
+        if not (os.environ.get("CIDX_SERVER_URL") or os.environ.get("MCPB_SERVER_URL")):
+            # Not using env vars, so config file exists
+            config_path = DEFAULT_CONFIG_PATH
+
         # Load configuration
         config = load_config(use_env=True)
 
         # Create and run bridge
-        bridge = Bridge(config)
+        bridge = Bridge(config, config_path=config_path)
         await bridge.run()
 
     except FileNotFoundError as e:

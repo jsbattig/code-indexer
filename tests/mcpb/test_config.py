@@ -33,6 +33,31 @@ class TestBridgeConfig:
         assert config.bearer_token == "test-token-123"
         assert config.timeout == 30
 
+    def test_config_with_refresh_token(self):
+        """Test creating config with refresh_token."""
+        config = BridgeConfig(
+            server_url="https://cidx.example.com",
+            bearer_token="test-token-123",
+            refresh_token="refresh-token-456",
+            timeout=30,
+        )
+
+        assert config.server_url == "https://cidx.example.com"
+        assert config.bearer_token == "test-token-123"
+        assert config.refresh_token == "refresh-token-456"
+        assert config.timeout == 30
+
+    def test_config_without_refresh_token(self):
+        """Test creating config without refresh_token (optional field)."""
+        config = BridgeConfig(
+            server_url="https://cidx.example.com",
+            bearer_token="test-token-123",
+        )
+
+        assert config.server_url == "https://cidx.example.com"
+        assert config.bearer_token == "test-token-123"
+        assert config.refresh_token is None
+
     def test_config_with_default_timeout(self):
         """Test creating config with default timeout."""
         config = BridgeConfig(
@@ -407,6 +432,128 @@ class TestDualEnvVarSupport:
             del os.environ["CIDX_SERVER_URL"]
             del os.environ["MCPB_BEARER_TOKEN"]
             del os.environ["MCPB_TIMEOUT"]
+
+    def test_load_config_with_refresh_token_from_file(self):
+        """Test loading refresh_token from config file."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.test.com",
+                "bearer_token": "test-access-token",
+                "refresh_token": "test-refresh-token",
+            }
+            json.dump(config_data, f)
+            config_path = f.name
+
+        try:
+            config = load_config(config_path)
+
+            assert config.server_url == "https://cidx.test.com"
+            assert config.bearer_token == "test-access-token"
+            assert config.refresh_token == "test-refresh-token"
+        finally:
+            os.unlink(config_path)
+
+    def test_load_config_without_refresh_token_from_file(self):
+        """Test loading config without refresh_token (optional field)."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.test.com",
+                "bearer_token": "test-access-token",
+            }
+            json.dump(config_data, f)
+            config_path = f.name
+
+        try:
+            config = load_config(config_path)
+
+            assert config.server_url == "https://cidx.test.com"
+            assert config.bearer_token == "test-access-token"
+            assert config.refresh_token is None
+        finally:
+            os.unlink(config_path)
+
+    def test_cidx_refresh_token_env_var(self):
+        """Test CIDX_REFRESH_TOKEN environment variable."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.test.com",
+                "bearer_token": "test-token",
+            }
+            json.dump(config_data, f)
+            config_path = f.name
+
+        os.environ["CIDX_REFRESH_TOKEN"] = "env-refresh-token"
+
+        try:
+            config = load_config(config_path, use_env=True)
+
+            assert config.refresh_token == "env-refresh-token"
+        finally:
+            os.unlink(config_path)
+            del os.environ["CIDX_REFRESH_TOKEN"]
+
+    def test_mcpb_refresh_token_env_var(self):
+        """Test MCPB_REFRESH_TOKEN environment variable."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.test.com",
+                "bearer_token": "test-token",
+            }
+            json.dump(config_data, f)
+            config_path = f.name
+
+        os.environ["MCPB_REFRESH_TOKEN"] = "mcpb-env-refresh-token"
+
+        try:
+            config = load_config(config_path, use_env=True)
+
+            assert config.refresh_token == "mcpb-env-refresh-token"
+        finally:
+            os.unlink(config_path)
+            del os.environ["MCPB_REFRESH_TOKEN"]
+
+    def test_cidx_refresh_token_takes_precedence_over_mcpb(self):
+        """Test CIDX_REFRESH_TOKEN takes precedence over MCPB_REFRESH_TOKEN."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.test.com",
+                "bearer_token": "test-token",
+            }
+            json.dump(config_data, f)
+            config_path = f.name
+
+        os.environ["CIDX_REFRESH_TOKEN"] = "cidx-refresh-token"
+        os.environ["MCPB_REFRESH_TOKEN"] = "mcpb-refresh-token"
+
+        try:
+            config = load_config(config_path, use_env=True)
+
+            assert config.refresh_token == "cidx-refresh-token"
+        finally:
+            os.unlink(config_path)
+            del os.environ["CIDX_REFRESH_TOKEN"]
+            del os.environ["MCPB_REFRESH_TOKEN"]
+
+    def test_refresh_token_env_var_overrides_file(self):
+        """Test refresh_token env var overrides file value."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.test.com",
+                "bearer_token": "test-token",
+                "refresh_token": "file-refresh-token",
+            }
+            json.dump(config_data, f)
+            config_path = f.name
+
+        os.environ["CIDX_REFRESH_TOKEN"] = "env-refresh-token"
+
+        try:
+            config = load_config(config_path, use_env=True)
+
+            assert config.refresh_token == "env-refresh-token"
+        finally:
+            os.unlink(config_path)
+            del os.environ["CIDX_REFRESH_TOKEN"]
 
 
 class TestEnhancedErrorMessages:
