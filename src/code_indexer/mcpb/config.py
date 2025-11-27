@@ -103,14 +103,18 @@ def load_config(
     """
     config_data = {}
 
-    # Load from file if path provided or using default
-    if config_path is not None or (not use_env):
-        path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
-        path = path.expanduser().resolve()
+    # Always attempt to load config file (use DEFAULT_CONFIG_PATH if not specified)
+    # Environment variables will override file values if use_env=True
+    path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    path = path.expanduser().resolve()
 
-        if not path.exists():
+    # Only raise error if config file doesn't exist AND no env vars provided
+    if not path.exists():
+        if not use_env:
             raise FileNotFoundError(f"Config file not found: {path}")
-
+        # If using env vars, config file is optional - continue with empty config_data
+    else:
+        # Config file exists - load it
         # Check file permissions (Story #517)
         file_stat = os.stat(path)
         # Get octal permissions (last 3 digits)
