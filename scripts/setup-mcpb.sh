@@ -47,8 +47,8 @@ check_dependencies() {
         missing_deps+=("curl")
     fi
 
-    if ! command -v jq &> /dev/null; then
-        missing_deps+=("jq")
+    if ! command -v python3 &> /dev/null; then
+        missing_deps+=("python3")
     fi
 
     if ! command -v unzip &> /dev/null; then
@@ -310,10 +310,7 @@ authenticate() {
     print_info "Authenticating with server..."
 
     local auth_endpoint="${server_url}/auth/login"
-    local payload=$(jq -n \
-        --arg username "$username" \
-        --arg password "$password" \
-        '{username: $username, password: $password}')
+    local payload=$(python3 -c "import json; print(json.dumps({'username': '''$username''', 'password': '''$password'''}))")
 
     # Make authentication request
     local response
@@ -339,7 +336,7 @@ authenticate() {
         print_error "Authentication failed (HTTP $http_code)"
 
         # Try to parse error message from response
-        local error_msg=$(echo "$response" | jq -r '.detail // .message // "Unknown error"' 2>/dev/null)
+        local error_msg=$(echo "$response" | python3 -c "import json, sys; data = json.load(sys.stdin); print(data.get('detail', data.get('message', 'Unknown error')))" 2>/dev/null)
         if [ $? -eq 0 ] && [ "$error_msg" != "Unknown error" ]; then
             print_error "Server message: $error_msg"
         fi
@@ -363,8 +360,8 @@ authenticate() {
     fi
 
     # Parse tokens from response
-    local access_token=$(echo "$response" | jq -r '.access_token // empty' 2>/dev/null)
-    local refresh_token=$(echo "$response" | jq -r '.refresh_token // empty' 2>/dev/null)
+    local access_token=$(echo "$response" | python3 -c "import json, sys; data = json.load(sys.stdin); print(data.get('access_token', ''))" 2>/dev/null)
+    local refresh_token=$(echo "$response" | python3 -c "import json, sys; data = json.load(sys.stdin); print(data.get('refresh_token', ''))" 2>/dev/null)
 
     if [ -z "$access_token" ] || [ "$access_token" = "null" ]; then
         print_error "Failed to extract access_token from response"
@@ -410,16 +407,9 @@ create_config() {
     # Create config JSON
     local config
     if [ -n "$refresh_token" ]; then
-        config=$(jq -n \
-            --arg url "$server_url" \
-            --arg bearer "$access_token" \
-            --arg refresh "$refresh_token" \
-            '{server_url: $url, bearer_token: $bearer, refresh_token: $refresh}')
+        config=$(python3 -c "import json; print(json.dumps({'server_url': '''$server_url''', 'bearer_token': '''$access_token''', 'refresh_token': '''$refresh_token'''}, indent=2))")
     else
-        config=$(jq -n \
-            --arg url "$server_url" \
-            --arg bearer "$access_token" \
-            '{server_url: $url, bearer_token: $bearer}')
+        config=$(python3 -c "import json; print(json.dumps({'server_url': '''$server_url''', 'bearer_token': '''$access_token'''}, indent=2))")
     fi
 
     # Write config file
@@ -493,8 +483,8 @@ configure_claude_desktop() {
     if [ "$os_type" = "Darwin" ]; then
         # macOS: Use direct environment variables (CIDX_SERVER_URL and CIDX_TOKEN)
         # Read server_url and access_token from config file if not already set
-        local config_server_url="${server_url:-$(jq -r '.server_url // empty' "$CONFIG_FILE" 2>/dev/null)}"
-        local config_access_token="${AUTH_ACCESS_TOKEN:-$(jq -r '.bearer_token // empty' "$CONFIG_FILE" 2>/dev/null)}"
+        local config_server_url="${server_url:-$(python3 -c "import json; data = json.load(open('$CONFIG_FILE')); print(data.get('server_url', ''))" 2>/dev/null)}"
+        local config_access_token="${AUTH_ACCESS_TOKEN:-$(python3 -c "import json; data = json.load(open('$CONFIG_FILE')); print(data.get('bearer_token', ''))" 2>/dev/null)}"
 
         if [ -z "$config_server_url" ] || [ -z "$config_access_token" ]; then
             print_error "Failed to retrieve server_url or access_token for macOS configuration"
@@ -502,31 +492,43 @@ configure_claude_desktop() {
             return 0
         fi
 
-        cidx_server_entry=$(jq -n \
-            --arg binary_path "$MCPB_BINARY" \
-            --arg url "$config_server_url" \
-            --arg token "$config_access_token" \
-            '{cidx: {type: "stdio", command: $binary_path, env: {CIDX_SERVER_URL: $url, CIDX_TOKEN: $token}}}')
+        cidx_server_entry=$(python3 -c "import json; print(json.dumps({'cidx': {'type': 'stdio', 'command': '''$MCPB_BINARY''', 'env': {'CIDX_SERVER_URL': '''$config_server_url''', 'CIDX_TOKEN': '''$config_access_token'''}}}, indent=2))")
     else
         # Linux/Windows: Use HOME environment variable (existing behavior)
-        cidx_server_entry=$(jq -n \
-            --arg binary_path "$MCPB_BINARY" \
-            --arg home_dir "$HOME" \
-            '{cidx: {type: "stdio", command: $binary_path, env: {HOME: $home_dir}}}')
+        cidx_server_entry=$(python3 -c "import json; print(json.dumps({'cidx': {'type': 'stdio', 'command': '''$MCPB_BINARY''', 'env': {'HOME': '''$HOME'''}}}, indent=2))")
     fi
 
     # Handle existing config file
     if [ -f "$claude_config_file" ]; then
         print_info "Updating existing Claude Desktop configuration..."
 
-        # Read existing config and merge with new MCP server
-        local updated_config=$(jq \
-            --argjson new_server "$cidx_server_entry" \
-            '.mcpServers = (.mcpServers // {}) + $new_server' \
-            "$claude_config_file" 2>&1)
+        # Read existing config and merge with new MCP server using Python
+        local updated_config=$(python3 -c "
+import json
+import sys
+
+try:
+    # Read existing config
+    with open('$claude_config_file', 'r') as f:
+        existing = json.load(f)
+
+    # Parse new server entry
+    new_server = json.loads('''$cidx_server_entry''')
+
+    # Merge mcpServers
+    if 'mcpServers' not in existing:
+        existing['mcpServers'] = {}
+    existing['mcpServers'].update(new_server)
+
+    # Output merged config
+    print(json.dumps(existing, indent=2))
+except Exception as e:
+    sys.stderr.write(f'Error: {e}\n')
+    sys.exit(1)
+" 2>&1)
 
         if [ $? -ne 0 ]; then
-            print_error "Failed to merge configuration with jq"
+            print_error "Failed to merge configuration"
             print_error "Error: $updated_config"
             print_warning "You'll need to manually add the CIDX MCP server to: $claude_config_file"
             print_info "  Binary path: $MCPB_BINARY"
@@ -547,10 +549,19 @@ configure_claude_desktop() {
     else
         print_info "Creating new Claude Desktop configuration..."
 
-        # Create new config with mcpServers section
-        local new_config=$(jq -n \
-            --argjson servers "$cidx_server_entry" \
-            '{mcpServers: $servers}')
+        # Create new config with mcpServers section using Python
+        local new_config=$(python3 -c "
+import json
+
+# Parse server entry
+servers = json.loads('''$cidx_server_entry''')
+
+# Create config
+config = {'mcpServers': servers}
+
+# Output config
+print(json.dumps(config, indent=2))
+")
 
         # Write new config
         echo "$new_config" > "$claude_config_file" || {
@@ -632,8 +643,8 @@ show_next_steps() {
         local os_type=$(uname -s)
         if [ "$os_type" = "Darwin" ]; then
             # macOS: Show CIDX_SERVER_URL and CIDX_TOKEN
-            local config_server_url=$(jq -r '.server_url // empty' "$CONFIG_FILE" 2>/dev/null)
-            local config_access_token=$(jq -r '.bearer_token // empty' "$CONFIG_FILE" 2>/dev/null)
+            local config_server_url=$(python3 -c "import json; data = json.load(open('$CONFIG_FILE')); print(data.get('server_url', ''))" 2>/dev/null)
+            local config_access_token=$(python3 -c "import json; data = json.load(open('$CONFIG_FILE')); print(data.get('bearer_token', ''))" 2>/dev/null)
             echo "        \"env\": {"
             echo "          \"CIDX_SERVER_URL\": \"${config_server_url:-https://your-server:8383}\","
             echo "          \"CIDX_TOKEN\": \"${config_access_token:-your-access-token}\""
@@ -654,7 +665,7 @@ show_next_steps() {
     fi
 
     echo "Manual API Usage:"
-    echo "  curl -H \"Authorization: Bearer \$(jq -r .bearer_token ~/.mcpb/config.json)\" \\"
+    echo "  curl -H \"Authorization: Bearer \$(python3 -c 'import json; print(json.load(open(\"$HOME/.mcpb/config.json\"))[\"bearer_token\"])')\" \\"
     echo "       https://your-server/api/endpoint"
     echo ""
 }
