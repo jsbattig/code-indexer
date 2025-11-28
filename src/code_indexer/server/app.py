@@ -4,6 +4,7 @@ FastAPI application for CIDX Server.
 Multi-user semantic code search server with JWT authentication and role-based access control.
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -1459,7 +1460,65 @@ def create_app() -> FastAPI:
     # Set server start time for health monitoring
     _server_start_time = datetime.now(timezone.utc).isoformat()
 
-    # Create FastAPI app with metadata
+    # Define lifespan context manager for startup/shutdown events
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """
+        Lifespan context manager for server startup and shutdown.
+
+        Handles:
+        - Startup: Auto-populate meta-directory with repository descriptions
+        - Shutdown: Clean up resources (future use)
+        """
+        # Startup: Auto-populate meta-directory
+        logger.info("Server startup: Initializing meta-directory population")
+        try:
+            from code_indexer.server.lifecycle.startup_meta_populator import (
+                StartupMetaPopulator,
+            )
+            from code_indexer.global_repos.global_registry import GlobalRegistry
+
+            # Get server data directory
+            server_data_dir = os.environ.get(
+                "CIDX_SERVER_DATA_DIR", str(Path.home() / ".cidx-server")
+            )
+            golden_repos_dir = Path(server_data_dir) / "golden-repos"
+            meta_dir = golden_repos_dir / "cidx-meta"
+
+            # Create registry instance
+            registry = GlobalRegistry(str(golden_repos_dir))
+
+            # Create populator and run startup population
+            populator = StartupMetaPopulator(
+                meta_dir=str(meta_dir),
+                golden_repos_dir=str(golden_repos_dir),
+                registry=registry,
+            )
+
+            result = populator.populate_on_startup()
+
+            if result["populated"]:
+                logger.info(
+                    f"Meta-directory populated: {result['repos_processed']} repositories processed"
+                )
+            else:
+                logger.info(f"Meta-directory population: {result['message']}")
+
+            if "error" in result:
+                logger.warning(
+                    f"Meta-directory population encountered error: {result['error']}"
+                )
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(f"Failed to populate meta-directory on startup: {e}", exc_info=True)
+
+        yield  # Server is now running
+
+        # Shutdown: Clean up resources (future use)
+        logger.info("Server shutdown: Cleaning up resources")
+
+    # Create FastAPI app with metadata and lifespan
     app = FastAPI(
         title="CIDX Multi-User Server",
         description="Multi-user semantic code search server with JWT authentication",
@@ -1467,6 +1526,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=lifespan,
     )
 
     # Add CORS middleware for Claude.ai OAuth compatibility
