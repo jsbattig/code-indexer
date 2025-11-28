@@ -6,6 +6,7 @@ on server startup, ensuring users can immediately query for repositories.
 """
 
 import logging
+import subprocess
 from pathlib import Path
 from typing import Dict, Any
 
@@ -14,6 +15,45 @@ from code_indexer.global_repos.meta_directory_updater import MetaDirectoryUpdate
 
 
 logger = logging.getLogger(__name__)
+
+
+def index_meta_directory(meta_dir: Path) -> None:
+    """
+    Index the meta-directory so users can query for repositories.
+
+    Uses cidx CLI to perform indexing via subprocess.
+
+    Args:
+        meta_dir: Path to meta-directory to index
+
+    Raises:
+        RuntimeError: If indexing fails
+    """
+    try:
+        logger.info(f"Indexing meta-directory: {meta_dir}")
+
+        # Use cidx index command to index the meta-directory
+        # This creates the .code-indexer/index/ structure in meta_dir
+        result = subprocess.run(
+            ["cidx", "index"],
+            cwd=str(meta_dir),
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout
+        )
+
+        if result.returncode != 0:
+            logger.error(f"Meta-directory indexing failed: {result.stderr}")
+            raise RuntimeError(f"Indexing failed with exit code {result.returncode}: {result.stderr}")
+
+        logger.info("Meta-directory indexing completed successfully")
+
+    except subprocess.TimeoutExpired:
+        logger.error("Meta-directory indexing timed out after 300 seconds")
+        raise RuntimeError("Indexing timed out")
+    except Exception as e:
+        logger.error(f"Unexpected error during meta-directory indexing: {e}")
+        raise RuntimeError(f"Indexing error: {e}")
 
 
 class StartupMetaPopulationError(Exception):
@@ -100,10 +140,26 @@ class StartupMetaPopulator:
                 f"Meta-directory population complete: {len(non_meta_repos)} repos processed"
             )
 
+            # BUG FIX #1: Index meta-directory after population
+            # This ensures users can immediately query for repositories
+            try:
+                logger.info("Indexing meta-directory for queryability")
+                index_meta_directory(self.meta_dir)
+                logger.info("Meta-directory indexed successfully")
+            except Exception as e:
+                # Log error but don't fail startup - descriptions exist even if indexing fails
+                logger.error(f"Failed to index meta-directory: {e}", exc_info=True)
+                return {
+                    "populated": True,
+                    "repos_processed": len(non_meta_repos),
+                    "message": f"Meta-directory populated with {len(non_meta_repos)} repositories (indexing failed)",
+                    "error": f"Indexing error: {str(e)}",
+                }
+
             return {
                 "populated": True,
                 "repos_processed": len(non_meta_repos),
-                "message": f"Meta-directory populated with {len(non_meta_repos)} repositories",
+                "message": f"Meta-directory populated and indexed with {len(non_meta_repos)} repositories",
             }
 
         except Exception as e:

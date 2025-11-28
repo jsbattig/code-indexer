@@ -38,13 +38,17 @@ class TestRAGWorkflow:
             "# Auth Service\n\nJWT authentication with OAuth2 support."
         )
 
+        # Create .code-indexer/index/ directory (as it would exist in real repo)
+        repo_index = test_repo / ".code-indexer" / "index"
+        repo_index.mkdir(parents=True)
+
         # Register the test repo
         registry = GlobalRegistry(str(golden_repos_dir))
         registry.register_global_repo(
             repo_name="auth-service",
             alias_name="auth-service-global",
             repo_url="https://github.com/org/auth-service",
-            index_path=str(test_repo),
+            index_path=str(repo_index),
         )
 
         # Initialize meta-directory
@@ -140,19 +144,25 @@ def validate_jwt_token(token):
             "# User Management\n\nUser registration and profile management."
         )
 
+        # Create .code-indexer/index/ directories for both repos
+        auth_repo_index = auth_repo / ".code-indexer" / "index"
+        auth_repo_index.mkdir(parents=True)
+        user_repo_index = user_repo / ".code-indexer" / "index"
+        user_repo_index.mkdir(parents=True)
+
         # Register both repos
         registry = GlobalRegistry(str(golden_repos_dir))
         registry.register_global_repo(
             repo_name="auth-service",
             alias_name="auth-service-global",
             repo_url="https://github.com/org/auth",
-            index_path=str(auth_repo),
+            index_path=str(auth_repo_index),
         )
         registry.register_global_repo(
             repo_name="user-management",
             alias_name="user-management-global",
             repo_url="https://github.com/org/users",
-            index_path=str(user_repo),
+            index_path=str(user_repo_index),
         )
 
         # Create aliases for both repos (needed for --repo queries)
@@ -265,19 +275,25 @@ def validate_jwt_token(token):
             "# Frontend UI\n\nReact components for user interface rendering."
         )
 
+        # Create .code-indexer/index/ directories for both repos
+        auth_repo_index = auth_repo / ".code-indexer" / "index"
+        auth_repo_index.mkdir(parents=True)
+        frontend_repo_index = frontend_repo / ".code-indexer" / "index"
+        frontend_repo_index.mkdir(parents=True)
+
         # Register both repos
         registry = GlobalRegistry(str(golden_repos_dir))
         registry.register_global_repo(
             repo_name="auth-service",
             alias_name="auth-service-global",
             repo_url="https://github.com/org/auth",
-            index_path=str(auth_repo),
+            index_path=str(auth_repo_index),
         )
         registry.register_global_repo(
             repo_name="frontend-ui",
             alias_name="frontend-ui-global",
             repo_url="https://github.com/org/frontend",
-            index_path=str(frontend_repo),
+            index_path=str(frontend_repo_index),
         )
 
         # Initialize and index meta-directory

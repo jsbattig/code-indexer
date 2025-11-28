@@ -66,18 +66,25 @@ Payment processing service for e-commerce.
 """
         )
 
-        # Register repos
+        # Create .code-indexer/index/ directories (as they would exist in real repos)
+        auth_index = auth_repo / ".code-indexer" / "index"
+        auth_index.mkdir(parents=True)
+        payment_index = payment_repo / ".code-indexer" / "index"
+        payment_index.mkdir(parents=True)
+
+        # Register repos with CORRECT index_path format
+        # index_path should point to .code-indexer/index/, not repo root
         registry.register_global_repo(
             repo_name="auth-service",
             alias_name="auth-service-global",
             repo_url="https://github.com/org/auth-service",
-            index_path=str(auth_repo),
+            index_path=str(auth_index),
         )
         registry.register_global_repo(
             repo_name="payment-api",
             alias_name="payment-api-global",
             repo_url="https://github.com/org/payment-api",
-            index_path=str(payment_repo),
+            index_path=str(payment_index),
         )
 
         # Initialize meta-directory
@@ -112,11 +119,15 @@ Payment processing service for e-commerce.
         repo.mkdir()
         (repo / "README.md").write_text("# Test Repo\n\nA test repository.")
 
+        # Create .code-indexer/index/ directory (as it would exist in real repo)
+        repo_index = repo / ".code-indexer" / "index"
+        repo_index.mkdir(parents=True)
+
         registry.register_global_repo(
             repo_name="test-repo",
             alias_name="test-repo-global",
             repo_url="https://github.com/org/test-repo",
-            index_path=str(repo),
+            index_path=str(repo_index),
         )
 
         initializer = MetaDirectoryInitializer(
@@ -181,11 +192,15 @@ ETL pipeline for processing customer data.
 """
         )
 
+        # Create .code-indexer/index/ directory (as it would exist in real repo)
+        repo_index = repo / ".code-indexer" / "index"
+        repo_index.mkdir(parents=True)
+
         registry.register_global_repo(
             repo_name="data-pipeline",
             alias_name="data-pipeline-global",
             repo_url="https://github.com/org/data-pipeline",
-            index_path=str(repo),
+            index_path=str(repo_index),
         )
 
         initializer = MetaDirectoryInitializer(
@@ -230,16 +245,20 @@ ETL pipeline for processing customer data.
         (js_repo / "package.json").write_text('{"name": "js-lib"}')
         (js_repo / "README.md").write_text("# JavaScript Library")
 
+        # Create .code-indexer/index/ directories for all repos
         for repo, name in [
             (python_repo1, "python-lib1"),
             (python_repo2, "python-lib2"),
             (js_repo, "js-lib"),
         ]:
+            repo_index = repo / ".code-indexer" / "index"
+            repo_index.mkdir(parents=True)
+
             registry.register_global_repo(
                 repo_name=name,
                 alias_name=f"{name}-global",
                 repo_url=f"https://github.com/org/{name}",
-                index_path=str(repo),
+                index_path=str(repo_index),
             )
 
         initializer = MetaDirectoryInitializer(
