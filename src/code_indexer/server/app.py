@@ -59,6 +59,7 @@ from .query.semantic_query_manager import (
 from .auth.refresh_token_manager import RefreshTokenManager
 from .auth.oauth.routes import router as oauth_router
 from .mcp.protocol import mcp_router
+from .global_routes.routes import router as global_routes_router
 from .models.branch_models import BranchListResponse
 from .models.activated_repository import ActivatedRepository
 from .services.branch_service import BranchService
@@ -5557,6 +5558,7 @@ def create_app() -> FastAPI:
     # Mount OAuth 2.1 routes
     app.include_router(oauth_router)
     app.include_router(mcp_router)
+    app.include_router(global_routes_router)
 
     # RFC 8414 compliance: OAuth discovery at root level for Claude.ai compatibility
     @app.get("/.well-known/oauth-authorization-server")

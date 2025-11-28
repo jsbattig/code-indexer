@@ -2466,6 +2466,56 @@ def validate_index_flags(ctx, param, value):
     return value
 
 
+@cli.command("set-global-refresh")
+@click.argument("interval", type=int)
+def set_global_refresh_interval(interval: int):
+    """Set global repository refresh interval (minimum 60 seconds).
+
+    \b
+    EXAMPLE:
+        cidx set-global-refresh 300
+    """
+    from code_indexer.global_repos.shared_operations import GlobalRepoOperations
+    import os
+
+    golden_repos_dir = os.environ.get(
+        "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
+    )
+
+    ops = GlobalRepoOperations(golden_repos_dir)
+    try:
+        ops.set_config(interval)
+        console.print(
+            f"[green]Updated global refresh interval to {interval} seconds[/green]"
+        )
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(4)
+
+
+@cli.command("show-global")
+def show_global_config():
+    """Show current global repository configuration.
+
+    \b
+    EXAMPLE:
+        cidx show-global
+    """
+    from code_indexer.global_repos.shared_operations import GlobalRepoOperations
+    import os
+
+    golden_repos_dir = os.environ.get(
+        "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
+    )
+
+    ops = GlobalRepoOperations(golden_repos_dir)
+    config = ops.get_config()
+
+    console.print("\n[bold]Global Repository Configuration[/bold]")
+    console.print(f"Refresh Interval: {config['refresh_interval']} seconds")
+    console.print()
+
+
 @cli.command()
 @click.option(
     "--clear", "-c", is_flag=True, help="Clear existing index and perform full reindex"
@@ -4225,6 +4275,11 @@ def display_temporal_results(results, temporal_service):
     type=click.Choice(["commit_message", "commit_diff"], case_sensitive=False),
     help="Filter by chunk type: commit_message (commit descriptions) or commit_diff (code changes). Requires --time-range or --time-range-all.",
 )
+@click.option(
+    "--repo",
+    type=str,
+    help="Query a global repository by alias (e.g., 'my-repo-global'). Allows querying registered global repos from any directory.",
+)
 # --show-unchanged removed: Story 2 - all temporal results are changes now
 @click.pass_context
 @require_mode("local", "remote", "proxy")
@@ -4252,6 +4307,7 @@ def query(
     diff_types: tuple,
     author: Optional[str],
     chunk_type: Optional[str],
+    repo: Optional[str],
 ):
     """Search the indexed codebase using semantic similarity.
 
@@ -4347,6 +4403,85 @@ def query(
 
     # Initialize console for output (needed by multiple code paths)
     console = Console()
+
+    # AC2: Handle --repo flag for global alias resolution (Story #521)
+    if repo:
+        # Resolve global alias to actual index path
+        import os
+        from .global_repos.alias_manager import AliasManager
+
+        # Get golden repos directory from environment or use default
+        golden_repos_dir = os.environ.get("CIDX_GOLDEN_REPOS_DIR")
+        if not golden_repos_dir:
+            # Use default location in user home
+            golden_repos_dir = str(Path.home() / ".code-indexer" / "golden-repos")
+
+        aliases_dir = Path(golden_repos_dir) / "aliases"
+        alias_manager = AliasManager(str(aliases_dir))
+
+        # Resolve the alias to get the index path
+        resolved_path = alias_manager.read_alias(repo)
+
+        if not resolved_path:
+            console.print(f"[red]Error: Global repo alias '{repo}' not found[/red]")
+            console.print(
+                "[yellow]Available global repos can be listed with: cidx global list[/yellow]"
+            )
+            console.print(
+                "[yellow]To activate a golden repo globally: cidx global activate <repo-name>[/yellow]"
+            )
+            sys.exit(1)
+
+        # The resolved_path might be repo_root OR the full index path
+        # Normalize to repo_root by stripping .code-indexer/index if present
+        resolved = Path(resolved_path)
+        if resolved.name == "index" and resolved.parent.name == ".code-indexer":
+            # Resolved path is full index path, strip to get repo root
+            repo_root = resolved.parent.parent
+        else:
+            # Resolved path is already repo root
+            repo_root = resolved
+
+        # Override project_root and mode
+        project_root = repo_root
+        mode = "local"  # Force local mode when querying global repos
+
+        # For global repos, we don't load config from file
+        # Instead, we create a minimal in-memory config
+        from .config import Config, VectorStoreConfig
+
+        # Create minimal config for querying global repo
+        global_repo_config = Config(
+            codebase_dir=repo_root,
+            vector_store=VectorStoreConfig(provider="filesystem"),
+        )
+
+        # Create a minimal config manager with the in-memory config
+        class MinimalConfigManager:
+            def __init__(self, config):
+                self._config = config
+
+            def load(self):
+                """Load and return the config (already in memory for global repos)."""
+                return self._config
+
+            def get_config(self):
+                """Get the config (already in memory for global repos)."""
+                return self._config
+
+            def get_daemon_config(self):
+                """No daemon support for global repos."""
+                return None  # No daemon for global repos
+
+        config_manager = MinimalConfigManager(global_repo_config)
+
+        # Store in context for downstream code
+        ctx.obj["config_manager"] = config_manager
+        ctx.obj["project_root"] = project_root
+        ctx.obj["mode"] = mode
+
+        if not quiet:
+            console.print(f"[blue]Querying global repo: {repo}[/blue]")
 
     # Check daemon delegation for local mode (Story 2.3 + Story 1: Temporal Support)
     # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
@@ -14408,6 +14543,359 @@ def admin_repos_delete(ctx, alias: str, force: bool):
             import traceback
 
             console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@cli.group("global")
+@click.pass_context
+def global_group(ctx):
+    """Manage global repository activations.
+
+    Commands for activating golden repos globally and managing global aliases.
+    """
+    pass
+
+
+@global_group.command("activate")
+@click.argument("repo_name")
+@click.pass_context
+def global_activate(ctx, repo_name: str):
+    """Activate a golden repository globally for querying.
+
+    Creates a global alias ({repo-name}-global) that allows querying
+    the repository from any directory using the --repo flag.
+
+    \b
+    USAGE:
+      cidx global activate my-repo
+
+    This creates an alias 'my-repo-global' that can be used with:
+      cidx query "search term" --repo my-repo-global
+
+    \b
+    WHEN TO USE:
+      - After a golden repo registration fails to activate automatically
+      - To retry global activation for an existing golden repo
+      - To manually activate a golden repo that was registered without activation
+    """
+    import os
+    from pathlib import Path
+    from .global_repos.global_activation import GlobalActivator, GlobalActivationError
+
+    console = Console()
+
+    # Get golden repos directory
+    golden_repos_dir = os.environ.get("CIDX_GOLDEN_REPOS_DIR")
+    if not golden_repos_dir:
+        golden_repos_dir = str(Path.home() / ".code-indexer" / "golden-repos")
+
+    # Find the golden repo
+    repos_dir = Path(golden_repos_dir) / "repos"
+    repo_path = repos_dir / repo_name
+
+    if not repo_path.exists():
+        console.print(f"[red]Error: Golden repo '{repo_name}' not found[/red]")
+        console.print(f"[yellow]Expected location: {repo_path}[/yellow]")
+        console.print(
+            "[yellow]Available repos: Use 'cidx golden list' to see registered golden repos[/yellow]"
+        )
+        sys.exit(1)
+
+    # Get the index path
+    index_path = repo_path / ".code-indexer" / "index"
+    if not index_path.exists():
+        console.print(
+            f"[red]Error: Index not found for golden repo '{repo_name}'[/red]"
+        )
+        console.print(f"[yellow]Expected index location: {index_path}[/yellow]")
+        console.print("[yellow]Try re-indexing the repository first[/yellow]")
+        sys.exit(1)
+
+    # Activate globally
+    try:
+        activator = GlobalActivator(golden_repos_dir)
+
+        # For retry, we need a repo URL - we can use a placeholder or read from registry
+        # For now, use a placeholder since this is a retry operation
+        repo_url = f"local://{repo_path}"
+
+        activator.activate_golden_repo(
+            repo_name=repo_name, repo_url=repo_url, clone_path=str(index_path)
+        )
+
+        alias_name = f"{repo_name}-global"
+        console.print(f"[green]✓ Successfully activated '{repo_name}' globally[/green]")
+        console.print(f"[blue]Global alias: {alias_name}[/blue]")
+        console.print()
+        console.print("You can now query this repo from anywhere:")
+        console.print(f'  [cyan]cidx query "search term" --repo {alias_name}[/cyan]')
+
+    except GlobalActivationError as e:
+        console.print(f"[red]Error: Failed to activate '{repo_name}' globally[/red]")
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@global_group.command("init-meta")
+@click.pass_context
+def global_init_meta(ctx):
+    """Initialize meta-directory for repository discovery.
+
+    Creates a special meta-directory that contains AI-generated descriptions
+    of all registered global repositories, enabling semantic search for
+    repository discovery.
+
+    \b
+    USAGE:
+      cidx global init-meta
+
+    This creates:
+      - A meta-directory at ~/.code-indexer/golden-repos/cidx-meta
+      - Description files for all existing global repositories
+      - Registers the meta-directory as a queryable global repo
+
+    \b
+    WHEN TO USE:
+      - First time setup for repository discovery
+      - After registering multiple repositories to enable discovery
+      - To regenerate descriptions for all repositories
+    """
+    import os
+    from pathlib import Path
+    from .global_repos.meta_directory_initializer import MetaDirectoryInitializer
+    from .global_repos.global_registry import GlobalRegistry
+
+    console = Console()
+
+    # Get golden repos directory
+    golden_repos_dir = os.environ.get("CIDX_GOLDEN_REPOS_DIR")
+    if not golden_repos_dir:
+        golden_repos_dir = str(Path.home() / ".code-indexer" / "golden-repos")
+
+    try:
+        # Initialize registry
+        registry = GlobalRegistry(golden_repos_dir)
+
+        # Initialize meta-directory
+        initializer = MetaDirectoryInitializer(
+            golden_repos_dir=golden_repos_dir, registry=registry
+        )
+
+        console.print("[cyan]Initializing meta-directory...[/cyan]")
+        meta_dir = initializer.initialize()
+
+        console.print(f"[green]Meta-directory initialized: {meta_dir}[/green]")
+        console.print()
+        console.print("[blue]You can now discover repositories using:[/blue]")
+        console.print(
+            '  [cyan]cidx query "search for repos" --repo cidx-meta-global[/cyan]'
+        )
+
+    except Exception as e:
+        console.print("[red]Error: Failed to initialize meta-directory[/red]")
+        console.print(f"[red]{e}[/red]")
+        import traceback
+
+        console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@global_group.command("list")
+@click.pass_context
+def global_list(ctx):
+    """List all globally activated repositories.
+
+    Shows all repositories that have been activated globally and can be
+    queried from any directory using the --repo flag.
+
+    \b
+    USAGE:
+      cidx global list
+
+    \b
+    OUTPUT:
+      Displays a table with:
+      - Global alias name (for use with --repo)
+      - Repository name
+      - Repository URL (or 'N/A' for local repos)
+      - Last refresh timestamp
+
+    \b
+    WHEN TO USE:
+      - To verify which repos are globally activated
+      - To check catalog completeness (AC4)
+      - To find the global alias name for a repository
+    """
+    import os
+    from pathlib import Path
+    from .global_repos.global_registry import GlobalRegistry
+    from rich.table import Table
+
+    console = Console()
+
+    # Get golden repos directory
+    golden_repos_dir = os.environ.get("CIDX_GOLDEN_REPOS_DIR")
+    if not golden_repos_dir:
+        golden_repos_dir = str(Path.home() / ".code-indexer" / "golden-repos")
+
+    try:
+        # Load registry
+        registry = GlobalRegistry(golden_repos_dir)
+        repos = registry.list_global_repos()
+
+        if not repos:
+            console.print("[yellow]No global repositories registered[/yellow]")
+            console.print()
+            console.print("To activate a golden repo globally, use:")
+            console.print("  [cyan]cidx global activate <repo-name>[/cyan]")
+            return
+
+        # Create table
+        table = Table(title=f"Global Repositories ({len(repos)} total)")
+        table.add_column("Alias", style="cyan", no_wrap=True)
+        table.add_column("Repo Name", style="blue")
+        table.add_column("URL", style="green")
+        table.add_column("Last Refresh", style="yellow")
+
+        # Add rows
+        for repo in repos:
+            alias = repo["alias_name"]
+            name = repo["repo_name"]
+            url = repo["repo_url"] if repo["repo_url"] else "[dim](local)[/dim]"
+            last_refresh = repo.get("last_refresh", "N/A")
+
+            # Format timestamp if it's ISO format
+            if last_refresh != "N/A" and "T" in last_refresh:
+                from datetime import datetime
+
+                try:
+                    dt = datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
+                    last_refresh = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass
+
+            table.add_row(alias, name, url, last_refresh)
+
+        console.print(table)
+
+    except Exception as e:
+        console.print("[red]Error: Failed to list global repositories[/red]")
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@global_group.command("status")
+@click.argument("alias_name")
+@click.pass_context
+def global_status(ctx, alias_name: str):
+    """Show status and metadata for a global repository.
+
+    Displays detailed information about a globally activated repository,
+    including catalog freshness indicators.
+
+    \b
+    USAGE:
+      cidx global status <alias-name>
+
+    \b
+    EXAMPLE:
+      cidx global status cidx-meta-global
+      cidx global status my-repo-global
+
+    \b
+    OUTPUT:
+      Shows:
+      - Repository name and alias
+      - Repository URL
+      - Index storage location
+      - Creation timestamp
+      - Last refresh timestamp (catalog freshness - AC5)
+
+    \b
+    WHEN TO USE:
+      - To check catalog freshness (AC5)
+      - To verify repository metadata
+      - To find the index storage location
+    """
+    import os
+    from pathlib import Path
+    from .global_repos.global_registry import GlobalRegistry
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+
+    # Get golden repos directory
+    golden_repos_dir = os.environ.get("CIDX_GOLDEN_REPOS_DIR")
+    if not golden_repos_dir:
+        golden_repos_dir = str(Path.home() / ".code-indexer" / "golden-repos")
+
+    try:
+        # Load registry
+        registry = GlobalRegistry(golden_repos_dir)
+        repo = registry.get_global_repo(alias_name)
+
+        if not repo:
+            console.print(
+                f"[red]Error: Repository '{alias_name}' not found in global registry[/red]"
+            )
+            console.print()
+            console.print(
+                "Use [cyan]cidx global list[/cyan] to see all registered repos"
+            )
+            sys.exit(1)
+
+        # Format timestamps
+        created_at = repo.get("created_at", "N/A")
+        last_refresh = repo.get("last_refresh", "N/A")
+
+        if created_at != "N/A" and "T" in created_at:
+            from datetime import datetime
+
+            try:
+                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                created_at = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+            except Exception:
+                pass
+
+        if last_refresh != "N/A" and "T" in last_refresh:
+            from datetime import datetime
+
+            try:
+                dt = datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
+                last_refresh = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+            except Exception:
+                pass
+
+        # Create status table
+        table = Table(show_header=False, box=None)
+        table.add_column("Field", style="cyan", width=20)
+        table.add_column("Value", style="white")
+
+        table.add_row("Alias", f"[bold]{repo['alias_name']}[/bold]")
+        table.add_row("Repo Name", repo["repo_name"])
+        table.add_row(
+            "URL",
+            repo["repo_url"] if repo["repo_url"] else "[dim](local repository)[/dim]",
+        )
+        table.add_row("Index Path", repo["index_path"])
+        table.add_row("Created", created_at)
+        table.add_row("Last Refresh", f"[yellow]{last_refresh}[/yellow]")
+
+        # Display in panel
+        panel = Panel(
+            table,
+            title=f"[bold]Repository Status: {alias_name}[/bold]",
+            border_style="blue",
+        )
+        console.print(panel)
+
+    except Exception as e:
+        console.print("[red]Error: Failed to get repository status[/red]")
+        console.print(f"[red]{e}[/red]")
+        import traceback
+
+        console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
 

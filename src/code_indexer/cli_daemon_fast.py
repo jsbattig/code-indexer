@@ -64,6 +64,7 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
         "--exclude-language",
         "--exclude-path",
         "--snippet-lines",
+        "--repo",
     }
 
     result: Dict[str, Any] = {
@@ -192,6 +193,10 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
 
     command = argv[1] if len(argv) > 1 else ""
     args = argv[2:] if len(argv) > 2 else []
+
+    # Skip daemon for --repo flag (global repos require full CLI for alias resolution)
+    if command == "query" and "--repo" in args:
+        raise ConnectionRefusedError("--repo requires full CLI (not daemon)")
 
     # CRITICAL: Validate arguments BEFORE attempting daemon connection
     # This ensures typos and invalid flags are caught immediately

@@ -48,9 +48,7 @@ class TestAutomaticTokenRefresh:
 
     async def test_client_initialization_with_config_path(self):
         """Test HTTP client initialization with config_path for token persistence."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             config_data = {
                 "server_url": "https://cidx.example.com",
                 "bearer_token": "test-token",
@@ -220,9 +218,7 @@ class TestAutomaticTokenRefresh:
     async def test_refresh_updates_config_file_atomically(self, httpx_mock):
         """Test that token refresh updates config file atomically with secure permissions."""
         # Create config file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             config_data = {
                 "server_url": "https://cidx.example.com",
                 "bearer_token": "old-token",
@@ -376,9 +372,7 @@ class TestAutomaticTokenRefresh:
         # Verify only first 20 chars of token are logged
         assert "new-access-token-123" in captured.err
         # Verify full token is NOT logged
-        assert (
-            "new-access-token-123456789012345678901234567890" not in captured.err
-        )
+        assert "new-access-token-123456789012345678901234567890" not in captured.err
 
     async def test_refresh_endpoint_non_401_error_propagates(self, httpx_mock):
         """Test that non-401 errors from refresh endpoint propagate correctly."""
@@ -522,9 +516,7 @@ class TestAutomaticTokenRefresh:
     async def test_config_file_preserves_other_fields(self, httpx_mock):
         """Test that config file update preserves other fields (timeout, log_level)."""
         # Create config file with all fields
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             config_data = {
                 "server_url": "https://cidx.example.com",
                 "bearer_token": "old-token",

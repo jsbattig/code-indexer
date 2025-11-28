@@ -143,8 +143,12 @@ def main() -> int:
             from .cli_daemon_fast import execute_via_daemon
 
             return execute_via_daemon(sys.argv, config_path)
+        except ConnectionRefusedError:
+            # Expected exception for --repo queries (need full CLI)
+            # Fall through to slow path silently (no warning messages)
+            pass
         except Exception as e:
-            # Fallback to full CLI if daemon delegation fails
+            # Unexpected error - show warning and fall through
             from rich.console import Console
 
             console = Console()

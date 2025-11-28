@@ -220,6 +220,29 @@ class GoldenRepoManager:
                 self.golden_repos[alias] = golden_repo
                 self._save_metadata()
 
+                # Automatic global activation (AC1 from Story #521)
+                # This is a non-blocking post-registration step (AC4)
+                try:
+                    from code_indexer.global_repos.global_activation import (
+                        GlobalActivator,
+                    )
+
+                    global_activator = GlobalActivator(self.golden_repos_dir)
+                    global_activator.activate_golden_repo(
+                        repo_name=alias, repo_url=repo_url, clone_path=clone_path
+                    )
+                    logging.info(
+                        f"Golden repository '{alias}' automatically activated globally as '{alias}-global'"
+                    )
+                except Exception as activation_error:
+                    # Log error but don't fail the golden repo registration (AC4)
+                    logging.error(
+                        f"Global activation failed for '{alias}': {activation_error}. "
+                        f"Golden repository is registered but not globally accessible. "
+                        f"Manual global activation can be retried later."
+                    )
+                    # Continue with successful registration response
+
                 return {
                     "success": True,
                     "message": f"Golden repository '{alias}' added successfully",

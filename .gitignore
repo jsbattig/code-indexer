@@ -178,3 +178,4 @@ voyage-code-3/
 code-indexer-temporal/
 .test-telemetry/
 coverage.json
+.local-testing

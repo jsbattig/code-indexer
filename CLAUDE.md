@@ -395,6 +395,17 @@ cidx stop                 # Stop daemon
 
 ## 10. Miscellaneous
 
+### Local Testing and Deployment
+
+**Configuration File**: `.local-testing` (gitignored)
+
+Contains sensitive deployment information for test environments:
+- CIDX server credentials and deployment process
+- Mac laptop credentials and MCPB installation process
+- One-liner deployment commands
+
+Consult this file when deploying to test environments.
+
 ### Claude CLI Integration
 
 **NO FALLBACKS** - Research and propose solutions, no cheating

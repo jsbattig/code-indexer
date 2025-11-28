@@ -293,6 +293,16 @@ class TemporalConfig(BaseModel):
     )
 
 
+class GlobalRefreshConfig(BaseModel):
+    """Configuration for global repository refresh intervals."""
+
+    refresh_interval_seconds: int = Field(
+        default=600,
+        ge=60,
+        description="Interval in seconds between automatic refreshes (minimum 60, default 600)",
+    )
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -437,6 +447,12 @@ class Config(BaseModel):
     temporal: TemporalConfig = Field(
         default_factory=TemporalConfig,
         description="Temporal (git history) indexing configuration",
+    )
+
+    # Global refresh configuration
+    global_refresh: GlobalRefreshConfig = Field(
+        default_factory=GlobalRefreshConfig,
+        description="Global repository refresh configuration",
     )
 
     @field_validator("codebase_dir", mode="before")
@@ -908,6 +924,36 @@ code-indexer index --clear
             daemon_dict = config.daemon.model_dump()
             daemon_dict["ttl_minutes"] = ttl_minutes
             config.daemon = DaemonConfig(**daemon_dict)
+
+        self.save()
+
+    def get_global_refresh_interval(self) -> int:
+        """Get global refresh interval in seconds.
+
+        Returns:
+            Refresh interval in seconds (default: 600)
+        """
+        config = self.get_config()
+        return config.global_refresh.refresh_interval_seconds
+
+    def set_global_refresh_interval(self, seconds: int) -> None:
+        """Set global refresh interval in seconds.
+
+        Args:
+            seconds: Refresh interval in seconds (minimum 60)
+
+        Raises:
+            ValueError: If seconds is less than 60 or not positive
+        """
+        if seconds <= 0:
+            raise ValueError("Refresh interval must be positive")
+        if seconds < 60:
+            raise ValueError("Refresh interval must be at least 60 seconds (minimum)")
+
+        config = self.get_config()
+
+        # Update global refresh config
+        config.global_refresh.refresh_interval_seconds = seconds
 
         self.save()
 

@@ -728,6 +728,78 @@ async def manage_composite_repository(
         return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
 
+async def handle_list_global_repos(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for list_global_repos tool."""
+    import os
+    from code_indexer.global_repos.shared_operations import GlobalRepoOperations
+
+    golden_repos_dir = os.environ.get(
+        "GOLDEN_REPOS_DIR",
+        os.path.expanduser("~/.code-indexer/golden-repos")
+    )
+    ops = GlobalRepoOperations(golden_repos_dir)
+    repos = ops.list_repos()
+    return _mcp_response({"success": True, "repos": repos})
+
+
+async def handle_global_repo_status(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for global_repo_status tool."""
+    import os
+    from code_indexer.global_repos.shared_operations import GlobalRepoOperations
+
+    golden_repos_dir = os.environ.get(
+        "GOLDEN_REPOS_DIR",
+        os.path.expanduser("~/.code-indexer/golden-repos")
+    )
+    ops = GlobalRepoOperations(golden_repos_dir)
+    alias = args.get("alias")
+
+    if not alias:
+        return _mcp_response({"success": False, "error": "Missing required parameter: alias"})
+
+    try:
+        status = ops.get_status(alias)
+        return _mcp_response({"success": True, **status})
+    except ValueError:
+        return _mcp_response({"success": False, "error": f"Global repo '{alias}' not found"})
+
+
+async def handle_get_global_config(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for get_global_config tool."""
+    import os
+    from code_indexer.global_repos.shared_operations import GlobalRepoOperations
+
+    golden_repos_dir = os.environ.get(
+        "GOLDEN_REPOS_DIR",
+        os.path.expanduser("~/.code-indexer/golden-repos")
+    )
+    ops = GlobalRepoOperations(golden_repos_dir)
+    config = ops.get_config()
+    return _mcp_response({"success": True, **config})
+
+
+async def handle_set_global_config(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for set_global_config tool."""
+    import os
+    from code_indexer.global_repos.shared_operations import GlobalRepoOperations
+
+    golden_repos_dir = os.environ.get(
+        "GOLDEN_REPOS_DIR",
+        os.path.expanduser("~/.code-indexer/golden-repos")
+    )
+    ops = GlobalRepoOperations(golden_repos_dir)
+    refresh_interval = args.get("refresh_interval")
+
+    if not refresh_interval:
+        return _mcp_response({"success": False, "error": "Missing required parameter: refresh_interval"})
+
+    try:
+        ops.set_config(refresh_interval)
+        return _mcp_response({"success": True, "status": "updated", "refresh_interval": refresh_interval})
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+
+
 # Handler registry mapping tool names to handler functions
 HANDLER_REGISTRY = {
     "search_code": search_code,
@@ -752,4 +824,8 @@ HANDLER_REGISTRY = {
     "get_job_statistics": get_job_statistics,
     "get_all_repositories_status": get_all_repositories_status,
     "manage_composite_repository": manage_composite_repository,
+    "list_global_repos": handle_list_global_repos,
+    "global_repo_status": handle_global_repo_status,
+    "get_global_config": handle_get_global_config,
+    "set_global_config": handle_set_global_config,
 }

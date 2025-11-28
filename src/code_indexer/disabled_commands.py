@@ -272,6 +272,13 @@ def require_mode(*allowed_modes: str):
     def decorator(command_func):
         @functools.wraps(command_func)
         def wrapper(*args, **kwargs):
+            # Story #521: Allow --repo flag to bypass mode check for global repo queries
+            # When querying a global repo, mode detection is not needed because
+            # the repo path is resolved from the global alias
+            if kwargs.get("repo"):
+                # Global repo query - bypass mode check
+                return command_func(*args, **kwargs)
+
             current_mode = detect_current_mode()
 
             if current_mode not in allowed_modes:

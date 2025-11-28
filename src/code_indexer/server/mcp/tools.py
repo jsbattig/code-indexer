@@ -500,6 +500,57 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "required_permission": "activate_repos",
     },
+    "list_global_repos": {
+        "name": "list_global_repos",
+        "description": "List all globally accessible repositories for query-first experience",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        },
+        "required_permission": "query_repos"
+    },
+    "global_repo_status": {
+        "name": "global_repo_status",
+        "description": "Get detailed status of a specific global repository including refresh timestamps",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string",
+                    "description": "Global repository alias (e.g., 'repo-name-global')"
+                }
+            },
+            "required": ["alias"]
+        },
+        "required_permission": "query_repos"
+    },
+    "get_global_config": {
+        "name": "get_global_config",
+        "description": "Get global repository refresh configuration",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        },
+        "required_permission": "query_repos"
+    },
+    "set_global_config": {
+        "name": "set_global_config",
+        "description": "Update global repository refresh interval (minimum 60 seconds)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "refresh_interval": {
+                    "type": "integer",
+                    "description": "Refresh interval in seconds",
+                    "minimum": 60
+                }
+            },
+            "required": ["refresh_interval"]
+        },
+        "required_permission": "manage_golden_repos"
+    },
 }
 
 
