@@ -204,6 +204,11 @@ async def async_main():  # pragma: no cover
     """Async main entry point for bridge executable."""
     from .config import load_config, DEFAULT_CONFIG_PATH
 
+    print(f"DEBUG: HOME={os.environ.get('HOME')}", file=sys.stderr)
+    print(f"DEBUG: PYTHONPATH={os.environ.get('PYTHONPATH')}", file=sys.stderr)
+    print(f"DEBUG: PYTHONUNBUFFERED={os.environ.get('PYTHONUNBUFFERED')}", file=sys.stderr)
+    print(f"DEBUG: DEFAULT_CONFIG_PATH={DEFAULT_CONFIG_PATH}", file=sys.stderr)
+
     try:
         # Determine config path (None if using only env vars)
         config_path = None
