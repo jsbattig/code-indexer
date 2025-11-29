@@ -51,6 +51,7 @@ class Bridge:
         Returns:
             JSON-RPC response as dictionary
         """
+        print(f"DEBUG process_line: Received line: {repr(line[:200] if len(line) > 200 else line)}", file=sys.stderr)
         try:
             # Parse JSON-RPC request
             request = parse_jsonrpc_request(line)
