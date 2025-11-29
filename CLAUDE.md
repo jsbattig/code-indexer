@@ -17,6 +17,23 @@
 
 ---
 
+## CRITICAL: SSH CONNECTION POLICY
+
+**ABSOLUTE PROHIBITION**: NEVER use `ssh` command directly via Bash tool.
+
+**MANDATORY**: ALWAYS use MCP SSH server tools for ALL remote connections:
+- `mcp__ssh__ssh_connect` - Establish SSH connection
+- `mcp__ssh__ssh_exec` - Execute commands on remote server
+- `mcp__ssh__ssh_disconnect` - Close SSH connection
+- `mcp__ssh__ssh_upload_file` - Upload files via SFTP
+- `mcp__ssh__ssh_download_file` - Download files via SFTP
+
+**WHY**: Direct `ssh` command causes authentication failures. MCP SSH server provides proper connection management.
+
+**VIOLATION = FUNDAMENTAL FAILURE**: Using direct `ssh` command breaks remote operations.
+
+---
+
 ## 1. CRITICAL BUSINESS INSIGHT - Query is Everything
 
 **THE SINGLE MOST IMPORTANT FEATURE**: Query capability is the core value proposition of CIDX. All query features available in CLI MUST be available in MCP/REST APIs with full parity.

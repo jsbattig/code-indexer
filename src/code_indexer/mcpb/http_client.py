@@ -257,8 +257,44 @@ class BridgeHttpClient:
                 headers={"Content-Type": "application/json"},
             )
 
-            # Handle 401 - refresh token expired
+            # Handle 401 - refresh token expired - try auto-login
             if response.status_code == 401:
+                # Try auto-login if credentials available
+                try:
+                    from .auto_login import attempt_auto_login
+                    from .credential_storage import credentials_exist
+
+                    if credentials_exist():
+                        print(
+                            "Refresh token expired - attempting auto-login...",
+                            file=sys.stderr,
+                        )
+                        new_access_token, new_refresh_token = await attempt_auto_login(
+                            self.server_url, self.timeout
+                        )
+
+                        # Update tokens in memory
+                        self.bearer_token = new_access_token
+                        self.refresh_token = new_refresh_token
+
+                        # Persist to config file if config_path is set
+                        if self.config_path is not None:
+                            await self._update_config_file(
+                                new_access_token, new_refresh_token
+                            )
+
+                        # Log success
+                        print(
+                            f"Auto-login successful: {new_access_token[:20]}...",
+                            file=sys.stderr,
+                        )
+                        return  # Success - token refreshed via auto-login
+
+                except Exception as e:
+                    # Auto-login failed - log and continue to raise original error
+                    print(f"Auto-login failed: {str(e)}", file=sys.stderr)
+
+                # No credentials or auto-login failed
                 raise HttpError("Refresh token expired - re-authentication required")
 
             # Handle other errors

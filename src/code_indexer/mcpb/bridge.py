@@ -162,6 +162,44 @@ class Bridge:
         await self.run_stdio_loop()
 
 
+def setup_credentials_command():  # pragma: no cover
+    """CLI command to set up encrypted credentials for automatic login."""
+    import getpass
+    from .credential_storage import save_credentials
+
+    print("MCPB Credential Setup")
+    print("=" * 40)
+    print("Enter credentials for automatic login when tokens expire.")
+    print("Credentials will be stored encrypted in ~/.mcpb/\n")
+
+    username = input("Username: ").strip()
+    if not username:
+        print("Error: Username cannot be empty", file=sys.stderr)
+        return 1
+
+    password = getpass.getpass("Password: ")
+    if not password:
+        print("Error: Password cannot be empty", file=sys.stderr)
+        return 1
+
+    # Confirm password
+    password_confirm = getpass.getpass("Confirm password: ")
+    if password != password_confirm:
+        print("Error: Passwords do not match", file=sys.stderr)
+        return 1
+
+    try:
+        save_credentials(username, password)
+        print("\nCredentials saved successfully to ~/.mcpb/credentials.enc")
+        print("  Encryption key: ~/.mcpb/encryption.key")
+        print("  File permissions: 600 (owner read/write only)")
+        print("\nAuto-login will be attempted when tokens expire.")
+        return 0
+    except Exception as e:
+        print(f"Error saving credentials: {str(e)}", file=sys.stderr)
+        return 1
+
+
 async def async_main():  # pragma: no cover
     """Async main entry point for bridge executable."""
     from .config import load_config, DEFAULT_CONFIG_PATH
@@ -223,7 +261,17 @@ def main():  # pragma: no cover
         help="Path to configuration file (default: ~/.mcpb/config.json)",
     )
 
+    parser.add_argument(
+        "--setup-credentials",
+        action="store_true",
+        help="Set up encrypted credentials for automatic login",
+    )
+
     args = parser.parse_args()
+
+    # Handle --setup-credentials flag
+    if args.setup_credentials:
+        sys.exit(setup_credentials_command())
 
     # Handle --diagnose flag
     if args.diagnose:

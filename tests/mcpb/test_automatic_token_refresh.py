@@ -138,8 +138,20 @@ class TestAutomaticTokenRefresh:
         # Verify bearer token was updated
         assert client.bearer_token == "new-access-token"
 
-    async def test_refresh_endpoint_failure_raises_error(self, httpx_mock):
+    async def test_refresh_endpoint_failure_raises_error(self, httpx_mock, monkeypatch, tmp_path):
         """Test that refresh endpoint failure raises clear error."""
+        from pathlib import Path
+
+        # Patch Path.home() to use tmp_path (no credentials)
+        def mock_home():
+            return tmp_path
+
+        monkeypatch.setattr(Path, "home", mock_home)
+
+        # Create .mcpb directory but NO credentials
+        mcpb_dir = tmp_path / ".mcpb"
+        mcpb_dir.mkdir(parents=True, exist_ok=True)
+
         # First request returns 401 (expired token)
         httpx_mock.add_response(
             method="POST",
@@ -614,3 +626,346 @@ class TestRefreshTokenIntegration:
         bridge = Bridge(config)
 
         assert bridge.http_client.refresh_token is None
+
+
+@pytest.mark.asyncio
+class TestAutoLoginIntegration:
+    """Integration tests for auto-login in token refresh flow."""
+
+    async def test_refresh_401_triggers_auto_login_when_credentials_exist(
+        self, httpx_mock, monkeypatch, tmp_path
+    ):
+        """Test that refresh 401 triggers auto-login when credentials exist."""
+        from pathlib import Path
+        from code_indexer.mcpb.credential_storage import save_credentials
+
+        # Patch Path.home() to use tmp_path
+        def mock_home():
+            return tmp_path
+
+        monkeypatch.setattr(Path, "home", mock_home)
+
+        # Create .mcpb directory and save credentials
+        mcpb_dir = tmp_path / ".mcpb"
+        mcpb_dir.mkdir(parents=True, exist_ok=True)
+        save_credentials("test_user", "test_password")
+
+        # First request returns 401 (expired token)
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            status_code=401,
+            text="Token has expired",
+        )
+
+        # Refresh endpoint returns 401 (refresh token expired)
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/refresh",
+            status_code=401,
+            text="Refresh token expired",
+        )
+
+        # Login endpoint returns new tokens
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/login",
+            json={
+                "access_token": "new-login-access-token",
+                "refresh_token": "new-login-refresh-token",
+            },
+            status_code=200,
+        )
+
+        # Retry with new token succeeds
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            json={"jsonrpc": "2.0", "result": {"tools": []}, "id": 1},
+            status_code=200,
+        )
+
+        client = BridgeHttpClient(
+            server_url="https://cidx.example.com",
+            bearer_token="expired-token",
+            timeout=30,
+            refresh_token="expired-refresh-token",
+        )
+
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+        response = await client.forward_request(request_data)
+
+        # Verify response is successful
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] == 1
+        assert "result" in response
+
+        # Verify bearer token was updated via auto-login
+        assert client.bearer_token == "new-login-access-token"
+        assert client.refresh_token == "new-login-refresh-token"
+
+        # Verify all expected requests were made
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 4  # MCP, refresh, login, retry MCP
+
+    async def test_refresh_401_skips_auto_login_when_no_credentials(
+        self, httpx_mock, monkeypatch, tmp_path
+    ):
+        """Test that refresh 401 skips auto-login when no credentials exist."""
+        from pathlib import Path
+
+        # Patch Path.home() to use empty tmp_path
+        def mock_home():
+            return tmp_path
+
+        monkeypatch.setattr(Path, "home", mock_home)
+
+        # Create .mcpb directory but NO credentials
+        mcpb_dir = tmp_path / ".mcpb"
+        mcpb_dir.mkdir(parents=True, exist_ok=True)
+
+        # First request returns 401
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            status_code=401,
+            text="Token has expired",
+        )
+
+        # Refresh endpoint returns 401 (refresh token expired)
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/refresh",
+            status_code=401,
+            text="Refresh token expired",
+        )
+
+        client = BridgeHttpClient(
+            server_url="https://cidx.example.com",
+            bearer_token="expired-token",
+            timeout=30,
+            refresh_token="expired-refresh-token",
+        )
+
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+
+        # Should raise error without attempting login
+        with pytest.raises(
+            HttpError, match="Refresh token expired - re-authentication required"
+        ):
+            await client.forward_request(request_data)
+
+        # Verify login endpoint was NOT called
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2  # Only MCP and refresh, no login
+
+    async def test_auto_login_success_updates_config_file(
+        self, httpx_mock, monkeypatch, tmp_path
+    ):
+        """Test that auto-login success updates config file."""
+        from pathlib import Path
+        from code_indexer.mcpb.credential_storage import save_credentials
+
+        # Patch Path.home() to use tmp_path
+        def mock_home():
+            return tmp_path
+
+        monkeypatch.setattr(Path, "home", mock_home)
+
+        # Create .mcpb directory and save credentials
+        mcpb_dir = tmp_path / ".mcpb"
+        mcpb_dir.mkdir(parents=True, exist_ok=True)
+        save_credentials("test_user", "test_password")
+
+        # Create config file
+        config_path = mcpb_dir / "config.json"
+        config_data = {
+            "server_url": "https://cidx.example.com",
+            "bearer_token": "old-token",
+            "refresh_token": "old-refresh",
+        }
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
+        # First request returns 401
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            status_code=401,
+            text="Token has expired",
+        )
+
+        # Refresh endpoint returns 401
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/refresh",
+            status_code=401,
+            text="Refresh token expired",
+        )
+
+        # Login endpoint returns new tokens
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/login",
+            json={
+                "access_token": "new-auto-login-token",
+                "refresh_token": "new-auto-refresh-token",
+            },
+            status_code=200,
+        )
+
+        # Retry succeeds
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            json={"jsonrpc": "2.0", "result": {}, "id": 1},
+            status_code=200,
+        )
+
+        client = BridgeHttpClient(
+            server_url="https://cidx.example.com",
+            bearer_token="old-token",
+            timeout=30,
+            refresh_token="old-refresh",
+            config_path=config_path,
+        )
+
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+        await client.forward_request(request_data)
+
+        # Verify config file was updated with new tokens
+        with open(config_path) as f:
+            updated_config = json.load(f)
+
+        assert updated_config["bearer_token"] == "new-auto-login-token"
+        assert updated_config["refresh_token"] == "new-auto-refresh-token"
+
+    async def test_auto_login_failure_raises_original_error(
+        self, httpx_mock, monkeypatch, tmp_path
+    ):
+        """Test that auto-login failure raises original error."""
+        from pathlib import Path
+        from code_indexer.mcpb.credential_storage import save_credentials
+
+        # Patch Path.home() to use tmp_path
+        def mock_home():
+            return tmp_path
+
+        monkeypatch.setattr(Path, "home", mock_home)
+
+        # Create .mcpb directory and save credentials
+        mcpb_dir = tmp_path / ".mcpb"
+        mcpb_dir.mkdir(parents=True, exist_ok=True)
+        save_credentials("test_user", "wrong_password")
+
+        # First request returns 401
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            status_code=401,
+            text="Token has expired",
+        )
+
+        # Refresh endpoint returns 401
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/refresh",
+            status_code=401,
+            text="Refresh token expired",
+        )
+
+        # Login endpoint returns 401 (invalid credentials)
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/login",
+            status_code=401,
+            text="Invalid credentials",
+        )
+
+        client = BridgeHttpClient(
+            server_url="https://cidx.example.com",
+            bearer_token="expired-token",
+            timeout=30,
+            refresh_token="expired-refresh-token",
+        )
+
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+
+        # Should raise original error after auto-login fails
+        with pytest.raises(
+            HttpError, match="Refresh token expired - re-authentication required"
+        ):
+            await client.forward_request(request_data)
+
+    async def test_auto_login_logs_attempt_and_result_to_stderr(
+        self, httpx_mock, monkeypatch, tmp_path, capsys
+    ):
+        """Test that auto-login logs attempt and result to stderr."""
+        from pathlib import Path
+        from code_indexer.mcpb.credential_storage import save_credentials
+
+        # Patch Path.home() to use tmp_path
+        def mock_home():
+            return tmp_path
+
+        monkeypatch.setattr(Path, "home", mock_home)
+
+        # Create .mcpb directory and save credentials
+        mcpb_dir = tmp_path / ".mcpb"
+        mcpb_dir.mkdir(parents=True, exist_ok=True)
+        save_credentials("test_user", "test_password")
+
+        # First request returns 401
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            status_code=401,
+            text="Token has expired",
+        )
+
+        # Refresh endpoint returns 401
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/refresh",
+            status_code=401,
+            text="Refresh token expired",
+        )
+
+        # Login endpoint returns new tokens
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/auth/login",
+            json={
+                "access_token": "new-auto-login-token-1234567890123456789012345",
+                "refresh_token": "new-refresh",
+            },
+            status_code=200,
+        )
+
+        # Retry succeeds
+        httpx_mock.add_response(
+            method="POST",
+            url="https://cidx.example.com/mcp",
+            json={"jsonrpc": "2.0", "result": {}, "id": 1},
+            status_code=200,
+        )
+
+        client = BridgeHttpClient(
+            server_url="https://cidx.example.com",
+            bearer_token="expired-token",
+            timeout=30,
+            refresh_token="expired-refresh-token",
+        )
+
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+        await client.forward_request(request_data)
+
+        # Verify stderr logs
+        captured = capsys.readouterr()
+        assert "Refresh token expired - attempting auto-login..." in captured.err
+        # From auto_login.py and http_client.py
+        assert "Auto-login successful:" in captured.err
+        # Verify truncated token (both auto_login.py and http_client.py log first 20 chars)
+        assert "new-auto-login-token" in captured.err
+        # Verify full token is NOT logged
+        assert "new-auto-login-token-1234567890123456789012345" not in captured.err
