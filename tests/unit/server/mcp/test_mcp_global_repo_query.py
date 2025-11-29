@@ -51,8 +51,8 @@ class TestGlobalRepoQuery:
         """Test successful query of global repository ending with -global suffix."""
         # Setup: Mock semantic_query_manager with _perform_search
         with (
-            patch("code_indexer.server.app") as mock_app,
             patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(mock_global_repo_path)}),
+            patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager,
         ):
 
             # Create mock QueryResult objects
@@ -65,9 +65,7 @@ class TestGlobalRepoQuery:
             }
 
             # Mock _perform_search to return QueryResult list
-            mock_query_manager = MagicMock()
             mock_query_manager._perform_search.return_value = [mock_result]
-            mock_app.semantic_query_manager = mock_query_manager
 
             # Mock GlobalRegistry for path lookup
             mock_registry = MagicMock()
@@ -117,9 +115,9 @@ class TestGlobalRepoQuery:
     @pytest.mark.asyncio
     async def test_activated_repo_query_still_works(self, mock_user):
         """Test that activated repositories (non-global) still use query_user_repositories."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager:
             # Mock semantic_query_manager for activated repos
-            mock_app.semantic_query_manager.query_user_repositories.return_value = {
+            mock_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
                 "query_metadata": {
@@ -129,9 +127,6 @@ class TestGlobalRepoQuery:
                     "timeout_occurred": False,
                 },
             }
-
-            # Mock semantic_search_service (should NOT be called for activated repos)
-            mock_app.semantic_search_service = MagicMock()
 
             # Test parameters with non-global repo alias
             params = {
@@ -144,10 +139,7 @@ class TestGlobalRepoQuery:
             await search_code(params, mock_user)
 
             # Verify: query_user_repositories was called for activated repo
-            mock_app.semantic_query_manager.query_user_repositories.assert_called_once()
-
-            # Verify semantic_search_service was NOT called
-            mock_app.semantic_search_service.search_repository_path.assert_not_called()
+            mock_query_manager.query_user_repositories.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_global_repo_not_found_error(self, mock_user, tmp_path):
@@ -156,12 +148,7 @@ class TestGlobalRepoQuery:
         empty_golden_dir = tmp_path / "empty-golden-repos"
         empty_golden_dir.mkdir(parents=True)
 
-        with (
-            patch("code_indexer.server.app") as mock_app,
-            patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(empty_golden_dir)}),
-        ):
-
-            mock_app.semantic_search_service = MagicMock()
+        with patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(empty_golden_dir)}):
 
             # Test parameters with non-existent global repo
             params = {
@@ -186,14 +173,12 @@ class TestGlobalRepoQuery:
     ):
         """Test that global repo queries support all search parameters."""
         with (
-            patch("code_indexer.server.app") as mock_app,
             patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(mock_global_repo_path)}),
+            patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager,
         ):
 
             # Mock _perform_search
-            mock_query_manager = MagicMock()
             mock_query_manager._perform_search.return_value = []
-            mock_app.semantic_query_manager = mock_query_manager
 
             # Mock GlobalRegistry for path lookup
             mock_registry = MagicMock()
@@ -247,9 +232,9 @@ class TestGlobalRepoQuery:
     @pytest.mark.asyncio
     async def test_query_without_repository_alias_uses_activated_repos(self, mock_user):
         """Test that queries without repository_alias still use activated repos."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager:
             # Mock semantic_query_manager
-            mock_app.semantic_query_manager.query_user_repositories.return_value = {
+            mock_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
                 "query_metadata": {
@@ -270,4 +255,4 @@ class TestGlobalRepoQuery:
             await search_code(params, mock_user)
 
             # Verify: query_user_repositories was called
-            mock_app.semantic_query_manager.query_user_repositories.assert_called_once()
+            mock_query_manager.query_user_repositories.assert_called_once()

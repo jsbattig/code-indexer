@@ -83,9 +83,9 @@ class TestListRepositoriesWithGlobalRepos:
         self, mock_user, mock_global_registry_data, mock_activated_repos
     ):
         """Test that global repos from registry appear in list_repositories response."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
             # Mock activated repo manager
-            mock_app.activated_repo_manager.list_activated_repositories.return_value = (
+            mock_repo_manager.list_activated_repositories.return_value = (
                 mock_activated_repos
             )
 
@@ -147,8 +147,8 @@ class TestListRepositoriesWithGlobalRepos:
         self, mock_user, mock_global_registry_data, mock_activated_repos
     ):
         """Test that global repos have is_global: true field."""
-        with patch("code_indexer.server.app") as mock_app:
-            mock_app.activated_repo_manager.list_activated_repositories.return_value = (
+        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
+            mock_repo_manager.list_activated_repositories.return_value = (
                 mock_activated_repos
             )
 
@@ -187,8 +187,8 @@ class TestListRepositoriesWithGlobalRepos:
         self, mock_user, mock_global_registry_data
     ):
         """Test that global repos include repo name, last update time, and index path."""
-        with patch("code_indexer.server.app") as mock_app:
-            mock_app.activated_repo_manager.list_activated_repositories.return_value = (
+        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
+            mock_repo_manager.list_activated_repositories.return_value = (
                 []
             )
 
@@ -226,8 +226,8 @@ class TestListRepositoriesWithGlobalRepos:
         self, mock_user, mock_activated_repos
     ):
         """Test that empty golden-repos directory is handled without errors."""
-        with patch("code_indexer.server.app") as mock_app:
-            mock_app.activated_repo_manager.list_activated_repositories.return_value = (
+        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
+            mock_repo_manager.list_activated_repositories.return_value = (
                 mock_activated_repos
             )
 
