@@ -17,6 +17,16 @@ import os
 from typing import Dict, Any
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
+from code_indexer.server.app import (
+    app,
+    semantic_query_manager,
+    activated_repo_manager,
+    background_job_manager,
+    user_manager,
+    golden_repo_manager,
+    repository_listing_manager,
+)
+from code_indexer.server.services.file_service import file_service
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +64,6 @@ def _get_golden_repos_dir() -> str:
     Returns:
         str: Absolute path to golden repos directory
     """
-    from code_indexer.server.app import app
     from typing import Optional, cast
 
     # PRIMARY: app.state (set during server startup)
@@ -76,7 +85,6 @@ def _get_golden_repos_dir() -> str:
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
     try:
-        from code_indexer.server.app import app
         from pathlib import Path
 
         repository_alias = params.get("repository_alias")
@@ -132,7 +140,7 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
             start_time = time.time()
             try:
-                results = app.semantic_query_manager._perform_search(
+                results = semantic_query_manager._perform_search(
                     username=user.username,
                     user_repos=mock_user_repos,
                     query_text=params["query_text"],
@@ -194,7 +202,7 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             return _mcp_response({"success": True, "results": result})
 
         # Activated repository: use semantic_query_manager for activated repositories (matches REST endpoint pattern)
-        result = app.semantic_query_manager.query_user_repositories(
+        result = semantic_query_manager.query_user_repositories(
             username=user.username,
             query_text=params["query_text"],
             repository_alias=params.get("repository_alias"),
@@ -243,11 +251,9 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List activated repositories for the current user, plus global repos."""
-    from code_indexer.server.app import app
-
     try:
         # Get activated repos from database
-        activated_repos = app.activated_repo_manager.list_activated_repositories(
+        activated_repos = activated_repo_manager.list_activated_repositories(
             user.username
         )
 
@@ -280,10 +286,8 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
 
 async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Activate a repository for querying (supports single or composite)."""
-    from code_indexer.server.app import app
-
     try:
-        job_id = app.activated_repo_manager.activate_repository(
+        job_id = activated_repo_manager.activate_repository(
             username=user.username,
             golden_repo_alias=params.get("golden_repo_alias"),
             golden_repo_aliases=params.get("golden_repo_aliases"),
@@ -303,11 +307,9 @@ async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, A
 
 async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Deactivate a repository."""
-    from code_indexer.server.app import app
-
     try:
         user_alias = params["user_alias"]
-        job_id = app.activated_repo_manager.deactivate_repository(
+        job_id = activated_repo_manager.deactivate_repository(
             username=user.username, user_alias=user_alias
         )
         return _mcp_response(
@@ -323,11 +325,9 @@ async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get detailed status of a repository."""
-    from code_indexer.server.app import app
-
     try:
         user_alias = params["user_alias"]
-        status = app.repository_listing_manager.get_repository_details(
+        status = repository_listing_manager.get_repository_details(
             user_alias, user.username
         )
         return _mcp_response({"success": True, "status": status})
@@ -337,12 +337,10 @@ async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Sync repository with upstream."""
-    from code_indexer.server.app import app
-
     try:
         user_alias = params["user_alias"]
         # Resolve alias to repository details
-        repos = app.activated_repo_manager.list_activated_repositories(user.username)
+        repos = activated_repo_manager.list_activated_repositories(user.username)
         repo_id = None
         for repo in repos:
             if repo["user_alias"] == user_alias:
@@ -359,10 +357,7 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
         # Defensive check
-        if (
-            not hasattr(app, "background_job_manager")
-            or app.background_job_manager is None
-        ):
+        if background_job_manager is None:
             return _mcp_response(
                 {
                     "success": False,
@@ -383,7 +378,7 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
         # Submit sync job with correct signature
-        job_id = app.background_job_manager.submit_job(
+        job_id = background_job_manager.submit_job(
             operation_type="sync_repository",
             func=sync_job_wrapper,
             submitter_username=user.username,
@@ -401,15 +396,13 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Switch repository to different branch."""
-    from code_indexer.server.app import app
-
     try:
         user_alias = params["user_alias"]
         branch_name = params["branch_name"]
         create = params.get("create", False)
 
         # Use activated_repo_manager.switch_branch (matches app.py endpoint pattern)
-        result = app.activated_repo_manager.switch_branch(
+        result = activated_repo_manager.switch_branch(
             username=user.username,
             user_alias=user_alias,
             branch_name=branch_name,
@@ -422,7 +415,6 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List files in a repository."""
-    from code_indexer.server.app import app
     from code_indexer.server.models.api_models import FileListQueryParams
 
     try:
@@ -437,7 +429,7 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
 
         # Call with correct signature: list_files(repo_id, username, query_params)
-        result = app.file_service.list_files(
+        result = file_service.list_files(
             repo_id=repository_alias,
             username=user.username,
             query_params=query_params,
@@ -472,13 +464,11 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
     Returns MCP-compliant response with content as array of text blocks.
     Per MCP spec, content must be an array of content blocks, each with 'type' and 'text' fields.
     """
-    from code_indexer.server.app import app
-
     try:
         repository_alias = params["repository_alias"]
         file_path = params["file_path"]
 
-        result = app.file_service.get_file_content(
+        result = file_service.get_file_content(
             repository_alias=repository_alias,
             file_path=file_path,
             username=user.username,
@@ -510,7 +500,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
     FileListingService doesn't have browse_directory method.
     Use list_files with path patterns instead.
     """
-    from code_indexer.server.app import app
     from code_indexer.server.models.api_models import FileListQueryParams
     from pathlib import Path
 
@@ -563,7 +552,7 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             path_pattern=path_pattern,
         )
 
-        result = app.file_service.list_files(
+        result = file_service.list_files(
             repo_id=repository_alias,
             username=user.username,
             query_params=query_params,
@@ -592,7 +581,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
 async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get available branches for a repository."""
-    from code_indexer.server.app import app
     from pathlib import Path
     from code_indexer.services.git_topology_service import GitTopologyService
     from code_indexer.server.services.branch_service import BranchService
@@ -602,7 +590,7 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         include_remote = params.get("include_remote", False)
 
         # Get repository path (matches app.py endpoint pattern at line 4383-4395)
-        repo_path = app.activated_repo_manager.get_activated_repo_path(
+        repo_path = activated_repo_manager.get_activated_repo_path(
             username=user.username,
             user_alias=repository_alias,
         )
@@ -674,14 +662,12 @@ async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Add a golden repository (admin only)."""
-    from code_indexer.server.app import app
-
     try:
         repo_url = params["url"]
         alias = params["alias"]
         default_branch = params.get("branch", "main")
 
-        job_id = app.golden_repo_manager.add_golden_repo(
+        job_id = golden_repo_manager.add_golden_repo(
             repo_url=repo_url,
             alias=alias,
             default_branch=default_branch,
@@ -700,11 +686,9 @@ async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Remove a golden repository (admin only)."""
-    from code_indexer.server.app import app
-
     try:
         alias = params["alias"]
-        job_id = app.golden_repo_manager.remove_golden_repo(
+        job_id = golden_repo_manager.remove_golden_repo(
             alias, submitter_username=user.username
         )
         return _mcp_response(
@@ -720,11 +704,9 @@ async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, An
 
 async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Refresh a golden repository (admin only)."""
-    from code_indexer.server.app import app
-
     try:
         alias = params["alias"]
-        job_id = app.golden_repo_manager.refresh_golden_repo(
+        job_id = golden_repo_manager.refresh_golden_repo(
             alias, submitter_username=user.username
         )
         return _mcp_response(
@@ -740,10 +722,8 @@ async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, A
 
 async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List all users (admin only)."""
-    from code_indexer.server.app import app
-
     try:
-        all_users = app.user_manager.get_all_users()
+        all_users = user_manager.get_all_users()
         return _mcp_response(
             {
                 "success": True,
@@ -766,14 +746,12 @@ async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Create a new user (admin only)."""
-    from code_indexer.server.app import app
-
     try:
         username = params["username"]
         password = params["password"]
         role = UserRole(params["role"])
 
-        new_user = app.user_manager.create_user(
+        new_user = user_manager.create_user(
             username=username, password=password, role=role
         )
         return _mcp_response(
@@ -817,12 +795,10 @@ async def get_job_statistics(params: Dict[str, Any], user: User) -> Dict[str, An
     BackgroundJobManager doesn't have get_job_statistics method.
     Use get_active_job_count, get_pending_job_count, get_failed_job_count instead.
     """
-    from code_indexer.server.app import app
-
     try:
-        active = app.background_job_manager.get_active_job_count()
-        pending = app.background_job_manager.get_pending_job_count()
-        failed = app.background_job_manager.get_failed_job_count()
+        active = background_job_manager.get_active_job_count()
+        pending = background_job_manager.get_pending_job_count()
+        failed = background_job_manager.get_failed_job_count()
 
         stats = {
             "active": active,
@@ -840,14 +816,12 @@ async def get_all_repositories_status(
     params: Dict[str, Any], user: User
 ) -> Dict[str, Any]:
     """Get status summary of all repositories."""
-    from code_indexer.server.app import app
-
     try:
-        repos = app.activated_repo_manager.list_activated_repositories(user.username)
+        repos = activated_repo_manager.list_activated_repositories(user.username)
         status_summary = []
         for repo in repos:
             try:
-                details = app.repository_listing_manager.get_repository_details(
+                details = repository_listing_manager.get_repository_details(
                     repo["user_alias"], user.username
                 )
                 status_summary.append(details)
@@ -872,15 +846,13 @@ async def manage_composite_repository(
     params: Dict[str, Any], user: User
 ) -> Dict[str, Any]:
     """Manage composite repository operations."""
-    from code_indexer.server.app import app
-
     try:
         operation = params["operation"]
         user_alias = params["user_alias"]
         golden_repo_aliases = params.get("golden_repo_aliases", [])
 
         if operation == "create":
-            job_id = app.activated_repo_manager.activate_repository(
+            job_id = activated_repo_manager.activate_repository(
                 username=user.username,
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
@@ -896,13 +868,13 @@ async def manage_composite_repository(
         elif operation == "update":
             # For update, deactivate then reactivate
             try:
-                app.activated_repo_manager.deactivate_repository(
+                activated_repo_manager.deactivate_repository(
                     username=user.username, user_alias=user_alias
                 )
             except Exception:
                 pass  # Ignore if doesn't exist
 
-            job_id = app.activated_repo_manager.activate_repository(
+            job_id = activated_repo_manager.activate_repository(
                 username=user.username,
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
@@ -916,7 +888,7 @@ async def manage_composite_repository(
             )
 
         elif operation == "delete":
-            job_id = app.activated_repo_manager.deactivate_repository(
+            job_id = activated_repo_manager.deactivate_repository(
                 username=user.username, user_alias=user_alias
             )
             return _mcp_response(
