@@ -5,6 +5,28 @@ echo "CIDX MCPB Installation Script"
 echo "=================================="
 echo ""
 
+# Validate parameters
+if [ $# -ne 3 ]; then
+    echo "Error: Missing required parameters"
+    echo ""
+    echo "Usage: bash install-mcpb.sh SERVER_URL USERNAME PASSWORD"
+    echo ""
+    echo "Example:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/jsbattig/code-indexer/master/install-mcpb.sh | bash -s -- \"https://linner.ddns.net:8383\" \"admin\" \"admin\""
+    echo ""
+    exit 1
+fi
+
+# Accept parameters
+SERVER_URL="$1"
+USERNAME="$2"
+PASSWORD="$3"
+
+echo "Configuration:"
+echo "  Server URL: $SERVER_URL"
+echo "  Username: $USERNAME"
+echo ""
+
 # Check if running as correct user
 if [ "$USER" != "seba.battig" ]; then
     echo "Error: Must run as seba.battig user"
@@ -81,15 +103,15 @@ EOF
 echo "Claude Desktop config updated"
 
 # Set up encrypted credentials using Python
-echo "Setting up encrypted credentials (admin/admin)..."
-python3 << 'PYTHON_SCRIPT'
+echo "Setting up encrypted credentials ($USERNAME/[hidden])..."
+python3 << PYTHON_SCRIPT
 import sys
 sys.path.insert(0, '/Users/seba.battig/Dev/code-indexer/src')
 
 from code_indexer.mcpb.credential_storage import save_credentials
 
 try:
-    save_credentials('admin', 'admin')
+    save_credentials('$USERNAME', '$PASSWORD')
     print("Encrypted credentials saved successfully")
 except Exception as e:
     print(f"Error saving credentials: {e}")
@@ -101,6 +123,16 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Create ~/.mcpb/config.json with server URL
+echo "Creating ~/.mcpb/config.json with server URL..."
+cat > "$HOME/.mcpb/config.json" << EOF
+{
+  "server_url": "$SERVER_URL"
+}
+EOF
+
+echo "Config file created: ~/.mcpb/config.json"
+
 # Restart Claude Desktop
 echo "Restarting Claude Desktop..."
 killall Claude 2>/dev/null || true
@@ -111,8 +143,11 @@ echo ""
 echo "Installation complete!"
 echo ""
 echo "Configuration summary:"
+echo "  - Server URL: $SERVER_URL"
+echo "  - Username: $USERNAME"
 echo "  - Wrapper script: $HOME/.mcpb/mcpb-wrapper.sh"
 echo "  - Claude config: $CLAUDE_CONFIG_FILE"
+echo "  - MCPB config: ~/.mcpb/config.json"
 echo "  - Credentials: ~/.mcpb/credentials.enc (encrypted)"
 echo ""
 echo "Claude Desktop has been restarted and should now have MCPB server available."
