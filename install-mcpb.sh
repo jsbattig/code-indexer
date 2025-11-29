@@ -29,14 +29,9 @@ else
     cd code-indexer
 fi
 
-# Install dependencies (try without --break-system-packages first for Mac compatibility)
+# Install dependencies (Mac doesn't need --break-system-packages)
 echo "📚 Installing dependencies..."
-if pip3 install -e . 2>/dev/null; then
-    echo "✅ Installed without --break-system-packages"
-else
-    echo "⚠️ Retrying with --break-system-packages..."
-    pip3 install --break-system-packages -e .
-fi
+pip3 install -e .
 
 # Verify mcpb command
 echo "✅ Verifying installation..."
@@ -47,7 +42,7 @@ if python3 -m code_indexer.mcpb --help > /dev/null 2>&1; then
     echo "1. Set up encrypted credentials:"
     echo "   python3 -m code_indexer.mcpb --setup-credentials"
     echo ""
-    echo "2. Update Claude Desktop config to use mcpb"
+    echo "2. Restart Claude Desktop to activate"
     echo ""
     echo "📖 For more info, see: https://github.com/jsbattig/code-indexer"
 else
