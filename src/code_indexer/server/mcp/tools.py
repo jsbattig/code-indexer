@@ -457,7 +457,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "get_job_statistics": {
         "name": "get_job_statistics",
-        "description": "Get background job statistics",
+        "description": "Get counts of background repository indexing jobs (active/pending/failed). Use this to monitor if repository registration, activation, or sync operations are still in progress. Returns job counts, not individual job details. Example: after calling add_golden_repo, check this periodically - when active=0 and pending=0, indexing is complete.",
         "inputSchema": {
             "type": "object",
             "properties": {},
