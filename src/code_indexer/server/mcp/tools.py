@@ -8,7 +8,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Tools 1-2: Search
     "search_code": {
         "name": "search_code",
-        "description": "Search code using semantic search, FTS, or hybrid mode",
+        "description": "Search code using semantic search, FTS, or hybrid mode. DISCOVERY WORKFLOW: For exploring unfamiliar codebases, query 'cidx-meta-global' first to discover which repositories contain relevant content (it returns repository descriptions), then query specific repositories for detailed code. Example: search_code('API endpoints', repository_alias='cidx-meta-global') finds repos with APIs, then search_code('user authentication endpoint', repository_alias='backend-global') for implementation details.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -502,7 +502,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "list_global_repos": {
         "name": "list_global_repos",
-        "description": "List all globally accessible repositories for query-first experience",
+        "description": "List all globally accessible repositories for instant querying without activation. Global repositories are pre-indexed and immediately queryable. IMPORTANT: 'cidx-meta-global' is the meta-directory catalog - it contains descriptions of all repositories. DISCOVERY WORKFLOW: (1) Query cidx-meta-global first to discover which repositories contain content on your topic, (2) then query those specific repositories for detailed code. Example: search_code('authentication', repository_alias='cidx-meta-global') returns repositories that handle authentication, then search_code('OAuth implementation', repository_alias='backend-api-global') for actual code.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
         "required_permission": "query_repos",
     },
