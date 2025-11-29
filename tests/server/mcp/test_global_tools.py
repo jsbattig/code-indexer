@@ -15,8 +15,6 @@ from code_indexer.server.mcp.handlers import (
     handle_set_global_config,
 )
 from code_indexer.server.auth.user_manager import User, UserRole
-import tempfile
-from pathlib import Path
 import json
 from datetime import datetime, timezone
 
@@ -54,7 +52,7 @@ def global_repos_setup(tmp_path, monkeypatch):
         "test-repo-global",
         "http://example.com/test.git",
         str(test_repo_path),
-        allow_reserved=False
+        allow_reserved=False,
     )
 
     return golden_repos_dir

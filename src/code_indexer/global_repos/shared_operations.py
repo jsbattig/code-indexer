@@ -79,12 +79,14 @@ class GlobalRepoOperations:
         # Normalize field names for protocol parity
         normalized = []
         for repo in repos:
-            normalized.append({
-                "alias": repo.get("alias_name"),  # alias_name → alias
-                "repo_name": repo.get("repo_name"),
-                "url": repo.get("repo_url"),  # repo_url → url
-                "last_refresh": repo.get("last_refresh"),
-            })
+            normalized.append(
+                {
+                    "alias": repo.get("alias_name"),  # alias_name → alias
+                    "repo_name": repo.get("repo_name"),
+                    "url": repo.get("repo_url"),  # repo_url → url
+                    "last_refresh": repo.get("last_refresh"),
+                }
+            )
 
         return normalized
 
@@ -147,17 +149,13 @@ class GlobalRepoOperations:
 
             # Validate config has required fields
             if "refresh_interval" not in config:
-                logger.warning(
-                    "Config missing refresh_interval, using default"
-                )
+                logger.warning("Config missing refresh_interval, using default")
                 config["refresh_interval"] = DEFAULT_REFRESH_INTERVAL
 
             return dict(config)
 
         except (json.JSONDecodeError, IOError) as e:
-            logger.warning(
-                f"Failed to load config file, using defaults: {e}"
-            )
+            logger.warning(f"Failed to load config file, using defaults: {e}")
             # Return default config
             return {"refresh_interval": DEFAULT_REFRESH_INTERVAL}
 
@@ -208,9 +206,7 @@ class GlobalRepoOperations:
         """
         # Write to temporary file first
         tmp_fd, tmp_path = tempfile.mkstemp(
-            dir=str(self.golden_repos_dir),
-            prefix=".global_config_",
-            suffix=".tmp"
+            dir=str(self.golden_repos_dir), prefix=".global_config_", suffix=".tmp"
         )
 
         try:

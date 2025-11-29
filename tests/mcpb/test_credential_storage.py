@@ -5,7 +5,6 @@ to securely store and retrieve username/password for automatic login.
 """
 
 import os
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -135,14 +134,20 @@ class TestCredentialStorage:
         # Check credentials file permissions
         creds_file = temp_mcpb_dir / "credentials.enc"
         creds_perms = os.stat(creds_file).st_mode & 0o777
-        assert creds_perms == 0o600, f"credentials.enc has insecure permissions: {oct(creds_perms)}"
+        assert (
+            creds_perms == 0o600
+        ), f"credentials.enc has insecure permissions: {oct(creds_perms)}"
 
         # Check key file permissions
         key_file = temp_mcpb_dir / "encryption.key"
         key_perms = os.stat(key_file).st_mode & 0o777
-        assert key_perms == 0o600, f"encryption.key has insecure permissions: {oct(key_perms)}"
+        assert (
+            key_perms == 0o600
+        ), f"encryption.key has insecure permissions: {oct(key_perms)}"
 
-    def test_save_credentials_creates_directory_if_not_exists(self, monkeypatch, tmp_path):
+    def test_save_credentials_creates_directory_if_not_exists(
+        self, monkeypatch, tmp_path
+    ):
         """Test that save_credentials() creates ~/.mcpb directory if it doesn't exist."""
         # Use a fresh temp directory without .mcpb
         fresh_tmp = tmp_path / "fresh"

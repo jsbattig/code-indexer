@@ -7,7 +7,7 @@ Bug #2: Wrong directory analyzed for descriptions (index_path instead of source)
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch
 from code_indexer.server.lifecycle.startup_meta_populator import StartupMetaPopulator
 from code_indexer.global_repos.meta_directory_updater import MetaDirectoryUpdater
 
@@ -53,7 +53,9 @@ class TestBug1MetaDirectoryIndexing:
         ]
         return registry
 
-    def test_bug1_meta_directory_not_indexed_after_population(self, temp_dirs, mock_registry):
+    def test_bug1_meta_directory_not_indexed_after_population(
+        self, temp_dirs, mock_registry
+    ):
         """
         Test Bug #1: Meta-directory should be indexed after population.
 
@@ -199,7 +201,9 @@ class TestBug2WrongDirectoryAnalyzed:
         ]
         return registry
 
-    def test_bug2_index_path_wrongly_used_for_analysis(self, tmp_path, temp_repo_structure):
+    def test_bug2_index_path_wrongly_used_for_analysis(
+        self, tmp_path, temp_repo_structure
+    ):
         """
         Test Bug #2: Should use source directory, not index_path.
 
@@ -257,14 +261,16 @@ class TestBug2WrongDirectoryAnalyzed:
                 f"Actual: {analyzed_path}\n"
                 f"Should analyze SOURCE code, not vector index directory"
             )
-            assert analyzed_path.name != "index", (
-                "Bug #2: Should not analyze 'index' directory"
-            )
-            assert ".code-indexer" not in str(analyzed_path), (
-                "Bug #2: Should not analyze .code-indexer directory"
-            )
+            assert (
+                analyzed_path.name != "index"
+            ), "Bug #2: Should not analyze 'index' directory"
+            assert ".code-indexer" not in str(
+                analyzed_path
+            ), "Bug #2: Should not analyze .code-indexer directory"
 
-    def test_bug2_descriptions_contain_source_code_content(self, tmp_path, temp_repo_structure):
+    def test_bug2_descriptions_contain_source_code_content(
+        self, tmp_path, temp_repo_structure
+    ):
         """
         Test Bug #2: Descriptions should be based on source code, not index metadata.
 
@@ -304,17 +310,17 @@ class TestBug2WrongDirectoryAnalyzed:
         # THIS WILL FAIL - Bug #2: Description based on index metadata, not source
 
         # Should contain content from source code
-        assert "authentication" in desc_content.lower() or "auth" in desc_content.lower(), (
-            "Bug #2: Description should mention authentication (from README.md/source code)"
-        )
+        assert (
+            "authentication" in desc_content.lower() or "auth" in desc_content.lower()
+        ), "Bug #2: Description should mention authentication (from README.md/source code)"
 
         # Should NOT contain index-specific metadata
-        assert "vector" not in desc_content.lower(), (
-            "Bug #2: Description should not mention vectors (index metadata)"
-        )
-        assert "metadata.json" not in desc_content.lower(), (
-            "Bug #2: Description should not mention metadata.json (index file)"
-        )
+        assert (
+            "vector" not in desc_content.lower()
+        ), "Bug #2: Description should not mention vectors (index metadata)"
+        assert (
+            "metadata.json" not in desc_content.lower()
+        ), "Bug #2: Description should not mention metadata.json (index file)"
 
     def test_bug2_path_extraction_from_index_path(self, tmp_path):
         """

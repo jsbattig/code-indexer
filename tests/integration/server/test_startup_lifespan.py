@@ -35,9 +35,7 @@ class TestStartupLifespan:
     @pytest.fixture
     def mock_env(self, temp_server_dir):
         """Mock environment variables for server."""
-        with patch.dict(
-            "os.environ", {"CIDX_SERVER_DATA_DIR": str(temp_server_dir)}
-        ):
+        with patch.dict("os.environ", {"CIDX_SERVER_DATA_DIR": str(temp_server_dir)}):
             yield temp_server_dir
 
     def test_lifespan_event_triggers_meta_population_on_startup(
@@ -224,8 +222,7 @@ class TestStartupLifespan:
                 population_logs = [
                     msg
                     for msg in log_messages
-                    if "meta-directory" in msg.lower()
-                    or "populat" in msg.lower()
+                    if "meta-directory" in msg.lower() or "populat" in msg.lower()
                 ]
 
                 # Should have logged population activity

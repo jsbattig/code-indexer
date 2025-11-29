@@ -27,7 +27,7 @@ def temp_golden_repos_dir():
                 "repo_url": "https://github.com/test/repo.git",
                 "index_path": "/path/to/test-repo",
                 "created_at": "2025-01-01T00:00:00+00:00",
-                "last_refresh": "2025-01-01T12:00:00+00:00"
+                "last_refresh": "2025-01-01T12:00:00+00:00",
             }
         }
 
@@ -64,7 +64,7 @@ def test_app_with_global_routes(temp_golden_repos_dir, monkeypatch):
             username="testuser",
             password_hash="dummy_hash",
             role=UserRole.ADMIN,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
     app.dependency_overrides[get_current_user] = override_get_current_user
@@ -140,7 +140,9 @@ class TestGetRepoStatus:
 class TestGetGlobalConfig:
     """Tests for GET /global/config endpoint."""
 
-    def test_get_config_returns_interval(self, test_app_with_global_routes, temp_golden_repos_dir):
+    def test_get_config_returns_interval(
+        self, test_app_with_global_routes, temp_golden_repos_dir
+    ):
         """Test that GET /global/config returns refresh interval."""
         # Create config file
         config_file = Path(temp_golden_repos_dir) / "global_config.json"
@@ -156,7 +158,9 @@ class TestGetGlobalConfig:
         assert "refresh_interval" in data
         assert data["refresh_interval"] == 3600
 
-    def test_get_config_returns_default_if_not_exists(self, test_app_with_global_routes):
+    def test_get_config_returns_default_if_not_exists(
+        self, test_app_with_global_routes
+    ):
         """Test that GET /global/config returns default config if file doesn't exist."""
         client = test_app_with_global_routes
 
@@ -172,14 +176,13 @@ class TestGetGlobalConfig:
 class TestUpdateGlobalConfig:
     """Tests for PUT /global/config endpoint."""
 
-    def test_put_config_updates_interval(self, test_app_with_global_routes, temp_golden_repos_dir):
+    def test_put_config_updates_interval(
+        self, test_app_with_global_routes, temp_golden_repos_dir
+    ):
         """Test that PUT /global/config updates refresh interval."""
         client = test_app_with_global_routes
 
-        response = client.put(
-            "/global/config",
-            json={"refresh_interval": 7200}
-        )
+        response = client.put("/global/config", json={"refresh_interval": 7200})
 
         assert response.status_code == 200
         data = response.json()
@@ -198,10 +201,7 @@ class TestUpdateGlobalConfig:
         client = test_app_with_global_routes
 
         # Test with interval < 60
-        response = client.put(
-            "/global/config",
-            json={"refresh_interval": 30}
-        )
+        response = client.put("/global/config", json={"refresh_interval": 30})
 
         # Pydantic validation returns 422, not 400
         assert response.status_code == 422
@@ -216,10 +216,7 @@ class TestUpdateGlobalConfig:
         invalid_values = [0, -100, 59, 30]
 
         for value in invalid_values:
-            response = client.put(
-                "/global/config",
-                json={"refresh_interval": value}
-            )
+            response = client.put("/global/config", json={"refresh_interval": value})
 
             # Pydantic validation returns 422 for invalid values
             assert response.status_code == 422, f"Expected 422 for value {value}"
@@ -231,10 +228,7 @@ class TestUpdateGlobalConfig:
         valid_values = [60, 3600, 86400]
 
         for value in valid_values:
-            response = client.put(
-                "/global/config",
-                json={"refresh_interval": value}
-            )
+            response = client.put("/global/config", json={"refresh_interval": value})
 
             assert response.status_code == 200, f"Expected 200 for value {value}"
 
@@ -259,14 +253,13 @@ class TestErrorParity:
         """Test that invalid config error has consistent format."""
         client = test_app_with_global_routes
 
-        response = client.put(
-            "/global/config",
-            json={"refresh_interval": 30}
-        )
+        response = client.put("/global/config", json={"refresh_interval": 30})
 
         # Pydantic validation returns 422
         assert response.status_code == 422
         data = response.json()
 
         assert "detail" in data
-        assert isinstance(data["detail"], (str, list))  # Pydantic returns list of validation errors
+        assert isinstance(
+            data["detail"], (str, list)
+        )  # Pydantic returns list of validation errors

@@ -45,7 +45,8 @@ class BridgeConfig:
         if not self.server_url:
             raise ValueError("server_url cannot be empty")
 
-        if not self.bearer_token:
+        # Allow AUTO_LOGIN_PENDING for touchless mode
+        if not self.bearer_token and self.bearer_token != "AUTO_LOGIN_PENDING":
             raise ValueError("bearer_token cannot be empty")
 
         # HTTPS validation (Story #517)
@@ -172,11 +173,19 @@ def load_config(
             "  Or: Add 'server_url' to ~/.mcpb/config.json"
         )
     if "bearer_token" not in config_data:
-        raise ValueError(
-            "Missing required field: bearer_token\n"
-            "  Fix: Set CIDX_TOKEN environment variable\n"
-            "  Or: Add 'bearer_token' to ~/.mcpb/config.json"
-        )
+        # Check if credentials exist for auto-login
+        from .credential_storage import credentials_exist
+
+        if credentials_exist():
+            # Use placeholder token - auto-login will trigger on first 401
+            config_data["bearer_token"] = "AUTO_LOGIN_PENDING"
+        else:
+            raise ValueError(
+                "Missing required field: bearer_token\n"
+                "  Fix: Set CIDX_TOKEN environment variable\n"
+                "  Or: Add 'bearer_token' to ~/.mcpb/config.json\n"
+                "  Or: Set up encrypted credentials with: python3 -m code_indexer.mcpb --setup-credentials"
+            )
 
     # Use defaults if not specified
     if "timeout" not in config_data:

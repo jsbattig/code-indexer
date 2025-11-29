@@ -1511,7 +1511,9 @@ def create_app() -> FastAPI:
 
         except Exception as e:
             # Log error but don't block server startup
-            logger.error(f"Failed to populate meta-directory on startup: {e}", exc_info=True)
+            logger.error(
+                f"Failed to populate meta-directory on startup: {e}", exc_info=True
+            )
 
         yield  # Server is now running
 

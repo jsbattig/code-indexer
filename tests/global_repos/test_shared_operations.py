@@ -5,7 +5,6 @@ TDD tests written FIRST before implementation.
 """
 
 import json
-import os
 import tempfile
 from pathlib import Path
 import pytest
@@ -40,7 +39,7 @@ def golden_repos_dir_with_data(temp_golden_repos_dir):
             "repo_url": "https://github.com/test/repo1.git",
             "index_path": "/path/to/repo1",
             "created_at": "2025-01-01T00:00:00+00:00",
-            "last_refresh": "2025-01-01T12:00:00+00:00"
+            "last_refresh": "2025-01-01T12:00:00+00:00",
         },
         "repo2-global": {
             "repo_name": "repo2",
@@ -48,8 +47,8 @@ def golden_repos_dir_with_data(temp_golden_repos_dir):
             "repo_url": "https://github.com/test/repo2.git",
             "index_path": "/path/to/repo2",
             "created_at": "2025-01-02T00:00:00+00:00",
-            "last_refresh": "2025-01-02T12:00:00+00:00"
-        }
+            "last_refresh": "2025-01-02T12:00:00+00:00",
+        },
     }
 
     registry_file = Path(temp_golden_repos_dir) / "global_registry.json"
@@ -110,7 +109,9 @@ class TestGetStatus:
         """Test that get_status raises ValueError for non-existent repo."""
         ops = GlobalRepoOperations(temp_golden_repos_dir)
 
-        with pytest.raises(ValueError, match="Global repo 'nonexistent-global' not found"):
+        with pytest.raises(
+            ValueError, match="Global repo 'nonexistent-global' not found"
+        ):
             ops.get_status("nonexistent-global")
 
     def test_get_status_includes_all_metadata_fields(self, golden_repos_dir_with_data):
@@ -118,9 +119,7 @@ class TestGetStatus:
         ops = GlobalRepoOperations(golden_repos_dir_with_data)
         status = ops.get_status("repo2-global")
 
-        required_fields = [
-            "alias", "repo_name", "url", "last_refresh"
-        ]
+        required_fields = ["alias", "repo_name", "url", "last_refresh"]
 
         for field in required_fields:
             assert field in status, f"Missing required field: {field}"
@@ -175,16 +174,24 @@ class TestSetConfig:
         ops = GlobalRepoOperations(temp_golden_repos_dir)
 
         # Should raise ValueError for values < 60
-        with pytest.raises(ValueError, match="Refresh interval must be at least 60 seconds"):
+        with pytest.raises(
+            ValueError, match="Refresh interval must be at least 60 seconds"
+        ):
             ops.set_config(59)
 
-        with pytest.raises(ValueError, match="Refresh interval must be at least 60 seconds"):
+        with pytest.raises(
+            ValueError, match="Refresh interval must be at least 60 seconds"
+        ):
             ops.set_config(30)
 
-        with pytest.raises(ValueError, match="Refresh interval must be at least 60 seconds"):
+        with pytest.raises(
+            ValueError, match="Refresh interval must be at least 60 seconds"
+        ):
             ops.set_config(0)
 
-        with pytest.raises(ValueError, match="Refresh interval must be at least 60 seconds"):
+        with pytest.raises(
+            ValueError, match="Refresh interval must be at least 60 seconds"
+        ):
             ops.set_config(-100)
 
     def test_set_config_accepts_valid_values(self, temp_golden_repos_dir):
@@ -260,7 +267,7 @@ class TestGlobalRepoOperationsInitialization:
             assert not golden_dir.exists()
 
             # Initialize
-            ops = GlobalRepoOperations(str(golden_dir))
+            GlobalRepoOperations(str(golden_dir))
 
             # Directory should now exist
             assert golden_dir.exists()
@@ -270,7 +277,7 @@ class TestGlobalRepoOperationsInitialization:
     def test_initialization_with_existing_directory(self, temp_golden_repos_dir):
         """Test that initialization works with existing directory."""
         # Should not raise error
-        ops = GlobalRepoOperations(temp_golden_repos_dir)
+        GlobalRepoOperations(temp_golden_repos_dir)
 
         # Verify directories still exist
         golden_dir = Path(temp_golden_repos_dir)

@@ -54,7 +54,9 @@ class TestStartupMetaPopulationE2E:
                 "repo2_dir": repo2_dir,
             }
 
-    def test_e2e_empty_meta_directory_populated_on_startup(self, temp_server_env, monkeypatch):
+    def test_e2e_empty_meta_directory_populated_on_startup(
+        self, temp_server_env, monkeypatch
+    ):
         """
         E2E Test: Server starts with empty meta-directory and populates it
         Given: The CIDX server has registered repositories
@@ -241,7 +243,9 @@ class TestStartupMetaPopulationE2E:
             # Note: Due to updater logic, files might be updated if repo changed
             # We're testing that the logic doesn't regenerate unnecessarily
 
-    def test_e2e_no_registered_repos_skips_population(self, temp_server_env, monkeypatch):
+    def test_e2e_no_registered_repos_skips_population(
+        self, temp_server_env, monkeypatch
+    ):
         """
         E2E Test: Server starts with no registered repositories
         Given: The registry is empty

@@ -147,7 +147,9 @@ class TestAutomaticTokenRefresh:
         # Verify bearer token was updated
         assert client.bearer_token == "new-access-token"
 
-    async def test_refresh_endpoint_failure_raises_error(self, httpx_mock, monkeypatch, tmp_path):
+    async def test_refresh_endpoint_failure_raises_error(
+        self, httpx_mock, monkeypatch, tmp_path
+    ):
         """Test that refresh endpoint failure raises clear error."""
         from pathlib import Path
 

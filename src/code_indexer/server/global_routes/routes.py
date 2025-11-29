@@ -25,8 +25,7 @@ router = APIRouter(prefix="/global", tags=["global"])
 
 # Module-level golden repos directory (configurable for testing)
 _golden_repos_dir: str = os.environ.get(
-    "GOLDEN_REPOS_DIR",
-    os.path.expanduser("~/.code-indexer/golden-repos")
+    "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
 )
 
 
@@ -56,9 +55,7 @@ class GlobalConfigUpdate(BaseModel):
     """Request model for updating global configuration."""
 
     refresh_interval: int = Field(
-        ...,
-        ge=60,
-        description="Refresh interval in seconds (minimum 60)"
+        ..., ge=60, description="Refresh interval in seconds (minimum 60)"
     )
 
     @field_validator("refresh_interval")
@@ -91,7 +88,7 @@ class ConfigUpdateResponse(BaseModel):
 # Endpoints
 @router.get("/repos", response_model=GlobalReposResponse)
 async def list_global_repos(
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
 ) -> GlobalReposResponse:
     """
     List all global repositories.
@@ -111,8 +108,7 @@ async def list_global_repos(
 
 @router.get("/repos/{alias}/status")
 async def get_repo_status(
-    alias: str,
-    user: User = Depends(get_current_user)
+    alias: str, user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Get status of a specific global repository.
@@ -139,9 +135,7 @@ async def get_repo_status(
 
 
 @router.get("/config", response_model=ConfigResponse)
-async def get_global_config(
-    user: User = Depends(get_current_user)
-) -> ConfigResponse:
+async def get_global_config(user: User = Depends(get_current_user)) -> ConfigResponse:
     """
     Get global configuration.
 
@@ -160,8 +154,7 @@ async def get_global_config(
 
 @router.put("/config", response_model=ConfigUpdateResponse)
 async def update_global_config(
-    config: GlobalConfigUpdate,
-    user: User = Depends(get_current_user)
+    config: GlobalConfigUpdate, user: User = Depends(get_current_user)
 ) -> ConfigUpdateResponse:
     """
     Update global configuration.

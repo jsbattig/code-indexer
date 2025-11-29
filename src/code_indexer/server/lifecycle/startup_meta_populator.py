@@ -44,7 +44,9 @@ def index_meta_directory(meta_dir: Path) -> None:
 
         if result.returncode != 0:
             logger.error(f"Meta-directory indexing failed: {result.stderr}")
-            raise RuntimeError(f"Indexing failed with exit code {result.returncode}: {result.stderr}")
+            raise RuntimeError(
+                f"Indexing failed with exit code {result.returncode}: {result.stderr}"
+            )
 
         logger.info("Meta-directory indexing completed successfully")
 
@@ -70,9 +72,7 @@ class StartupMetaPopulator:
     generated in the meta-directory for semantic search discovery.
     """
 
-    def __init__(
-        self, meta_dir: str, golden_repos_dir: str, registry: GlobalRegistry
-    ):
+    def __init__(self, meta_dir: str, golden_repos_dir: str, registry: GlobalRegistry):
         """
         Initialize the startup meta populator.
 
@@ -109,7 +109,9 @@ class StartupMetaPopulator:
 
             # If no repos registered, skip population
             if not non_meta_repos:
-                logger.info("No repositories registered, skipping meta-directory population")
+                logger.info(
+                    "No repositories registered, skipping meta-directory population"
+                )
                 return {
                     "populated": False,
                     "repos_processed": 0,

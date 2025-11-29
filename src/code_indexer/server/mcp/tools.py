@@ -503,12 +503,8 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "list_global_repos": {
         "name": "list_global_repos",
         "description": "List all globally accessible repositories for query-first experience",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        },
-        "required_permission": "query_repos"
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+        "required_permission": "query_repos",
     },
     "global_repo_status": {
         "name": "global_repo_status",
@@ -518,22 +514,18 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "properties": {
                 "alias": {
                     "type": "string",
-                    "description": "Global repository alias (e.g., 'repo-name-global')"
+                    "description": "Global repository alias (e.g., 'repo-name-global')",
                 }
             },
-            "required": ["alias"]
+            "required": ["alias"],
         },
-        "required_permission": "query_repos"
+        "required_permission": "query_repos",
     },
     "get_global_config": {
         "name": "get_global_config",
         "description": "Get global repository refresh configuration",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        },
-        "required_permission": "query_repos"
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+        "required_permission": "query_repos",
     },
     "set_global_config": {
         "name": "set_global_config",
@@ -544,12 +536,12 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 "refresh_interval": {
                     "type": "integer",
                     "description": "Refresh interval in seconds",
-                    "minimum": 60
+                    "minimum": 60,
                 }
             },
-            "required": ["refresh_interval"]
+            "required": ["refresh_interval"],
         },
-        "required_permission": "manage_golden_repos"
+        "required_permission": "manage_golden_repos",
     },
 }
 

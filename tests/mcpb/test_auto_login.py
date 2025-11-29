@@ -108,7 +108,9 @@ class TestAutoLogin:
         )
 
         # Attempt auto-login should fail
-        with pytest.raises(HttpError, match="Auto-login failed.*401.*Invalid credentials"):
+        with pytest.raises(
+            HttpError, match="Auto-login failed.*401.*Invalid credentials"
+        ):
             await attempt_auto_login("https://cidx.example.com", timeout=30)
 
     @pytest.mark.asyncio
@@ -157,9 +159,7 @@ class TestAutoLogin:
         )
 
         # Attempt auto-login should fail
-        with pytest.raises(
-            HttpError, match="Invalid login response.*refresh_token"
-        ):
+        with pytest.raises(HttpError, match="Invalid login response.*refresh_token"):
             await attempt_auto_login("https://cidx.example.com", timeout=30)
 
     @pytest.mark.asyncio
