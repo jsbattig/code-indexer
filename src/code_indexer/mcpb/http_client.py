@@ -122,10 +122,26 @@ class BridgeHttpClient:
                             f"Authentication failed: {response.status_code} {response.text}"
                         )
                 else:
-                    # No refresh_token available or already attempted refresh
-                    raise HttpError(
-                        f"Authentication failed: {response.status_code} {response.text}"
-                    )
+                    # No refresh_token available - try auto-login
+                    try:
+                        await self._attempt_auto_login()
+
+                        # Retry request with new token from auto-login
+                        headers = self.get_request_headers()
+                        response = await self._client.post(
+                            url, json=request_data, headers=headers
+                        )
+
+                        # If still 401 after auto-login, raise error
+                        if response.status_code == 401:
+                            raise HttpError(
+                                f"Authentication failed: {response.status_code} {response.text}"
+                            )
+                    except HttpError:
+                        # Auto-login failed or no credentials - raise original auth error
+                        raise HttpError(
+                            f"Authentication failed: {response.status_code} {response.text}"
+                        )
 
             # Handle server errors
             if response.status_code >= 500:
@@ -231,6 +247,44 @@ class BridgeHttpClient:
         )
         return error_response.to_dict()
 
+    async def _attempt_auto_login(self) -> None:
+        """Attempt auto-login using stored credentials.
+
+        Updates self.bearer_token and self.refresh_token with new values.
+        If config_path is set, persists updated tokens to config file atomically.
+
+        Raises:
+            HttpError: If auto-login fails or credentials unavailable
+        """
+        try:
+            from .auto_login import attempt_auto_login
+            from .credential_storage import credentials_exist
+
+            if not credentials_exist():
+                raise HttpError("No stored credentials available for auto-login")
+
+            print("Attempting auto-login...", file=sys.stderr)
+            new_access_token, new_refresh_token = await attempt_auto_login(
+                self.server_url, self.timeout
+            )
+
+            # Update tokens in memory
+            self.bearer_token = new_access_token
+            self.refresh_token = new_refresh_token
+
+            # Persist to config file if config_path is set
+            if self.config_path is not None:
+                await self._update_config_file(new_access_token, new_refresh_token)
+
+            # Log success
+            print(
+                f"Auto-login successful: {new_access_token[:20]}...",
+                file=sys.stderr,
+            )
+
+        except Exception as e:
+            raise HttpError(f"Auto-login failed: {str(e)}") from e
+
     async def _refresh_access_token(self) -> None:
         """Refresh access token using refresh token.
 
@@ -259,43 +313,15 @@ class BridgeHttpClient:
 
             # Handle 401 - refresh token expired - try auto-login
             if response.status_code == 401:
-                # Try auto-login if credentials available
                 try:
-                    from .auto_login import attempt_auto_login
-                    from .credential_storage import credentials_exist
-
-                    if credentials_exist():
-                        print(
-                            "Refresh token expired - attempting auto-login...",
-                            file=sys.stderr,
-                        )
-                        new_access_token, new_refresh_token = await attempt_auto_login(
-                            self.server_url, self.timeout
-                        )
-
-                        # Update tokens in memory
-                        self.bearer_token = new_access_token
-                        self.refresh_token = new_refresh_token
-
-                        # Persist to config file if config_path is set
-                        if self.config_path is not None:
-                            await self._update_config_file(
-                                new_access_token, new_refresh_token
-                            )
-
-                        # Log success
-                        print(
-                            f"Auto-login successful: {new_access_token[:20]}...",
-                            file=sys.stderr,
-                        )
-                        return  # Success - token refreshed via auto-login
-
+                    await self._attempt_auto_login()
+                    return  # Success - token refreshed via auto-login
                 except Exception as e:
                     # Auto-login failed - log and continue to raise original error
                     print(f"Auto-login failed: {str(e)}", file=sys.stderr)
-
-                # No credentials or auto-login failed
-                raise HttpError("Refresh token expired - re-authentication required")
+                    raise HttpError(
+                        "Refresh token expired - re-authentication required"
+                    )
 
             # Handle other errors
             if response.status_code >= 500:

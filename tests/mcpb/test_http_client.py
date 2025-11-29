@@ -106,8 +106,15 @@ class TestHttpClientRequests:
         request = httpx_mock.get_request()
         assert request.headers["Authorization"] == "Bearer secret-token"
 
-    async def test_forward_request_401_raises_auth_error(self, httpx_mock):
-        """Test that 401 response raises authentication error."""
+    async def test_forward_request_401_raises_auth_error(
+        self, httpx_mock, monkeypatch
+    ):
+        """Test that 401 response attempts auto-login and raises auth error if no credentials."""
+        # Mock credentials_exist to return False (no stored credentials)
+        from code_indexer.mcpb import credential_storage
+
+        monkeypatch.setattr(credential_storage, "credentials_exist", lambda: False)
+
         httpx_mock.add_response(
             method="POST",
             url="https://cidx.example.com/mcp",
@@ -123,6 +130,7 @@ class TestHttpClientRequests:
 
         request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
 
+        # Should attempt auto-login but fail due to no credentials
         with pytest.raises(HttpError, match="Authentication failed.*401"):
             await client.forward_request(request_data)
 

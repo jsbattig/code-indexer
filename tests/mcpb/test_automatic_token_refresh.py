@@ -70,8 +70,16 @@ class TestAutomaticTokenRefresh:
         finally:
             os.unlink(config_path)
 
-    async def test_401_without_refresh_token_raises_auth_error(self, httpx_mock):
-        """Test that 401 without refresh_token raises authentication error."""
+    async def test_401_without_refresh_token_raises_auth_error(
+        self, httpx_mock, monkeypatch
+    ):
+        """Test that 401 without refresh_token attempts auto-login and raises error if no credentials."""
+        # Mock credentials_exist to return False (no stored credentials)
+        from code_indexer.mcpb import credential_storage
+
+        monkeypatch.setattr(credential_storage, "credentials_exist", lambda: False)
+
+        # Initial request returns 401
         httpx_mock.add_response(
             method="POST",
             url="https://cidx.example.com/mcp",
@@ -88,6 +96,7 @@ class TestAutomaticTokenRefresh:
 
         request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
 
+        # Should attempt auto-login but fail due to no credentials
         with pytest.raises(HttpError, match="Authentication failed.*401"):
             await client.forward_request(request_data)
 
@@ -962,7 +971,7 @@ class TestAutoLoginIntegration:
 
         # Verify stderr logs
         captured = capsys.readouterr()
-        assert "Refresh token expired - attempting auto-login..." in captured.err
+        assert "Attempting auto-login..." in captured.err
         # From auto_login.py and http_client.py
         assert "Auto-login successful:" in captured.err
         # Verify truncated token (both auto_login.py and http_client.py log first 20 chars)
