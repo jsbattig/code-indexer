@@ -34,6 +34,30 @@
 
 ---
 
+## SSH SERVER RESTART - CRITICAL PROCEDURE
+
+**ABSOLUTE PROHIBITION**: NEVER use `kill -15 && nohup python3 -m ... &` for server restarts.
+
+**WHY**: Manual process management with nohup causes SSH session lockups. You MUST use systemd service management.
+
+**CORRECT PROCEDURE** for cidx-server restarts:
+```bash
+# Connect via MCP SSH tools
+mcp__ssh__ssh_connect(...)
+
+# Restart using systemd
+echo "PASSWORD" | sudo -S systemctl restart cidx-server
+
+# Verify service status
+systemctl status cidx-server --no-pager
+```
+
+**VIOLATION = SSH LOCKUP**: Using manual kill/nohup will freeze the SSH session indefinitely, requiring session termination and reconnection.
+
+**RECORDED**: 2025-11-29 - After multiple instances of SSH lockups caused by manual process management instead of systemd service control.
+
+---
+
 ## 1. CRITICAL BUSINESS INSIGHT - Query is Everything
 
 **THE SINGLE MOST IMPORTANT FEATURE**: Query capability is the core value proposition of CIDX. All query features available in CLI MUST be available in MCP/REST APIs with full parity.
