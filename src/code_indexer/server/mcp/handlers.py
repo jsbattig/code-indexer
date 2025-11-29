@@ -12,8 +12,13 @@ All handlers return MCP-compliant responses with content arrays:
 """
 
 import json
+import logging
+import os
 from typing import Dict, Any
 from code_indexer.server.auth.user_manager import User, UserRole
+from code_indexer.global_repos.global_registry import GlobalRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def _mcp_response(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -190,12 +195,40 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
 
 
 async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """List activated repositories for the current user."""
+    """List activated repositories for the current user, plus global repos."""
     from code_indexer.server import app
 
     try:
-        repos = app.activated_repo_manager.list_activated_repositories(user.username)
-        return _mcp_response({"success": True, "repositories": repos})
+        # Get activated repos from database
+        activated_repos = app.activated_repo_manager.list_activated_repositories(
+            user.username
+        )
+
+        # Get global repos from GlobalRegistry
+        global_repos = []
+        try:
+            golden_repos_dir = os.environ.get(
+                "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
+            )
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos_data = registry.list_global_repos()
+
+            # Mark global repos with is_global: true
+            for repo in global_repos_data:
+                repo["is_global"] = True
+                global_repos.append(repo)
+
+        except Exception as e:
+            # Log but don't fail - continue with activated repos only
+            logger.warning(
+                f"Failed to load global repos from {golden_repos_dir}: {e}",
+                exc_info=True
+            )
+
+        # Merge activated and global repos
+        all_repos = activated_repos + global_repos
+
+        return _mcp_response({"success": True, "repositories": all_repos})
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "repositories": []})
 

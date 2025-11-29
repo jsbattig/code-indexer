@@ -126,6 +126,7 @@ class GlobalRegistry:
 
         Raises:
             ReservedNameError: If alias_name is a reserved name and allow_reserved=False
+            ValueError: If alias_name doesn't end with '-global' suffix
             RuntimeError: If save fails
         """
         # Validate alias_name is not reserved (unless explicitly allowed)
@@ -135,6 +136,14 @@ class GlobalRegistry:
                 f"Cannot register repo with name '{alias_name}': "
                 f"This name is reserved for {purpose}. "
                 f"Choose a different alias name for your repository."
+            )
+
+        # Enforce -global suffix convention (Epic #520 requirement)
+        # Case-insensitive check to allow UPPERCASE-GLOBAL, lowercase-global, etc.
+        if not alias_name.lower().endswith("-global"):
+            raise ValueError(
+                f"Global repo alias must end with '-global' suffix (case-insensitive). "
+                f"Got: '{alias_name}', expected: '{repo_name}-global'"
             )
 
         now = datetime.now(timezone.utc).isoformat()
