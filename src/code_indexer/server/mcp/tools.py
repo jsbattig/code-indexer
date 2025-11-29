@@ -36,7 +36,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 },
                 "search_mode": {
                     "type": "string",
-                    "description": "Search mode",
+                    "description": "Search mode: 'semantic' for natural language/conceptual queries ('how authentication works'), 'fts' for exact text/identifiers ('def authenticate_user'), 'hybrid' for both. Default: semantic.",
                     "enum": ["semantic", "fts", "hybrid"],
                     "default": "semantic",
                 },
@@ -70,7 +70,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 # Temporal query parameters (Story #446)
                 "time_range": {
                     "type": "string",
-                    "description": "Time range filter for temporal queries (format: YYYY-MM-DD..YYYY-MM-DD, e.g., '2024-01-01..2024-12-31'). Returns only code that existed during this period. Requires temporal index built with 'cidx index --index-commits'.",
+                    "description": "Time range filter for temporal queries (format: YYYY-MM-DD..YYYY-MM-DD, e.g., '2024-01-01..2024-12-31'). Returns only code that existed during this period. Requires temporal index built with 'cidx index --index-commits'. NOTE: If temporal queries return empty results, the repository may not have temporal indexing enabled. Use global_repo_status to check temporal index availability (future enhancement).",
                 },
                 "time_range_all": {
                     "type": "boolean",
@@ -147,7 +147,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "discover_repositories": {
         "name": "discover_repositories",
-        "description": "Discover available repositories from configured sources",
+        "description": "List repositories available from external source configurations (Git forges, local paths). DIFFERENT FROM list_global_repos: This shows POTENTIAL repos from sources like GitHub organizations; those repos may not yet be indexed. To make a discovered repo queryable, use add_golden_repo. For already-indexed repos ready to query, use list_global_repos.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -163,7 +163,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Tools 3-8: Repository Management
     "list_repositories": {
         "name": "list_repositories",
-        "description": "List activated repositories for the current user",
+        "description": "List repositories YOU have activated (user-specific). DIFFERENT FROM list_global_repos: This shows YOUR activated repos (created via activate_repository for specific branches or composites); list_global_repos shows shared pre-indexed repos available to everyone. Most users only need list_global_repos unless they've activated specific branches or created composites.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -173,7 +173,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "activate_repository": {
         "name": "activate_repository",
-        "description": "Activate a repository for querying (supports single or composite)",
+        "description": "Create a user-specific repository activation for branch selection or composite repositories. WHEN TO USE: Use global repos directly for most queries; activate only when you need (1) a specific branch other than default, (2) to combine multiple repos into one queryable composite, or (3) user-specific customization. GLOBAL VS ACTIVATED: Global repos are shared, instantly queryable; activated repos are user-specific. After activation, query using the user_alias you provide.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -354,7 +354,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Tools 14-18: Admin
     "add_golden_repo": {
         "name": "add_golden_repo",
-        "description": "Add a golden repository",
+        "description": "Register a new repository for indexing (ASYNC operation). Returns immediately but indexing runs in background. WORKFLOW: (1) Call add_golden_repo(url, alias), (2) Poll get_job_statistics() until active=0 and pending=0 (recommended: every 10-30 seconds), (3) Repository becomes available as '{alias}-global' for querying. NAMING: Use descriptive aliases; '-global' suffix added automatically for global access. FAILURE: Check get_job_statistics() for failed>0; errors typically from invalid URL or auth issues.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -502,7 +502,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "list_global_repos": {
         "name": "list_global_repos",
-        "description": "List all globally accessible repositories for instant querying without activation. Global repositories are pre-indexed and immediately queryable. IMPORTANT: 'cidx-meta-global' is the meta-directory catalog - it contains descriptions of all repositories. DISCOVERY WORKFLOW: (1) Query cidx-meta-global first to discover which repositories contain content on your topic, (2) then query those specific repositories for detailed code. Example: search_code('authentication', repository_alias='cidx-meta-global') returns repositories that handle authentication, then search_code('OAuth implementation', repository_alias='backend-api-global') for actual code.",
+        "description": "List all globally accessible repositories. TERMINOLOGY: 'Global repos' (also called 'golden repos') are pre-indexed and immediately queryable without activation - they're shared across all users. 'Activated repos' are user-specific and created via activate_repository for branch selection or composites. Most users only need global repos. SPECIAL: 'cidx-meta-global' is the meta-directory catalog containing descriptions of ALL repositories. DISCOVERY WORKFLOW: (1) Query cidx-meta-global to discover which repositories contain content on your topic, (2) then query those specific repositories for detailed code. Example: search_code('authentication', repository_alias='cidx-meta-global') returns repositories that handle authentication, then search_code('OAuth implementation', repository_alias='backend-api-global') for actual code. STATUS: All listed global repos are ready for querying immediately; use global_repo_status for detailed info.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
         "required_permission": "query_repos",
     },
