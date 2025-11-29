@@ -219,17 +219,15 @@ async def async_main():  # pragma: no cover
         await bridge.run()
 
     except FileNotFoundError as e:
-        error_response = create_error_response(
-            request_id=None, code=SERVER_ERROR, message=f"Configuration error: {str(e)}"
-        )
-        print(json.dumps(error_response.to_dict()), file=sys.stderr)
+        print(f"MCPB Configuration Error: {str(e)}", file=sys.stderr)
+        print("Expected config file location: ~/.mcpb/config.json", file=sys.stderr)
         sys.exit(1)
 
     except Exception as e:
-        error_response = create_error_response(
-            request_id=None, code=SERVER_ERROR, message=f"Fatal error: {str(e)}"
-        )
-        print(json.dumps(error_response.to_dict()), file=sys.stderr)
+        print(f"MCPB Fatal Error: {str(e)}", file=sys.stderr)
+        import traceback
+
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)
 
 
