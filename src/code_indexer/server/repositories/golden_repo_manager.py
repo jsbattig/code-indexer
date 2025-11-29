@@ -793,7 +793,7 @@ class GoldenRepoManager:
                     cwd=clone_path,
                     capture_output=True,
                     text=True,
-                    timeout=300,  # 5 minutes timeout per command
+                    timeout=7200,  # 2 hours timeout per command
                 )
 
                 if result.returncode != 0:
