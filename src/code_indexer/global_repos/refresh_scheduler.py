@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from code_indexer.config import ConfigManager
 from .alias_manager import AliasManager
@@ -19,6 +19,7 @@ from .git_pull_updater import GitPullUpdater
 from .meta_directory_updater import MetaDirectoryUpdater
 from .query_tracker import QueryTracker
 from .cleanup_manager import CleanupManager
+from .shared_operations import GlobalRepoOperations
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class RefreshScheduler:
     def __init__(
         self,
         golden_repos_dir: str,
-        config_manager: ConfigManager,
+        config_source: Union[ConfigManager, GlobalRepoOperations],
         query_tracker: QueryTracker,
         cleanup_manager: CleanupManager,
     ):
@@ -44,12 +45,12 @@ class RefreshScheduler:
 
         Args:
             golden_repos_dir: Path to golden repos directory
-            config_manager: Configuration manager for refresh interval
+            config_source: Configuration source (ConfigManager for CLI, GlobalRepoOperations for server)
             query_tracker: Query tracker for reference counting
             cleanup_manager: Cleanup manager for old index removal
         """
         self.golden_repos_dir = Path(golden_repos_dir)
-        self.config_manager = config_manager
+        self.config_source = config_source
         self.query_tracker = query_tracker
         self.cleanup_manager = cleanup_manager
 
@@ -68,7 +69,13 @@ class RefreshScheduler:
         Returns:
             Refresh interval in seconds
         """
-        return self.config_manager.get_global_refresh_interval()
+        # Support both ConfigManager (CLI) and GlobalRepoOperations (server)
+        if isinstance(self.config_source, GlobalRepoOperations):
+            config = self.config_source.get_config()
+            return config["refresh_interval"]
+        else:
+            # ConfigManager (CLI)
+            return self.config_source.get_global_refresh_interval()
 
     def is_running(self) -> bool:
         """

@@ -42,8 +42,106 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
     try:
         from code_indexer.server import app
+        import os
+        from pathlib import Path
 
-        # Use semantic_query_manager for activated repositories (matches REST endpoint pattern)
+        repository_alias = params.get("repository_alias")
+
+        # Check if this is a global repository query (ends with -global suffix)
+        if repository_alias and repository_alias.endswith("-global"):
+            # Global repository: query directly without activation requirement
+            golden_repos_dir = os.environ.get(
+                "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
+            )
+
+            # Extract repo name by removing -global suffix
+            repo_name = repository_alias[:-7]  # Remove "-global" suffix
+
+            # Construct global repo path: golden-repos/{repo_name}/
+            global_repo_path = Path(golden_repos_dir) / repo_name
+
+            # Verify global repo exists
+            if not global_repo_path.exists():
+                raise FileNotFoundError(
+                    f"Global repository '{repository_alias}' not found at {global_repo_path}"
+                )
+
+            # Build mock repository list for _perform_search (single global repo)
+            mock_user_repos = [
+                {
+                    "user_alias": repository_alias,
+                    "repo_path": str(global_repo_path),
+                    "actual_repo_id": repo_name,
+                }
+            ]
+
+            # Call _perform_search directly with all query parameters
+            import time
+
+            start_time = time.time()
+            try:
+                results = app.semantic_query_manager._perform_search(
+                    username=user.username,
+                    user_repos=mock_user_repos,
+                    query_text=params["query_text"],
+                    limit=params.get("limit", 10),
+                    min_score=params.get("min_score", 0.5),
+                    file_extensions=params.get("file_extensions"),
+                    language=params.get("language"),
+                    exclude_language=params.get("exclude_language"),
+                    path_filter=params.get("path_filter"),
+                    exclude_path=params.get("exclude_path"),
+                    accuracy=params.get("accuracy", "balanced"),
+                    # Temporal query parameters (Story #446)
+                    time_range=params.get("time_range"),
+                    time_range_all=params.get("time_range_all", False),
+                    at_commit=params.get("at_commit"),
+                    include_removed=params.get("include_removed", False),
+                    show_evolution=params.get("show_evolution", False),
+                    evolution_limit=params.get("evolution_limit"),
+                    # FTS-specific parameters (Story #503 Phase 2)
+                    case_sensitive=params.get("case_sensitive", False),
+                    fuzzy=params.get("fuzzy", False),
+                    edit_distance=params.get("edit_distance", 0),
+                    snippet_lines=params.get("snippet_lines", 5),
+                    regex=params.get("regex", False),
+                    # Temporal filtering parameters (Story #503 Phase 3)
+                    diff_type=params.get("diff_type"),
+                    author=params.get("author"),
+                    chunk_type=params.get("chunk_type"),
+                )
+                execution_time_ms = int((time.time() - start_time) * 1000)
+                timeout_occurred = False
+            except TimeoutError as e:
+                execution_time_ms = int((time.time() - start_time) * 1000)
+                timeout_occurred = True
+                raise Exception(f"Query timed out: {str(e)}")
+            except Exception as e:
+                execution_time_ms = int((time.time() - start_time) * 1000)
+                if "timeout" in str(e).lower():
+                    raise Exception(f"Query timed out: {str(e)}")
+                raise
+
+            # Build response matching query_user_repositories format
+            response_results = []
+            for r in results:
+                result_dict = r.to_dict()
+                response_results.append(result_dict)
+
+            result = {
+                "results": response_results,
+                "total_results": len(response_results),
+                "query_metadata": {
+                    "query_text": params["query_text"],
+                    "execution_time_ms": execution_time_ms,
+                    "repositories_searched": 1,
+                    "timeout_occurred": timeout_occurred,
+                },
+            }
+
+            return _mcp_response({"success": True, "results": result})
+
+        # Activated repository: use semantic_query_manager for activated repositories (matches REST endpoint pattern)
         result = app.semantic_query_manager.query_user_repositories(
             username=user.username,
             query_text=params["query_text"],

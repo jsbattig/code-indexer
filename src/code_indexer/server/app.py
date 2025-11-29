@@ -1468,8 +1468,16 @@ def create_app() -> FastAPI:
 
         Handles:
         - Startup: Auto-populate meta-directory with repository descriptions
-        - Shutdown: Clean up resources (future use)
+        - Startup: Start global repos background services (QueryTracker, CleanupManager, RefreshScheduler)
+        - Shutdown: Stop background services gracefully
+        - Shutdown: Clean up resources
         """
+        # Get server data directory (used by multiple components)
+        server_data_dir = os.environ.get(
+            "CIDX_SERVER_DATA_DIR", str(Path.home() / ".cidx-server")
+        )
+        golden_repos_dir = Path(server_data_dir) / "golden-repos"
+
         # Startup: Auto-populate meta-directory
         logger.info("Server startup: Initializing meta-directory population")
         try:
@@ -1478,11 +1486,6 @@ def create_app() -> FastAPI:
             )
             from code_indexer.global_repos.global_registry import GlobalRegistry
 
-            # Get server data directory
-            server_data_dir = os.environ.get(
-                "CIDX_SERVER_DATA_DIR", str(Path.home() / ".cidx-server")
-            )
-            golden_repos_dir = Path(server_data_dir) / "golden-repos"
             meta_dir = golden_repos_dir / "cidx-meta"
 
             # Create registry instance
@@ -1515,9 +1518,47 @@ def create_app() -> FastAPI:
                 f"Failed to populate meta-directory on startup: {e}", exc_info=True
             )
 
+        # Startup: Initialize and start global repos background services
+        logger.info("Server startup: Starting global repos background services")
+        global_lifecycle_manager = None
+        try:
+            from code_indexer.server.lifecycle.global_repos_lifecycle import (
+                GlobalReposLifecycleManager,
+            )
+
+            global_lifecycle_manager = GlobalReposLifecycleManager(
+                str(golden_repos_dir)
+            )
+            global_lifecycle_manager.start()
+
+            # Store lifecycle manager in app state for access by query handlers
+            app.state.global_lifecycle_manager = global_lifecycle_manager
+            app.state.query_tracker = global_lifecycle_manager.query_tracker
+
+            logger.info("Global repos background services started successfully")
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to start global repos background services: {e}",
+                exc_info=True,
+            )
+
         yield  # Server is now running
 
-        # Shutdown: Clean up resources (future use)
+        # Shutdown: Stop global repos background services BEFORE other cleanup
+        logger.info("Server shutdown: Stopping global repos background services")
+        if global_lifecycle_manager is not None:
+            try:
+                global_lifecycle_manager.stop()
+                logger.info("Global repos background services stopped successfully")
+            except Exception as e:
+                logger.error(
+                    f"Error stopping global repos background services: {e}",
+                    exc_info=True,
+                )
+
+        # Shutdown: Clean up other resources
         logger.info("Server shutdown: Cleaning up resources")
 
     # Create FastAPI app with metadata and lifespan
