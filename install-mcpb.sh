@@ -73,6 +73,7 @@ cat > "$HOME/.mcpb/mcpb-wrapper.sh" << 'EOF'
 # MCPB Wrapper Script - Sets required environment for Claude Desktop
 export HOME=/Users/seba.battig
 export PYTHONPATH=/Users/seba.battig/Dev/code-indexer/src:/Users/seba.battig/Library/Python/3.9/lib/python/site-packages
+export PYTHONUNBUFFERED=1
 
 # Execute mcpb with all arguments
 exec python3 -m code_indexer.mcpb "$@"
