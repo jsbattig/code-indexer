@@ -302,7 +302,8 @@ class TestErrorHandling:
         response = await bridge.process_line("not valid json")
 
         assert response["jsonrpc"] == "2.0"
-        assert response["id"] is None
+        # MCP spec requires id=0 for parse errors (not null)
+        assert response["id"] == 0
         assert response["error"]["code"] == -32700
         assert "parse" in response["error"]["message"].lower()
 

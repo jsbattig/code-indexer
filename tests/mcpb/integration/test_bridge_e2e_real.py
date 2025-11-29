@@ -251,7 +251,8 @@ class TestBridgeE2E:
         response = await bridge.process_line(malformed_line)
 
         assert response["jsonrpc"] == "2.0"
-        assert response["id"] is None
+        # MCP spec requires id=0 for parse errors (not null)
+        assert response["id"] == 0
         assert "error" in response
         assert response["error"]["code"] == -32700  # Parse error
 
@@ -265,7 +266,8 @@ class TestBridgeE2E:
         response = await bridge.process_line(invalid_line)
 
         assert response["jsonrpc"] == "2.0"
-        assert response["id"] is None
+        # MCP spec requires id=0 for invalid requests where ID cannot be extracted
+        assert response["id"] == 0
         assert "error" in response
         assert response["error"]["code"] == -32600  # Invalid request
         assert "jsonrpc" in response["error"]["data"]["detail"].lower()
