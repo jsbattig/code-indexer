@@ -114,7 +114,7 @@ def get_current_user(
             )
 
         # Check if token is blacklisted
-        from src.code_indexer.server.app import is_token_blacklisted
+        from code_indexer.server.app import is_token_blacklisted
 
         jti = payload.get("jti")
         if jti and is_token_blacklisted(jti):
