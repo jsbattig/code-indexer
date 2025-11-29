@@ -59,11 +59,28 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
             )
 
-            # Extract repo name by removing -global suffix
-            repo_name = repository_alias[:-7]  # Remove "-global" suffix
+            # Look up global repo in GlobalRegistry to get actual path
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos = registry.list_global_repos()
 
-            # Construct global repo path: golden-repos/{repo_name}/
-            global_repo_path = Path(golden_repos_dir) / repo_name
+            # Find the matching global repo
+            repo_entry = next(
+                (r for r in global_repos if r["alias_name"] == repository_alias),
+                None
+            )
+
+            if not repo_entry:
+                return _mcp_response({
+                    "success": False,
+                    "error": f"Global repository '{repository_alias}' not found",
+                    "results": []
+                })
+
+            # Extract actual repo path from index_path
+            # index_path is like: /path/to/repo/.code-indexer/index
+            # We need: /path/to/repo
+            index_path = Path(repo_entry["index_path"])
+            global_repo_path = index_path.parent.parent  # Go up two levels from index dir
 
             # Verify global repo exists
             if not global_repo_path.exists():
@@ -76,7 +93,7 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 {
                     "user_alias": repository_alias,
                     "repo_path": str(global_repo_path),
-                    "actual_repo_id": repo_name,
+                    "actual_repo_id": repo_entry["repo_name"],
                 }
             ]
 
@@ -467,11 +484,45 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
     """
     from code_indexer.server import app
     from code_indexer.server.models.api_models import FileListQueryParams
+    import os
+    from pathlib import Path
 
     try:
         repository_alias = params["repository_alias"]
         path = params.get("path", "")
         recursive = params.get("recursive", True)
+
+        # Check if this is a global repository (ends with -global suffix)
+        if repository_alias and repository_alias.endswith("-global"):
+            # Look up global repo in GlobalRegistry to get actual path
+            golden_repos_dir = os.environ.get(
+                "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
+            )
+
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos = registry.list_global_repos()
+
+            # Find the matching global repo
+            repo_entry = next(
+                (r for r in global_repos if r["alias_name"] == repository_alias),
+                None
+            )
+
+            if not repo_entry:
+                return _mcp_response({
+                    "success": False,
+                    "error": f"Global repository '{repository_alias}' not found",
+                    "structure": {}
+                })
+
+            # Extract actual repo path from index_path
+            # index_path is like: /path/to/repo/.code-indexer/index
+            # We need: /path/to/repo
+            index_path = Path(repo_entry["index_path"])
+            repo_path_resolved = str(index_path.parent.parent)
+
+            # Use resolved path instead of alias for file_service
+            repository_alias = repo_path_resolved
 
         # Build path pattern for recursive search
         path_pattern = None

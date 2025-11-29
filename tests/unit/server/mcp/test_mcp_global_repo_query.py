@@ -69,6 +69,19 @@ class TestGlobalRepoQuery:
             mock_query_manager._perform_search.return_value = [mock_result]
             mock_app.semantic_query_manager = mock_query_manager
 
+            # Mock GlobalRegistry for path lookup
+            mock_registry = MagicMock()
+            mock_registry.list_global_repos.return_value = [
+                {
+                    "repo_name": "cidx-meta",
+                    "alias_name": "cidx-meta-global",
+                    "repo_url": None,
+                    "index_path": str(mock_global_repo_path / "cidx-meta" / ".code-indexer" / "index"),
+                    "created_at": "2025-11-28T08:48:12.625104+00:00",
+                    "last_refresh": "2025-11-28T08:48:12.625104+00:00",
+                }
+            ]
+
             # Test parameters with global repo alias
             params = {
                 "query_text": "authentication",
@@ -76,8 +89,12 @@ class TestGlobalRepoQuery:
                 "limit": 10,
             }
 
-            # Execute
-            result = await search_code(params, mock_user)
+            # Execute with GlobalRegistry mock
+            with patch(
+                "code_indexer.server.mcp.handlers.GlobalRegistry",
+                return_value=mock_registry,
+            ):
+                result = await search_code(params, mock_user)
 
             # Verify: _perform_search was called for global repo
             mock_query_manager._perform_search.assert_called_once()
@@ -178,6 +195,19 @@ class TestGlobalRepoQuery:
             mock_query_manager._perform_search.return_value = []
             mock_app.semantic_query_manager = mock_query_manager
 
+            # Mock GlobalRegistry for path lookup
+            mock_registry = MagicMock()
+            mock_registry.list_global_repos.return_value = [
+                {
+                    "repo_name": "cidx-meta",
+                    "alias_name": "cidx-meta-global",
+                    "repo_url": None,
+                    "index_path": str(mock_global_repo_path / "cidx-meta" / ".code-indexer" / "index"),
+                    "created_at": "2025-11-28T08:48:12.625104+00:00",
+                    "last_refresh": "2025-11-28T08:48:12.625104+00:00",
+                }
+            ]
+
             # Test parameters with all filter options
             params = {
                 "query_text": "auth",
@@ -192,8 +222,12 @@ class TestGlobalRepoQuery:
                 "file_extensions": [".py", ".md"],
             }
 
-            # Execute
-            await search_code(params, mock_user)
+            # Execute with GlobalRegistry mock
+            with patch(
+                "code_indexer.server.mcp.handlers.GlobalRegistry",
+                return_value=mock_registry,
+            ):
+                await search_code(params, mock_user)
 
             # Verify: _perform_search was called
             mock_query_manager._perform_search.assert_called_once()
