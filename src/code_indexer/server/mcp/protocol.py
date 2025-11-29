@@ -206,8 +206,14 @@ async def process_jsonrpc_request(
     try:
         if method == "initialize":
             # MCP protocol handshake
+            # TODO: Verify full MCP 2025-06-18 compatibility
+            # - 2025-06-18 removed JSON-RPC batching support (breaking change)
+            # - Added structured JSON tool output (structuredContent)
+            # - Enhanced OAuth 2.0 integration with resource parameter (RFC 8707)
+            # - Server-initiated user input via elicitation/create requests
+            # Current implementation status: Updated version only, features pending audit
             result = {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": "2025-06-18",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "CIDX", "version": "7.3.0"},
             }
@@ -369,7 +375,7 @@ async def authenticated_sse_generator(user):
         "data": json.dumps(
             {
                 "protocol": "mcp",
-                "version": "2024-11-05",
+                "version": "2025-06-18",
                 "capabilities": {"tools": {}},
                 "user": user.username,
             }

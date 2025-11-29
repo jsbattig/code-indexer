@@ -294,12 +294,18 @@ CIDX can index and semantically search entire git commit history:
 
 ## MCP Protocol Integration
 
-**Protocol Version**: `2024-11-05` (Model Context Protocol)
+**Protocol Version**: `2025-06-18` (Model Context Protocol)
 
 **Initialize Handshake** (CRITICAL for Claude Code connection):
 - Method: `initialize` - MUST be first client-server interaction
-- Server Response: `{ "protocolVersion": "2024-11-05", "capabilities": { "tools": {} }, "serverInfo": { "name": "CIDX", "version": "7.3.0" } }`
+- Server Response: `{ "protocolVersion": "2025-06-18", "capabilities": { "tools": {} }, "serverInfo": { "name": "CIDX", "version": "7.3.0" } }`
 - Required for OAuth flow completion - Claude Code calls `initialize` after authentication
+
+**Version Notes**:
+- Updated from `2024-11-05` to `2025-06-18` for Claude Desktop compatibility
+- 2025-06-18 breaking changes: Removed JSON-RPC batching support
+- 2025-06-18 new features: Structured tool output, OAuth resource parameter (RFC 8707), elicitation/create for server-initiated user input
+- Current implementation: Version updated, feature audit pending
 
 **Tool Response Format** (CRITICAL for Claude Code compatibility):
 - All tool results MUST return `content` as an **array of content blocks**, NOT a string
