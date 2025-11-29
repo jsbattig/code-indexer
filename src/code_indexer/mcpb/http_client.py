@@ -276,12 +276,6 @@ class BridgeHttpClient:
             if self.config_path is not None:
                 await self._update_config_file(new_access_token, new_refresh_token)
 
-            # Log success
-            print(
-                f"Auto-login successful: {new_access_token[:20]}...",
-                file=sys.stderr,
-            )
-
         except Exception as e:
             raise HttpError(f"Auto-login failed: {str(e)}") from e
 
