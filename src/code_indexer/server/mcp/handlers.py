@@ -54,11 +54,13 @@ def _get_golden_repos_dir() -> str:
     Returns:
         str: Absolute path to golden repos directory
     """
-    from code_indexer.server import app
+    from code_indexer.server.app import app
     from typing import Optional, cast
 
     # PRIMARY: app.state (set during server startup)
-    golden_repos_dir: Optional[str] = cast(Optional[str], getattr(app.state, 'golden_repos_dir', None))
+    golden_repos_dir: Optional[str] = cast(
+        Optional[str], getattr(app.state, "golden_repos_dir", None)
+    )
     if golden_repos_dir:
         return golden_repos_dir
 
@@ -74,7 +76,7 @@ def _get_golden_repos_dir() -> str:
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
     try:
-        from code_indexer.server import app
+        from code_indexer.server.app import app
         from pathlib import Path
 
         repository_alias = params.get("repository_alias")
@@ -90,22 +92,25 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
             # Find the matching global repo
             repo_entry = next(
-                (r for r in global_repos if r["alias_name"] == repository_alias),
-                None
+                (r for r in global_repos if r["alias_name"] == repository_alias), None
             )
 
             if not repo_entry:
-                return _mcp_response({
-                    "success": False,
-                    "error": f"Global repository '{repository_alias}' not found",
-                    "results": []
-                })
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Global repository '{repository_alias}' not found",
+                        "results": [],
+                    }
+                )
 
             # Extract actual repo path from index_path
             # index_path is like: /path/to/repo/.code-indexer/index
             # We need: /path/to/repo
             index_path = Path(repo_entry["index_path"])
-            global_repo_path = index_path.parent.parent  # Go up two levels from index dir
+            global_repo_path = (
+                index_path.parent.parent
+            )  # Go up two levels from index dir
 
             # Verify global repo exists
             if not global_repo_path.exists():
@@ -238,7 +243,7 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List activated repositories for the current user, plus global repos."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         # Get activated repos from database
@@ -262,7 +267,7 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
             # Log but don't fail - continue with activated repos only
             logger.warning(
                 f"Failed to load global repos from {golden_repos_dir}: {e}",
-                exc_info=True
+                exc_info=True,
             )
 
         # Merge activated and global repos
@@ -275,7 +280,7 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
 
 async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Activate a repository for querying (supports single or composite)."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         job_id = app.activated_repo_manager.activate_repository(
@@ -298,7 +303,7 @@ async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, A
 
 async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Deactivate a repository."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         user_alias = params["user_alias"]
@@ -318,7 +323,7 @@ async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get detailed status of a repository."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         user_alias = params["user_alias"]
@@ -332,7 +337,7 @@ async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Sync repository with upstream."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         user_alias = params["user_alias"]
@@ -396,7 +401,7 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Switch repository to different branch."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         user_alias = params["user_alias"]
@@ -417,7 +422,7 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List files in a repository."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
     from code_indexer.server.models.api_models import FileListQueryParams
 
     try:
@@ -467,7 +472,7 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
     Returns MCP-compliant response with content as array of text blocks.
     Per MCP spec, content must be an array of content blocks, each with 'type' and 'text' fields.
     """
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         repository_alias = params["repository_alias"]
@@ -505,7 +510,7 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
     FileListingService doesn't have browse_directory method.
     Use list_files with path patterns instead.
     """
-    from code_indexer.server import app
+    from code_indexer.server.app import app
     from code_indexer.server.models.api_models import FileListQueryParams
     from pathlib import Path
 
@@ -524,16 +529,17 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
             # Find the matching global repo
             repo_entry = next(
-                (r for r in global_repos if r["alias_name"] == repository_alias),
-                None
+                (r for r in global_repos if r["alias_name"] == repository_alias), None
             )
 
             if not repo_entry:
-                return _mcp_response({
-                    "success": False,
-                    "error": f"Global repository '{repository_alias}' not found",
-                    "structure": {}
-                })
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Global repository '{repository_alias}' not found",
+                        "structure": {},
+                    }
+                )
 
             # Extract actual repo path from index_path
             # index_path is like: /path/to/repo/.code-indexer/index
@@ -586,7 +592,7 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
 async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get available branches for a repository."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
     from pathlib import Path
     from code_indexer.services.git_topology_service import GitTopologyService
     from code_indexer.server.services.branch_service import BranchService
@@ -668,7 +674,7 @@ async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Add a golden repository (admin only)."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         repo_url = params["url"]
@@ -694,7 +700,7 @@ async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Remove a golden repository (admin only)."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         alias = params["alias"]
@@ -714,7 +720,7 @@ async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, An
 
 async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Refresh a golden repository (admin only)."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         alias = params["alias"]
@@ -734,7 +740,7 @@ async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, A
 
 async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List all users (admin only)."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         all_users = app.user_manager.get_all_users()
@@ -760,7 +766,7 @@ async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Create a new user (admin only)."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         username = params["username"]
@@ -811,7 +817,7 @@ async def get_job_statistics(params: Dict[str, Any], user: User) -> Dict[str, An
     BackgroundJobManager doesn't have get_job_statistics method.
     Use get_active_job_count, get_pending_job_count, get_failed_job_count instead.
     """
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         active = app.background_job_manager.get_active_job_count()
@@ -834,7 +840,7 @@ async def get_all_repositories_status(
     params: Dict[str, Any], user: User
 ) -> Dict[str, Any]:
     """Get status summary of all repositories."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         repos = app.activated_repo_manager.list_activated_repositories(user.username)
@@ -866,7 +872,7 @@ async def manage_composite_repository(
     params: Dict[str, Any], user: User
 ) -> Dict[str, Any]:
     """Manage composite repository operations."""
-    from code_indexer.server import app
+    from code_indexer.server.app import app
 
     try:
         operation = params["operation"]
