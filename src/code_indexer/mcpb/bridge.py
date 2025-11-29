@@ -51,7 +51,10 @@ class Bridge:
         Returns:
             JSON-RPC response as dictionary
         """
-        print(f"DEBUG process_line: Received line: {repr(line[:200] if len(line) > 200 else line)}", file=sys.stderr)
+        print(
+            f"DEBUG process_line: Received line: {repr(line[:200] if len(line) > 200 else line)}",
+            file=sys.stderr,
+        )
         try:
             # Parse JSON-RPC request
             request = parse_jsonrpc_request(line)
@@ -211,7 +214,9 @@ async def async_main():  # pragma: no cover
 
     print(f"DEBUG: HOME={os.environ.get('HOME')}", file=sys.stderr)
     print(f"DEBUG: PYTHONPATH={os.environ.get('PYTHONPATH')}", file=sys.stderr)
-    print(f"DEBUG: PYTHONUNBUFFERED={os.environ.get('PYTHONUNBUFFERED')}", file=sys.stderr)
+    print(
+        f"DEBUG: PYTHONUNBUFFERED={os.environ.get('PYTHONUNBUFFERED')}", file=sys.stderr
+    )
     print(f"DEBUG: DEFAULT_CONFIG_PATH={DEFAULT_CONFIG_PATH}", file=sys.stderr)
 
     try:

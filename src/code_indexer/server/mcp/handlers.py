@@ -329,7 +329,9 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     try:
         user_alias = params["user_alias"]
         # Resolve alias to repository details
-        repos = app_module.activated_repo_manager.list_activated_repositories(user.username)
+        repos = app_module.activated_repo_manager.list_activated_repositories(
+            user.username
+        )
         repo_id = None
         for repo in repos:
             if repo["user_alias"] == user_alias:
@@ -806,7 +808,9 @@ async def get_all_repositories_status(
 ) -> Dict[str, Any]:
     """Get status summary of all repositories."""
     try:
-        repos = app_module.activated_repo_manager.list_activated_repositories(user.username)
+        repos = app_module.activated_repo_manager.list_activated_repositories(
+            user.username
+        )
         status_summary = []
         for repo in repos:
             try:

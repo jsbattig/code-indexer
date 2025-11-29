@@ -83,7 +83,9 @@ def mock_global_registry_data(mock_golden_repos_dir):
             "repo_name": "cidx-meta",
             "alias_name": "cidx-meta-global",
             "repo_url": None,
-            "index_path": str(mock_golden_repos_dir / "cidx-meta" / ".code-indexer" / "index"),
+            "index_path": str(
+                mock_golden_repos_dir / "cidx-meta" / ".code-indexer" / "index"
+            ),
             "created_at": "2025-11-28T08:48:12.625104+00:00",
             "last_refresh": "2025-11-28T08:48:12.625104+00:00",
         },
@@ -91,7 +93,9 @@ def mock_global_registry_data(mock_golden_repos_dir):
             "repo_name": "click",
             "alias_name": "click-global",
             "repo_url": "local:///path/to/repos/click",
-            "index_path": str(mock_golden_repos_dir / "repos" / "click" / ".code-indexer" / "index"),
+            "index_path": str(
+                mock_golden_repos_dir / "repos" / "click" / ".code-indexer" / "index"
+            ),
             "created_at": "2025-11-28T21:01:20.090249+00:00",
             "last_refresh": "2025-11-28T21:01:20.090249+00:00",
         },
@@ -99,7 +103,9 @@ def mock_global_registry_data(mock_golden_repos_dir):
             "repo_name": "pytest",
             "alias_name": "pytest-global",
             "repo_url": "local:///path/to/repos/pytest",
-            "index_path": str(mock_golden_repos_dir / "repos" / "pytest" / ".code-indexer" / "index"),
+            "index_path": str(
+                mock_golden_repos_dir / "repos" / "pytest" / ".code-indexer" / "index"
+            ),
             "created_at": "2025-11-28T21:01:27.116257+00:00",
             "last_refresh": "2025-11-28T21:01:27.116257+00:00",
         },
@@ -154,7 +160,7 @@ class TestGlobalRepoPathResolution:
                     "limit": 10,
                 }
 
-                result = await search_code(params, mock_user)
+                await search_code(params, mock_user)
 
                 # Verify: GlobalRegistry was instantiated with app.state.golden_repos_dir
                 mock_registry_class.assert_called_once_with(str(mock_golden_repos_dir))
@@ -212,7 +218,7 @@ class TestGlobalRepoPathResolution:
                     "limit": 10,
                 }
 
-                result = await search_code(params, mock_user)
+                await search_code(params, mock_user)
 
                 # Verify: _perform_search was called
                 mock_query_manager._perform_search.assert_called_once()
@@ -224,16 +230,18 @@ class TestGlobalRepoPathResolution:
 
                 # CRITICAL: Path should be golden-repos/repos/click (from registry)
                 # NOT golden-repos/click (from manual construction)
-                assert "repos" in repo_path.parts, (
-                    f"Path should include 'repos' subdirectory. Got: {repo_path}"
-                )
-                assert repo_path.name == "click", f"Path should end with 'click'. Got: {repo_path}"
+                assert (
+                    "repos" in repo_path.parts
+                ), f"Path should include 'repos' subdirectory. Got: {repo_path}"
+                assert (
+                    repo_path.name == "click"
+                ), f"Path should end with 'click'. Got: {repo_path}"
 
                 # Explicit check: Should NOT be golden-repos/click
                 wrong_path = mock_golden_repos_dir / "click"
                 assert repo_path != wrong_path, (
-                    f"Handler is constructing wrong path! "
-                    f"Should use registry lookup, not golden_repos_dir / repo_name"
+                    "Handler is constructing wrong path! "
+                    "Should use registry lookup, not golden_repos_dir / repo_name"
                 )
 
     @pytest.mark.asyncio
@@ -266,6 +274,7 @@ class TestGlobalRepoPathResolution:
                 # Verify: MCP error response
                 assert "content" in result
                 import json
+
                 response_data = json.loads(result["content"][0]["text"])
 
                 assert response_data["success"] is False
@@ -298,7 +307,7 @@ class TestGlobalRepoPathResolution:
                     "limit": 10,
                 }
 
-                result = await search_code(params, mock_user)
+                await search_code(params, mock_user)
 
                 # Verify: Correct path resolution
                 call_kwargs = mock_query_manager._perform_search.call_args.kwargs
@@ -341,7 +350,7 @@ class TestGlobalRepoPathResolution:
                     "limit": 10,
                 }
 
-                result = await search_code(params, mock_user)
+                await search_code(params, mock_user)
 
                 # Verify: Correct path resolution for meta-directory
                 call_kwargs = mock_query_manager._perform_search.call_args.kwargs
@@ -356,9 +365,9 @@ class TestGlobalRepoPathResolution:
                 )
 
                 # Explicit check: Should NOT include 'repos' in path
-                assert "repos" not in repo_path.parts, (
-                    "Meta-directory should NOT be under repos/ subdirectory"
-                )
+                assert (
+                    "repos" not in repo_path.parts
+                ), "Meta-directory should NOT be under repos/ subdirectory"
 
     @pytest.mark.asyncio
     async def test_registry_lookup_happens_before_path_construction(
@@ -394,22 +403,31 @@ class TestGlobalRepoPathResolution:
                 await search_code(params, mock_user)
 
                 # Verify: GlobalRegistry was instantiated (lookup step)
-                assert mock_registry_class.called, "Handler must instantiate GlobalRegistry"
+                assert (
+                    mock_registry_class.called
+                ), "Handler must instantiate GlobalRegistry"
 
                 # Verify: list_global_repos was called (lookup step)
-                assert mock_registry.list_global_repos.called, (
-                    "Handler must call list_global_repos() to lookup repo"
-                )
+                assert (
+                    mock_registry.list_global_repos.called
+                ), "Handler must call list_global_repos() to lookup repo"
 
                 # Verify: Both calls happened BEFORE _perform_search
                 call_order = [
-                    call[0] for call in [
+                    call[0]
+                    for call in [
                         ("registry_init", mock_registry_class.call_count > 0),
                         ("list_repos", mock_registry.list_global_repos.call_count > 0),
-                        ("perform_search", mock_query_manager._perform_search.call_count > 0),
-                    ] if call[1]
+                        (
+                            "perform_search",
+                            mock_query_manager._perform_search.call_count > 0,
+                        ),
+                    ]
+                    if call[1]
                 ]
 
-                assert call_order == ["registry_init", "list_repos", "perform_search"], (
-                    "Handler must: 1) Init registry, 2) List repos, 3) Perform search"
-                )
+                assert call_order == [
+                    "registry_init",
+                    "list_repos",
+                    "perform_search",
+                ], "Handler must: 1) Init registry, 2) List repos, 3) Perform search"

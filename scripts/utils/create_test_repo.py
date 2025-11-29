@@ -73,12 +73,17 @@ def create_repository_structure() -> None:
 
 def commit_1() -> None:
     """Commit 1: Initial project setup (2025-11-01 10:00:00)."""
-    write_file(".gitignore", """__pycache__/
+    write_file(
+        ".gitignore",
+        """__pycache__/
 *.pyc
 .env
-""")
+""",
+    )
 
-    write_file("src/auth.py", '''"""Authentication module."""
+    write_file(
+        "src/auth.py",
+        '''"""Authentication module."""
 
 def login(username: str, password: str) -> bool:
     """Basic login check."""
@@ -89,9 +94,12 @@ def login(username: str, password: str) -> bool:
 def logout(session_id: str) -> None:
     """End user session."""
     pass
-''')
+''',
+    )
 
-    write_file("src/database.py", '''"""Database connection module."""
+    write_file(
+        "src/database.py",
+        '''"""Database connection module."""
 
 def connect(connection_string: str):
     """Connect to database."""
@@ -101,12 +109,16 @@ def connect(connection_string: str):
 def disconnect(connection):
     """Disconnect from database."""
     pass
-''')
+''',
+    )
 
-    write_file("README.md", """# Test Project
+    write_file(
+        "README.md",
+        """# Test Project
 
 A test project for diff-based temporal indexing validation.
-""")
+""",
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-01T10:00:00", "Initial project setup")
@@ -114,7 +126,9 @@ A test project for diff-based temporal indexing validation.
 
 def commit_2() -> None:
     """Commit 2: Add API endpoints (2025-11-01 14:00:00)."""
-    write_file("src/api.py", '''"""REST API endpoints."""
+    write_file(
+        "src/api.py",
+        '''"""REST API endpoints."""
 
 def get_users():
     """Get all users."""
@@ -127,10 +141,13 @@ def create_user(name: str):
 def delete_user(user_id: int):
     """Delete user."""
     return {"deleted": user_id}
-''')
+''',
+    )
 
     # Modify database.py - append query helper
-    write_file("src/database.py", '''"""Database connection module."""
+    write_file(
+        "src/database.py",
+        '''"""Database connection module."""
 
 def connect(connection_string: str):
     """Connect to database."""
@@ -145,7 +162,8 @@ def query(connection, sql: str):
     """Execute SQL query."""
     print(f"Executing: {sql}")
     return []
-''')
+''',
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-01T14:00:00", "Add API endpoints")
@@ -153,7 +171,9 @@ def query(connection, sql: str):
 
 def commit_3() -> None:
     """Commit 3: Add configuration system (2025-11-01 18:00:00)."""
-    write_file("src/config.py", '''"""Configuration loading module."""
+    write_file(
+        "src/config.py",
+        '''"""Configuration loading module."""
 
 import os
 
@@ -169,10 +189,13 @@ def get_database_url():
     """Get database connection string."""
     config = load_config()
     return config["database_url"]
-''')
+''',
+    )
 
     # Modify database.py - use config for connection string
-    write_file("src/database.py", '''"""Database connection module."""
+    write_file(
+        "src/database.py",
+        '''"""Database connection module."""
 
 from src.config import get_database_url
 
@@ -191,7 +214,8 @@ def query(connection, sql: str):
     """Execute SQL query."""
     print(f"Executing: {sql}")
     return []
-''')
+''',
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-01T18:00:00", "Add configuration system")
@@ -199,7 +223,9 @@ def query(connection, sql: str):
 
 def commit_4() -> None:
     """Commit 4: Add utility functions (2025-11-02 10:00:00)."""
-    write_file("src/utils.py", '''"""Utility functions."""
+    write_file(
+        "src/utils.py",
+        '''"""Utility functions."""
 
 import hashlib
 from datetime import datetime
@@ -215,10 +241,13 @@ def format_date(dt: datetime) -> str:
 def sanitize_input(text: str) -> str:
     """Sanitize user input."""
     return text.strip().replace("<", "&lt;").replace(">", "&gt;")
-''')
+''',
+    )
 
     # Modify auth.py - use utils for password hashing
-    write_file("src/auth.py", '''"""Authentication module."""
+    write_file(
+        "src/auth.py",
+        '''"""Authentication module."""
 
 from src.utils import hash_password
 
@@ -233,7 +262,8 @@ def login(username: str, password: str) -> bool:
 def logout(session_id: str) -> None:
     """End user session."""
     pass
-''')
+''',
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-02T10:00:00", "Add utility functions")
@@ -241,7 +271,9 @@ def logout(session_id: str) -> None:
 
 def commit_5() -> None:
     """Commit 5: Add test suite (2025-11-02 14:00:00)."""
-    write_file("tests/test_auth.py", '''"""Tests for authentication module."""
+    write_file(
+        "tests/test_auth.py",
+        '''"""Tests for authentication module."""
 
 from src.auth import login, logout
 
@@ -256,9 +288,12 @@ def test_login_failure():
 def test_logout():
     """Test logout."""
     logout("session-123")  # Should not raise
-''')
+''',
+    )
 
-    write_file("tests/test_database.py", '''"""Tests for database module."""
+    write_file(
+        "tests/test_database.py",
+        '''"""Tests for database module."""
 
 from src.database import connect, disconnect, query
 
@@ -272,7 +307,8 @@ def test_query():
     conn = connect("sqlite:///test.db")
     results = query(conn, "SELECT * FROM users")
     assert isinstance(results, list)
-''')
+''',
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-02T14:00:00", "Add test suite")
@@ -281,7 +317,9 @@ def test_query():
 def commit_6() -> None:
     """Commit 6: Refactor authentication with JWT (2025-11-02 18:00:00)."""
     # Complete rewrite with 100+ line changes
-    write_file("src/auth.py", '''"""Authentication module with JWT support."""
+    write_file(
+        "src/auth.py",
+        '''"""Authentication module with JWT support."""
 
 import jwt
 import hashlib
@@ -344,7 +382,8 @@ def refresh_token(token: str) -> Optional[str]:
     if payload:
         return create_token(payload["user_id"], payload["username"])
     return None
-''')
+''',
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-02T18:00:00", "Refactor authentication")
@@ -352,7 +391,9 @@ def refresh_token(token: str) -> Optional[str]:
 
 def commit_7() -> None:
     """Commit 7: Add API tests (2025-11-03 10:00:00)."""
-    write_file("tests/test_api.py", '''"""Tests for API endpoints."""
+    write_file(
+        "tests/test_api.py",
+        '''"""Tests for API endpoints."""
 
 from src.api import get_users, create_user, delete_user
 
@@ -372,10 +413,13 @@ def test_delete_user():
     """Test user deletion."""
     result = delete_user(123)
     assert result["deleted"] == 123
-''')
+''',
+    )
 
     # Modify api.py - add error handling
-    write_file("src/api.py", '''"""REST API endpoints with error handling."""
+    write_file(
+        "src/api.py",
+        '''"""REST API endpoints with error handling."""
 
 def get_users():
     """Get all users."""
@@ -401,7 +445,8 @@ def delete_user(user_id: int):
         return {"deleted": user_id}
     except Exception as e:
         return {"error": str(e)}
-''')
+''',
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-03T10:00:00", "Add API tests")
@@ -413,7 +458,9 @@ def commit_8() -> None:
     (TEST_REPO_PATH / "src/database.py").unlink()
 
     # Add new async database implementation
-    write_file("src/db_new.py", '''"""Modern async database implementation."""
+    write_file(
+        "src/db_new.py",
+        '''"""Modern async database implementation."""
 
 import asyncio
 from typing import Optional, Dict, List
@@ -448,7 +495,8 @@ async def create_connection(connection_string: str) -> DatabaseConnection:
     conn = DatabaseConnection(connection_string)
     await conn.connect()
     return conn
-''')
+''',
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-03T14:00:00", "Delete old database code")
@@ -462,7 +510,9 @@ def commit_9() -> None:
 
 def commit_10() -> None:
     """Commit 10: Add documentation (2025-11-03 18:00:00)."""
-    write_file("docs/API.md", """# API Documentation
+    write_file(
+        "docs/API.md",
+        """# API Documentation
 
 ## Authentication
 
@@ -508,9 +558,12 @@ Create new user.
 
 ### DELETE /users/:id
 Delete user by ID.
-""")
+""",
+    )
 
-    write_file("docs/CHANGELOG.md", """# Changelog
+    write_file(
+        "docs/CHANGELOG.md",
+        """# Changelog
 
 ## 2025-11-04
 
@@ -525,10 +578,13 @@ Delete user by ID.
 
 ### Removed
 - Old synchronous database code
-""")
+""",
+    )
 
     # Modify README.md - add usage examples
-    write_file("README.md", """# Test Project
+    write_file(
+        "README.md",
+        """# Test Project
 
 A test project for diff-based temporal indexing validation.
 
@@ -560,7 +616,8 @@ pytest tests/
 ## Documentation
 
 See `docs/API.md` for API documentation.
-""")
+""",
+    )
 
     run_git_command(["add", "."])
     git_commit("2025-11-03T18:00:00", "Add documentation")
@@ -571,7 +628,7 @@ def commit_11() -> None:
     # Create a small fake PNG file
     png_path = TEST_REPO_PATH / "docs/architecture.png"
     # PNG file signature
-    png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+    png_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
     png_path.write_bytes(png_data)
 
     run_git_command(["add", "docs/architecture.png"])

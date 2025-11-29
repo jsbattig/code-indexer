@@ -52,7 +52,9 @@ class TestGlobalRepoQuery:
         # Setup: Mock semantic_query_manager with _perform_search
         with (
             patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(mock_global_repo_path)}),
-            patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager,
+            patch(
+                "code_indexer.server.mcp.handlers.semantic_query_manager"
+            ) as mock_query_manager,
         ):
 
             # Create mock QueryResult objects
@@ -74,7 +76,9 @@ class TestGlobalRepoQuery:
                     "repo_name": "cidx-meta",
                     "alias_name": "cidx-meta-global",
                     "repo_url": None,
-                    "index_path": str(mock_global_repo_path / "cidx-meta" / ".code-indexer" / "index"),
+                    "index_path": str(
+                        mock_global_repo_path / "cidx-meta" / ".code-indexer" / "index"
+                    ),
                     "created_at": "2025-11-28T08:48:12.625104+00:00",
                     "last_refresh": "2025-11-28T08:48:12.625104+00:00",
                 }
@@ -115,7 +119,9 @@ class TestGlobalRepoQuery:
     @pytest.mark.asyncio
     async def test_activated_repo_query_still_works(self, mock_user):
         """Test that activated repositories (non-global) still use query_user_repositories."""
-        with patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager:
+        with patch(
+            "code_indexer.server.mcp.handlers.semantic_query_manager"
+        ) as mock_query_manager:
             # Mock semantic_query_manager for activated repos
             mock_query_manager.query_user_repositories.return_value = {
                 "results": [],
@@ -174,7 +180,9 @@ class TestGlobalRepoQuery:
         """Test that global repo queries support all search parameters."""
         with (
             patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(mock_global_repo_path)}),
-            patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager,
+            patch(
+                "code_indexer.server.mcp.handlers.semantic_query_manager"
+            ) as mock_query_manager,
         ):
 
             # Mock _perform_search
@@ -187,7 +195,9 @@ class TestGlobalRepoQuery:
                     "repo_name": "cidx-meta",
                     "alias_name": "cidx-meta-global",
                     "repo_url": None,
-                    "index_path": str(mock_global_repo_path / "cidx-meta" / ".code-indexer" / "index"),
+                    "index_path": str(
+                        mock_global_repo_path / "cidx-meta" / ".code-indexer" / "index"
+                    ),
                     "created_at": "2025-11-28T08:48:12.625104+00:00",
                     "last_refresh": "2025-11-28T08:48:12.625104+00:00",
                 }
@@ -232,7 +242,9 @@ class TestGlobalRepoQuery:
     @pytest.mark.asyncio
     async def test_query_without_repository_alias_uses_activated_repos(self, mock_user):
         """Test that queries without repository_alias still use activated repos."""
-        with patch("code_indexer.server.mcp.handlers.semantic_query_manager") as mock_query_manager:
+        with patch(
+            "code_indexer.server.mcp.handlers.semantic_query_manager"
+        ) as mock_query_manager:
             # Mock semantic_query_manager
             mock_query_manager.query_user_repositories.return_value = {
                 "results": [],

@@ -40,7 +40,9 @@ def golden_repos_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def lifecycle_manager(golden_repos_dir: Path) -> Generator[GlobalReposLifecycleManager, None, None]:
+def lifecycle_manager(
+    golden_repos_dir: Path,
+) -> Generator[GlobalReposLifecycleManager, None, None]:
     """Create lifecycle manager for testing."""
     manager = GlobalReposLifecycleManager(str(golden_repos_dir))
     yield manager
@@ -53,7 +55,9 @@ def lifecycle_manager(golden_repos_dir: Path) -> Generator[GlobalReposLifecycleM
 class TestGlobalReposLifecycleManager:
     """Test suite for GlobalReposLifecycleManager."""
 
-    def test_initialization_creates_components(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_initialization_creates_components(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Test that initialization creates all required components."""
         # QueryTracker should be created
         assert lifecycle_manager.query_tracker is not None
@@ -67,7 +71,9 @@ class TestGlobalReposLifecycleManager:
         assert lifecycle_manager.refresh_scheduler is not None
         assert isinstance(lifecycle_manager.refresh_scheduler, RefreshScheduler)
 
-    def test_start_starts_all_services(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_start_starts_all_services(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Test that start() starts all background services."""
         # Verify not running initially
         assert not lifecycle_manager.is_running()
@@ -85,7 +91,9 @@ class TestGlobalReposLifecycleManager:
         # Cleanup
         lifecycle_manager.stop()
 
-    def test_stop_stops_all_services(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_stop_stops_all_services(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Test that stop() stops all background services gracefully."""
         # Start services first
         lifecycle_manager.start()
@@ -130,7 +138,9 @@ class TestGlobalReposLifecycleManager:
         assert first_stopped
         assert second_stopped
 
-    def test_query_tracker_tracks_queries(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_query_tracker_tracks_queries(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Test that QueryTracker correctly tracks queries."""
         tracker = lifecycle_manager.query_tracker
 
@@ -145,7 +155,9 @@ class TestGlobalReposLifecycleManager:
         # Reference should be released after context
         assert tracker.get_ref_count("/some/index/path") == 0
 
-    def test_cleanup_manager_schedules_cleanup(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_cleanup_manager_schedules_cleanup(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Test that CleanupManager schedules and processes cleanups."""
         lifecycle_manager.start()
 
@@ -161,7 +173,9 @@ class TestGlobalReposLifecycleManager:
         # Cleanup
         lifecycle_manager.stop()
 
-    def test_refresh_scheduler_respects_configuration(self, lifecycle_manager: GlobalReposLifecycleManager, golden_repos_dir: Path):
+    def test_refresh_scheduler_respects_configuration(
+        self, lifecycle_manager: GlobalReposLifecycleManager, golden_repos_dir: Path
+    ):
         """Test that RefreshScheduler reads configuration correctly."""
         # Set custom refresh interval via GlobalRepoOperations
         from code_indexer.global_repos.shared_operations import GlobalRepoOperations
@@ -175,7 +189,9 @@ class TestGlobalReposLifecycleManager:
         # Should match configured value
         assert interval == 300
 
-    def test_graceful_shutdown_with_active_queries(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_graceful_shutdown_with_active_queries(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Test that shutdown waits for active queries to complete."""
         lifecycle_manager.start()
 
@@ -196,12 +212,19 @@ class TestGlobalReposLifecycleManager:
         assert not lifecycle_manager.cleanup_manager.is_running()
         assert not lifecycle_manager.refresh_scheduler.is_running()
 
-    def test_components_share_query_tracker(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_components_share_query_tracker(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Test that CleanupManager uses the same QueryTracker instance."""
         # CleanupManager should use the shared QueryTracker
-        assert lifecycle_manager.cleanup_manager._query_tracker is lifecycle_manager.query_tracker
+        assert (
+            lifecycle_manager.cleanup_manager._query_tracker
+            is lifecycle_manager.query_tracker
+        )
 
-    def test_startup_shutdown_integration(self, lifecycle_manager: GlobalReposLifecycleManager):
+    def test_startup_shutdown_integration(
+        self, lifecycle_manager: GlobalReposLifecycleManager
+    ):
         """Integration test of complete startup/shutdown cycle."""
         # Initial state: not running
         assert not lifecycle_manager.is_running()

@@ -10,7 +10,6 @@ Per Epic #520 requirement: Global repos should be visible without activation.
 import pytest
 import os
 from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
 from code_indexer.server.mcp.handlers import list_repositories
 from code_indexer.server.auth.user_manager import User, UserRole
 
@@ -83,7 +82,9 @@ class TestListRepositoriesWithGlobalRepos:
         self, mock_user, mock_global_registry_data, mock_activated_repos
     ):
         """Test that global repos from registry appear in list_repositories response."""
-        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
+        with patch(
+            "code_indexer.server.mcp.handlers.activated_repo_manager"
+        ) as mock_repo_manager:
             # Mock activated repo manager
             mock_repo_manager.list_activated_repositories.return_value = (
                 mock_activated_repos
@@ -147,7 +148,9 @@ class TestListRepositoriesWithGlobalRepos:
         self, mock_user, mock_global_registry_data, mock_activated_repos
     ):
         """Test that global repos have is_global: true field."""
-        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
+        with patch(
+            "code_indexer.server.mcp.handlers.activated_repo_manager"
+        ) as mock_repo_manager:
             mock_repo_manager.list_activated_repositories.return_value = (
                 mock_activated_repos
             )
@@ -171,26 +174,26 @@ class TestListRepositoriesWithGlobalRepos:
                 # Verify: All global repos have is_global: true
                 for repo in repos:
                     if repo.get("alias_name", "").endswith("-global"):
-                        assert repo["is_global"] is True, (
-                            f"Global repo {repo['alias_name']} missing is_global=True"
-                        )
+                        assert (
+                            repo["is_global"] is True
+                        ), f"Global repo {repo['alias_name']} missing is_global=True"
 
                 # Verify: Activated repos do NOT have is_global: true
                 for repo in repos:
                     if not repo.get("alias_name", "").endswith("-global"):
-                        assert repo.get("is_global") is not True, (
-                            f"Activated repo should not have is_global=True"
-                        )
+                        assert (
+                            repo.get("is_global") is not True
+                        ), "Activated repo should not have is_global=True"
 
     @pytest.mark.asyncio
     async def test_global_repos_include_metadata(
         self, mock_user, mock_global_registry_data
     ):
         """Test that global repos include repo name, last update time, and index path."""
-        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
-            mock_repo_manager.list_activated_repositories.return_value = (
-                []
-            )
+        with patch(
+            "code_indexer.server.mcp.handlers.activated_repo_manager"
+        ) as mock_repo_manager:
+            mock_repo_manager.list_activated_repositories.return_value = []
 
             mock_registry = MagicMock()
             mock_registry.list_global_repos.return_value = list(
@@ -213,9 +216,9 @@ class TestListRepositoriesWithGlobalRepos:
                     if repo.get("is_global") is True:
                         assert "repo_name" in repo, "Global repo missing repo_name"
                         assert "alias_name" in repo, "Global repo missing alias_name"
-                        assert "last_refresh" in repo, (
-                            "Global repo missing last_refresh"
-                        )
+                        assert (
+                            "last_refresh" in repo
+                        ), "Global repo missing last_refresh"
                         assert "index_path" in repo, "Global repo missing index_path"
 
                         # Verify alias_name has -global suffix
@@ -226,7 +229,9 @@ class TestListRepositoriesWithGlobalRepos:
         self, mock_user, mock_activated_repos
     ):
         """Test that empty golden-repos directory is handled without errors."""
-        with patch("code_indexer.server.mcp.handlers.activated_repo_manager") as mock_repo_manager:
+        with patch(
+            "code_indexer.server.mcp.handlers.activated_repo_manager"
+        ) as mock_repo_manager:
             mock_repo_manager.list_activated_repositories.return_value = (
                 mock_activated_repos
             )

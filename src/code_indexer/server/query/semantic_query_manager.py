@@ -637,9 +637,15 @@ class SemanticQueryManager:
         for repo_info in user_repos:
             try:
                 repo_alias = repo_info["user_alias"]
-                repo_path = self.activated_repo_manager.get_activated_repo_path(
-                    username, repo_alias
-                )
+
+                # Check if repo_path is already provided (e.g., for global repos)
+                if "repo_path" in repo_info and repo_info["repo_path"]:
+                    repo_path = repo_info["repo_path"]
+                else:
+                    # Fall back to activated repo manager for regular activated repos
+                    repo_path = self.activated_repo_manager.get_activated_repo_path(
+                        username, repo_alias
+                    )
 
                 # Create temporary config and search engine for this repository
                 # This would need actual implementation with proper config management

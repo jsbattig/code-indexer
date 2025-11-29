@@ -55,7 +55,9 @@ class TestMcpNullIdProhibition:
 
         # CRITICAL: MCP spec PROHIBITS null IDs
         assert response_dict["id"] is not None, "MCP spec prohibits null IDs"
-        assert response_dict["id"] == 0, "Invalid request errors should use id=0 when ID unavailable"
+        assert (
+            response_dict["id"] == 0
+        ), "Invalid request errors should use id=0 when ID unavailable"
 
     @pytest.mark.asyncio
     async def test_bridge_parse_error_never_returns_null_id(self):
@@ -92,7 +94,9 @@ class TestMcpNullIdProhibition:
 
         # CRITICAL: MCP spec PROHIBITS null IDs
         assert response["id"] is not None, "MCP spec prohibits null IDs in responses"
-        assert response["id"] == 0, "Invalid requests must use id=0 when ID cannot be extracted"
+        assert (
+            response["id"] == 0
+        ), "Invalid requests must use id=0 when ID cannot be extracted"
         assert response["error"]["code"] == INVALID_REQUEST
 
     @pytest.mark.asyncio
@@ -110,7 +114,9 @@ class TestMcpNullIdProhibition:
         response = await bridge.process_request(request)
 
         # Should preserve original request ID
-        assert response["id"] == 42, "Should preserve original request ID when available"
+        assert (
+            response["id"] == 42
+        ), "Should preserve original request ID when available"
         assert response["error"]["code"] == INVALID_REQUEST
 
     @pytest.mark.asyncio

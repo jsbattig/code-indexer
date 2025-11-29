@@ -61,7 +61,9 @@ def mock_global_registry_data(mock_golden_repos_dir):
             "repo_name": "cidx-meta",
             "alias_name": "cidx-meta-global",
             "repo_url": None,
-            "index_path": str(mock_golden_repos_dir / "cidx-meta" / ".code-indexer" / "index"),
+            "index_path": str(
+                mock_golden_repos_dir / "cidx-meta" / ".code-indexer" / "index"
+            ),
             "created_at": "2025-11-28T08:48:12.625104+00:00",
             "last_refresh": "2025-11-28T08:48:12.625104+00:00",
         },
@@ -69,7 +71,9 @@ def mock_global_registry_data(mock_golden_repos_dir):
             "repo_name": "click",
             "alias_name": "click-global",
             "repo_url": "local:///path/to/repos/click",
-            "index_path": str(mock_golden_repos_dir / "repos" / "click" / ".code-indexer" / "index"),
+            "index_path": str(
+                mock_golden_repos_dir / "repos" / "click" / ".code-indexer" / "index"
+            ),
             "created_at": "2025-11-28T21:01:20.090249+00:00",
             "last_refresh": "2025-11-28T21:01:20.090249+00:00",
         },
@@ -112,7 +116,7 @@ class TestBrowseDirectoryGlobalRepoSupport:
                             "path": "README.md",
                             "size": 1024,
                             "modified_at": "2025-11-28T10:00:00",
-                        }
+                        },
                     )
                 ]
             )
@@ -139,10 +143,11 @@ class TestBrowseDirectoryGlobalRepoSupport:
 
                 # Verify: Response is successful (not "repo not found")
                 import json
+
                 response_data = json.loads(result["content"][0]["text"])
-                assert response_data["success"] is True, (
-                    "browse_directory should succeed for global repos"
-                )
+                assert (
+                    response_data["success"] is True
+                ), "browse_directory should succeed for global repos"
 
     @pytest.mark.asyncio
     async def test_browse_directory_uses_registry_path_not_constructed_path(
@@ -174,7 +179,7 @@ class TestBrowseDirectoryGlobalRepoSupport:
                     "recursive": False,
                 }
 
-                result = await browse_directory(params, mock_user)
+                await browse_directory(params, mock_user)
 
                 # Verify: file_service.list_files was called
                 mock_file_service.list_files.assert_called_once()
@@ -188,7 +193,9 @@ class TestBrowseDirectoryGlobalRepoSupport:
                 expected_repo_path = str(mock_golden_repos_dir / "repos" / "click")
 
                 # The handler should pass the resolved path, not the alias
-                assert repo_id == expected_repo_path or Path(repo_id) == Path(expected_repo_path), (
+                assert repo_id == expected_repo_path or Path(repo_id) == Path(
+                    expected_repo_path
+                ), (
                     f"Handler should use registry-resolved path for file_service. "
                     f"Expected: {expected_repo_path}, Got: {repo_id}"
                 )
@@ -221,6 +228,7 @@ class TestBrowseDirectoryGlobalRepoSupport:
 
                 # Verify: MCP error response
                 import json
+
                 response_data = json.loads(result["content"][0]["text"])
 
                 assert response_data["success"] is False
@@ -242,7 +250,7 @@ class TestBrowseDirectoryGlobalRepoSupport:
                 "recursive": True,
             }
 
-            result = await browse_directory(params, mock_user)
+            await browse_directory(params, mock_user)
 
             # Verify: file_service.list_files was called
             mock_file_service.list_files.assert_called_once()
@@ -277,7 +285,7 @@ class TestBrowseDirectoryGlobalRepoSupport:
                     "recursive": True,
                 }
 
-                result = await browse_directory(params, mock_user)
+                await browse_directory(params, mock_user)
 
                 # Verify: list_files was called with correct path pattern
                 mock_file_service.list_files.assert_called_once()
@@ -322,7 +330,7 @@ class TestBrowseDirectoryGlobalRepoSupport:
                     "recursive": False,
                 }
 
-                result = await browse_directory(params, mock_user)
+                await browse_directory(params, mock_user)
 
                 # Verify: Path pattern uses single-level glob
                 call_args = mock_file_service.list_files.call_args
@@ -367,10 +375,11 @@ class TestBrowseDirectoryGlobalRepoSupport:
 
                 # Verify: Response structure includes path="/"
                 import json
+
                 response_data = json.loads(result["content"][0]["text"])
 
                 assert response_data["success"] is True
                 structure = response_data["structure"]
-                assert structure["path"] == "/" or structure["path"] == "", (
-                    "Empty path should list root directory"
-                )
+                assert (
+                    structure["path"] == "/" or structure["path"] == ""
+                ), "Empty path should list root directory"
