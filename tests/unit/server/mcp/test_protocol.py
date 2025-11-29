@@ -602,7 +602,7 @@ class TestInitializeMethod:
         # Result must contain required fields per MCP spec
         result = response["result"]
         assert "protocolVersion" in result
-        assert result["protocolVersion"] == "2024-11-05"
+        assert result["protocolVersion"] == "2025-06-18"
         assert "capabilities" in result
         assert "serverInfo" in result
 

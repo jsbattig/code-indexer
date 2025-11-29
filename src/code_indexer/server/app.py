@@ -1534,6 +1534,7 @@ def create_app() -> FastAPI:
             # Store lifecycle manager in app state for access by query handlers
             app.state.global_lifecycle_manager = global_lifecycle_manager
             app.state.query_tracker = global_lifecycle_manager.query_tracker
+            app.state.golden_repos_dir = str(golden_repos_dir)
 
             logger.info("Global repos background services started successfully")
 

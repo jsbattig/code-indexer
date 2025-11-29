@@ -50,7 +50,7 @@ class TestHandlerRegistry:
     """Test handler registry completeness."""
 
     def test_all_22_handlers_registered(self):
-        """Verify all 22 tool handlers are registered."""
+        """Verify all 26 tool handlers are registered."""
         expected_handlers = [
             "search_code",
             "discover_repositories",
@@ -74,11 +74,15 @@ class TestHandlerRegistry:
             "get_job_statistics",
             "get_all_repositories_status",
             "manage_composite_repository",
+            "list_global_repos",
+            "global_repo_status",
+            "get_global_config",
+            "set_global_config",
         ]
 
         assert (
-            len(HANDLER_REGISTRY) == 22
-        ), f"Expected 22 handlers, found {len(HANDLER_REGISTRY)}"
+            len(HANDLER_REGISTRY) == 26
+        ), f"Expected 26 handlers, found {len(HANDLER_REGISTRY)}"
 
         for handler_name in expected_handlers:
             assert (
@@ -237,6 +241,10 @@ class TestSearchCode:
                 edit_distance=0,
                 snippet_lines=5,
                 regex=False,
+                # Phase 3 temporal parameters
+                diff_type=None,
+                author=None,
+                chunk_type=None,
             )
 
     async def test_search_code_with_fts_parameters(self, mock_user):
@@ -299,6 +307,10 @@ class TestSearchCode:
                 edit_distance=2,
                 snippet_lines=10,
                 regex=False,
+                # Phase 3 temporal parameters
+                diff_type=None,
+                author=None,
+                chunk_type=None,
             )
 
 
@@ -347,8 +359,22 @@ class TestListRepositories:
             {"user_alias": "repo2", "golden_repo_alias": "golden2"},
         ]
 
-        with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
+        with (
+            patch("code_indexer.server.app.activated_repo_manager") as mock_manager,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+            ) as mock_get_dir,
+            patch(
+                "code_indexer.server.mcp.handlers.GlobalRegistry"
+            ) as mock_registry_class,
+        ):
             mock_manager.list_activated_repositories = Mock(return_value=mock_repos)
+            mock_get_dir.return_value = "/mock/golden-repos"
+
+            # Mock GlobalRegistry instance and its list_global_repos method
+            mock_registry_instance = Mock()
+            mock_registry_instance.list_global_repos = Mock(return_value=[])
+            mock_registry_class.return_value = mock_registry_instance
 
             result = await list_repositories({}, mock_user)
 

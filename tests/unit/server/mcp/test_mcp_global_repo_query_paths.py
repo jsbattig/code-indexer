@@ -123,6 +123,9 @@ class TestGlobalRepoPathResolution:
             patch("code_indexer.server.app") as mock_app,
             patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(mock_golden_repos_dir)}),
         ):
+            # Mock app.state.golden_repos_dir to return the test directory
+            mock_app.state.golden_repos_dir = str(mock_golden_repos_dir)
+
             # Mock GlobalRegistry
             mock_registry = MagicMock()
             mock_registry.list_global_repos.return_value = mock_global_registry_data
@@ -153,7 +156,7 @@ class TestGlobalRepoPathResolution:
 
                 result = await search_code(params, mock_user)
 
-                # Verify: GlobalRegistry was instantiated
+                # Verify: GlobalRegistry was instantiated with app.state.golden_repos_dir
                 mock_registry_class.assert_called_once_with(str(mock_golden_repos_dir))
 
                 # Verify: list_global_repos was called to lookup path

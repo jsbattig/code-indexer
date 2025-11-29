@@ -43,11 +43,38 @@ def _mcp_response(data: Dict[str, Any]) -> Dict[str, Any]:
     return {"content": [{"type": "text", "text": json.dumps(data, indent=2)}]}
 
 
+def _get_golden_repos_dir() -> str:
+    """Get golden_repos_dir with three-tier fallback strategy.
+
+    Fallback order:
+    1. app.state.golden_repos_dir (set during server startup)
+    2. GOLDEN_REPOS_DIR environment variable
+    3. Default: ~/.code-indexer/golden-repos
+
+    Returns:
+        str: Absolute path to golden repos directory
+    """
+    from code_indexer.server import app
+    from typing import Optional, cast
+
+    # PRIMARY: app.state (set during server startup)
+    golden_repos_dir: Optional[str] = cast(Optional[str], getattr(app.state, 'golden_repos_dir', None))
+    if golden_repos_dir:
+        return golden_repos_dir
+
+    # SECONDARY: Environment variable
+    golden_repos_dir = os.environ.get("GOLDEN_REPOS_DIR")
+    if golden_repos_dir:
+        return golden_repos_dir
+
+    # TERTIARY: Default fallback
+    return os.path.expanduser("~/.code-indexer/golden-repos")
+
+
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
     try:
         from code_indexer.server import app
-        import os
         from pathlib import Path
 
         repository_alias = params.get("repository_alias")
@@ -55,9 +82,7 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         # Check if this is a global repository query (ends with -global suffix)
         if repository_alias and repository_alias.endswith("-global"):
             # Global repository: query directly without activation requirement
-            golden_repos_dir = os.environ.get(
-                "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-            )
+            golden_repos_dir = _get_golden_repos_dir()
 
             # Look up global repo in GlobalRegistry to get actual path
             registry = GlobalRegistry(golden_repos_dir)
@@ -224,9 +249,7 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
         # Get global repos from GlobalRegistry
         global_repos = []
         try:
-            golden_repos_dir = os.environ.get(
-                "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-            )
+            golden_repos_dir = _get_golden_repos_dir()
             registry = GlobalRegistry(golden_repos_dir)
             global_repos_data = registry.list_global_repos()
 
@@ -484,7 +507,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
     """
     from code_indexer.server import app
     from code_indexer.server.models.api_models import FileListQueryParams
-    import os
     from pathlib import Path
 
     try:
@@ -495,9 +517,7 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
         # Check if this is a global repository (ends with -global suffix)
         if repository_alias and repository_alias.endswith("-global"):
             # Look up global repo in GlobalRegistry to get actual path
-            golden_repos_dir = os.environ.get(
-                "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-            )
+            golden_repos_dir = _get_golden_repos_dir()
 
             registry = GlobalRegistry(golden_repos_dir)
             global_repos = registry.list_global_repos()
@@ -912,12 +932,9 @@ async def manage_composite_repository(
 
 async def handle_list_global_repos(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for list_global_repos tool."""
-    import os
     from code_indexer.global_repos.shared_operations import GlobalRepoOperations
 
-    golden_repos_dir = os.environ.get(
-        "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-    )
+    golden_repos_dir = _get_golden_repos_dir()
     ops = GlobalRepoOperations(golden_repos_dir)
     repos = ops.list_repos()
     return _mcp_response({"success": True, "repos": repos})
@@ -925,12 +942,9 @@ async def handle_list_global_repos(args: Dict[str, Any], user: User) -> Dict[str
 
 async def handle_global_repo_status(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for global_repo_status tool."""
-    import os
     from code_indexer.global_repos.shared_operations import GlobalRepoOperations
 
-    golden_repos_dir = os.environ.get(
-        "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-    )
+    golden_repos_dir = _get_golden_repos_dir()
     ops = GlobalRepoOperations(golden_repos_dir)
     alias = args.get("alias")
 
@@ -950,12 +964,9 @@ async def handle_global_repo_status(args: Dict[str, Any], user: User) -> Dict[st
 
 async def handle_get_global_config(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for get_global_config tool."""
-    import os
     from code_indexer.global_repos.shared_operations import GlobalRepoOperations
 
-    golden_repos_dir = os.environ.get(
-        "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-    )
+    golden_repos_dir = _get_golden_repos_dir()
     ops = GlobalRepoOperations(golden_repos_dir)
     config = ops.get_config()
     return _mcp_response({"success": True, **config})
@@ -963,12 +974,9 @@ async def handle_get_global_config(args: Dict[str, Any], user: User) -> Dict[str
 
 async def handle_set_global_config(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for set_global_config tool."""
-    import os
     from code_indexer.global_repos.shared_operations import GlobalRepoOperations
 
-    golden_repos_dir = os.environ.get(
-        "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-    )
+    golden_repos_dir = _get_golden_repos_dir()
     ops = GlobalRepoOperations(golden_repos_dir)
     refresh_interval = args.get("refresh_interval")
 

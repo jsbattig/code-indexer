@@ -332,6 +332,9 @@ class TestListRepositoriesWithGlobalRepos:
             patch("code_indexer.server.app") as mock_app,
             patch.dict(os.environ, {"GOLDEN_REPOS_DIR": str(temp_golden_dir)}),
         ):
+            # Mock app.state.golden_repos_dir to return the test directory
+            mock_app.state.golden_repos_dir = str(temp_golden_dir)
+
             mock_app.activated_repo_manager.list_activated_repositories.return_value = (
                 []
             )
@@ -346,7 +349,7 @@ class TestListRepositoriesWithGlobalRepos:
             ) as mock_registry_class:
                 await list_repositories({}, mock_user)
 
-                # Verify: GlobalRegistry was instantiated with correct path
+                # Verify: GlobalRegistry was instantiated with app.state.golden_repos_dir
                 mock_registry_class.assert_called_once_with(str(temp_golden_dir))
 
     @pytest.mark.asyncio
