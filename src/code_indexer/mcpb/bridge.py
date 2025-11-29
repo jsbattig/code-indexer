@@ -59,8 +59,10 @@ class Bridge:
 
         except json.JSONDecodeError as e:
             # Return parse error
+            # MCP protocol requires ID to be string/number, NOT null
+            # Use -1 as sentinel when request ID cannot be determined
             error_response = create_error_response(
-                request_id=None,
+                request_id=-1,
                 code=PARSE_ERROR,
                 message="Parse error",
                 data={"detail": str(e)},
@@ -69,8 +71,10 @@ class Bridge:
 
         except ValueError as e:
             # Return invalid request error
+            # MCP protocol requires ID to be string/number, NOT null
+            # Use -1 as sentinel when request ID cannot be determined
             error_response = create_error_response(
-                request_id=None,
+                request_id=-1,
                 code=INVALID_REQUEST,
                 message="Invalid Request",
                 data={"detail": str(e)},
