@@ -29,9 +29,14 @@ else
     cd code-indexer
 fi
 
-# Install dependencies
+# Install dependencies (try without --break-system-packages first for Mac compatibility)
 echo "📚 Installing dependencies..."
-pip3 install --break-system-packages -e .
+if pip3 install -e . 2>/dev/null; then
+    echo "✅ Installed without --break-system-packages"
+else
+    echo "⚠️ Retrying with --break-system-packages..."
+    pip3 install --break-system-packages -e .
+fi
 
 # Verify mcpb command
 echo "✅ Verifying installation..."
