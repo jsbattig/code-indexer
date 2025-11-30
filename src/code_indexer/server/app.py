@@ -1623,8 +1623,26 @@ def create_app() -> FastAPI:
         db_path=oauth_db_path, issuer=None, user_manager=user_manager
     )
 
-    golden_repo_manager = GoldenRepoManager()
-    background_job_manager = BackgroundJobManager()
+    # Load server configuration for resource limits and timeouts
+    from .utils.config_manager import ServerConfigManager
+
+    config_manager = ServerConfigManager(server_dir_path=server_data_dir)
+    server_config = config_manager.load_config()
+    if server_config is None:
+        # Create default config if none exists
+        server_config = config_manager.create_default_config()
+        config_manager.save_config(server_config)
+
+    # Apply environment variable overrides
+    server_config = config_manager.apply_env_overrides(server_config)
+
+    # Initialize managers with resource configuration
+    golden_repo_manager = GoldenRepoManager(
+        resource_config=server_config.resource_config
+    )
+    background_job_manager = BackgroundJobManager(
+        resource_config=server_config.resource_config
+    )
     # Inject BackgroundJobManager into GoldenRepoManager for async operations
     golden_repo_manager.background_job_manager = background_job_manager
     activated_repo_manager = ActivatedRepoManager(

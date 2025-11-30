@@ -14,8 +14,11 @@ import inspect
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, TYPE_CHECKING
 from dataclasses import dataclass, asdict
+
+if TYPE_CHECKING:
+    from code_indexer.server.utils.config_manager import ServerResourceConfig
 
 
 class JobStatus(str, Enum):
@@ -54,11 +57,16 @@ class BackgroundJobManager:
     user isolation, and comprehensive job management functionality.
     """
 
-    def __init__(self, storage_path: Optional[str] = None):
+    def __init__(
+        self,
+        storage_path: Optional[str] = None,
+        resource_config: Optional["ServerResourceConfig"] = None,
+    ):
         """Initialize enhanced background job manager.
 
         Args:
             storage_path: Path for persistent job storage (optional)
+            resource_config: Resource configuration (limits, timeouts)
         """
         self.jobs: Dict[str, BackgroundJob] = {}
         self._lock = threading.Lock()
@@ -69,8 +77,12 @@ class BackgroundJobManager:
         # Persistence settings
         self.storage_path = storage_path
 
-        # Resource management
-        self.max_jobs_per_user = 10
+        # Resource configuration (import here to avoid circular dependency)
+        if resource_config is None:
+            from code_indexer.server.utils.config_manager import ServerResourceConfig
+
+            resource_config = ServerResourceConfig()
+        self.resource_config = resource_config
 
         # Load persisted jobs if storage path provided
         if self.storage_path:
@@ -102,20 +114,21 @@ class BackgroundJobManager:
             Job ID for tracking
 
         Raises:
-            Exception: If user has exceeded max jobs limit
+            Exception: If user has exceeded max jobs limit (if configured)
         """
-        # Check user job limit
-        with self._lock:
-            user_active_jobs = sum(
-                1
-                for job in self.jobs.values()
-                if job.username == submitter_username
-                and job.status in [JobStatus.PENDING, JobStatus.RUNNING]
-            )
-            if user_active_jobs >= self.max_jobs_per_user:
-                raise Exception(
-                    f"Maximum number of jobs exceeded for user {submitter_username} ({self.max_jobs_per_user})"
+        # Check user job limit only if configured
+        if self.resource_config.max_jobs_per_user is not None:
+            with self._lock:
+                user_active_jobs = sum(
+                    1
+                    for job in self.jobs.values()
+                    if job.username == submitter_username
+                    and job.status in [JobStatus.PENDING, JobStatus.RUNNING]
                 )
+                if user_active_jobs >= self.resource_config.max_jobs_per_user:
+                    raise Exception(
+                        f"Maximum number of jobs exceeded for user {submitter_username} ({self.resource_config.max_jobs_per_user})"
+                    )
 
         job_id = str(uuid.uuid4())
 

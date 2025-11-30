@@ -25,6 +25,7 @@ from src.code_indexer.server.repositories.golden_repo_manager import (
     GitOperationError,
 )
 from src.code_indexer.server.repositories.background_jobs import BackgroundJobManager
+from src.code_indexer.server.utils.config_manager import ServerResourceConfig
 
 
 class TestGoldenRepoManager:
@@ -161,9 +162,36 @@ class TestGoldenRepoManager:
                     default_branch="main",
                 )
 
-    def test_add_golden_repo_exceeds_limit(self, golden_repo_manager):
-        """Test adding golden repository exceeds maximum limit."""
-        # Mock having 20 existing repos (at limit)
+    def test_add_golden_repo_respects_configured_limit(self, temp_data_dir):
+        """Test adding golden repository respects configured limit."""
+        # Configure manager with limit of 5 repos
+        config = ServerResourceConfig(max_golden_repos=5)
+        manager = GoldenRepoManager(data_dir=temp_data_dir, resource_config=config)
+
+        # Mock having 5 existing repos (at limit)
+        manager.golden_repos = {
+            f"repo-{i}": GoldenRepo(
+                alias=f"repo-{i}",
+                repo_url=f"https://github.com/test/repo-{i}.git",
+                default_branch="main",
+                clone_path=f"/path/to/repo-{i}",
+                created_at="2023-01-01T00:00:00Z",
+            )
+            for i in range(5)
+        }
+
+        with pytest.raises(
+            ResourceLimitError, match="Maximum of 5 golden repositories"
+        ):
+            manager.add_golden_repo(
+                repo_url="https://github.com/test/new-repo.git",
+                alias="new-repo",
+                default_branch="main",
+            )
+
+    def test_add_golden_repo_no_limit_by_default(self, golden_repo_manager):
+        """Test adding golden repository with no limit by default."""
+        # Create 25 existing repos (more than old hardcoded limit)
         golden_repo_manager.golden_repos = {
             f"repo-{i}": GoldenRepo(
                 alias=f"repo-{i}",
@@ -172,17 +200,34 @@ class TestGoldenRepoManager:
                 clone_path=f"/path/to/repo-{i}",
                 created_at="2023-01-01T00:00:00Z",
             )
-            for i in range(20)
+            for i in range(25)
         }
 
-        with pytest.raises(
-            ResourceLimitError, match="Maximum of 20 golden repositories"
-        ):
-            golden_repo_manager.add_golden_repo(
-                repo_url="https://github.com/test/new-repo.git",
-                alias="new-repo",
-                default_branch="main",
-            )
+        # Should succeed with no limit configured
+        with patch.object(
+            golden_repo_manager, "_validate_git_repository"
+        ) as mock_validate:
+            mock_validate.return_value = True
+            with patch.object(golden_repo_manager, "_clone_repository") as mock_clone:
+                mock_clone.return_value = "/path/to/cloned/repo"
+                with patch.object(
+                    golden_repo_manager, "_execute_post_clone_workflow"
+                ) as mock_workflow:
+                    mock_workflow.return_value = None
+                    with patch.object(
+                        golden_repo_manager, "_get_repository_size"
+                    ) as mock_size:
+                        mock_size.return_value = 1000  # Small repo
+
+                        result = golden_repo_manager.add_golden_repo(
+                            repo_url="https://github.com/test/new-repo.git",
+                            alias="new-repo",
+                            default_branch="main",
+                        )
+
+                        # Should return job_id string
+                        assert isinstance(result, str)
+                        assert result == "test-job-id-12345"
 
     def test_list_golden_repos_empty(self, golden_repo_manager):
         """Test listing golden repositories when none exist."""
@@ -344,10 +389,53 @@ class TestGoldenRepoManager:
         assert data["test-repo"]["alias"] == "test-repo"
         assert data["test-repo"]["repo_url"] == "https://github.com/test/repo.git"
 
-    def test_repository_size_validation(self, golden_repo_manager):
-        """Test repository size validation during cloning (async refactored version)."""
+    def test_repository_size_validation_when_configured(self, temp_data_dir):
+        """Test repository size validation when limit is configured."""
+        # Configure manager with 100MB size limit
+        config = ServerResourceConfig(max_repo_size_bytes=100 * 1024 * 1024)
+        manager = GoldenRepoManager(data_dir=temp_data_dir, resource_config=config)
+
+        # Mock background job manager
+        mock_bg_manager = MagicMock(spec=BackgroundJobManager)
+        mock_bg_manager.submit_job.return_value = "test-job-id-12345"
+        manager.background_job_manager = mock_bg_manager
+
+        with patch.object(manager, "_get_repository_size") as mock_size:
+            mock_size.return_value = 150 * 1024 * 1024  # 150MB (exceeds limit)
+            with patch.object(manager, "_validate_git_repository") as mock_validate:
+                mock_validate.return_value = True
+                with patch.object(manager, "_clone_repository") as mock_clone:
+                    mock_clone.return_value = "/path/to/large-repo"
+                    with patch.object(
+                        manager, "_execute_post_clone_workflow"
+                    ) as mock_workflow:
+                        mock_workflow.return_value = None
+
+                        # After async refactoring, add_golden_repo returns job_id
+                        # The exception is raised when background worker executes
+                        job_id = manager.add_golden_repo(
+                            repo_url="https://github.com/test/large-repo.git",
+                            alias="large-repo",
+                            default_branch="main",
+                        )
+
+                        # Verify job_id was returned
+                        assert isinstance(job_id, str)
+
+                        # Execute the background worker to trigger the exception
+                        call_args = manager.background_job_manager.submit_job.call_args
+                        background_worker = call_args[1]["func"]
+
+                        with pytest.raises(
+                            ResourceLimitError,
+                            match="Repository size \\(.*\\) exceeds limit",
+                        ):
+                            background_worker()
+
+    def test_repository_size_no_limit_by_default(self, golden_repo_manager):
+        """Test repository size has no limit by default."""
         with patch.object(golden_repo_manager, "_get_repository_size") as mock_size:
-            mock_size.return_value = 2 * 1024 * 1024 * 1024  # 2GB (exceeds 1GB limit)
+            mock_size.return_value = 5 * 1024 * 1024 * 1024  # 5GB (more than old limit)
             with patch.object(
                 golden_repo_manager, "_validate_git_repository"
             ) as mock_validate:
@@ -361,8 +449,7 @@ class TestGoldenRepoManager:
                     ) as mock_workflow:
                         mock_workflow.return_value = None
 
-                        # After async refactoring, add_golden_repo returns job_id
-                        # The exception is raised when background worker executes
+                        # Should succeed with no size limit configured
                         job_id = golden_repo_manager.add_golden_repo(
                             repo_url="https://github.com/test/large-repo.git",
                             alias="large-repo",
@@ -371,18 +458,16 @@ class TestGoldenRepoManager:
 
                         # Verify job_id was returned
                         assert isinstance(job_id, str)
+                        assert job_id == "test-job-id-12345"
 
-                        # Execute the background worker to trigger the exception
+                        # Execute the background worker to verify no exception
                         call_args = (
                             golden_repo_manager.background_job_manager.submit_job.call_args
                         )
                         background_worker = call_args[1]["func"]
 
-                        with pytest.raises(
-                            ResourceLimitError,
-                            match="Repository size \\(.*\\) exceeds limit",
-                        ):
-                            background_worker()
+                        # Should complete without raising ResourceLimitError
+                        background_worker()
 
     def test_get_repository_size(self, golden_repo_manager, temp_data_dir):
         """Test getting repository size calculation."""

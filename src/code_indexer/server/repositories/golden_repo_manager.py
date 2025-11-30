@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from code_indexer.server.models.golden_repo_branch_models import (
         GoldenRepoBranchInfo,
     )
+    from code_indexer.server.utils.config_manager import ServerResourceConfig
+
 from pydantic import BaseModel
 
 
@@ -79,15 +81,17 @@ class GoldenRepoManager:
     that support git operations with Copy-on-Write (CoW) cloning.
     """
 
-    MAX_GOLDEN_REPOS = 20
-    MAX_REPO_SIZE_BYTES = 1 * 1024 * 1024 * 1024  # 1GB
-
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(
+        self,
+        data_dir: Optional[str] = None,
+        resource_config: Optional["ServerResourceConfig"] = None,
+    ):
         """
         Initialize golden repository manager.
 
         Args:
             data_dir: Data directory path (defaults to ~/.cidx-server/data)
+            resource_config: Resource configuration (timeouts, limits)
         """
         if data_dir:
             self.data_dir = data_dir
@@ -97,6 +101,13 @@ class GoldenRepoManager:
 
         self.golden_repos_dir = os.path.join(self.data_dir, "golden-repos")
         self.metadata_file = os.path.join(self.golden_repos_dir, "metadata.json")
+
+        # Resource configuration (import here to avoid circular dependency)
+        if resource_config is None:
+            from code_indexer.server.utils.config_manager import ServerResourceConfig
+
+            resource_config = ServerResourceConfig()
+        self.resource_config = resource_config
 
         # Ensure directory structure exists
         os.makedirs(self.golden_repos_dir, exist_ok=True)
@@ -162,12 +173,16 @@ class GoldenRepoManager:
         Raises:
             GoldenRepoError: If alias already exists
             GitOperationError: If git repository is invalid or inaccessible
-            ResourceLimitError: If resource limits are exceeded
+            ResourceLimitError: If resource limits are exceeded (if configured)
         """
         # Validate BEFORE submitting job
-        if len(self.golden_repos) >= self.MAX_GOLDEN_REPOS:
+        # Check max repos limit only if configured
+        if (
+            self.resource_config.max_golden_repos is not None
+            and len(self.golden_repos) >= self.resource_config.max_golden_repos
+        ):
             raise ResourceLimitError(
-                f"Maximum of {self.MAX_GOLDEN_REPOS} golden repositories allowed"
+                f"Maximum of {self.resource_config.max_golden_repos} golden repositories allowed"
             )
 
         if alias in self.golden_repos:
@@ -193,16 +208,19 @@ class GoldenRepoManager:
                     temporal_options=temporal_options,
                 )
 
-                # Check repository size
-                repo_size = self._get_repository_size(clone_path)
-                if repo_size > self.MAX_REPO_SIZE_BYTES:
-                    # Clean up cloned repository
-                    self._cleanup_repository_files(clone_path)
-                    size_gb = repo_size / (1024 * 1024 * 1024)
-                    limit_gb = self.MAX_REPO_SIZE_BYTES / (1024 * 1024 * 1024)
-                    raise ResourceLimitError(
-                        f"Repository size ({size_gb:.1f}GB) exceeds limit ({limit_gb:.1f}GB)"
-                    )
+                # Check repository size only if limit is configured
+                if self.resource_config.max_repo_size_bytes is not None:
+                    repo_size = self._get_repository_size(clone_path)
+                    if repo_size > self.resource_config.max_repo_size_bytes:
+                        # Clean up cloned repository
+                        self._cleanup_repository_files(clone_path)
+                        size_gb = repo_size / (1024 * 1024 * 1024)
+                        limit_gb = self.resource_config.max_repo_size_bytes / (
+                            1024 * 1024 * 1024
+                        )
+                        raise ResourceLimitError(
+                            f"Repository size ({size_gb:.1f}GB) exceeds limit ({limit_gb:.1f}GB)"
+                        )
 
                 # Create golden repository record
                 created_at = datetime.now(timezone.utc).isoformat()
@@ -377,7 +395,7 @@ class GoldenRepoManager:
                 ["git", "ls-remote", repo_url],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=self.resource_config.git_clone_timeout,
             )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, subprocess.SubprocessError):
@@ -505,7 +523,7 @@ class GoldenRepoManager:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minutes timeout
+                timeout=self.resource_config.git_pull_timeout,
             )
 
             if result.returncode != 0:
@@ -925,7 +943,7 @@ class GoldenRepoManager:
                         cwd=clone_path,
                         capture_output=True,
                         text=True,
-                        timeout=300,
+                        timeout=self.resource_config.git_refresh_timeout,
                     )
 
                     if result.returncode != 0:
@@ -1036,7 +1054,7 @@ class GoldenRepoManager:
                     cwd=clone_path,
                     capture_output=True,
                     text=True,
-                    timeout=300,
+                    timeout=self.resource_config.git_init_conflict_timeout,
                 )
                 return result.returncode == 0
             else:
@@ -1053,7 +1071,7 @@ class GoldenRepoManager:
                     cwd=clone_path,
                     capture_output=True,
                     text=True,
-                    timeout=300,
+                    timeout=self.resource_config.git_init_conflict_timeout,
                 )
                 return result.returncode == 0
 
@@ -1101,11 +1119,13 @@ class GoldenRepoManager:
                 cwd=clone_path,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=self.resource_config.git_service_cleanup_timeout,
             )
 
             # Wait for service cleanup using proper event-based waiting
-            if not self._wait_for_service_cleanup(clone_path, timeout=10):
+            if not self._wait_for_service_cleanup(
+                clone_path, timeout=self.resource_config.git_service_wait_timeout
+            ):
                 logging.warning(
                     "Service cleanup wait timed out, proceeding with start attempt"
                 )
@@ -1116,7 +1136,7 @@ class GoldenRepoManager:
                 cwd=clone_path,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=self.resource_config.git_service_conflict_timeout,
             )
             return result.returncode == 0
 
@@ -1166,7 +1186,7 @@ class GoldenRepoManager:
                     cwd=clone_path,
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=self.resource_config.git_process_check_timeout,
                 )
                 # If status shows no services or fails with "not running", cleanup is complete
                 if result.returncode != 0 or "not running" in result.stdout.lower():
@@ -1255,7 +1275,7 @@ class GoldenRepoManager:
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=self.resource_config.git_untracked_file_timeout,
             )
 
             if result.returncode == 0:

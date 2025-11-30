@@ -28,12 +28,40 @@ class PasswordSecurityConfig:
 
 
 @dataclass
+class ServerResourceConfig:
+    """
+    Resource limits and timeout configuration for CIDX server.
+
+    All previously hardcoded magic numbers are now externalized here.
+    All limits are disabled (set to very high values) to remove constraints.
+    """
+
+    # Git operation timeouts (in seconds) - lenient values
+    git_clone_timeout: int = 3600  # 1 hour for git clone validation
+    git_pull_timeout: int = 3600  # 1 hour for git pull
+    git_refresh_timeout: int = 3600  # 1 hour for git refresh
+    git_init_conflict_timeout: int = 1800  # 30 minutes for init conflict resolution
+    git_service_conflict_timeout: int = (
+        1800  # 30 minutes for service conflict resolution
+    )
+    git_service_cleanup_timeout: int = 300  # 5 minutes for service cleanup
+    git_service_wait_timeout: int = 180  # 3 minutes for service cleanup wait
+    git_process_check_timeout: int = 30  # 30 seconds for process check
+    git_untracked_file_timeout: int = 60  # 1 minute for untracked file check
+
+    # Resource limits - effectively unlimited (removed constraints)
+    max_golden_repos: Optional[int] = None  # No limit
+    max_repo_size_bytes: Optional[int] = None  # No limit
+    max_jobs_per_user: Optional[int] = None  # No limit
+
+
+@dataclass
 class ServerConfig:
     """
     Server configuration data structure.
 
     Contains all configurable server settings including networking,
-    authentication, and logging configurations.
+    authentication, logging, and resource configurations.
     """
 
     server_dir: str
@@ -42,11 +70,14 @@ class ServerConfig:
     jwt_expiration_minutes: int = 10
     log_level: str = "INFO"
     password_security: Optional[PasswordSecurityConfig] = None
+    resource_config: Optional[ServerResourceConfig] = None
 
     def __post_init__(self):
         """Initialize nested config objects if not provided."""
         if self.password_security is None:
             self.password_security = PasswordSecurityConfig()
+        if self.resource_config is None:
+            self.resource_config = ServerResourceConfig()
 
 
 class ServerConfigManager:
@@ -116,6 +147,22 @@ class ServerConfigManager:
             # Ensure server_dir is set if missing from file
             if "server_dir" not in config_dict:
                 config_dict["server_dir"] = str(self.server_dir)
+
+            # Convert nested password_security dict to PasswordSecurityConfig
+            if "password_security" in config_dict and isinstance(
+                config_dict["password_security"], dict
+            ):
+                config_dict["password_security"] = PasswordSecurityConfig(
+                    **config_dict["password_security"]
+                )
+
+            # Convert nested resource_config dict to ServerResourceConfig
+            if "resource_config" in config_dict and isinstance(
+                config_dict["resource_config"], dict
+            ):
+                config_dict["resource_config"] = ServerResourceConfig(
+                    **config_dict["resource_config"]
+                )
 
             return ServerConfig(**config_dict)
         except json.JSONDecodeError as e:
