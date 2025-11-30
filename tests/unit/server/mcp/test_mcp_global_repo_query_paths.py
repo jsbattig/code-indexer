@@ -75,17 +75,14 @@ def mock_global_registry_data(mock_golden_repos_dir):
     """
     Mock GlobalRegistry data with ACTUAL paths from registry.
 
-    Key insight: index_path points to .code-indexer/index directory,
-    so repo path is index_path.parent.parent
+    Key insight: index_path points to the repository root directory.
     """
     return [
         {
             "repo_name": "cidx-meta",
             "alias_name": "cidx-meta-global",
             "repo_url": None,
-            "index_path": str(
-                mock_golden_repos_dir / "cidx-meta" / ".code-indexer" / "index"
-            ),
+            "index_path": str(mock_golden_repos_dir / "cidx-meta"),
             "created_at": "2025-11-28T08:48:12.625104+00:00",
             "last_refresh": "2025-11-28T08:48:12.625104+00:00",
         },
@@ -93,9 +90,7 @@ def mock_global_registry_data(mock_golden_repos_dir):
             "repo_name": "click",
             "alias_name": "click-global",
             "repo_url": "local:///path/to/repos/click",
-            "index_path": str(
-                mock_golden_repos_dir / "repos" / "click" / ".code-indexer" / "index"
-            ),
+            "index_path": str(mock_golden_repos_dir / "repos" / "click"),
             "created_at": "2025-11-28T21:01:20.090249+00:00",
             "last_refresh": "2025-11-28T21:01:20.090249+00:00",
         },
@@ -103,9 +98,7 @@ def mock_global_registry_data(mock_golden_repos_dir):
             "repo_name": "pytest",
             "alias_name": "pytest-global",
             "repo_url": "local:///path/to/repos/pytest",
-            "index_path": str(
-                mock_golden_repos_dir / "repos" / "pytest" / ".code-indexer" / "index"
-            ),
+            "index_path": str(mock_golden_repos_dir / "repos" / "pytest"),
             "created_at": "2025-11-28T21:01:27.116257+00:00",
             "last_refresh": "2025-11-28T21:01:27.116257+00:00",
         },

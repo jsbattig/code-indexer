@@ -49,6 +49,13 @@ class ServerResourceConfig:
     git_process_check_timeout: int = 30  # 30 seconds for process check
     git_untracked_file_timeout: int = 60  # 1 minute for untracked file check
 
+    # Refresh scheduler timeouts (in seconds)
+    cow_clone_timeout: int = 600  # 10 minutes for CoW clone of large repos (11GB)
+    git_update_index_timeout: int = 300  # 5 minutes for git update-index --refresh
+    git_restore_timeout: int = 300  # 5 minutes for git restore .
+    cidx_fix_config_timeout: int = 60  # 1 minute for cidx fix-config
+    cidx_index_timeout: int = 3600  # 1 hour for cidx index on large repos
+
     # Resource limits - effectively unlimited (removed constraints)
     max_golden_repos: Optional[int] = None  # No limit
     max_repo_size_bytes: Optional[int] = None  # No limit

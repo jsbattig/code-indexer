@@ -6,11 +6,13 @@ change detection, index creation, alias swap, and cleanup scheduling.
 """
 
 import logging
+import shutil
+import subprocess
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, TYPE_CHECKING
 
 from code_indexer.config import ConfigManager
 from .alias_manager import AliasManager
@@ -21,6 +23,8 @@ from .query_tracker import QueryTracker
 from .cleanup_manager import CleanupManager
 from .shared_operations import GlobalRepoOperations
 
+if TYPE_CHECKING:
+    from code_indexer.server.utils.config_manager import ServerResourceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +43,7 @@ class RefreshScheduler:
         config_source: Union[ConfigManager, GlobalRepoOperations],
         query_tracker: QueryTracker,
         cleanup_manager: CleanupManager,
+        resource_config: Optional["ServerResourceConfig"] = None,
     ):
         """
         Initialize the refresh scheduler.
@@ -48,11 +53,13 @@ class RefreshScheduler:
             config_source: Configuration source (ConfigManager for CLI, GlobalRepoOperations for server)
             query_tracker: Query tracker for reference counting
             cleanup_manager: Cleanup manager for old index removal
+            resource_config: Optional resource configuration for timeouts (server mode)
         """
         self.golden_repos_dir = Path(golden_repos_dir)
         self.config_source = config_source
         self.query_tracker = query_tracker
         self.cleanup_manager = cleanup_manager
+        self.resource_config = resource_config
 
         # Initialize managers
         self.alias_manager = AliasManager(str(self.golden_repos_dir / "aliases"))
@@ -193,18 +200,16 @@ class RefreshScheduler:
                 logger.warning(f"Repo {alias_name} not in registry, skipping refresh")
                 return
 
-            # Get source path (golden repo clone)
-            # For now, use current_target as source path
-            # (In full implementation, this would be the golden repo path)
-            source_path = current_target
+            # Get golden repo path (source for git pull and CoW clone)
+            golden_repo_path = repo_info["index_path"]
 
             # Create updater for this repo
             # Meta-directory (repo_url=None) uses MetaDirectoryUpdater
             # Normal repos use GitPullUpdater
             if repo_info.get("repo_url") is None:
-                updater = MetaDirectoryUpdater(source_path, self.registry)
+                updater = MetaDirectoryUpdater(golden_repo_path, self.registry)
             else:
-                updater = GitPullUpdater(source_path)
+                updater = GitPullUpdater(golden_repo_path)
 
             # Check for changes
             has_changes = updater.has_changes()
@@ -245,38 +250,185 @@ class RefreshScheduler:
 
     def _create_new_index(self, alias_name: str, source_path: str) -> str:
         """
-        Create a new versioned index directory.
+        Create a new versioned index directory with CoW clone and indexing.
 
-        In full implementation, this would:
-        1. Create v_TIMESTAMP directory
-        2. Clone from source using CoW
-        3. Run indexing
-
-        For now, this is a placeholder that returns a path.
+        Complete workflow:
+        1. Create .versioned/{repo_name}/v_{timestamp}/ directory structure
+        2. Perform CoW clone using cp --reflink=auto -r
+        3. Fix git status (git update-index --refresh, git restore .)
+        4. Run cidx fix-config --force
+        5. Run cidx index to create indexes
+        6. Validate index exists before returning
+        7. Return path only if validation passes
 
         Args:
-            alias_name: Global alias name
-            source_path: Path to source repository
+            alias_name: Global alias name (e.g., "my-repo-global")
+            source_path: Path to source repository (golden repo)
 
         Returns:
-            Path to new index directory
+            Path to new index directory (only if validation passes)
+
+        Raises:
+            RuntimeError: If any step fails (with cleanup of partial artifacts)
         """
+        # Get timeouts from resource config or use defaults
+        cow_timeout = 600  # Default: 10 minutes
+        git_update_timeout = 300  # Default: 5 minutes
+        git_restore_timeout = 300  # Default: 5 minutes
+        cidx_fix_timeout = 60  # Default: 1 minute
+        cidx_index_timeout = 3600  # Default: 1 hour
+
+        if self.resource_config:
+            cow_timeout = self.resource_config.cow_clone_timeout
+            git_update_timeout = self.resource_config.git_update_index_timeout
+            git_restore_timeout = self.resource_config.git_restore_timeout
+            cidx_fix_timeout = self.resource_config.cidx_fix_config_timeout
+            cidx_index_timeout = self.resource_config.cidx_index_timeout
+
         # Generate version timestamp
         timestamp = int(datetime.utcnow().timestamp())
         version = f"v_{timestamp}"
 
         # Create versioned directory path
         repo_name = alias_name.replace("-global", "")
-        versioned_path = self.golden_repos_dir / repo_name / version
+        versioned_base = self.golden_repos_dir / ".versioned" / repo_name
+        versioned_path = versioned_base / version
 
-        # In full implementation, this would:
-        # - Create directory
-        # - CoW clone from source
-        # - Run indexing
-        # For now, just return the path
-        logger.info(
-            f"Would create new index at: {versioned_path} "
-            f"(placeholder - full implementation needed)"
-        )
+        logger.info(f"Creating new versioned index at: {versioned_path}")
 
-        return str(versioned_path)
+        try:
+            # Step 1: Create versioned directory structure
+            versioned_base.mkdir(parents=True, exist_ok=True)
+
+            # Step 2: Perform CoW clone
+            logger.info(f"CoW cloning from {source_path} to {versioned_path}")
+            try:
+                result = subprocess.run(
+                    [
+                        "cp",
+                        "--reflink=auto",
+                        "-r",
+                        str(source_path),
+                        str(versioned_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=cow_timeout,
+                    check=True,
+                )
+                logger.info("CoW clone completed successfully")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"CoW clone failed: {e.stderr}")
+                raise RuntimeError(f"CoW clone failed: {e.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.error(f"CoW clone timed out after {cow_timeout} seconds")
+                raise RuntimeError(f"CoW clone timed out after {cow_timeout} seconds")
+
+            # Step 3: Fix git status (only if .git exists)
+            git_dir = versioned_path / ".git"
+            if git_dir.exists():
+                # Step 3a: git update-index --refresh
+                logger.info("Running git update-index --refresh to fix CoW timestamps")
+                try:
+                    result = subprocess.run(
+                        ["git", "update-index", "--refresh"],
+                        cwd=str(versioned_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=git_update_timeout,
+                        check=False,  # Non-fatal - may show modified files
+                    )
+                    if result.returncode != 0:
+                        logger.debug(f"git update-index output: {result.stderr}")
+                except subprocess.TimeoutExpired:
+                    logger.warning(
+                        f"git update-index timed out after {git_update_timeout} seconds"
+                    )
+
+                # Step 3b: git restore .
+                logger.info("Running git restore . to clean up timestamp changes")
+                try:
+                    result = subprocess.run(
+                        ["git", "restore", "."],
+                        cwd=str(versioned_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=git_restore_timeout,
+                        check=False,  # Non-fatal
+                    )
+                    if result.returncode != 0:
+                        logger.debug(f"git restore output: {result.stderr}")
+                except subprocess.TimeoutExpired:
+                    logger.warning(
+                        f"git restore timed out after {git_restore_timeout} seconds"
+                    )
+
+            # Step 4: Run cidx fix-config --force
+            logger.info("Running cidx fix-config --force to update paths")
+            try:
+                result = subprocess.run(
+                    ["cidx", "fix-config", "--force"],
+                    cwd=str(versioned_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=cidx_fix_timeout,
+                    check=True,
+                )
+                logger.info("cidx fix-config completed successfully")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"cidx fix-config failed: {e.stderr}")
+                raise RuntimeError(f"cidx fix-config failed: {e.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.error(
+                    f"cidx fix-config timed out after {cidx_fix_timeout} seconds"
+                )
+                raise RuntimeError(
+                    f"cidx fix-config timed out after {cidx_fix_timeout} seconds"
+                )
+
+            # Step 5: Run cidx index
+            logger.info("Running cidx index to create indexes")
+            try:
+                result = subprocess.run(
+                    ["cidx", "index"],
+                    cwd=str(versioned_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=cidx_index_timeout,
+                    check=True,
+                )
+                logger.info("cidx index completed successfully")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Indexing failed: {e.stderr}")
+                raise RuntimeError(f"Indexing failed: {e.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.error(f"Indexing timed out after {cidx_index_timeout} seconds")
+                raise RuntimeError(
+                    f"Indexing timed out after {cidx_index_timeout} seconds"
+                )
+
+            # Step 6: Validate index exists
+            index_dir = versioned_path / ".code-indexer" / "index"
+            if not index_dir.exists():
+                logger.error(f"Index validation failed: {index_dir} does not exist")
+                raise RuntimeError(
+                    "Index validation failed: index directory not created"
+                )
+
+            logger.info(
+                f"New versioned index created successfully at: {versioned_path}"
+            )
+            return str(versioned_path)
+
+        except Exception as e:
+            # Step 7: Cleanup partial artifacts on failure
+            logger.error(f"Failed to create new index, cleaning up: {e}")
+            if versioned_path.exists():
+                try:
+                    shutil.rmtree(versioned_path)
+                    logger.info(f"Cleaned up partial index at: {versioned_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to cleanup partial index: {cleanup_error}")
+
+            # Re-raise with context
+            raise RuntimeError(f"Failed to create new index: {e}")

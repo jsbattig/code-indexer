@@ -103,13 +103,9 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                     }
                 )
 
-            # Extract actual repo path from index_path
-            # index_path is like: /path/to/repo/.code-indexer/index
-            # We need: /path/to/repo
+            # index_path in the registry already points to the repository root
             index_path = Path(repo_entry["index_path"])
-            global_repo_path = (
-                index_path.parent.parent
-            )  # Go up two levels from index dir
+            global_repo_path = index_path  # Use directly as repo root
 
             # Verify global repo exists
             if not global_repo_path.exists():
@@ -253,10 +249,28 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
             registry = GlobalRegistry(golden_repos_dir)
             global_repos_data = registry.list_global_repos()
 
-            # Mark global repos with is_global: true
+            # Normalize global repos schema to match activated repos
             for repo in global_repos_data:
-                repo["is_global"] = True
-                global_repos.append(repo)
+                # Validate required fields exist
+                if "alias_name" not in repo or "repo_name" not in repo:
+                    logger.warning(f"Skipping malformed global repo entry: {repo}")
+                    continue
+
+                normalized = {
+                    "user_alias": repo["alias_name"],  # Map alias_name → user_alias
+                    "golden_repo_alias": repo[
+                        "repo_name"
+                    ],  # Map repo_name → golden_repo_alias
+                    "current_branch": None,  # Global repos are read-only snapshots
+                    "is_global": True,
+                    "repo_url": repo.get("repo_url"),
+                    "last_refresh": repo.get("last_refresh"),
+                    "index_path": repo.get(
+                        "index_path"
+                    ),  # Preserve for backward compatibility
+                    "created_at": repo.get("created_at"),  # Preserve creation timestamp
+                }
+                global_repos.append(normalized)
 
         except Exception as e:
             # Log but don't fail - continue with activated repos only
@@ -521,11 +535,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
                     }
                 )
 
-            # Extract actual repo path from index_path
-            # index_path is like: /path/to/repo/.code-indexer/index
-            # We need: /path/to/repo
+            # index_path in the registry already points to the repository root
             index_path = Path(repo_entry["index_path"])
-            repo_path_resolved = str(index_path.parent.parent)
+            repo_path_resolved = str(index_path)  # Use directly as repo root
 
             # Use resolved path instead of alias for file_service
             repository_alias = repo_path_resolved

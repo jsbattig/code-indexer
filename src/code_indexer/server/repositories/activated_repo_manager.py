@@ -93,7 +93,7 @@ class ActivatedRepoManager:
         self.logger = logging.getLogger(__name__)
 
         # Set dependencies
-        self.golden_repo_manager = golden_repo_manager or GoldenRepoManager(data_dir)
+        self.golden_repo_manager = golden_repo_manager or GoldenRepoManager(self.data_dir)
         self.background_job_manager = background_job_manager or BackgroundJobManager()
 
     def activate_repository(

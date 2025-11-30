@@ -389,7 +389,10 @@ async def integrate_resource_manager_with_existing_operations():
     when adding ResourceManager to existing codebase.
     """
     # Example: Wrapping existing golden repo operations
-    golden_repo_manager = GoldenRepoManager()
+    from pathlib import Path
+    home_dir = Path.home()
+    data_dir = str(home_dir / ".cidx-server" / "data")
+    golden_repo_manager = GoldenRepoManager(data_dir=data_dir)
     resource_managed_golden = ResourceManagedGoldenRepoOperations(golden_repo_manager)
 
     # Example: Using resource-managed operations

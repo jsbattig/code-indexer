@@ -210,10 +210,21 @@ class TestGoldenRepoAsyncOperations:
             # Job should NOT have been submitted
             golden_repo_manager.background_job_manager.submit_job.assert_not_called()
 
-    def test_add_golden_repo_validates_max_repos_limit(self, golden_repo_manager):
-        """Test that add_golden_repo validates MAX_GOLDEN_REPOS limit before job submission."""
-        # Fill up to max
-        for i in range(GoldenRepoManager.MAX_GOLDEN_REPOS):
+    def test_add_golden_repo_validates_max_repos_limit(self, temp_data_dir):
+        """Test that add_golden_repo validates max repos limit when configured."""
+        from src.code_indexer.server.utils.config_manager import ServerResourceConfig
+
+        # Create manager with configured limit of 5 repos
+        config = ServerResourceConfig(max_golden_repos=5)
+        manager = GoldenRepoManager(data_dir=temp_data_dir, resource_config=config)
+
+        # Inject mock BackgroundJobManager
+        mock_bg_manager = MagicMock(spec=BackgroundJobManager)
+        mock_bg_manager.submit_job.return_value = "test-job-id"
+        manager.background_job_manager = mock_bg_manager
+
+        # Fill up to max (5 repos)
+        for i in range(5):
             from src.code_indexer.server.repositories.golden_repo_manager import (
                 GoldenRepo,
             )
@@ -228,25 +239,25 @@ class TestGoldenRepoAsyncOperations:
                 enable_temporal=False,
                 temporal_options=None,
             )
-            golden_repo_manager.golden_repos[f"repo-{i}"] = golden_repo
+            manager.golden_repos[f"repo-{i}"] = golden_repo
 
         # Try to add one more - should fail validation
         with patch.object(
-            golden_repo_manager, "_validate_git_repository"
+            manager, "_validate_git_repository"
         ) as mock_validate:
             mock_validate.return_value = True
 
             with pytest.raises(
                 ResourceLimitError,
-                match=f"Maximum of {GoldenRepoManager.MAX_GOLDEN_REPOS} golden repositories allowed",
+                match="Maximum of 5 golden repositories allowed",
             ):
-                golden_repo_manager.add_golden_repo(
+                manager.add_golden_repo(
                     repo_url="https://github.com/test/overflow.git",
                     alias="overflow",
                 )
 
             # Job should NOT have been submitted
-            golden_repo_manager.background_job_manager.submit_job.assert_not_called()
+            manager.background_job_manager.submit_job.assert_not_called()
 
     # Test remove_golden_repo
     def test_remove_golden_repo_returns_job_id(self, manager_with_existing_repo):

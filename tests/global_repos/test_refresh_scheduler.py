@@ -37,7 +37,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -65,7 +65,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -104,7 +104,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -151,7 +151,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -197,7 +197,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -246,7 +246,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -295,7 +295,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -345,7 +345,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -399,7 +399,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -437,7 +437,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -462,7 +462,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -508,7 +508,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )
@@ -567,7 +567,7 @@ class TestRefreshScheduler:
 
         scheduler = RefreshScheduler(
             golden_repos_dir=str(golden_repos_dir),
-            config_manager=config_mgr,
+            config_source=config_mgr,
             query_tracker=tracker,
             cleanup_manager=cleanup_mgr,
         )

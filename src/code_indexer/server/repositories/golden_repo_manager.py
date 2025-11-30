@@ -83,22 +83,23 @@ class GoldenRepoManager:
 
     def __init__(
         self,
-        data_dir: Optional[str] = None,
+        data_dir: str,
         resource_config: Optional["ServerResourceConfig"] = None,
     ):
         """
         Initialize golden repository manager.
 
         Args:
-            data_dir: Data directory path (defaults to ~/.cidx-server/data)
+            data_dir: Data directory path (REQUIRED - no default)
             resource_config: Resource configuration (timeouts, limits)
-        """
-        if data_dir:
-            self.data_dir = data_dir
-        else:
-            home_dir = Path.home()
-            self.data_dir = str(home_dir / ".cidx-server" / "data")
 
+        Raises:
+            ValueError: If data_dir is None or empty
+        """
+        if not data_dir or not data_dir.strip():
+            raise ValueError("data_dir is required and cannot be None or empty")
+
+        self.data_dir = data_dir
         self.golden_repos_dir = os.path.join(self.data_dir, "golden-repos")
         self.metadata_file = os.path.join(self.golden_repos_dir, "metadata.json")
 
@@ -510,12 +511,11 @@ class GoldenRepoManager:
             GitOperationError: If cloning fails
         """
         try:
-            # Use shallow clone to save space and time
+            # Clone full repository with complete history for semantic search
             result = subprocess.run(
                 [
                     "git",
                     "clone",
-                    "--depth=1",
                     "--branch",
                     branch,
                     repo_url,

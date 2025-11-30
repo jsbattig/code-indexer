@@ -144,6 +144,80 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["query_text"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean",
+                    "description": "Whether the search operation succeeded",
+                },
+                "results": {
+                    "type": "object",
+                    "description": "Search results (present when success=True)",
+                    "properties": {
+                        "results": {
+                            "type": "array",
+                            "description": "Array of code search results",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "file_path": {"type": "string", "description": "Relative path to file"},
+                                    "line_number": {"type": "integer", "description": "Line number where match found"},
+                                    "code_snippet": {"type": "string", "description": "Code snippet containing match"},
+                                    "similarity_score": {"type": "number", "description": "Semantic similarity score (0.0-1.0)"},
+                                    "repository_alias": {"type": "string", "description": "Repository where result found"},
+                                    "source_repo": {
+                                        "type": ["string", "null"],
+                                        "description": "Component repository name for composite repositories. Null for single repositories. Indicates which repo in a composite this result came from."
+                                    },
+                                    "file_last_modified": {"type": ["number", "null"], "description": "Unix timestamp when file last modified (null if stat failed)"},
+                                    "indexed_timestamp": {"type": ["number", "null"], "description": "Unix timestamp when file was indexed (null if not available)"},
+                                    "temporal_context": {
+                                        "type": ["object", "null"],
+                                        "description": "Temporal metadata for time-range queries (null for non-temporal queries)",
+                                        "properties": {
+                                            "first_seen": {"type": "string", "description": "ISO timestamp when code first appeared"},
+                                            "last_seen": {"type": "string", "description": "ISO timestamp when code last modified"},
+                                            "commit_count": {"type": "integer", "description": "Number of commits affecting this code"},
+                                            "commits": {
+                                                "type": "array",
+                                                "description": "List of commits affecting this code",
+                                                "items": {"type": "object"}
+                                            },
+                                            "is_removed": {"type": "boolean", "description": "Whether file was removed from current HEAD (only when include_removed=true)"},
+                                            "evolution": {
+                                                "type": ["array", "null"],
+                                                "description": "Code evolution timeline (only when show_evolution=true)",
+                                                "items": {"type": "object"}
+                                            }
+                                        }
+                                    },
+                                },
+                            },
+                        },
+                        "total_results": {
+                            "type": "integer",
+                            "description": "Total number of results returned",
+                        },
+                        "query_metadata": {
+                            "type": "object",
+                            "description": "Query execution metadata",
+                            "properties": {
+                                "query_text": {"type": "string", "description": "Original query text"},
+                                "execution_time_ms": {"type": "integer", "description": "Query execution time in milliseconds"},
+                                "repositories_searched": {"type": "integer", "description": "Number of repositories searched"},
+                                "timeout_occurred": {"type": "boolean", "description": "Whether query timed out"},
+                            },
+                        },
+                    },
+                },
+                "error": {
+                    "type": "string",
+                    "description": "Error message (present when success=False)",
+                },
+            },
+            "required": ["success"],
+        },
     },
     "discover_repositories": {
         "name": "discover_repositories",
@@ -159,6 +233,31 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": [],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "repositories": {
+                    "type": "array",
+                    "description": "List of discovered golden repositories",
+                    "items": {
+                        "type": "object",
+                        "description": "Golden repository information from GoldenRepository.to_dict()",
+                        "properties": {
+                            "alias": {"type": "string", "description": "Repository alias"},
+                            "repo_url": {"type": "string", "description": "Git repository URL"},
+                            "default_branch": {"type": "string", "description": "Default branch name"},
+                            "clone_path": {"type": "string", "description": "Filesystem path to cloned repository"},
+                            "created_at": {"type": "string", "description": "Repository creation timestamp"},
+                            "enable_temporal": {"type": "boolean", "description": "Whether temporal indexing is enabled"},
+                            "temporal_options": {"type": "object", "description": "Temporal indexing configuration options"}
+                        }
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     # Tools 3-8: Repository Management
     "list_repositories": {
@@ -170,6 +269,32 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": [],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "repositories": {
+                    "type": "array",
+                    "description": "Combined list of activated and global repositories",
+                    "items": {
+                        "type": "object",
+                        "description": "Normalized repository information (activated or global)",
+                        "properties": {
+                            "user_alias": {"type": "string", "description": "User-visible repository alias (queryable name). For global repos, ends with '-global' suffix"},
+                            "golden_repo_alias": {"type": "string", "description": "Base golden repository name (without -global suffix)"},
+                            "current_branch": {"type": ["string", "null"], "description": "Active branch for activated repos, null for global repos (read-only snapshots)"},
+                            "is_global": {"type": "boolean", "description": "True if globally accessible shared repo, false if user-activated repo"},
+                            "repo_url": {"type": ["string", "null"], "description": "Repository URL (for global repos)"},
+                            "last_refresh": {"type": ["string", "null"], "description": "ISO 8601 timestamp of last index refresh"},
+                            "index_path": {"type": "string", "description": "Filesystem path to repository index"},
+                            "created_at": {"type": ["string", "null"], "description": "ISO 8601 timestamp when repository was added"},
+                        },
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "activate_repository": {
         "name": "activate_repository",
@@ -198,6 +323,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": [],
         },
         "required_permission": "activate_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "job_id": {"type": ["string", "null"], "description": "Background job ID for tracking activation progress"},
+                "message": {"type": "string", "description": "Human-readable status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "deactivate_repository": {
         "name": "deactivate_repository",
@@ -213,6 +348,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["user_alias"],
         },
         "required_permission": "activate_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "job_id": {"type": ["string", "null"], "description": "Background job ID for tracking deactivation"},
+                "message": {"type": "string", "description": "Human-readable status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "get_repository_status": {
         "name": "get_repository_status",
@@ -228,6 +373,39 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["user_alias"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "status": {
+                    "type": "object",
+                    "description": "Detailed repository status information",
+                    "properties": {
+                        "alias": {"type": "string", "description": "Repository alias"},
+                        "repo_url": {"type": "string", "description": "Repository URL"},
+                        "default_branch": {"type": "string", "description": "Default branch name"},
+                        "clone_path": {"type": "string", "description": "Filesystem path to cloned repository"},
+                        "created_at": {"type": "string", "description": "Repository creation timestamp"},
+                        "activation_status": {"type": "string", "description": "Activation status (activated/available)"},
+                        "branches_list": {"type": "array", "description": "List of available branches", "items": {"type": "string"}},
+                        "file_count": {"type": "integer", "description": "Number of files in repository"},
+                        "index_size": {"type": "integer", "description": "Size of index in bytes"},
+                        "last_updated": {"type": "string", "description": "Last update timestamp"},
+                        "enable_temporal": {"type": "boolean", "description": "Whether temporal indexing is enabled"},
+                        "temporal_status": {
+                            "type": ["object", "null"],
+                            "description": "Temporal indexing status (null if disabled)",
+                            "properties": {
+                                "enabled": {"type": "boolean", "description": "Whether temporal indexing is enabled"},
+                                "diff_context": {"type": "integer", "description": "Number of context lines for diffs"}
+                            }
+                        }
+                    }
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "sync_repository": {
         "name": "sync_repository",
@@ -243,6 +421,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["user_alias"],
         },
         "required_permission": "activate_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "job_id": {"type": ["string", "null"], "description": "Background job ID for tracking sync progress"},
+                "message": {"type": "string", "description": "Human-readable status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "switch_branch": {
         "name": "switch_branch",
@@ -262,6 +450,15 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["user_alias", "branch_name"],
         },
         "required_permission": "activate_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "message": {"type": "string", "description": "Human-readable status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     # Tools 9-13: Files & Health
     "list_files": {
@@ -282,6 +479,28 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["repository_alias"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "files": {
+                    "type": "array",
+                    "description": "List of files in repository",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Relative file path"},
+                            "size_bytes": {"type": "integer", "description": "File size in bytes"},
+                            "modified_at": {"type": "string", "description": "ISO 8601 last modification timestamp"},
+                            "language": {"type": ["string", "null"], "description": "Detected programming language"},
+                            "is_indexed": {"type": "boolean", "description": "Whether file is indexed"},
+                        },
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "get_file_content": {
         "name": "get_file_content",
@@ -301,6 +520,29 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["repository_alias", "file_path"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "content": {
+                    "type": "array",
+                    "description": "Array of content blocks (MCP spec compliant)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["text"], "description": "Content block type"},
+                            "text": {"type": "string", "description": "File content as text"},
+                        },
+                    },
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "File metadata (size, language, etc)",
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "browse_directory": {
         "name": "browse_directory",
@@ -325,6 +567,23 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["repository_alias"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "structure": {
+                    "type": "object",
+                    "description": "Directory structure with files",
+                    "properties": {
+                        "path": {"type": "string", "description": "Directory path browsed"},
+                        "files": {"type": "array", "description": "Array of file information objects"},
+                        "total": {"type": "integer", "description": "Total number of files"},
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "get_branches": {
         "name": "get_branches",
@@ -340,6 +599,42 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["repository_alias"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "branches": {
+                    "type": "array",
+                    "description": "List of branches",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Branch name"},
+                            "is_current": {"type": "boolean", "description": "Whether this is the active branch"},
+                            "last_commit": {
+                                "type": "object",
+                                "properties": {
+                                    "sha": {"type": "string", "description": "Commit SHA"},
+                                    "message": {"type": "string", "description": "Commit message"},
+                                    "author": {"type": "string", "description": "Commit author"},
+                                    "date": {"type": "string", "description": "Commit date"},
+                                },
+                            },
+                            "index_status": {
+                                "type": ["object", "null"],
+                                "description": "Index status for this branch (nullable)",
+                            },
+                            "remote_tracking": {
+                                "type": ["object", "null"],
+                                "description": "Remote tracking information (nullable)",
+                            },
+                        },
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "check_health": {
         "name": "check_health",
@@ -350,6 +645,23 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": [],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "health": {
+                    "type": "object",
+                    "description": "System health information",
+                    "properties": {
+                        "status": {"type": "string", "enum": ["healthy", "degraded", "unhealthy"], "description": "Overall health status"},
+                        "timestamp": {"type": "string", "description": "ISO 8601 health check timestamp"},
+                        "checks": {"type": "object", "description": "Individual service health checks"},
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     # Tools 14-18: Admin
     "add_golden_repo": {
@@ -374,6 +686,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["url", "alias"],
         },
         "required_permission": "manage_golden_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "job_id": {"type": ["string", "null"], "description": "Background job ID for tracking indexing progress"},
+                "message": {"type": "string", "description": "Human-readable status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "remove_golden_repo": {
         "name": "remove_golden_repo",
@@ -389,6 +711,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["alias"],
         },
         "required_permission": "manage_golden_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "job_id": {"type": ["string", "null"], "description": "Background job ID"},
+                "message": {"type": "string", "description": "Status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "refresh_golden_repo": {
         "name": "refresh_golden_repo",
@@ -404,6 +736,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["alias"],
         },
         "required_permission": "manage_golden_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "job_id": {"type": ["string", "null"], "description": "Background job ID"},
+                "message": {"type": "string", "description": "Status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "list_users": {
         "name": "list_users",
@@ -414,6 +756,27 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": [],
         },
         "required_permission": "manage_users",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "users": {
+                    "type": "array",
+                    "description": "List of users",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "username": {"type": "string", "description": "Username"},
+                            "role": {"type": "string", "enum": ["admin", "power_user", "normal_user"], "description": "User role"},
+                            "created_at": {"type": "string", "description": "ISO 8601 creation timestamp"},
+                        },
+                    },
+                },
+                "total": {"type": "integer", "description": "Total number of users"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "create_user": {
         "name": "create_user",
@@ -438,6 +801,24 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["username", "password", "role"],
         },
         "required_permission": "manage_users",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "user": {
+                    "type": ["object", "null"],
+                    "description": "Created user information",
+                    "properties": {
+                        "username": {"type": "string", "description": "Username"},
+                        "role": {"type": "string", "description": "User role"},
+                        "created_at": {"type": "string", "description": "ISO 8601 creation timestamp"},
+                    },
+                },
+                "message": {"type": "string", "description": "Status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     # Tools 19-22: Analytics
     "get_repository_statistics": {
@@ -454,6 +835,57 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["repository_alias"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "statistics": {
+                    "type": "object",
+                    "description": "Repository statistics (RepositoryStatsResponse model)",
+                    "properties": {
+                        "repository_id": {"type": "string", "description": "Repository identifier"},
+                        "files": {
+                            "type": "object",
+                            "description": "File statistics",
+                            "properties": {
+                                "total": {"type": "integer", "description": "Total number of files"},
+                                "indexed": {"type": "integer", "description": "Number of indexed files"},
+                                "by_language": {"type": "object", "description": "File counts by programming language"}
+                            }
+                        },
+                        "storage": {
+                            "type": "object",
+                            "description": "Storage statistics",
+                            "properties": {
+                                "repository_size_bytes": {"type": "integer", "description": "Total repository size in bytes"},
+                                "index_size_bytes": {"type": "integer", "description": "Index size in bytes"},
+                                "embedding_count": {"type": "integer", "description": "Number of embeddings stored"}
+                            }
+                        },
+                        "activity": {
+                            "type": "object",
+                            "description": "Activity statistics",
+                            "properties": {
+                                "created_at": {"type": "string", "description": "Repository creation timestamp (ISO 8601)"},
+                                "last_sync_at": {"type": ["string", "null"], "description": "Last synchronization timestamp (ISO 8601)"},
+                                "last_accessed_at": {"type": ["string", "null"], "description": "Last access timestamp (ISO 8601)"},
+                                "sync_count": {"type": "integer", "description": "Number of successful syncs"}
+                            }
+                        },
+                        "health": {
+                            "type": "object",
+                            "description": "Health assessment",
+                            "properties": {
+                                "score": {"type": "number", "description": "Health score between 0.0 and 1.0"},
+                                "issues": {"type": "array", "description": "List of identified health issues", "items": {"type": "string"}}
+                            }
+                        }
+                    }
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "get_job_statistics": {
         "name": "get_job_statistics",
@@ -464,6 +896,24 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": [],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "statistics": {
+                    "type": "object",
+                    "description": "Job statistics",
+                    "properties": {
+                        "active": {"type": "integer", "description": "Number of currently running jobs"},
+                        "pending": {"type": "integer", "description": "Number of queued jobs waiting to run"},
+                        "failed": {"type": "integer", "description": "Number of failed jobs"},
+                        "total": {"type": "integer", "description": "Total jobs (active + pending + failed)"},
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "get_all_repositories_status": {
         "name": "get_all_repositories_status",
@@ -474,6 +924,19 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": [],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "repositories": {
+                    "type": "array",
+                    "description": "Array of repository status summaries",
+                },
+                "total": {"type": "integer", "description": "Total number of repositories"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "manage_composite_repository": {
         "name": "manage_composite_repository",
@@ -499,12 +962,46 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["operation", "user_alias"],
         },
         "required_permission": "activate_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "job_id": {"type": ["string", "null"], "description": "Background job ID"},
+                "message": {"type": "string", "description": "Status message"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "list_global_repos": {
         "name": "list_global_repos",
         "description": "List all globally accessible repositories. TERMINOLOGY: 'Global repos' (also called 'golden repos') are pre-indexed and immediately queryable without activation - they're shared across all users. 'Activated repos' are user-specific and created via activate_repository for branch selection or composites. Most users only need global repos. SPECIAL: 'cidx-meta-global' is the meta-directory catalog containing descriptions of ALL repositories. DISCOVERY WORKFLOW: (1) Query cidx-meta-global to discover which repositories contain content on your topic, (2) then query those specific repositories for detailed code. Example: search_code('authentication', repository_alias='cidx-meta-global') returns repositories that handle authentication, then search_code('OAuth implementation', repository_alias='backend-api-global') for actual code. STATUS: All listed global repos are ready for querying immediately; use global_repo_status for detailed info.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "repos": {
+                    "type": "array",
+                    "description": "List of global repositories (normalized schema)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "user_alias": {"type": "string", "description": "Global repository alias (ends with '-global')"},
+                            "golden_repo_alias": {"type": "string", "description": "Base repository name"},
+                            "is_global": {"type": "boolean", "description": "Always true for global repos"},
+                            "repo_url": {"type": ["string", "null"], "description": "Repository URL"},
+                            "last_refresh": {"type": ["string", "null"], "description": "ISO 8601 last refresh timestamp"},
+                            "index_path": {"type": "string", "description": "Filesystem path to index"},
+                            "created_at": {"type": ["string", "null"], "description": "ISO 8601 creation timestamp"},
+                        },
+                    },
+                },
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
     "global_repo_status": {
         "name": "global_repo_status",
@@ -520,12 +1017,33 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["alias"],
         },
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "error": {"type": "string", "description": "Error message if failed"},
+                "alias": {"type": "string", "description": "Global repository alias"},
+                "repo_name": {"type": "string", "description": "Repository name"},
+                "url": {"type": "string", "description": "Git repository URL"},
+                "last_refresh": {"type": ["string", "null"], "description": "ISO 8601 timestamp of last refresh"},
+            },
+            "required": ["success"],
+        },
     },
     "get_global_config": {
         "name": "get_global_config",
         "description": "Get global repository refresh configuration",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
         "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "error": {"type": "string", "description": "Error message if failed"},
+                "refresh_interval": {"type": "integer", "description": "Refresh interval in seconds (minimum 60)"},
+            },
+            "required": ["success"],
+        },
     },
     "set_global_config": {
         "name": "set_global_config",
@@ -542,6 +1060,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["refresh_interval"],
         },
         "required_permission": "manage_golden_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether operation succeeded"},
+                "status": {"type": "string", "description": "Operation status"},
+                "refresh_interval": {"type": "integer", "description": "Updated refresh interval in seconds"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
     },
 }
 

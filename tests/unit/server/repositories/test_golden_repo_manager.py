@@ -730,6 +730,28 @@ class TestGoldenRepoManager:
         assert hasattr(golden_repo_manager, "_clone_local_repository_with_regular_copy")
 
 
+    def test_initialization_requires_data_dir(self):
+        """Test that GoldenRepoManager raises ValueError when data_dir is None."""
+        with pytest.raises(ValueError, match="data_dir is required and cannot be None or empty"):
+            GoldenRepoManager(data_dir=None)
+
+    def test_initialization_rejects_empty_data_dir(self):
+        """Test that GoldenRepoManager raises ValueError when data_dir is empty string."""
+        with pytest.raises(ValueError, match="data_dir is required and cannot be None or empty"):
+            GoldenRepoManager(data_dir="")
+
+    def test_initialization_rejects_whitespace_data_dir(self):
+        """Test that GoldenRepoManager raises ValueError when data_dir is only whitespace."""
+        with pytest.raises(ValueError, match="data_dir is required and cannot be None or empty"):
+            GoldenRepoManager(data_dir="   ")
+
+    def test_initialization_accepts_valid_data_dir(self, temp_data_dir):
+        """Test that GoldenRepoManager initializes successfully with valid data_dir."""
+        manager = GoldenRepoManager(data_dir=temp_data_dir)
+        assert manager.data_dir == temp_data_dir
+        assert os.path.exists(manager.golden_repos_dir)
+
+
 class TestGoldenRepo:
     """Test suite for GoldenRepo model."""
 

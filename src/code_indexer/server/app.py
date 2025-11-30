@@ -1637,7 +1637,9 @@ def create_app() -> FastAPI:
     server_config = config_manager.apply_env_overrides(server_config)
 
     # Initialize managers with resource configuration
+    data_dir = str(Path(server_data_dir) / "data")
     golden_repo_manager = GoldenRepoManager(
+        data_dir=data_dir,
         resource_config=server_config.resource_config
     )
     background_job_manager = BackgroundJobManager(

@@ -41,7 +41,12 @@ class RepositoryListingManager:
             golden_repo_manager: Golden repository manager instance
             activated_repo_manager: Activated repository manager instance
         """
-        self.golden_repo_manager = golden_repo_manager or GoldenRepoManager()
+        if golden_repo_manager is None:
+            from pathlib import Path
+            home_dir = Path.home()
+            data_dir = str(home_dir / ".cidx-server" / "data")
+            golden_repo_manager = GoldenRepoManager(data_dir=data_dir)
+        self.golden_repo_manager = golden_repo_manager
         self.activated_repo_manager = activated_repo_manager or ActivatedRepoManager()
         self.logger = logging.getLogger(__name__)
 

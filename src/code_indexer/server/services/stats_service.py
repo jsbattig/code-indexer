@@ -483,8 +483,11 @@ class RepositoryStatsService:
         try:
             # Use existing repository manager patterns from the codebase
             from ..repositories.golden_repo_manager import GoldenRepoManager
+            from pathlib import Path
 
-            repo_manager = GoldenRepoManager()
+            home_dir = Path.home()
+            data_dir = str(home_dir / ".cidx-server" / "data")
+            repo_manager = GoldenRepoManager(data_dir=data_dir)
 
             # Search for repository by alias (repo_id)
             golden_repos = repo_manager.list_golden_repos()

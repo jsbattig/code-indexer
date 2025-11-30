@@ -158,10 +158,8 @@ class MetaDirectoryUpdater(UpdateStrategy):
             logger.warning(f"No index_path for repo: {repo_name}")
             return
 
-        # BUG FIX: Extract source directory from index_path
-        # index_path points to .code-indexer/index/, we need the repo root
-        # Example: /path/to/repo/.code-indexer/index -> /path/to/repo
-        repo_path = Path(index_path).parent.parent
+        # index_path contains the repository root directly
+        repo_path = Path(index_path)
 
         try:
             analyzer = RepoAnalyzer(str(repo_path))
@@ -226,9 +224,8 @@ class MetaDirectoryUpdater(UpdateStrategy):
         if not index_path:
             return False
 
-        # BUG FIX: Extract source directory from index_path
-        # index_path points to .code-indexer/index/, we need the repo root
-        repo_path = Path(index_path).parent.parent
+        # index_path contains the repository root directly
+        repo_path = Path(index_path)
         if not repo_path.exists():
             return False
 
