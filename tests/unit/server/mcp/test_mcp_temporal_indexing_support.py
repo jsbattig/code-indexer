@@ -412,9 +412,11 @@ class TestRefreshSchedulerTemporalCommand:
 
     def test_create_new_index_uses_temporal_flags_when_enabled(self, tmp_path):
         """
-        Test that _create_new_index includes --index-commits when enable_temporal=True.
+        Test that _create_new_index runs TWO separate commands when enable_temporal=True:
+        1. cidx index --fts (semantic + FTS)
+        2. cidx index --index-commits (temporal)
 
-        Acceptance Criterion: Refresh includes --index-commits flag when temporal enabled.
+        Acceptance Criterion: Refresh includes separate --index-commits command when temporal enabled.
         """
         from pathlib import Path
 
@@ -471,18 +473,32 @@ class TestRefreshSchedulerTemporalCommand:
                     source_path=str(source_path),
                 )
 
-        # Find cidx index command
+        # Find cidx index commands
         cidx_index_cmds = [c for c in captured_commands if c[0] == "cidx" and c[1] == "index"]
-        assert len(cidx_index_cmds) > 0, "cidx index was not called"
+        assert len(cidx_index_cmds) == 2, (
+            f"Expected 2 cidx index commands (semantic+FTS and temporal), got {len(cidx_index_cmds)}: {cidx_index_cmds}"
+        )
 
-        cidx_cmd = cidx_index_cmds[0]
-        assert "--index-commits" in cidx_cmd, (
-            f"--index-commits not in cidx command: {cidx_cmd}"
+        # First command should be semantic+FTS (cidx index --fts)
+        fts_cmd = cidx_index_cmds[0]
+        assert "--fts" in fts_cmd, f"First command should have --fts: {fts_cmd}"
+        assert "--index-commits" not in fts_cmd, (
+            f"First command should NOT have --index-commits: {fts_cmd}"
+        )
+
+        # Second command should be temporal (cidx index --index-commits)
+        temporal_cmd = cidx_index_cmds[1]
+        assert "--index-commits" in temporal_cmd, (
+            f"Second command should have --index-commits: {temporal_cmd}"
+        )
+        assert "--fts" not in temporal_cmd, (
+            f"Second command should NOT have --fts: {temporal_cmd}"
         )
 
     def test_create_new_index_includes_temporal_options(self, tmp_path):
         """
-        Test that _create_new_index includes --max-commits, --since-date, --diff-context.
+        Test that _create_new_index includes --max-commits, --since-date, --diff-context
+        in the SECOND command (temporal command), not in the first (semantic+FTS).
         """
         from pathlib import Path
 
@@ -544,22 +560,29 @@ class TestRefreshSchedulerTemporalCommand:
                 )
 
         cidx_index_cmds = [c for c in captured_commands if c[0] == "cidx" and c[1] == "index"]
-        assert len(cidx_index_cmds) > 0
+        assert len(cidx_index_cmds) == 2, (
+            f"Expected 2 cidx index commands, got {len(cidx_index_cmds)}: {cidx_index_cmds}"
+        )
 
-        cidx_cmd = cidx_index_cmds[0]
+        # First command: semantic+FTS (should NOT have temporal options)
+        fts_cmd = cidx_index_cmds[0]
+        assert "--fts" in fts_cmd
+        assert "--index-commits" not in fts_cmd
 
-        # Verify all temporal options are present
-        assert "--index-commits" in cidx_cmd
-        assert "--max-commits" in cidx_cmd
-        assert "500" in cidx_cmd
-        assert "--since-date" in cidx_cmd
-        assert "2024-06-01" in cidx_cmd
-        assert "--diff-context" in cidx_cmd
-        assert "8" in cidx_cmd
+        # Second command: temporal (should have all temporal options)
+        temporal_cmd = cidx_index_cmds[1]
+        assert "--index-commits" in temporal_cmd
+        assert "--max-commits" in temporal_cmd
+        assert "500" in temporal_cmd
+        assert "--since-date" in temporal_cmd
+        assert "2024-06-01" in temporal_cmd
+        assert "--diff-context" in temporal_cmd
+        assert "8" in temporal_cmd
 
     def test_create_new_index_no_temporal_flags_when_disabled(self, tmp_path):
         """
-        Test that _create_new_index does NOT include --index-commits when enable_temporal=False.
+        Test that _create_new_index runs ONLY ONE command when enable_temporal=False.
+        Only semantic+FTS indexing, no temporal indexing command.
 
         Acceptance Criterion: Repository indexed without temporal indexing (backward compatible).
         """
@@ -617,13 +640,20 @@ class TestRefreshSchedulerTemporalCommand:
                 )
 
         cidx_index_cmds = [c for c in captured_commands if c[0] == "cidx" and c[1] == "index"]
-        assert len(cidx_index_cmds) > 0
 
-        cidx_cmd = cidx_index_cmds[0]
+        # Should have exactly ONE cidx index command (semantic+FTS only)
+        assert len(cidx_index_cmds) == 1, (
+            f"Expected 1 cidx index command when temporal disabled, got {len(cidx_index_cmds)}: {cidx_index_cmds}"
+        )
+
+        fts_cmd = cidx_index_cmds[0]
+
+        # Should have --fts flag
+        assert "--fts" in fts_cmd, f"Command should have --fts: {fts_cmd}"
 
         # Should NOT have temporal flags
-        assert "--index-commits" not in cidx_cmd, (
-            f"--index-commits should NOT be in command when temporal disabled: {cidx_cmd}"
+        assert "--index-commits" not in fts_cmd, (
+            f"--index-commits should NOT be in command when temporal disabled: {fts_cmd}"
         )
 
 

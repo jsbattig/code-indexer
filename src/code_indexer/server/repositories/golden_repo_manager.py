@@ -772,25 +772,35 @@ class GoldenRepoManager:
         if force_init:
             init_command.append("--force")
 
-        # Build index command with optional temporal parameters
+        # Build index command for semantic + FTS (always required)
         index_command = ["cidx", "index", "--fts"]
+
+        # Build workflow commands list
+        workflow_commands = [
+            init_command,
+            index_command,
+        ]
+
+        # If temporal indexing is enabled, add a SEPARATE command for temporal index
+        # Note: --index-commits ONLY does temporal indexing, not semantic+FTS
+        # So we need two separate cidx index calls: one for semantic+FTS, one for temporal
         if enable_temporal:
-            index_command.append("--index-commits")
+            temporal_command = ["cidx", "index", "--index-commits"]
 
             if temporal_options:
                 if temporal_options.get("max_commits"):
-                    index_command.extend(
+                    temporal_command.extend(
                         ["--max-commits", str(temporal_options["max_commits"])]
                     )
 
                 if temporal_options.get("since_date"):
-                    index_command.extend(
+                    temporal_command.extend(
                         ["--since-date", temporal_options["since_date"]]
                     )
 
                 # Add diff-context parameter (default: 5 from model)
                 diff_context = temporal_options.get("diff_context", 5)
-                index_command.extend(["--diff-context", str(diff_context)])
+                temporal_command.extend(["--diff-context", str(diff_context)])
 
                 # Log warning for large context values
                 if diff_context > 20:
@@ -799,10 +809,7 @@ class GoldenRepoManager:
                         f"increase storage. Recommended range: 3-10 lines."
                     )
 
-        workflow_commands = [
-            init_command,
-            index_command,
-        ]
+            workflow_commands.append(temporal_command)
 
         try:
             for i, command in enumerate(workflow_commands, 1):

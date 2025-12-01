@@ -386,34 +386,12 @@ class RefreshScheduler:
                     f"cidx fix-config timed out after {cidx_fix_timeout} seconds"
                 )
 
-            # Step 5: Run cidx index
-            # Build index command with optional temporal flags (Story #527)
+            # Step 5: Run cidx index for semantic + FTS (always required)
+            # Note: --index-commits ONLY does temporal indexing, not semantic+FTS
+            # So we need two separate cidx index calls: one for semantic+FTS, one for temporal
             index_command = ["cidx", "index", "--fts"]
 
-            # Read temporal settings from registry
-            repo_info = self.registry.get_global_repo(alias_name)
-            enable_temporal = repo_info.get("enable_temporal", False) if repo_info else False
-            temporal_options = repo_info.get("temporal_options") if repo_info else None
-
-            if enable_temporal:
-                index_command.append("--index-commits")
-                logger.info(f"Temporal indexing enabled for {alias_name}")
-
-                if temporal_options:
-                    if temporal_options.get("max_commits"):
-                        index_command.extend(
-                            ["--max-commits", str(temporal_options["max_commits"])]
-                        )
-                    if temporal_options.get("since_date"):
-                        index_command.extend(
-                            ["--since-date", temporal_options["since_date"]]
-                        )
-                    if temporal_options.get("diff_context"):
-                        index_command.extend(
-                            ["--diff-context", str(temporal_options["diff_context"])]
-                        )
-
-            logger.info(f"Running cidx index to create indexes: {' '.join(index_command)}")
+            logger.info(f"Running cidx index for semantic+FTS: {' '.join(index_command)}")
             try:
                 result = subprocess.run(
                     index_command,
@@ -423,15 +401,59 @@ class RefreshScheduler:
                     timeout=cidx_index_timeout,
                     check=True,
                 )
-                logger.info("cidx index completed successfully")
+                logger.info("cidx index (semantic+FTS) completed successfully")
             except subprocess.CalledProcessError as e:
-                logger.error(f"Indexing failed: {e.stderr}")
-                raise RuntimeError(f"Indexing failed: {e.stderr}")
+                logger.error(f"Indexing (semantic+FTS) failed: {e.stderr}")
+                raise RuntimeError(f"Indexing (semantic+FTS) failed: {e.stderr}")
             except subprocess.TimeoutExpired:
-                logger.error(f"Indexing timed out after {cidx_index_timeout} seconds")
+                logger.error(f"Indexing (semantic+FTS) timed out after {cidx_index_timeout} seconds")
                 raise RuntimeError(
-                    f"Indexing timed out after {cidx_index_timeout} seconds"
+                    f"Indexing (semantic+FTS) timed out after {cidx_index_timeout} seconds"
                 )
+
+            # Step 5b: Run cidx index --index-commits for temporal indexing (if enabled)
+            # Read temporal settings from registry
+            repo_info = self.registry.get_global_repo(alias_name)
+            enable_temporal = repo_info.get("enable_temporal", False) if repo_info else False
+            temporal_options = repo_info.get("temporal_options") if repo_info else None
+
+            if enable_temporal:
+                temporal_command = ["cidx", "index", "--index-commits"]
+                logger.info(f"Temporal indexing enabled for {alias_name}")
+
+                if temporal_options:
+                    if temporal_options.get("max_commits"):
+                        temporal_command.extend(
+                            ["--max-commits", str(temporal_options["max_commits"])]
+                        )
+                    if temporal_options.get("since_date"):
+                        temporal_command.extend(
+                            ["--since-date", temporal_options["since_date"]]
+                        )
+                    if temporal_options.get("diff_context"):
+                        temporal_command.extend(
+                            ["--diff-context", str(temporal_options["diff_context"])]
+                        )
+
+                logger.info(f"Running cidx index for temporal: {' '.join(temporal_command)}")
+                try:
+                    result = subprocess.run(
+                        temporal_command,
+                        cwd=str(versioned_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=cidx_index_timeout,
+                        check=True,
+                    )
+                    logger.info("cidx index (temporal) completed successfully")
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Temporal indexing failed: {e.stderr}")
+                    raise RuntimeError(f"Temporal indexing failed: {e.stderr}")
+                except subprocess.TimeoutExpired:
+                    logger.error(f"Temporal indexing timed out after {cidx_index_timeout} seconds")
+                    raise RuntimeError(
+                        f"Temporal indexing timed out after {cidx_index_timeout} seconds"
+                    )
 
             # Step 6: Validate index exists
             index_dir = versioned_path / ".code-indexer" / "index"
