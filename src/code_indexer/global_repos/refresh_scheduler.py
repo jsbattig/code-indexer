@@ -200,8 +200,8 @@ class RefreshScheduler:
                 logger.warning(f"Repo {alias_name} not in registry, skipping refresh")
                 return
 
-            # Get golden repo path (source for git pull and CoW clone)
-            golden_repo_path = repo_info["index_path"]
+            # Get golden repo path from alias (registry path becomes stale after refresh)
+            golden_repo_path = current_target
 
             # Create updater for this repo
             # Meta-directory (repo_url=None) uses MetaDirectoryUpdater
