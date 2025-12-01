@@ -13,6 +13,7 @@ from .update_strategy import UpdateStrategy
 from .global_registry import GlobalRegistry
 from .repo_analyzer import RepoAnalyzer
 from .description_generator import DescriptionGenerator
+from .alias_manager import AliasManager
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,9 @@ class MetaDirectoryUpdater(UpdateStrategy):
         self.meta_dir.mkdir(parents=True, exist_ok=True)
         self.registry = registry
         self.generator = DescriptionGenerator(str(meta_dir))
+        # Initialize alias manager to get current paths (not stale registry paths)
+        golden_repos_dir = self.meta_dir.parent
+        self.alias_manager = AliasManager(str(golden_repos_dir / "aliases"))
 
     def has_changes(self) -> bool:
         """
@@ -152,10 +156,15 @@ class MetaDirectoryUpdater(UpdateStrategy):
             logger.warning(f"Repository not found in registry: {repo_name}")
             return
 
-        # Get index_path and extract source directory
-        index_path = repo.get("index_path")
+        # Get CURRENT index_path from alias (not stale registry path)
+        alias_name = repo.get("alias_name")
+        if not alias_name:
+            logger.warning(f"No alias_name for repo: {repo_name}")
+            return
+
+        index_path = self.alias_manager.read_alias(alias_name)
         if not index_path:
-            logger.warning(f"No index_path for repo: {repo_name}")
+            logger.warning(f"Alias not found or invalid for repo: {repo_name}")
             return
 
         # index_path contains the repository root directly
@@ -220,7 +229,12 @@ class MetaDirectoryUpdater(UpdateStrategy):
         if not repo:
             return False
 
-        index_path = repo.get("index_path", "")
+        # Get CURRENT index_path from alias (not stale registry path)
+        alias_name = repo.get("alias_name")
+        if not alias_name:
+            return False
+
+        index_path = self.alias_manager.read_alias(alias_name)
         if not index_path:
             return False
 

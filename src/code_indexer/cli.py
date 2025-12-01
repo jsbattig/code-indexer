@@ -14820,6 +14820,7 @@ def global_status(ctx, alias_name: str):
     import os
     from pathlib import Path
     from .global_repos.global_registry import GlobalRegistry
+    from .global_repos.alias_manager import AliasManager
     from rich.panel import Panel
     from rich.table import Table
 
@@ -14844,6 +14845,12 @@ def global_status(ctx, alias_name: str):
                 "Use [cyan]cidx global list[/cyan] to see all registered repos"
             )
             sys.exit(1)
+
+        # Get CURRENT index_path from alias (not stale registry path)
+        alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+        current_index_path = alias_manager.read_alias(alias_name)
+        if not current_index_path:
+            current_index_path = repo.get("index_path", "N/A")
 
         # Format timestamps
         created_at = repo.get("created_at", "N/A")
@@ -14878,7 +14885,7 @@ def global_status(ctx, alias_name: str):
             "URL",
             repo["repo_url"] if repo["repo_url"] else "[dim](local repository)[/dim]",
         )
-        table.add_row("Index Path", repo["index_path"])
+        table.add_row("Index Path", current_index_path)
         table.add_row("Created", created_at)
         table.add_row("Last Refresh", f"[yellow]{last_refresh}[/yellow]")
 
