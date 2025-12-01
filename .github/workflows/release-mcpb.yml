@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             platform: linux-x64
           - os: macos-13  # Intel Mac
             platform: darwin-x64
