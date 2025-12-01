@@ -1123,6 +1123,38 @@ class TantivyIndexManager:
 
         return rebuild_thread
 
+    def set_cached_index(self, index: Any, schema: Any) -> None:
+        """
+        Set index and schema from external cache.
+
+        Used by server-side caching to inject pre-loaded index
+        without re-initializing from disk.
+
+        Args:
+            index: tantivy.Index instance from cache
+            schema: tantivy.Schema instance from cache
+
+        Note: Writer is NOT set - this is for read-only search operations only.
+        """
+        self._index = index
+        self._schema = schema
+        logger.debug(f"Set cached FTS index for {self.index_dir}")
+
+    def get_index_for_caching(self) -> tuple[Any, Any]:
+        """
+        Get index and schema for external caching.
+
+        Returns:
+            Tuple of (tantivy_index, schema) for caching
+
+        Raises:
+            RuntimeError: If index is not initialized
+        """
+        if self._index is None:
+            raise RuntimeError("Index not initialized. Call initialize_index() first.")
+
+        return self._index, self._schema
+
     def close(self) -> None:
         """Close the index and writer."""
         if self._writer is not None:
