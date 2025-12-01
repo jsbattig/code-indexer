@@ -1497,7 +1497,7 @@ def create_app() -> FastAPI:
         server_data_dir = os.environ.get(
             "CIDX_SERVER_DATA_DIR", str(Path.home() / ".cidx-server")
         )
-        golden_repos_dir = Path(server_data_dir) / "golden-repos"
+        golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
 
         # Startup: Auto-populate meta-directory
         logger.info("Server startup: Initializing meta-directory population")
