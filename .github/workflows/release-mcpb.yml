@@ -18,7 +18,7 @@ jobs:
         include:
           - os: ubuntu-20.04
             platform: linux-x64
-          - os: macos-15-intel  # Intel Mac (was macos-13, now deprecated)
+          - os: macos-13  # Intel Mac
             platform: darwin-x64
           - os: macos-latest  # Apple Silicon Mac (M1/M2)
             platform: darwin-arm64
@@ -48,13 +48,9 @@ jobs:
         id: get_version
         shell: bash
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            # Tag-triggered: extract version from tag
-            VERSION=${GITHUB_REF#refs/tags/v}
-          else
-            # Manually triggered or branch push: extract from __init__.py
-            VERSION=$(python3 -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)")
-          fi
+          # Always extract version from source code for consistency
+          VERSION=$(python3 -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)")
+          echo "Version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Verify binary
@@ -90,13 +86,9 @@ jobs:
         id: get_version
         shell: bash
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            # Tag-triggered: extract version from tag
-            VERSION=${GITHUB_REF#refs/tags/v}
-          else
-            # Manually triggered or branch push: extract from __init__.py
-            VERSION=$(python3 -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)")
-          fi
+          # Always extract version from source code for consistency
+          VERSION=$(python3 -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)")
+          echo "Version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create release notes
