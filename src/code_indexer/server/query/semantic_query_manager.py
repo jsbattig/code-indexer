@@ -1247,8 +1247,13 @@ class SemanticQueryManager:
             config_manager = ConfigManager.create_with_backtrack(repo_path)
             config = config_manager.get_config()
 
-            # Create vector store and embedding provider
-            backend = BackendFactory.create(config=config, project_root=repo_path)
+            # Create vector store and embedding provider (Story #526: pass server cache)
+            # Import here to avoid circular dependency
+            from ..app import _server_hnsw_cache
+
+            backend = BackendFactory.create(
+                config=config, project_root=repo_path, hnsw_cache=_server_hnsw_cache
+            )
             vector_store = backend.get_vector_store_client()
             embedding_provider = EmbeddingProviderFactory.create(config, console=None)
 

@@ -1122,6 +1122,9 @@ semantic_query_manager: Optional[SemanticQueryManager] = None
 # Server startup time for health monitoring
 _server_start_time: Optional[str] = None
 
+# Server-wide HNSW cache (Story #526)
+_server_hnsw_cache: Optional[Any] = None
+
 
 def get_server_uptime() -> Optional[int]:
     """
@@ -1446,7 +1449,16 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI app
     """
-    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time
+    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time, _server_hnsw_cache
+
+    # Story #526: Initialize server-side HNSW cache at bootstrap for 1800x performance
+    # Import and initialize global cache instance
+    from .cache import get_global_cache
+
+    _server_hnsw_cache = get_global_cache()
+    logger.info(
+        f"HNSW index cache initialized (TTL: {_server_hnsw_cache.config.ttl_minutes}min)"
+    )
 
     # Initialize exception logger EARLY for server mode
     from ..utils.exception_logger import ExceptionLogger
@@ -1786,6 +1798,73 @@ def create_app() -> FastAPI:
                 "uptime": None,
                 "active_jobs": 0,
             }
+
+    # Cache statistics endpoint (Story #526: HNSW Index Cache monitoring)
+    @app.get("/cache/stats")
+    async def get_cache_stats(
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        Get HNSW index cache statistics.
+
+        Story #526: Server-Side HNSW Index Caching for 1800x Query Performance
+
+        Returns cache performance metrics including:
+        - Total cached repositories
+        - Cache hit/miss ratios
+        - Memory usage estimates
+        - Per-repository access statistics
+        - TTL remaining for each cached entry
+
+        Requires authentication for security.
+
+        Returns:
+            JSON with cache statistics:
+            {
+                "cached_repositories": int,
+                "total_memory_mb": float,
+                "hit_count": int,
+                "miss_count": int,
+                "hit_ratio": float,
+                "eviction_count": int,
+                "per_repository_stats": {
+                    "repo_path": {
+                        "access_count": int,
+                        "last_accessed": str (ISO datetime),
+                        "created_at": str (ISO datetime),
+                        "ttl_remaining_seconds": float
+                    }
+                }
+            }
+        """
+        try:
+            # Import cache singleton
+            from .cache import get_global_cache
+
+            # Get cache instance
+            cache = get_global_cache()
+
+            # Get statistics
+            stats = cache.get_stats()
+
+            # Convert to JSON-serializable dictionary
+            return {
+                "cached_repositories": stats.cached_repositories,
+                "total_memory_mb": stats.total_memory_mb,
+                "hit_count": stats.hit_count,
+                "miss_count": stats.miss_count,
+                "hit_ratio": stats.hit_ratio,
+                "eviction_count": stats.eviction_count,
+                "per_repository_stats": stats.per_repository_stats,
+            }
+
+        except Exception as e:
+            # Log error but don't expose internal details
+            logger.error(f"Error retrieving cache statistics: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve cache statistics",
+            )
 
     @app.post("/auth/login", response_model=LoginResponse)
     async def login(login_data: LoginRequest, request: Request):

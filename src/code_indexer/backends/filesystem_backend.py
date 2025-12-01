@@ -27,14 +27,22 @@ class FilesystemBackend(VectorStoreBackend):
                 └── (vector storage files)
     """
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, hnsw_index_cache: Any = None):
         """Initialize FilesystemBackend.
 
         Args:
             project_root: Root directory of the project being indexed
+            hnsw_index_cache: Optional HNSW index cache for server performance (Story #526)
+                             Server mode passes this explicitly. None for CLI mode.
         """
         super().__init__(project_root)
         self.vectors_dir = self.project_root / ".code-indexer" / "index"
+
+        # Story #526: Server passes cache explicitly, CLI leaves it None
+        self.hnsw_index_cache = hnsw_index_cache
+
+        if hnsw_index_cache is not None:
+            logger.info("HNSW index caching enabled (server mode)")
 
     def initialize(self) -> None:
         """Initialize filesystem storage by creating index directory.
@@ -116,13 +124,17 @@ class FilesystemBackend(VectorStoreBackend):
 
         For filesystem backend, this returns a FilesystemVectorStore instance.
 
+        Story #526: Passes hnsw_index_cache to enable server-side caching.
+
         Returns:
             FilesystemVectorStore instance configured for this project
         """
         from ..storage.filesystem_vector_store import FilesystemVectorStore
 
         return FilesystemVectorStore(
-            base_path=self.vectors_dir, project_root=self.project_root
+            base_path=self.vectors_dir,
+            project_root=self.project_root,
+            hnsw_index_cache=self.hnsw_index_cache,
         )
 
     def health_check(self) -> bool:

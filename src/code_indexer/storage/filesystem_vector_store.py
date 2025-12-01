@@ -30,12 +30,18 @@ class FilesystemVectorStore:
     - ID indexing for fast lookups
     """
 
-    def __init__(self, base_path: Path, project_root: Optional[Path] = None):
+    def __init__(
+        self,
+        base_path: Path,
+        project_root: Optional[Path] = None,
+        hnsw_index_cache: Optional[Any] = None,
+    ):
         """Initialize filesystem vector store.
 
         Args:
             base_path: Base directory for all collections
             project_root: Root directory of the project being indexed (for git operations)
+            hnsw_index_cache: Optional HNSW index cache for server-side performance (Story #526)
         """
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
@@ -77,6 +83,10 @@ class FilesystemVectorStore:
         # HNSW-001 (AC3): Daemon mode cache entry (optional, set by daemon service)
         # When set, enables in-memory HNSW updates for watch mode instead of disk I/O
         self.cache_entry: Optional[Any] = None
+
+        # Story #526: Server-side HNSW index cache for 1800x performance improvement
+        # When set, caches hnswlib.Index objects with TTL-based eviction
+        self.hnsw_index_cache = hnsw_index_cache
 
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
@@ -1616,10 +1626,34 @@ class FilesystemVectorStore:
         # === PARALLEL EXECUTION (always) ===
 
         def load_index():
-            """Load HNSW and ID indexes in parallel thread."""
-            # Load HNSW index
+            """Load HNSW and ID indexes in parallel thread.
+
+            Story #526: If hnsw_index_cache is configured, use cached HNSW index
+            for 1800x performance improvement (~277ms → <1ms).
+            """
+            # Load HNSW index (with caching if available)
             t_hnsw = time.time()
-            hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+
+            # Story #526: Use cache if available
+            if self.hnsw_index_cache is not None:
+                # Cache key is collection_path (unique per repository)
+                cache_key = str(collection_path.resolve())
+
+                def hnsw_loader():
+                    """Loader function for cache miss."""
+                    index = hnsw_manager.load_index(collection_path, max_elements=100000)
+                    # Load ID mapping from metadata for cache entry
+                    id_mapping = hnsw_manager._load_id_mapping(collection_path)
+                    return index, id_mapping
+
+                # Get or load from cache
+                hnsw_index, _cached_id_mapping = self.hnsw_index_cache.get_or_load(
+                    cache_key, hnsw_loader
+                )
+            else:
+                # No cache - load directly (original behavior)
+                hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+
             hnsw_load_ms = (time.time() - t_hnsw) * 1000
 
             # Load ID index in same thread (parallel with embedding generation)

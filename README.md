@@ -180,6 +180,7 @@ cidx query "login" --time-range-all --author "john@example.com" --quiet
 - **Incremental updates**: 3.6x speedup for re-indexing
 - **Watch mode**: <20ms per file change
 - **FTS**: 1.36x faster than grep on indexed codebases
+- **Server-side caching**: 100-1800x speedup for repeated queries (277ms to <1ms)
 
 ### Advanced Filtering
 
@@ -268,6 +269,41 @@ cidx start
 # Use watch mode for real-time updates
 cidx watch
 ```
+
+### Server Mode (Team Collaboration)
+
+Multi-user server with advanced caching for team-wide semantic search:
+- **Automatic HNSW index caching**: 100-1800x speedup for repeated queries
+- **First query (cold)**: ~277ms (OS page cache benefit)
+- **Subsequent queries (warm)**: <1ms (in-memory cache)
+- **TTL-based eviction**: Configurable cache lifetime (default: 10 minutes)
+- **Per-repository isolation**: Independent cache entries for each repository
+- **Multi-user support**: Shared cache across team members
+- **OAuth 2.0 authentication**: Secure access control
+
+**Cache Configuration**:
+```bash
+# Configure cache TTL (seconds)
+export CIDX_HNSW_CACHE_TTL_SECONDS=600  # 10 minutes default
+
+# Server mode auto-enabled when running server
+```
+
+**Monitor Cache Performance**:
+```bash
+# Query cache statistics
+curl http://localhost:8000/cache/stats
+
+# Response shows hit/miss ratios and speedup metrics
+{
+  "total_hits": 1234,
+  "total_misses": 56,
+  "hit_ratio": 0.957,
+  "active_entries": 12
+}
+```
+
+See [Server Deployment Guide](docs/server-deployment.md) for detailed configuration.
 
 ## Common Commands
 

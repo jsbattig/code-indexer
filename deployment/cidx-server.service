@@ -1,0 +1,44 @@
+[Unit]
+Description=CIDX Server - Multi-User Semantic Code Search Server
+Documentation=https://github.com/jsbattig/code-indexer
+After=network.target
+
+[Service]
+Type=simple
+User=sebabattig
+WorkingDirectory=/home/sebabattig/Dev/code-indexer
+
+# VoyageAI API key for embeddings (REQUIRED)
+# Replace with actual API key during deployment
+Environment="VOYAGE_API_KEY=your_voyage_api_key_here"
+
+# Optional: Server data directory (default: ~/.cidx-server)
+# Environment="CIDX_SERVER_DATA_DIR=/home/sebabattig/.cidx-server"
+
+# Optional: HNSW index cache configuration
+# Environment="CIDX_INDEX_CACHE_TTL_MINUTES=10"
+# Environment="CIDX_INDEX_CACHE_CLEANUP_INTERVAL=60"
+
+# Optional: Golden repos directory (default: ~/.cidx-server/golden-repos)
+# Environment="GOLDEN_REPOS_DIR=/home/sebabattig/.cidx-server/golden-repos"
+
+# Start server module
+ExecStart=/usr/bin/python3 -m code_indexer.server.app
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cidx-server
+
+# Security hardening (optional - adjust based on your security requirements)
+# PrivateTmp=true
+# NoNewPrivileges=true
+# ProtectSystem=strict
+# ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

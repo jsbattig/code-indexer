@@ -153,8 +153,15 @@ class SemanticSearchService:
 
             logger.info(f"Loaded repository config from {repo_path}")
 
-            # Create backend using BackendFactory
-            backend = BackendFactory.create(config=config, project_root=Path(repo_path))
+            # Create backend using BackendFactory (Story #526: pass server cache)
+            # Import here to avoid circular dependency
+            from ..app import _server_hnsw_cache
+
+            backend = BackendFactory.create(
+                config=config,
+                project_root=Path(repo_path),
+                hnsw_cache=_server_hnsw_cache,
+            )
             vector_store_client = backend.get_vector_store_client()
 
             logger.info(f"Using backend: {type(backend).__name__}")
