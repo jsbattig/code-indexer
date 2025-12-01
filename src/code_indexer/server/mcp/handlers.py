@@ -93,9 +93,22 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                     }
                 )
 
-            # index_path in the registry already points to the repository root
-            index_path = Path(repo_entry["index_path"])
-            global_repo_path = index_path  # Use directly as repo root
+            # Use AliasManager to get current target path (registry path becomes stale after refresh)
+            from code_indexer.global_repos.alias_manager import AliasManager
+
+            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+            target_path = alias_manager.read_alias(repository_alias)
+
+            if not target_path:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Alias for '{repository_alias}' not found",
+                        "results": [],
+                    }
+                )
+
+            global_repo_path = Path(target_path)
 
             # Verify global repo exists
             if not global_repo_path.exists():
@@ -525,12 +538,23 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
                     }
                 )
 
-            # index_path in the registry already points to the repository root
-            index_path = Path(repo_entry["index_path"])
-            repo_path_resolved = str(index_path)  # Use directly as repo root
+            # Use AliasManager to get current target path (registry path becomes stale after refresh)
+            from code_indexer.global_repos.alias_manager import AliasManager
+
+            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+            target_path = alias_manager.read_alias(repository_alias)
+
+            if not target_path:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Alias for '{repository_alias}' not found",
+                        "structure": {},
+                    }
+                )
 
             # Use resolved path instead of alias for file_service
-            repository_alias = repo_path_resolved
+            repository_alias = target_path
 
         # Build path pattern for recursive search
         path_pattern = None
