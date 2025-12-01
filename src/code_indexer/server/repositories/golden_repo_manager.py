@@ -769,7 +769,7 @@ class GoldenRepoManager:
             init_command.append("--force")
 
         # Build index command with optional temporal parameters
-        index_command = ["cidx", "index"]
+        index_command = ["cidx", "index", "--fts"]
         if enable_temporal:
             index_command.append("--index-commits")
 

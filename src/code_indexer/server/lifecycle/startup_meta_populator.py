@@ -35,7 +35,7 @@ def index_meta_directory(meta_dir: Path) -> None:
         # Use cidx index command to index the meta-directory
         # This creates the .code-indexer/index/ structure in meta_dir
         result = subprocess.run(
-            ["cidx", "index"],
+            ["cidx", "index", "--fts"],
             cwd=str(meta_dir),
             capture_output=True,
             text=True,
