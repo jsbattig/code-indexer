@@ -58,6 +58,23 @@ systemctl status cidx-server --no-pager
 
 ---
 
+## CIDX SERVER PORT CONFIGURATION - DO NOT CHANGE
+
+**ABSOLUTE PROHIBITION**: NEVER change the port configuration for cidx-server, HAProxy, or firewall.
+
+**LOCKED CONFIGURATION** (verified working 2025-11-30):
+- cidx-server systemd service: port 8000
+- HAProxy backend (192.168.60.30): forwards to 192.168.60.20:8000
+- Firewall (192.168.60.20): allows port 8000 from 192.168.60.30
+
+**WHY**: These three components must be synchronized. Changing any one breaks external access via https://linner.ddns.net:8383.
+
+**VIOLATION = SERVER INACCESSIBLE**: Any port change will cause HAProxy 503 errors.
+
+**RECORDED**: 2025-11-30 - After port mismatch caused HAProxy backend failure.
+
+---
+
 ## 1. CRITICAL BUSINESS INSIGHT - Query is Everything
 
 **THE SINGLE MOST IMPORTANT FEATURE**: Query capability is the core value proposition of CIDX. All query features available in CLI MUST be available in MCP/REST APIs with full parity.
