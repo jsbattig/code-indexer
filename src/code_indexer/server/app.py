@@ -1125,6 +1125,9 @@ _server_start_time: Optional[str] = None
 # Server-wide HNSW cache (Story #526)
 _server_hnsw_cache: Optional[Any] = None
 
+# Server-wide FTS cache
+_server_fts_cache: Optional[Any] = None
+
 
 def get_server_uptime() -> Optional[int]:
     """
@@ -1449,15 +1452,21 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI app
     """
-    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time, _server_hnsw_cache
+    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time, _server_hnsw_cache, _server_fts_cache
 
     # Story #526: Initialize server-side HNSW cache at bootstrap for 1800x performance
     # Import and initialize global cache instance
-    from .cache import get_global_cache
+    from .cache import get_global_cache, get_global_fts_cache
 
     _server_hnsw_cache = get_global_cache()
     logger.info(
         f"HNSW index cache initialized (TTL: {_server_hnsw_cache.config.ttl_minutes}min)"
+    )
+
+    # Initialize server-side FTS cache for FTS query performance
+    _server_fts_cache = get_global_fts_cache()
+    logger.info(
+        f"FTS index cache initialized (TTL: {_server_fts_cache.config.ttl_minutes}min)"
     )
 
     # Initialize exception logger EARLY for server mode
