@@ -7,6 +7,7 @@ and retrying the request.
 
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -296,9 +297,11 @@ class TestAutomaticTokenRefresh:
             assert updated_config["bearer_token"] == "new-access-token"
             assert updated_config["refresh_token"] == "new-refresh-token"
 
-            # Verify file has secure permissions (0600)
-            file_perms = os.stat(config_path).st_mode & 0o777
-            assert file_perms == 0o600
+            # Verify file has secure permissions (0600) - only on Unix
+            # Windows doesn't use Unix-style permissions
+            if sys.platform != "win32":
+                file_perms = os.stat(config_path).st_mode & 0o777
+                assert file_perms == 0o600
 
         finally:
             os.unlink(config_path)
@@ -980,3 +983,177 @@ class TestAutoLoginIntegration:
         assert "new-auto-login-token" in captured.err
         # Verify full token is NOT logged
         assert "new-auto-login-token-1234567890123456789012345" not in captured.err
+
+
+@pytest.mark.asyncio
+class TestWindowsCompatibility:
+    """Tests for Windows-specific compatibility issues."""
+
+    async def test_atomic_file_replacement_when_target_exists(self, httpx_mock):
+        """Test that config file update works when target file already exists.
+
+        This specifically tests the fix for Windows where os.rename() fails
+        if the destination file exists. The fix uses os.replace() which works
+        correctly on both Unix and Windows.
+        """
+        # Create config file that already exists (simulates the Windows issue)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.example.com",
+                "bearer_token": "old-token",
+                "refresh_token": "old-refresh",
+            }
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            # Verify the file exists before we start
+            assert config_path.exists()
+
+            # First request returns 401
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/mcp",
+                status_code=401,
+                text="Token has expired",
+            )
+
+            # Refresh endpoint returns new tokens
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/auth/refresh",
+                json={
+                    "access_token": "new-access-token",
+                    "refresh_token": "new-refresh-token",
+                },
+                status_code=200,
+            )
+
+            # Retry succeeds
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/mcp",
+                json={"jsonrpc": "2.0", "result": {}, "id": 1},
+                status_code=200,
+            )
+
+            client = BridgeHttpClient(
+                server_url="https://cidx.example.com",
+                bearer_token="old-token",
+                timeout=30,
+                refresh_token="old-refresh",
+                config_path=config_path,
+            )
+
+            request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+
+            # This should succeed without raising FileExistsError on Windows
+            await client.forward_request(request_data)
+
+            # Verify config file was successfully updated
+            with open(config_path) as f:
+                updated_config = json.load(f)
+
+            assert updated_config["bearer_token"] == "new-access-token"
+            assert updated_config["refresh_token"] == "new-refresh-token"
+
+        finally:
+            if config_path.exists():
+                os.unlink(config_path)
+
+    async def test_multiple_consecutive_token_refreshes(self, httpx_mock):
+        """Test multiple consecutive token refreshes work correctly.
+
+        This tests that repeated atomic file replacements work correctly,
+        simulating multiple token refresh cycles.
+        """
+        # Create initial config file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            config_data = {
+                "server_url": "https://cidx.example.com",
+                "bearer_token": "initial-token",
+                "refresh_token": "initial-refresh",
+            }
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            # First cycle: request 1
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/mcp",
+                status_code=401,
+                text="Token has expired",
+            )
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/auth/refresh",
+                json={
+                    "access_token": "token-v2",
+                    "refresh_token": "refresh-v2",
+                },
+                status_code=200,
+            )
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/mcp",
+                json={"jsonrpc": "2.0", "result": {}, "id": 1},
+                status_code=200,
+            )
+
+            # Second cycle: request 2
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/mcp",
+                status_code=401,
+                text="Token has expired again",
+            )
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/auth/refresh",
+                json={
+                    "access_token": "token-v3",
+                    "refresh_token": "refresh-v3",
+                },
+                status_code=200,
+            )
+            httpx_mock.add_response(
+                method="POST",
+                url="https://cidx.example.com/mcp",
+                json={"jsonrpc": "2.0", "result": {}, "id": 2},
+                status_code=200,
+            )
+
+            client = BridgeHttpClient(
+                server_url="https://cidx.example.com",
+                bearer_token="initial-token",
+                timeout=30,
+                refresh_token="initial-refresh",
+                config_path=config_path,
+            )
+
+            # First request triggers first refresh
+            await client.forward_request(
+                {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+            )
+
+            # Verify first refresh worked
+            with open(config_path) as f:
+                config_after_first = json.load(f)
+            assert config_after_first["bearer_token"] == "token-v2"
+            assert config_after_first["refresh_token"] == "refresh-v2"
+
+            # Second request triggers second refresh
+            await client.forward_request(
+                {"jsonrpc": "2.0", "method": "tools/list", "id": 2}
+            )
+
+            # Verify second refresh worked (atomic replacement of existing file)
+            with open(config_path) as f:
+                config_after_second = json.load(f)
+            assert config_after_second["bearer_token"] == "token-v3"
+            assert config_after_second["refresh_token"] == "refresh-v3"
+
+        finally:
+            if config_path.exists():
+                os.unlink(config_path)

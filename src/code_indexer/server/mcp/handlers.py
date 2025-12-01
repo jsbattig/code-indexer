@@ -515,6 +515,20 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
         repository_alias = params["repository_alias"]
         path = params.get("path", "")
         recursive = params.get("recursive", True)
+        user_path_pattern = params.get("path_pattern")
+        language = params.get("language")
+        limit = params.get("limit", 500)
+        sort_by = params.get("sort_by", "path")
+
+        # Validate limit range
+        if limit < 1:
+            limit = 1
+        elif limit > 500:
+            limit = 500
+
+        # Validate sort_by value
+        if sort_by not in ("path", "size", "modified_at"):
+            sort_by = "path"
 
         # Check if this is a global repository (ends with -global suffix)
         if repository_alias and repository_alias.endswith("-global"):
@@ -556,17 +570,34 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             # Use resolved path instead of alias for file_service
             repository_alias = target_path
 
-        # Build path pattern for recursive search
-        path_pattern = None
+        # Build path pattern combining path and user's pattern
+        final_path_pattern = None
         if path:
-            # Match files under the specified path
-            path_pattern = f"{path}/**/*" if recursive else f"{path}/*"
+            # Normalize path (remove trailing slash)
+            path = path.rstrip("/")
+            # Base pattern for the specified directory
+            base_pattern = f"{path}/**/*" if recursive else f"{path}/*"
+            if user_path_pattern:
+                # Combine path with user's pattern
+                # e.g., path="src", path_pattern="*.py" -> "src/**/*.py"
+                if recursive:
+                    final_path_pattern = f"{path}/**/{user_path_pattern}"
+                else:
+                    final_path_pattern = f"{path}/{user_path_pattern}"
+            else:
+                final_path_pattern = base_pattern
+        elif user_path_pattern:
+            # Just use the user's pattern directly
+            final_path_pattern = user_path_pattern
+        # else: final_path_pattern stays None (all files)
 
-        # Use list_files with max allowed limit to get directory structure
+        # Use list_files with user-specified limit
         query_params = FileListQueryParams(
             page=1,
-            limit=500,  # Max limit allowed by FileListQueryParams
-            path_pattern=path_pattern,
+            limit=limit,
+            path_pattern=final_path_pattern,
+            language=language,
+            sort_by=sort_by,
         )
 
         result = app_module.file_service.list_files(

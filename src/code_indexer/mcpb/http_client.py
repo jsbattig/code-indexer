@@ -401,8 +401,10 @@ class BridgeHttpClient:
                     # Set secure permissions (owner read/write only)
                     os.chmod(temp_path, 0o600)
 
-                    # Atomic rename
-                    os.rename(temp_path, self.config_path)
+                    # Atomic replace - works correctly on both Unix and Windows
+                    # Note: os.rename() fails on Windows if destination exists,
+                    # but os.replace() atomically replaces on all platforms
+                    os.replace(temp_path, self.config_path)
 
                 except Exception:
                     # Clean up temp file on error

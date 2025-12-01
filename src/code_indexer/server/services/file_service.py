@@ -7,11 +7,13 @@ All operations use real file system operations with proper pagination and filter
 
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, Set
 from datetime import datetime, timezone
 import logging
 import fnmatch
 import math
+
+import pathspec
 
 from ..models.api_models import (
     FileListResponse,
@@ -74,6 +76,9 @@ LANGUAGE_EXTENSIONS = {
 
 class FileListingService:
     """Service for listing repository files."""
+
+    # Directories that are always excluded from file listings
+    ALWAYS_EXCLUDED_DIRS: Set[str] = {".code-indexer", ".git"}
 
     def __init__(self):
         """Initialize the file listing service."""
@@ -162,7 +167,12 @@ class FileListingService:
 
     def _collect_files(self, repo_path: str) -> List[FileInfo]:
         """
-        Collect all files in repository.
+        Collect all files in repository, excluding system directories and gitignored files.
+
+        Excludes:
+        - .code-indexer/ directory (CIDX index storage)
+        - .git/ directory (Git internals)
+        - Files matching .gitignore patterns (if .gitignore exists)
 
         Args:
             repo_path: Repository file system path
@@ -173,15 +183,30 @@ class FileListingService:
         files = []
         repo_root = Path(repo_path)
 
+        # Load .gitignore patterns if present
+        gitignore_spec = self._load_gitignore_spec(repo_root)
+
         try:
             for file_path in repo_root.rglob("*"):
                 if file_path.is_file():
                     try:
-                        stat_info = file_path.stat()
                         relative_path = file_path.relative_to(repo_root)
+                        relative_path_str = str(relative_path)
+
+                        # Skip files in always-excluded directories
+                        if self._is_in_excluded_dir(relative_path):
+                            continue
+
+                        # Skip files matching .gitignore patterns
+                        if gitignore_spec and gitignore_spec.match_file(
+                            relative_path_str
+                        ):
+                            continue
+
+                        stat_info = file_path.stat()
 
                         file_info = FileInfo(
-                            path=str(relative_path),
+                            path=relative_path_str,
                             size_bytes=stat_info.st_size,
                             modified_at=datetime.fromtimestamp(
                                 stat_info.st_mtime, tz=timezone.utc
@@ -200,6 +225,49 @@ class FileListingService:
             raise
 
         return files
+
+    def _is_in_excluded_dir(self, relative_path: Path) -> bool:
+        """
+        Check if a file path is within an excluded directory.
+
+        Args:
+            relative_path: Path relative to repository root
+
+        Returns:
+            True if path is in an excluded directory
+        """
+        # Check each part of the path against excluded directories
+        for part in relative_path.parts:
+            if part in self.ALWAYS_EXCLUDED_DIRS:
+                return True
+        return False
+
+    def _load_gitignore_spec(self, repo_root: Path) -> Optional[pathspec.PathSpec]:
+        """
+        Load and parse .gitignore file if present.
+
+        Args:
+            repo_root: Repository root directory
+
+        Returns:
+            PathSpec object for matching gitignore patterns, or None if no .gitignore
+        """
+        gitignore_path = repo_root / ".gitignore"
+
+        if not gitignore_path.exists():
+            return None
+
+        try:
+            with open(gitignore_path, "r", encoding="utf-8") as f:
+                gitignore_content = f.read()
+
+            # Parse gitignore patterns using pathspec library
+            return pathspec.PathSpec.from_lines(
+                "gitwildmatch", gitignore_content.splitlines()
+            )
+        except (OSError, UnicodeDecodeError) as e:
+            logger.warning(f"Failed to read .gitignore at {gitignore_path}: {e}")
+            return None
 
     def _detect_language(self, file_path: Path) -> Optional[str]:
         """

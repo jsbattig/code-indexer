@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.4.0] - 2025-12-01
+
+### Fixed
+
+#### Windows Token Refresh Failure in MCPB
+
+**Problem**: Token refresh was failing on Windows because `os.rename()` fails when the destination file already exists, unlike Unix systems where it performs an atomic overwrite.
+
+**Root Cause**: The token persistence code used `os.rename()` for atomic file replacement, which is not cross-platform compatible.
+
+**Solution**: Changed from `os.rename()` to `os.replace()` which provides cross-platform atomic file replacement, working correctly on both Windows (overwrites existing files) and Unix systems.
+
+**Impact**:
+- Token refresh now works correctly on Windows
+- Maintains atomic file replacement semantics
+- No behavioral change on Unix systems
+
+### Enhanced
+
+#### browse_directory MCP/REST Endpoint Filtering
+
+**Overview**: The `browse_directory` endpoint now supports comprehensive filtering parameters for more precise directory browsing operations.
+
+**New Parameters**:
+- `path_pattern`: Glob pattern filtering (e.g., `*.py`, `src/**/*.ts`) for matching specific file patterns
+- `language`: Filter by programming language detection
+- `limit`: Control maximum number of results returned (default 500)
+- `sort_by`: Sort results by path, size, or modified_at
+
+**Automatic Exclusions**:
+- `.code-indexer/` directory automatically excluded from results
+- `.git/` directory automatically excluded from results
+- `.gitignore` patterns automatically respected using pathspec library
+
+**MCP Tool Documentation**:
+- Added comprehensive parameter descriptions to MCP tool definitions
+- Improved discoverability of filtering options through tool introspection
+
+**Use Cases**:
+- Filtering large repositories to find specific file types
+- Browsing source directories while excluding build artifacts
+- Sorting files by modification time for recent changes discovery
+
 ## [8.2.0] - 2025-11-26
 
 ### Added - Epic #514: Claude Desktop MCPB Integration
