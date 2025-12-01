@@ -390,7 +390,7 @@ class RefreshScheduler:
             logger.info("Running cidx index to create indexes")
             try:
                 result = subprocess.run(
-                    ["cidx", "index"],
+                    ["cidx", "index", "--fts"],
                     cwd=str(versioned_path),
                     capture_output=True,
                     text=True,
