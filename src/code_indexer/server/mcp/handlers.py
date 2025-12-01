@@ -13,7 +13,6 @@ All handlers return MCP-compliant responses with content arrays:
 
 import json
 import logging
-import os
 from typing import Dict, Any
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
@@ -45,32 +44,23 @@ def _mcp_response(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _get_golden_repos_dir() -> str:
-    """Get golden_repos_dir with three-tier fallback strategy.
+    """Get golden_repos_dir from app.state.
 
-    Fallback order:
-    1. app.state.golden_repos_dir (set during server startup)
-    2. GOLDEN_REPOS_DIR environment variable
-    3. Default: ~/.code-indexer/golden-repos
-
-    Returns:
-        str: Absolute path to golden repos directory
+    Raises:
+        RuntimeError: If golden_repos_dir is not configured in app.state
     """
     from typing import Optional, cast
 
-    # PRIMARY: app.state (set during server startup)
     golden_repos_dir: Optional[str] = cast(
         Optional[str], getattr(app_module.app.state, "golden_repos_dir", None)
     )
     if golden_repos_dir:
         return golden_repos_dir
 
-    # SECONDARY: Environment variable
-    golden_repos_dir = os.environ.get("GOLDEN_REPOS_DIR")
-    if golden_repos_dir:
-        return golden_repos_dir
-
-    # TERTIARY: Default fallback
-    return os.path.expanduser("~/.code-indexer/golden-repos")
+    raise RuntimeError(
+        "golden_repos_dir not configured in app.state. "
+        "Server must set app.state.golden_repos_dir during startup."
+    )
 
 
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:

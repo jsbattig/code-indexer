@@ -9,24 +9,22 @@ Provides REST endpoints for:
 Uses GlobalRepoOperations for shared business logic with CLI and MCP.
 """
 
-import os
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, field_validator
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from code_indexer.server.auth.dependencies import get_current_user
 from code_indexer.server.auth.user_manager import User
 from code_indexer.global_repos.shared_operations import GlobalRepoOperations
+from code_indexer.server import app as app_module
 
 
 # Router with /global prefix
 router = APIRouter(prefix="/global", tags=["global"])
 
 
-# Module-level golden repos directory (configurable for testing)
-_golden_repos_dir: str = os.environ.get(
-    "GOLDEN_REPOS_DIR", os.path.expanduser("~/.code-indexer/golden-repos")
-)
+# Module-level golden repos directory (configurable for testing via set_golden_repos_dir)
+_golden_repos_dir: Optional[str] = None
 
 
 def set_golden_repos_dir(dir_path: str) -> None:
@@ -40,14 +38,43 @@ def set_golden_repos_dir(dir_path: str) -> None:
     _golden_repos_dir = dir_path
 
 
+def _get_golden_repos_dir() -> str:
+    """Get golden_repos_dir from app.state or test override.
+
+    Raises:
+        RuntimeError: If golden_repos_dir is not configured
+    """
+    from typing import cast
+
+    # Check test override first
+    if _golden_repos_dir:
+        return _golden_repos_dir
+
+    # Get from app.state
+    golden_repos_dir: Optional[str] = cast(
+        Optional[str], getattr(app_module.app.state, "golden_repos_dir", None)
+    )
+    if golden_repos_dir:
+        return golden_repos_dir
+
+    raise RuntimeError(
+        "golden_repos_dir not configured. "
+        "Server must set app.state.golden_repos_dir during startup, "
+        "or use set_golden_repos_dir() for testing."
+    )
+
+
 def get_global_repo_operations() -> GlobalRepoOperations:
     """
     Get GlobalRepoOperations instance.
 
     Returns:
         GlobalRepoOperations configured with golden repos directory
+
+    Raises:
+        RuntimeError: If golden_repos_dir is not configured
     """
-    return GlobalRepoOperations(_golden_repos_dir)
+    return GlobalRepoOperations(_get_golden_repos_dir())
 
 
 # Request/response models
