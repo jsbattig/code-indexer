@@ -11,7 +11,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,8 @@ class GlobalRegistry:
         repo_url: Optional[str],
         index_path: str,
         allow_reserved: bool = False,
+        enable_temporal: bool = False,
+        temporal_options: Optional[Dict[str, Union[int, str]]] = None,
     ) -> None:
         """
         Register a global repository.
@@ -123,6 +125,8 @@ class GlobalRegistry:
             repo_url: Git repository URL (None for meta-directory)
             index_path: Path to the indexed repository
             allow_reserved: If True, allow reserved names (internal use only)
+            enable_temporal: Whether to enable temporal indexing (git history search)
+            temporal_options: Temporal indexing options (max_commits, since_date, diff_context)
 
         Raises:
             ReservedNameError: If alias_name is a reserved name and allow_reserved=False
@@ -155,6 +159,9 @@ class GlobalRegistry:
             "index_path": index_path,
             "created_at": now,
             "last_refresh": now,
+            # Temporal indexing settings (Story #527)
+            "enable_temporal": enable_temporal,
+            "temporal_options": temporal_options,
         }
 
         self._save_registry()

@@ -7,6 +7,7 @@ is registered, implementing the automatic activation workflow.
 
 import logging
 from pathlib import Path
+from typing import Optional, Dict, Union
 
 from .alias_manager import AliasManager
 from .global_registry import GlobalRegistry
@@ -44,7 +45,12 @@ class GlobalActivator:
         self.registry = GlobalRegistry(str(self.golden_repos_dir))
 
     def activate_golden_repo(
-        self, repo_name: str, repo_url: str, clone_path: str
+        self,
+        repo_name: str,
+        repo_url: str,
+        clone_path: str,
+        enable_temporal: bool = False,
+        temporal_options: Optional[Dict[str, Union[int, str]]] = None,
     ) -> None:
         """
         Activate a golden repository globally.
@@ -56,6 +62,8 @@ class GlobalActivator:
             repo_name: Repository name (e.g., "my-repo")
             repo_url: Git repository URL
             clone_path: Path to the cloned/indexed repository
+            enable_temporal: Whether to enable temporal indexing (git history search)
+            temporal_options: Temporal indexing options (max_commits, since_date, diff_context)
 
         Raises:
             GlobalActivationError: If activation fails
@@ -70,12 +78,15 @@ class GlobalActivator:
             )
 
             # Step 2: Register in global registry (atomically)
+            # Include temporal settings for RefreshScheduler to use (Story #527)
             logger.info(f"Registering in global registry: {alias_name}")
             self.registry.register_global_repo(
                 repo_name=repo_name,
                 alias_name=alias_name,
                 repo_url=repo_url,
                 index_path=clone_path,
+                enable_temporal=enable_temporal,
+                temporal_options=temporal_options,
             )
 
             logger.info(f"Global activation complete: {alias_name}")

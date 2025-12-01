@@ -678,16 +678,27 @@ async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 
 async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Add a golden repository (admin only)."""
+    """Add a golden repository (admin only).
+
+    Supports temporal indexing via enable_temporal and temporal_options parameters.
+    When enable_temporal=True, the repository will be indexed with --index-commits
+    to support time-based searches (git history search).
+    """
     try:
         repo_url = params["url"]
         alias = params["alias"]
         default_branch = params.get("branch", "main")
 
+        # Extract temporal indexing parameters (Story #527)
+        enable_temporal = params.get("enable_temporal", False)
+        temporal_options = params.get("temporal_options")
+
         job_id = app_module.golden_repo_manager.add_golden_repo(
             repo_url=repo_url,
             alias=alias,
             default_branch=default_branch,
+            enable_temporal=enable_temporal,
+            temporal_options=temporal_options,
             submitter_username=user.username,
         )
         return _mcp_response(

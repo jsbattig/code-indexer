@@ -248,7 +248,11 @@ class GoldenRepoManager:
 
                     global_activator = GlobalActivator(self.golden_repos_dir)
                     global_activator.activate_golden_repo(
-                        repo_name=alias, repo_url=repo_url, clone_path=clone_path
+                        repo_name=alias,
+                        repo_url=repo_url,
+                        clone_path=clone_path,
+                        enable_temporal=enable_temporal,
+                        temporal_options=temporal_options,
                     )
                     logging.info(
                         f"Golden repository '{alias}' automatically activated globally as '{alias}-global'"

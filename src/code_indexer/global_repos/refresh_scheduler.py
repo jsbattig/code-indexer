@@ -387,10 +387,36 @@ class RefreshScheduler:
                 )
 
             # Step 5: Run cidx index
-            logger.info("Running cidx index to create indexes")
+            # Build index command with optional temporal flags (Story #527)
+            index_command = ["cidx", "index", "--fts"]
+
+            # Read temporal settings from registry
+            repo_info = self.registry.get_global_repo(alias_name)
+            enable_temporal = repo_info.get("enable_temporal", False) if repo_info else False
+            temporal_options = repo_info.get("temporal_options") if repo_info else None
+
+            if enable_temporal:
+                index_command.append("--index-commits")
+                logger.info(f"Temporal indexing enabled for {alias_name}")
+
+                if temporal_options:
+                    if temporal_options.get("max_commits"):
+                        index_command.extend(
+                            ["--max-commits", str(temporal_options["max_commits"])]
+                        )
+                    if temporal_options.get("since_date"):
+                        index_command.extend(
+                            ["--since-date", temporal_options["since_date"]]
+                        )
+                    if temporal_options.get("diff_context"):
+                        index_command.extend(
+                            ["--diff-context", str(temporal_options["diff_context"])]
+                        )
+
+            logger.info(f"Running cidx index to create indexes: {' '.join(index_command)}")
             try:
                 result = subprocess.run(
-                    ["cidx", "index", "--fts"],
+                    index_command,
                     cwd=str(versioned_path),
                     capture_output=True,
                     text=True,
