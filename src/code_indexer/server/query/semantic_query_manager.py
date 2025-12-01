@@ -1257,12 +1257,13 @@ class SemanticQueryManager:
             vector_store = backend.get_vector_store_client()
             embedding_provider = EmbeddingProviderFactory.create(config, console=None)
 
-            # Create temporal service
+            # Create temporal service with correct collection name
             temporal_service = TemporalSearchService(
                 config_manager=config_manager,
                 project_root=repo_path,
                 vector_store_client=vector_store,
                 embedding_provider=embedding_provider,
+                collection_name=TemporalSearchService.TEMPORAL_COLLECTION_NAME,
             )
 
             # Check if temporal index exists
