@@ -968,6 +968,9 @@ class SemanticQueryManager:
             # Convert search results to QueryResult objects
             semantic_results = []
             for search_item in search_response.results:
+                # DEBUG: Log semantic search item
+                self.logger.info(f"[SEMANTIC DEBUG] search_item: file={search_item.file_path}, line_start={search_item.line_start}, score={search_item.score}")
+
                 # Apply min_score filter if specified
                 if min_score is not None and search_item.score < min_score:
                     continue
@@ -1584,6 +1587,10 @@ class SemanticQueryManager:
             # Convert FTS results to QueryResult objects
             query_results = []
             for result in fts_raw_results:
+                # DEBUG: Log what keys are in the FTS result
+                self.logger.info(f"[FTS DEBUG] Raw FTS result keys: {list(result.keys())}")
+                self.logger.info(f"[FTS DEBUG] Raw FTS result: {result}")
+
                 # FTS doesn't have similarity scores in the same sense as semantic search
                 # Use a normalized score based on result ordering (1.0 for first result)
                 score = 1.0 - (len(query_results) * 0.01)  # Decreasing score
@@ -1594,7 +1601,7 @@ class SemanticQueryManager:
 
                 query_result = QueryResult(
                     file_path=result.get("path", ""),
-                    line_number=result.get("line_start", 0),
+                    line_number=result.get("line", 0),  # FIX: Tantivy returns 'line', not 'line_start'
                     code_snippet=result.get("snippet", ""),
                     similarity_score=score,
                     repository_alias=repository_alias,
@@ -1640,6 +1647,16 @@ class SemanticQueryManager:
         """
         # DEBUG: Log input parameters
         self.logger.info(f"[HYBRID DEBUG] Starting RRF merge: fts_results={len(fts_results)}, semantic_results={len(semantic_results)}, limit={limit}")
+
+        # DEBUG: Log all FTS results
+        self.logger.info("[HYBRID DEBUG] FTS Results:")
+        for i, result in enumerate(fts_results, 1):
+            self.logger.info(f"  FTS #{i}: {result.file_path}:{result.line_number} (score={result.similarity_score:.6f})")
+
+        # DEBUG: Log all semantic results
+        self.logger.info("[HYBRID DEBUG] Semantic Results:")
+        for i, result in enumerate(semantic_results, 1):
+            self.logger.info(f"  SEM #{i}: {result.file_path}:{result.line_number} (score={result.similarity_score:.6f})")
 
         # Use file_path + line_number as key for deduplication
         seen_keys = set()
