@@ -9,6 +9,17 @@
     --pico-line-height: 1.4;
 }
 
+/* Dark mode customizations with off-black backgrounds */
+[data-theme="dark"] {
+    --pico-background-color: #1a1a1a;
+    --pico-card-background-color: #242424;
+    --pico-card-sectioning-background-color: #2a2a2a;
+    --pico-code-background-color: #2a2a2a;
+    --pico-table-border-color: #3a3a3a;
+    --pico-muted-border-color: #3a3a3a;
+    --pico-card-border-color: #3a3a3a;
+}
+
 html {
     font-size: 15px;
 }
