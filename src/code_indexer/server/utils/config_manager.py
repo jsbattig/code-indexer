@@ -28,6 +28,39 @@ class PasswordSecurityConfig:
 
 
 @dataclass
+class CacheConfig:
+    """Cache configuration for HNSW and FTS indexes."""
+
+    # HNSW index cache settings
+    index_cache_ttl_minutes: float = 10.0
+    index_cache_cleanup_interval: int = 60
+    index_cache_max_size_mb: Optional[int] = None
+
+    # FTS index cache settings
+    fts_cache_ttl_minutes: float = 10.0
+    fts_cache_cleanup_interval: int = 60
+    fts_cache_max_size_mb: Optional[int] = None
+    fts_cache_reload_on_access: bool = True
+
+
+@dataclass
+class ReindexingConfig:
+    """Reindexing trigger and analysis configuration."""
+
+    change_percentage_threshold: float = 10.0
+    accuracy_threshold: float = 0.85
+    max_index_age_days: int = 30
+    batch_size: int = 100
+    max_analysis_time_seconds: int = 300
+    max_memory_usage_mb: int = 512
+    enable_structural_analysis: bool = True
+    enable_config_change_detection: bool = True
+    enable_corruption_detection: bool = True
+    enable_periodic_check: bool = True
+    parallel_analysis: bool = True
+
+
+@dataclass
 class ServerResourceConfig:
     """
     Resource limits and timeout configuration for CIDX server.
@@ -56,10 +89,8 @@ class ServerResourceConfig:
     cidx_fix_config_timeout: int = 60  # 1 minute for cidx fix-config
     cidx_index_timeout: int = 3600  # 1 hour for cidx index on large repos
 
-    # Resource limits - effectively unlimited (removed constraints)
-    max_golden_repos: Optional[int] = None  # No limit
-    max_repo_size_bytes: Optional[int] = None  # No limit
-    max_jobs_per_user: Optional[int] = None  # No limit
+    # NOTE: Artificial resource limits (max_golden_repos, max_repo_size_bytes, max_jobs_per_user)
+    # have been REMOVED from the codebase. They were nonsensical limitations that served no purpose.
 
 
 @dataclass
@@ -68,16 +99,19 @@ class ServerConfig:
     Server configuration data structure.
 
     Contains all configurable server settings including networking,
-    authentication, logging, and resource configurations.
+    authentication, logging, cache, reindexing, and resource configurations.
     """
 
     server_dir: str
     host: str = "127.0.0.1"
     port: int = 8000
+    workers: int = 4
     jwt_expiration_minutes: int = 10
     log_level: str = "INFO"
     password_security: Optional[PasswordSecurityConfig] = None
     resource_config: Optional[ServerResourceConfig] = None
+    cache_config: Optional[CacheConfig] = None
+    reindexing_config: Optional[ReindexingConfig] = None
 
     def __post_init__(self):
         """Initialize nested config objects if not provided."""
@@ -85,6 +119,10 @@ class ServerConfig:
             self.password_security = PasswordSecurityConfig()
         if self.resource_config is None:
             self.resource_config = ServerResourceConfig()
+        if self.cache_config is None:
+            self.cache_config = CacheConfig()
+        if self.reindexing_config is None:
+            self.reindexing_config = ReindexingConfig()
 
 
 class ServerConfigManager:
@@ -169,6 +207,22 @@ class ServerConfigManager:
             ):
                 config_dict["resource_config"] = ServerResourceConfig(
                     **config_dict["resource_config"]
+                )
+
+            # Convert nested cache_config dict to CacheConfig
+            if "cache_config" in config_dict and isinstance(
+                config_dict["cache_config"], dict
+            ):
+                config_dict["cache_config"] = CacheConfig(
+                    **config_dict["cache_config"]
+                )
+
+            # Convert nested reindexing_config dict to ReindexingConfig
+            if "reindexing_config" in config_dict and isinstance(
+                config_dict["reindexing_config"], dict
+            ):
+                config_dict["reindexing_config"] = ReindexingConfig(
+                    **config_dict["reindexing_config"]
                 )
 
             return ServerConfig(**config_dict)

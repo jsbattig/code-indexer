@@ -42,19 +42,17 @@ class HealthCheckService:
             config_manager = ConfigManager.create_with_backtrack()
             self.config = config_manager.get_config()
 
-            # Real FilesystemVectorStore integration (Story #505) - not injectable, not mockable
-            from ...storage.filesystem_vector_store import FilesystemVectorStore
+            # Server data directory for vector stores
+            self.data_dir = Path.home() / ".cidx-server" / "data"
+            self.data_dir.mkdir(parents=True, exist_ok=True)
 
-            index_dir = Path.cwd() / ".code-indexer" / "index"
-            self.vector_store_client = FilesystemVectorStore(
-                base_path=index_dir, project_root=Path.cwd()
-            )
+            # Vector store client will be checked on demand, not pre-initialized
+            # This is because server may have multiple activated repositories
+            self.vector_store_client = None
 
             # Real database URL for health checks
             # Use SQLite as the default database for CIDX Server
-            data_dir = Path.home() / ".cidx-server" / "data"
-            data_dir.mkdir(parents=True, exist_ok=True)
-            self.database_url = f"sqlite:///{data_dir}/cidx_server.db"
+            self.database_url = f"sqlite:///{self.data_dir}/cidx_server.db"
 
         except Exception as e:
             logger.error(f"Failed to initialize real dependencies: {e}")
@@ -145,9 +143,10 @@ class HealthCheckService:
 
     def _check_vector_store_health(self) -> ServiceHealthInfo:
         """
-        Check vector store connectivity and performance.
+        Check vector store health by examining server's repository directories.
 
         CLAUDE.md Foundation #1: Real vector store integration, no simulations.
+        Checks actual server data directories for activated and golden repositories.
 
         Returns:
             Vector store service health information
@@ -155,25 +154,40 @@ class HealthCheckService:
         start_time = time.time()
 
         try:
-            # Real vector store health check - not simulated
-            health_ok = self.vector_store_client.health_check()
+            # Check server's data directories for vector stores
+            # Server stores activated repos in ~/.cidx-server/data/activated/
+            # and golden repos in ~/.cidx-server/data/golden/
+            activated_dir = self.data_dir / "activated"
+            golden_dir = self.data_dir / "golden"
+
+            # Count repositories with vector stores
+            activated_count = 0
+            golden_count = 0
+            total_collections = 0
+
+            # Check activated repositories
+            if activated_dir.exists():
+                for user_dir in activated_dir.iterdir():
+                    if user_dir.is_dir():
+                        for repo_dir in user_dir.iterdir():
+                            if repo_dir.is_dir():
+                                index_dir = repo_dir / ".code-indexer" / "index"
+                                if index_dir.exists():
+                                    activated_count += 1
+                                    total_collections += 1
+
+            # Check golden repositories
+            if golden_dir.exists():
+                for repo_dir in golden_dir.iterdir():
+                    if repo_dir.is_dir():
+                        index_dir = repo_dir / ".code-indexer" / "index"
+                        if index_dir.exists():
+                            golden_count += 1
+                            total_collections += 1
 
             response_time = int((time.time() - start_time) * 1000)
 
-            if not health_ok:
-                return ServiceHealthInfo(
-                    status=HealthStatus.UNHEALTHY,
-                    response_time_ms=response_time,
-                    error_message="Vector store health check failed",
-                )
-
-            # Get additional cluster information for comprehensive health
-            try:
-                collections = self.vector_store_client.list_collections()
-                cluster_size = len(collections) if collections else 0
-            except Exception:
-                cluster_size = 0
-
+            # Determine health status based on ability to enumerate
             if response_time < RESPONSE_TIME_WARNING:
                 status = HealthStatus.HEALTHY
             elif response_time < RESPONSE_TIME_CRITICAL:
@@ -185,8 +199,9 @@ class HealthCheckService:
                 status=status,
                 response_time_ms=response_time,
                 metadata={
-                    "cluster_size": cluster_size,
-                    "collections_count": len(collections) if collections else 0,
+                    "golden_repos": golden_count,
+                    "activated_repos": activated_count,
+                    "total_collections": total_collections,
                 },
             )
 

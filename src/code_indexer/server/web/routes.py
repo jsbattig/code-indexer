@@ -685,6 +685,7 @@ def _create_golden_repos_page_response(
     """Create golden repos page response with all necessary context."""
     csrf_token = generate_csrf_token()
     repos = _get_golden_repos_list()
+    users = _get_users_list()
 
     response = templates.TemplateResponse(
         "golden_repos.html",
@@ -695,6 +696,7 @@ def _create_golden_repos_page_response(
             "show_nav": True,
             "csrf_token": csrf_token,
             "repos": repos,
+            "users": [{"username": u.username} for u in users],
             "success_message": success_message,
             "error_message": error_message,
         },
@@ -849,6 +851,65 @@ async def refresh_golden_repo(
         error_msg = str(e)
         if "not found" in error_msg.lower():
             error_msg = f"Repository '{alias}' not found"
+        return _create_golden_repos_page_response(
+            request, session, error_message=error_msg
+        )
+
+
+@web_router.post("/golden-repos/activate", response_class=HTMLResponse)
+async def activate_golden_repo(
+    request: Request,
+    golden_alias: str = Form(...),
+    username: str = Form(...),
+    user_alias: str = Form(""),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Activate a golden repository for a user."""
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_golden_repos_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    # Validate inputs
+    if not golden_alias or not golden_alias.strip():
+        return _create_golden_repos_page_response(
+            request, session, error_message="Golden repository alias is required"
+        )
+
+    if not username or not username.strip():
+        return _create_golden_repos_page_response(
+            request, session, error_message="Username is required"
+        )
+
+    # Use golden_alias as user_alias if not provided
+    effective_user_alias = user_alias.strip() if user_alias.strip() else golden_alias.strip()
+
+    # Try to activate the repository
+    try:
+        activated_manager = _get_activated_repo_manager()
+        job_id = activated_manager.activate_repository(
+            username=username.strip(),
+            golden_repo_alias=golden_alias.strip(),
+            user_alias=effective_user_alias,
+        )
+        return _create_golden_repos_page_response(
+            request,
+            session,
+            success_message=f"Repository '{golden_alias}' activation for user '{username}' submitted (Job ID: {job_id})",
+        )
+    except Exception as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            error_msg = f"Golden repository '{golden_alias}' not found"
+        elif "already" in error_msg.lower():
+            error_msg = f"User '{username}' already has this repository activated"
         return _create_golden_repos_page_response(
             request, session, error_message=error_msg
         )
@@ -1691,13 +1752,67 @@ async def query_submit(
     # Add to query history
     _add_to_query_history(session.username, query_text.strip(), repository, search_mode)
 
-    # Execute query (placeholder - in real implementation, call query API)
+    # Parse min_score
+    parsed_min_score = None
+    if min_score and min_score.strip():
+        try:
+            parsed_min_score = float(min_score)
+        except ValueError:
+            pass
+
+    # Execute actual query
     results = []
     query_executed = True
+    error_message = None
 
-    # TODO: Implement actual query execution via API
-    # For now, return empty results since we don't have real query implementation
-    # In production, this would call the query API endpoint
+    try:
+        query_manager = _get_semantic_query_manager()
+        if not query_manager:
+            error_message = "Query service not available"
+        else:
+            # Find the username for this repository
+            # Repository format is "user_alias (username)"
+            repo_parts = repository.split(" (")
+            user_alias = repo_parts[0] if repo_parts else repository
+
+            # Get the repository owner from activated repos
+            all_repos = _get_all_activated_repos()
+            target_repo = None
+            for repo in all_repos:
+                if repo.get("user_alias") == user_alias:
+                    target_repo = repo
+                    break
+
+            if not target_repo:
+                error_message = f"Repository '{user_alias}' not found"
+            else:
+                repo_username = target_repo.get("username", session.username)
+
+                # Execute query
+                query_response = query_manager.query_user_repositories(
+                    username=repo_username,
+                    query_text=query_text.strip(),
+                    repository_alias=user_alias,
+                    limit=limit,
+                    min_score=parsed_min_score,
+                    language=language if language else None,
+                    path_filter=path_pattern if path_pattern else None,
+                    search_mode=search_mode,
+                )
+
+                # Convert results to template format
+                for result in query_response.get("results", []):
+                    results.append({
+                        "file_path": result.get("file_path", ""),
+                        "line_numbers": f"{result.get('line_number', 1)}",
+                        "content": result.get("code_snippet", ""),
+                        "score": result.get("similarity_score", 0.0),
+                        "language": _detect_language_from_path(result.get("file_path", "")),
+                    })
+
+    except Exception as e:
+        logger.error("Query execution failed: %s", e, exc_info=True)
+        error_message = f"Query failed: {str(e)}"
 
     return _create_query_page_response(
         request,
@@ -1709,8 +1824,9 @@ async def query_submit(
         language=language,
         path_pattern=path_pattern,
         min_score=min_score,
-        results=results,
+        results=results if not error_message else None,
         query_executed=query_executed,
+        error_message=error_message,
     )
 
 
@@ -1741,6 +1857,16 @@ async def query_results_partial(request: Request):
 
     set_csrf_cookie(response, csrf_token)
     return response
+
+
+def _get_semantic_query_manager():
+    """Get the semantic query manager instance."""
+    try:
+        from ..app import semantic_query_manager
+        return semantic_query_manager
+    except Exception as e:
+        logger.error("Failed to get semantic query manager: %s", e, exc_info=True)
+        return None
 
 
 @web_router.post("/partials/query-results", response_class=HTMLResponse)
@@ -1792,27 +1918,94 @@ async def query_results_partial_post(
             },
         )
 
-    # Add to query history if repository selected
-    if repository:
-        _add_to_query_history(
-            session.username, query_text.strip(), repository, search_mode
+    if not repository:
+        return templates.TemplateResponse(
+            "partials/query_results.html",
+            {
+                "request": request,
+                "results": None,
+                "query_executed": False,
+                "query_text": query_text,
+                "error_message": "Please select a repository",
+            },
         )
 
-    # Execute query (placeholder - in real implementation, call query API)
+    # Add to query history
+    _add_to_query_history(
+        session.username, query_text.strip(), repository, search_mode
+    )
+
+    # Parse min_score
+    parsed_min_score = None
+    if min_score and min_score.strip():
+        try:
+            parsed_min_score = float(min_score)
+        except ValueError:
+            pass
+
+    # Execute actual query
     results = []
     query_executed = True
+    error_message = None
 
-    # TODO: Implement actual query execution via API
-    # For now, return empty results since we don't have real query implementation
+    try:
+        query_manager = _get_semantic_query_manager()
+        if not query_manager:
+            error_message = "Query service not available"
+        else:
+            # Find the username for this repository
+            # Repository format is "user_alias (username)"
+            repo_parts = repository.split(" (")
+            user_alias = repo_parts[0] if repo_parts else repository
+
+            # Get the repository owner from activated repos
+            all_repos = _get_all_activated_repos()
+            target_repo = None
+            for repo in all_repos:
+                if repo.get("user_alias") == user_alias:
+                    target_repo = repo
+                    break
+
+            if not target_repo:
+                error_message = f"Repository '{user_alias}' not found"
+            else:
+                repo_username = target_repo.get("username", session.username)
+
+                # Execute query
+                query_response = query_manager.query_user_repositories(
+                    username=repo_username,
+                    query_text=query_text.strip(),
+                    repository_alias=user_alias,
+                    limit=limit,
+                    min_score=parsed_min_score,
+                    language=language if language else None,
+                    path_filter=path_pattern if path_pattern else None,
+                    search_mode=search_mode,
+                )
+
+                # Convert results to template format
+                for result in query_response.get("results", []):
+                    results.append({
+                        "file_path": result.get("file_path", ""),
+                        "line_numbers": f"{result.get('line_number', 1)}",
+                        "content": result.get("code_snippet", ""),
+                        "score": result.get("similarity_score", 0.0),
+                        "language": _detect_language_from_path(result.get("file_path", "")),
+                    })
+
+    except Exception as e:
+        logger.error("Query execution failed: %s", e, exc_info=True)
+        error_message = f"Query failed: {str(e)}"
 
     csrf_token_new = generate_csrf_token()
     response = templates.TemplateResponse(
         "partials/query_results.html",
         {
             "request": request,
-            "results": results,
+            "results": results if not error_message else None,
             "query_executed": query_executed,
             "query_text": query_text,
+            "error_message": error_message,
         },
     )
 
@@ -1820,70 +2013,108 @@ async def query_results_partial_post(
     return response
 
 
+def _detect_language_from_path(file_path: str) -> str:
+    """Detect programming language from file path extension."""
+    ext_to_lang = {
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".jsx": "javascript",
+        ".java": "java",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".cs": "csharp",
+        ".go": "go",
+        ".rs": "rust",
+        ".rb": "ruby",
+        ".php": "php",
+        ".html": "html",
+        ".css": "css",
+        ".sql": "sql",
+        ".md": "markdown",
+        ".json": "json",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".xml": "xml",
+        ".sh": "bash",
+        ".bash": "bash",
+    }
+    from pathlib import Path
+    ext = Path(file_path).suffix.lower()
+    return ext_to_lang.get(ext, "plaintext")
+
+
 def _get_default_config() -> dict:
-    """Get default configuration values."""
+    """Get default configuration values matching ConfigService structure."""
     return {
         "server": {
-            "host": "0.0.0.0",
+            "host": "127.0.0.1",
             "port": 8000,
             "workers": 4,
             "log_level": "INFO",
+            "jwt_expiration_minutes": 60,
         },
-        "indexing": {
+        "cache": {
+            "index_cache_ttl_minutes": 10.0,
+            "index_cache_cleanup_interval": 60,
+            "index_cache_max_size_mb": None,
+            "fts_cache_ttl_minutes": 10.0,
+            "fts_cache_cleanup_interval": 60,
+            "fts_cache_max_size_mb": None,
+            "fts_cache_reload_on_access": True,
+        },
+        "reindexing": {
+            "change_percentage_threshold": 10.0,
+            "accuracy_threshold": 0.85,
+            "max_index_age_days": 30,
             "batch_size": 100,
-            "max_file_size": 1048576,  # 1MB
-            "excluded_patterns": ["*.pyc", "__pycache__", ".git", "node_modules"],
+            "max_analysis_time_seconds": 300,
+            "max_memory_usage_mb": 512,
+            "enable_structural_analysis": True,
+            "enable_config_change_detection": True,
+            "enable_corruption_detection": True,
+            "enable_periodic_check": True,
+            "parallel_analysis": True,
         },
-        "query": {
-            "default_limit": 10,
-            "max_limit": 100,
-            "timeout": 30,
-            "min_score": 0.5,
+        "timeouts": {
+            "git_clone_timeout": 3600,
+            "git_pull_timeout": 1800,
+            "git_refresh_timeout": 300,
+            "cidx_index_timeout": 7200,
         },
-        "storage": {
-            "data_directory": "~/.cidx-server/data",
-            "vector_store_path": "~/.cidx-server/vectors",
-        },
-        "security": {
-            "session_timeout": 28800,  # 8 hours
-            "token_expiration": 3600,  # 1 hour
+        "password_security": {
+            "min_length": 12,
+            "max_length": 128,
+            "required_char_classes": 3,
+            "min_entropy_bits": 50,
         },
     }
 
 
 def _get_current_config() -> dict:
-    """Get current configuration from environment or defaults."""
-    import os
+    """Get current configuration from ConfigService (persisted to ~/.cidx-server/config.json)."""
+    from ..services.config_service import get_config_service
 
-    default_config = _get_default_config()
+    try:
+        config_service = get_config_service()
+        settings = config_service.get_all_settings()
 
-    # Server settings from environment
-    server_data_dir = os.environ.get(
-        "CIDX_SERVER_DATA_DIR", os.path.expanduser("~/.cidx-server")
-    )
-
-    # Override with environment values if available
-    config = {
-        "server": {
-            "host": os.environ.get("CIDX_HOST", default_config["server"]["host"]),
-            "port": int(os.environ.get("CIDX_PORT", default_config["server"]["port"])),
-            "workers": int(
-                os.environ.get("CIDX_WORKERS", default_config["server"]["workers"])
-            ),
-            "log_level": os.environ.get(
-                "CIDX_LOG_LEVEL", default_config["server"]["log_level"]
-            ),
-        },
-        "indexing": default_config["indexing"].copy(),
-        "query": default_config["query"].copy(),
-        "storage": {
-            "data_directory": server_data_dir,
-            "vector_store_path": os.path.join(server_data_dir, "vectors"),
-        },
-        "security": default_config["security"].copy(),
-    }
-
-    return config
+        # Convert to template-friendly format
+        config = {
+            "server": settings["server"],
+            "cache": settings["cache"],
+            "reindexing": settings["reindexing"],
+            "timeouts": settings["timeouts"],
+            "password_security": settings["password_security"],
+        }
+        return config
+    except Exception as e:
+        logger.error("Failed to load config: %s", e)
+        # Return defaults on error
+        return _get_default_config()
 
 
 def _validate_config_section(section: str, data: dict) -> Optional[str]:
@@ -1914,13 +2145,128 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
             except (ValueError, TypeError):
                 return "Workers must be a valid number"
 
-        # Validate log_level - must be one of DEBUG, INFO, WARNING, ERROR
+        # Validate log_level - must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL
         log_level = data.get("log_level")
         if log_level is not None:
-            valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR"]
+            valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
             if log_level.upper() not in valid_log_levels:
                 return f"Log level must be one of: {', '.join(valid_log_levels)}"
 
+        jwt_expiration = data.get("jwt_expiration_minutes")
+        if jwt_expiration is not None:
+            try:
+                jwt_int = int(jwt_expiration)
+                if jwt_int < 1:
+                    return "JWT expiration must be a positive number"
+            except (ValueError, TypeError):
+                return "JWT expiration must be a valid number"
+
+    elif section == "cache":
+        # Validate cache TTL values
+        for field in ["index_cache_ttl_minutes", "fts_cache_ttl_minutes"]:
+            value = data.get(field)
+            if value is not None:
+                try:
+                    val_float = float(value)
+                    if val_float <= 0:
+                        field_name = field.replace('_', ' ').title()
+                        return f"{field_name} must be a positive number"
+                except (ValueError, TypeError):
+                    field_name = field.replace('_', ' ').title()
+                    return f"{field_name} must be a valid number"
+
+        # Validate cleanup intervals
+        for field in ["index_cache_cleanup_interval", "fts_cache_cleanup_interval"]:
+            value = data.get(field)
+            if value is not None:
+                try:
+                    val_int = int(value)
+                    if val_int < 1:
+                        field_name = field.replace('_', ' ').title()
+                        return f"{field_name} must be a positive number"
+                except (ValueError, TypeError):
+                    field_name = field.replace('_', ' ').title()
+                    return f"{field_name} must be a valid number"
+
+    elif section == "reindexing":
+        # Validate thresholds (0-100 for percentage, 0-1 for accuracy)
+        change_threshold = data.get("change_percentage_threshold")
+        if change_threshold is not None:
+            try:
+                val = float(change_threshold)
+                if val < 0 or val > 100:
+                    return "Change percentage threshold must be between 0 and 100"
+            except (ValueError, TypeError):
+                return "Change percentage threshold must be a valid number"
+
+        accuracy = data.get("accuracy_threshold")
+        if accuracy is not None:
+            try:
+                val = float(accuracy)
+                if val < 0 or val > 1:
+                    return "Accuracy threshold must be between 0 and 1"
+            except (ValueError, TypeError):
+                return "Accuracy threshold must be a valid number"
+
+        # Validate positive integers
+        for field in ["max_index_age_days", "batch_size", "max_analysis_time_seconds", "max_memory_usage_mb"]:
+            value = data.get(field)
+            if value is not None:
+                try:
+                    val_int = int(value)
+                    if val_int < 1:
+                        field_name = field.replace('_', ' ').title()
+                        return f"{field_name} must be a positive number"
+                except (ValueError, TypeError):
+                    field_name = field.replace('_', ' ').title()
+                    return f"{field_name} must be a valid number"
+
+    elif section == "timeouts":
+        # Validate timeout values (must be positive integers)
+        for field in ["git_clone_timeout", "git_pull_timeout", "git_refresh_timeout", "cidx_index_timeout"]:
+            value = data.get(field)
+            if value is not None:
+                try:
+                    val_int = int(value)
+                    if val_int < 1:
+                        field_name = field.replace('_', ' ').title()
+                        return f"{field_name} must be a positive number"
+                except (ValueError, TypeError):
+                    field_name = field.replace('_', ' ').title()
+                    return f"{field_name} must be a valid number"
+
+    elif section == "password_security":
+        # Validate password length settings
+        min_length = data.get("min_length")
+        max_length = data.get("max_length")
+
+        if min_length is not None:
+            try:
+                min_int = int(min_length)
+                if min_int < 1:
+                    return "Minimum password length must be at least 1"
+            except (ValueError, TypeError):
+                return "Minimum password length must be a valid number"
+
+        if max_length is not None:
+            try:
+                max_int = int(max_length)
+                if max_int < 1:
+                    return "Maximum password length must be at least 1"
+            except (ValueError, TypeError):
+                return "Maximum password length must be a valid number"
+
+        # Validate required char classes (1-4)
+        char_classes = data.get("required_char_classes")
+        if char_classes is not None:
+            try:
+                cc_int = int(char_classes)
+                if cc_int < 1 or cc_int > 4:
+                    return "Required character classes must be between 1 and 4"
+            except (ValueError, TypeError):
+                return "Required character classes must be a valid number"
+
+    # Old sections kept for backwards compatibility during transition
     elif section == "indexing":
         batch_size = data.get("batch_size")
         if batch_size is not None:
@@ -1930,30 +2276,6 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                     return "Batch size must be a positive number"
             except (ValueError, TypeError):
                 return "Batch size must be a valid number"
-
-        max_file_size = data.get("max_file_size")
-        if max_file_size is not None:
-            try:
-                size_int = int(max_file_size)
-                if size_int < 1:
-                    return "Max file size must be a positive number"
-            except (ValueError, TypeError):
-                return "Max file size must be a valid number"
-
-        # Validate excluded_patterns - basic format check
-        excluded_patterns = data.get("excluded_patterns")
-        if excluded_patterns is not None:
-            patterns_str = str(excluded_patterns).strip()
-            if patterns_str:
-                # Split by newlines and check each pattern
-                patterns = [p.strip() for p in patterns_str.split('\n') if p.strip()]
-                for pattern in patterns:
-                    # Check for invalid characters that could cause issues
-                    if '\0' in pattern:
-                        return "Excluded patterns cannot contain null characters"
-                    # Patterns should not be excessively long
-                    if len(pattern) > 500:
-                        return "Individual excluded patterns cannot exceed 500 characters"
 
     elif section == "query":
         for field in ["default_limit", "max_limit", "timeout"]:
@@ -2042,6 +2364,8 @@ async def update_config_section(
     csrf_token: Optional[str] = Form(None),
 ):
     """Update configuration for a specific section."""
+    from ..services.config_service import get_config_service
+
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
@@ -2055,7 +2379,7 @@ async def update_config_section(
         )
 
     # Validate section
-    valid_sections = ["server", "indexing", "query", "storage", "security"]
+    valid_sections = ["server", "cache", "reindexing", "timeouts", "password_security"]
     if section not in valid_sections:
         return _create_config_page_response(
             request, session, error_message=f"Invalid section: {section}"
@@ -2075,12 +2399,30 @@ async def update_config_section(
             validation_errors={section: error},
         )
 
-    # Configuration preview only - backend API doesn't support persistence yet
-    return _create_config_page_response(
-        request,
-        session,
-        success_message=f"{section.title()} configuration preview updated (changes not persisted - requires API implementation)",
-    )
+    # Save configuration using ConfigService
+    try:
+        config_service = get_config_service()
+        for key, value in data.items():
+            config_service.update_setting(section, key, value)
+
+        return _create_config_page_response(
+            request,
+            session,
+            success_message=f"{section.title()} configuration saved successfully",
+        )
+    except ValueError as e:
+        return _create_config_page_response(
+            request,
+            session,
+            error_message=f"Failed to save configuration: {str(e)}",
+        )
+    except Exception as e:
+        logger.error("Failed to save config section %s: %s", section, e)
+        return _create_config_page_response(
+            request,
+            session,
+            error_message=f"Failed to save configuration: {str(e)}",
+        )
 
 
 @web_router.post("/config/reset", response_class=HTMLResponse)
@@ -2089,6 +2431,9 @@ async def reset_config(
     csrf_token: Optional[str] = Form(None),
 ):
     """Reset configuration to defaults."""
+    from ..services.config_service import get_config_service
+    from ..utils.config_manager import ServerConfigManager
+
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
@@ -2101,12 +2446,26 @@ async def reset_config(
             request, session, error_message="Invalid CSRF token"
         )
 
-    # Configuration preview only - backend API doesn't support persistence yet
-    return _create_config_page_response(
-        request,
-        session,
-        success_message="Configuration preview reset to defaults (changes not persisted)",
-    )
+    # Reset to defaults using ConfigService
+    try:
+        config_service = get_config_service()
+        # Create a fresh default config and save it
+        default_config = config_service.config_manager.create_default_config()
+        config_service.config_manager.save_config(default_config)
+        config_service._config = default_config  # Update cached config
+
+        return _create_config_page_response(
+            request,
+            session,
+            success_message="Configuration reset to defaults successfully",
+        )
+    except Exception as e:
+        logger.error("Failed to reset config: %s", e)
+        return _create_config_page_response(
+            request,
+            session,
+            error_message=f"Failed to reset configuration: {str(e)}",
+        )
 
 
 @web_router.get("/partials/config-section", response_class=HTMLResponse)

@@ -1,4 +1,9 @@
-{% if results %}
+{% if error_message %}
+<div class="message-error">
+    <strong>Error:</strong> {{ error_message }}
+</div>
+
+{% elif results %}
 <div class="results-info">
     <p>Found <strong>{{ results|length }}</strong> result{% if results|length != 1 %}s{% endif %}{% if query_text %} for "{{ query_text }}"{% endif %}</p>
 </div>

@@ -16,7 +16,6 @@ import pytest
 from src.code_indexer.server.repositories.golden_repo_manager import (
     GoldenRepoManager,
     GoldenRepoError,
-    ResourceLimitError,
 )
 from src.code_indexer.server.repositories.background_jobs import BackgroundJobManager
 
@@ -125,23 +124,14 @@ class TestGoldenRepoAsyncOperations:
         ) as mock_validate:
             mock_validate.return_value = True
 
-            # Mock clone and workflow
-            with patch.object(golden_repo_manager, "_clone_repository") as mock_clone:
-                mock_clone.return_value = "/path/to/cloned/repo"
-                with patch.object(golden_repo_manager, "_execute_post_clone_workflow"):
-                    with patch.object(
-                        golden_repo_manager, "_get_repository_size"
-                    ) as mock_size:
-                        mock_size.return_value = 1000  # Small repo
+            result = golden_repo_manager.add_golden_repo(
+                repo_url="https://github.com/test/new-repo.git",
+                alias="new-repo",
+            )
 
-                        result = golden_repo_manager.add_golden_repo(
-                            repo_url="https://github.com/test/new-repo.git",
-                            alias="new-repo",
-                        )
-
-                        # Should return job_id string, not Dict
-                        assert isinstance(result, str)
-                        assert result == "test-job-id-12345"
+            # Should return job_id string, not Dict
+            assert isinstance(result, str)
+            assert result == "test-job-id-12345"
 
     def test_add_golden_repo_submits_background_job(self, golden_repo_manager):
         """Test that add_golden_repo submits job to BackgroundJobManager."""
@@ -150,30 +140,21 @@ class TestGoldenRepoAsyncOperations:
         ) as mock_validate:
             mock_validate.return_value = True
 
-            # Mock clone and workflow
-            with patch.object(golden_repo_manager, "_clone_repository") as mock_clone:
-                mock_clone.return_value = "/path/to/cloned/repo"
-                with patch.object(golden_repo_manager, "_execute_post_clone_workflow"):
-                    with patch.object(
-                        golden_repo_manager, "_get_repository_size"
-                    ) as mock_size:
-                        mock_size.return_value = 1000  # Small repo
+            golden_repo_manager.add_golden_repo(
+                repo_url="https://github.com/test/new-repo.git",
+                alias="new-repo",
+            )
 
-                        golden_repo_manager.add_golden_repo(
-                            repo_url="https://github.com/test/new-repo.git",
-                            alias="new-repo",
-                        )
+            # Verify job was submitted
+            golden_repo_manager.background_job_manager.submit_job.assert_called_once()
 
-                        # Verify job was submitted
-                        golden_repo_manager.background_job_manager.submit_job.assert_called_once()
-
-                        # Verify job parameters
-                        call_args = (
-                            golden_repo_manager.background_job_manager.submit_job.call_args
-                        )
-                        assert call_args[1]["operation_type"] == "add_golden_repo"
-                        assert call_args[1]["submitter_username"] == "admin"
-                        assert call_args[1]["is_admin"] is True
+            # Verify job parameters
+            call_args = (
+                golden_repo_manager.background_job_manager.submit_job.call_args
+            )
+            assert call_args[1]["operation_type"] == "add_golden_repo"
+            assert call_args[1]["submitter_username"] == "admin"
+            assert call_args[1]["is_admin"] is True
 
     def test_add_golden_repo_validates_before_job_submission(self, golden_repo_manager):
         """Test that add_golden_repo validates limits/duplicates before submitting job."""
@@ -209,55 +190,6 @@ class TestGoldenRepoAsyncOperations:
 
             # Job should NOT have been submitted
             golden_repo_manager.background_job_manager.submit_job.assert_not_called()
-
-    def test_add_golden_repo_validates_max_repos_limit(self, temp_data_dir):
-        """Test that add_golden_repo validates max repos limit when configured."""
-        from src.code_indexer.server.utils.config_manager import ServerResourceConfig
-
-        # Create manager with configured limit of 5 repos
-        config = ServerResourceConfig(max_golden_repos=5)
-        manager = GoldenRepoManager(data_dir=temp_data_dir, resource_config=config)
-
-        # Inject mock BackgroundJobManager
-        mock_bg_manager = MagicMock(spec=BackgroundJobManager)
-        mock_bg_manager.submit_job.return_value = "test-job-id"
-        manager.background_job_manager = mock_bg_manager
-
-        # Fill up to max (5 repos)
-        for i in range(5):
-            from src.code_indexer.server.repositories.golden_repo_manager import (
-                GoldenRepo,
-            )
-            from datetime import datetime, timezone
-
-            golden_repo = GoldenRepo(
-                alias=f"repo-{i}",
-                repo_url=f"https://github.com/test/repo{i}.git",
-                default_branch="main",
-                clone_path=f"/path/to/repo{i}",
-                created_at=datetime.now(timezone.utc).isoformat(),
-                enable_temporal=False,
-                temporal_options=None,
-            )
-            manager.golden_repos[f"repo-{i}"] = golden_repo
-
-        # Try to add one more - should fail validation
-        with patch.object(
-            manager, "_validate_git_repository"
-        ) as mock_validate:
-            mock_validate.return_value = True
-
-            with pytest.raises(
-                ResourceLimitError,
-                match="Maximum of 5 golden repositories allowed",
-            ):
-                manager.add_golden_repo(
-                    repo_url="https://github.com/test/overflow.git",
-                    alias="overflow",
-                )
-
-            # Job should NOT have been submitted
-            manager.background_job_manager.submit_job.assert_not_called()
 
     # Test remove_golden_repo
     def test_remove_golden_repo_returns_job_id(self, manager_with_existing_repo):
@@ -330,34 +262,25 @@ class TestGoldenRepoAsyncOperations:
         ) as mock_validate:
             mock_validate.return_value = True
 
-            # Mock clone and workflow
-            with patch.object(golden_repo_manager, "_clone_repository") as mock_clone:
-                mock_clone.return_value = "/path/to/cloned/repo"
-                with patch.object(golden_repo_manager, "_execute_post_clone_workflow"):
-                    with patch.object(
-                        golden_repo_manager, "_get_repository_size"
-                    ) as mock_size:
-                        mock_size.return_value = 1000  # Small repo
+            golden_repo_manager.add_golden_repo(
+                repo_url="https://github.com/test/new-repo.git",
+                alias="new-repo",
+            )
 
-                        golden_repo_manager.add_golden_repo(
-                            repo_url="https://github.com/test/new-repo.git",
-                            alias="new-repo",
-                        )
+            # Get the func argument passed to submit_job
+            call_args = (
+                golden_repo_manager.background_job_manager.submit_job.call_args
+            )
+            func = call_args[1]["func"]
 
-                        # Get the func argument passed to submit_job
-                        call_args = (
-                            golden_repo_manager.background_job_manager.submit_job.call_args
-                        )
-                        func = call_args[1]["func"]
+            # Verify it's callable
+            assert callable(func)
 
-                        # Verify it's callable
-                        assert callable(func)
+            # Verify it takes no arguments (wrapper pattern)
+            import inspect
 
-                        # Verify it takes no arguments (wrapper pattern)
-                        import inspect
-
-                        sig = inspect.signature(func)
-                        assert len(sig.parameters) == 0
+            sig = inspect.signature(func)
+            assert len(sig.parameters) == 0
 
     def test_remove_golden_repo_background_worker_callable(
         self, manager_with_existing_repo

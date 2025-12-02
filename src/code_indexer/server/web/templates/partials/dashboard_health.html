@@ -44,7 +44,7 @@
     <!-- Vector Store Status -->
     <article class="health-card">
         <header>
-            <h3>Vector Store</h3>
+            <h3>Vector Stores</h3>
         </header>
         <div class="status-content">
             {% set vs_status = health.services.get('vector_store') %}
@@ -59,6 +59,14 @@
             <span class="status-text">Unknown</span>
             {% endif %}
         </div>
+        {% if vs_status and vs_status.metadata %}
+        <footer>
+            <small>
+                Golden: {{ vs_status.metadata.get('golden_repos', 0) }} |
+                Activated: {{ vs_status.metadata.get('activated_repos', 0) }}
+            </small>
+        </footer>
+        {% endif %}
         {% if vs_status and vs_status.error_message %}
         <footer>
             <small class="error-text">{{ vs_status.error_message }}</small>
@@ -66,10 +74,10 @@
         {% endif %}
     </article>
 
-    <!-- Storage Status -->
+    <!-- Storage Status (Disk only) -->
     <article class="health-card">
         <header>
-            <h3>Storage</h3>
+            <h3>Disk Storage</h3>
         </header>
         <div class="status-content">
             {% set storage_status = health.services.get('storage') %}
@@ -83,12 +91,40 @@
         </div>
         {% if health.system %}
         <footer>
-            <small>
-                CPU: {{ "%.1f"|format(health.system.cpu_usage_percent) }}% |
-                Memory: {{ "%.1f"|format(health.system.memory_usage_percent) }}% |
-                Disk: {{ "%.1f"|format(health.system.disk_free_space_gb) if health.system.disk_free_space_gb else 'N/A' }}GB free
-            </small>
+            <small>{{ "%.1f"|format(health.system.disk_free_space_gb) if health.system.disk_free_space_gb else 'N/A' }}GB free</small>
         </footer>
+        {% endif %}
+    </article>
+
+    <!-- System Resources (CPU/RAM) -->
+    <article class="health-card">
+        <header>
+            <h3>System Resources</h3>
+        </header>
+        {% if health.system %}
+        <div class="system-metrics">
+            <div class="metric">
+                <span class="metric-label">CPU</span>
+                <span class="metric-value">{{ "%.1f"|format(health.system.cpu_usage_percent) }}%</span>
+                <div class="metric-bar">
+                    <div class="metric-fill {% if health.system.cpu_usage_percent > 80 %}high{% elif health.system.cpu_usage_percent > 60 %}medium{% endif %}"
+                         style="width: {{ health.system.cpu_usage_percent }}%"></div>
+                </div>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Memory</span>
+                <span class="metric-value">{{ "%.1f"|format(health.system.memory_usage_percent) }}%</span>
+                <div class="metric-bar">
+                    <div class="metric-fill {% if health.system.memory_usage_percent > 80 %}high{% elif health.system.memory_usage_percent > 60 %}medium{% endif %}"
+                         style="width: {{ health.system.memory_usage_percent }}%"></div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="status-content">
+            <span class="status-indicator status-unhealthy"></span>
+            <span class="status-text">Unknown</span>
+        </div>
         {% endif %}
     </article>
     {% else %}

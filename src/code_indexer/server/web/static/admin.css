@@ -3,6 +3,29 @@
  * Minimal custom styles that complement Pico CSS
  */
 
+/* Override Pico defaults for data-dense admin interface */
+:root {
+    --pico-font-size: 15px;
+    --pico-line-height: 1.4;
+}
+
+html {
+    font-size: 15px;
+}
+
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.15rem; }
+
+/* Table font sizes */
+table {
+    font-size: 0.95rem;
+}
+
+table th, table td {
+    padding: 0.5rem 0.75rem;
+}
+
 /* Navigation enhancements */
 nav.admin-nav {
     margin-bottom: 1rem;
@@ -155,6 +178,55 @@ header.admin-header {
     color: var(--pico-muted-color);
 }
 
+/* System metrics display (CPU/RAM bars) */
+.system-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.system-metrics .metric {
+    display: grid;
+    grid-template-columns: 55px 45px 1fr;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.system-metrics .metric-label {
+    font-weight: 500;
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+}
+
+.system-metrics .metric-value {
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-align: right;
+}
+
+.system-metrics .metric-bar {
+    height: 8px;
+    background-color: var(--pico-card-border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.system-metrics .metric-fill {
+    height: 100%;
+    background-color: #22c55e;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.system-metrics .metric-fill.medium {
+    background-color: #f59e0b;
+}
+
+.system-metrics .metric-fill.high {
+    background-color: #ef4444;
+}
+
 /* Status Indicators */
 .status-indicator {
     display: inline-block;
@@ -276,6 +348,140 @@ header.admin-header {
     color: var(--pico-muted-color);
     text-align: center;
     padding: 2rem;
+}
+
+/* Golden Repos Table */
+.golden-repos-table {
+    width: 100%;
+}
+
+.golden-repos-table .status-cell {
+    min-width: 80px;
+    white-space: nowrap;
+}
+
+.golden-repos-table .repo-url {
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.golden-repos-table .actions-cell {
+    white-space: nowrap;
+}
+
+.golden-repos-table .actions-cell button {
+    margin-right: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* Status indicators in tables */
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+}
+
+.status-indicator.status-ready {
+    color: #22c55e;
+}
+
+.status-indicator.status-indexing {
+    color: #3b82f6;
+}
+
+.status-indicator.status-error {
+    color: #ef4444;
+}
+
+/* Spinner for indexing status */
+.spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #3b82f6;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Small button variant */
+button.small, .button.small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+button.danger, .button.danger {
+    --pico-background-color: #ef4444;
+    --pico-border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* Form sections */
+.form-section {
+    margin-bottom: 1.5rem;
+}
+
+.form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+/* Details row in tables */
+.details-row {
+    background-color: var(--pico-card-background-color);
+}
+
+.repo-details {
+    margin: 0;
+    padding: 1rem;
+}
+
+.details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.detail-item label {
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--pico-muted-color);
+    margin-bottom: 0.25rem;
+}
+
+.no-data {
+    text-align: center;
+    color: var(--pico-muted-color);
+    padding: 2rem;
+}
+
+/* Message styling */
+.message-success {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-left: 4px solid #22c55e;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.message-error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-left: 4px solid #ef4444;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
 }
 
 /* Responsive adjustments */

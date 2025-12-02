@@ -31,12 +31,6 @@ class GoldenRepoError(Exception):
     pass
 
 
-class ResourceLimitError(GoldenRepoError):
-    """Exception raised when resource limits are exceeded."""
-
-    pass
-
-
 class GitOperationError(GoldenRepoError):
     """Exception raised when git operations fail."""
 
@@ -174,18 +168,8 @@ class GoldenRepoManager:
         Raises:
             GoldenRepoError: If alias already exists
             GitOperationError: If git repository is invalid or inaccessible
-            ResourceLimitError: If resource limits are exceeded (if configured)
         """
         # Validate BEFORE submitting job
-        # Check max repos limit only if configured
-        if (
-            self.resource_config.max_golden_repos is not None
-            and len(self.golden_repos) >= self.resource_config.max_golden_repos
-        ):
-            raise ResourceLimitError(
-                f"Maximum of {self.resource_config.max_golden_repos} golden repositories allowed"
-            )
-
         if alias in self.golden_repos:
             raise GoldenRepoError(f"Golden repository alias '{alias}' already exists")
 
@@ -208,20 +192,6 @@ class GoldenRepoManager:
                     enable_temporal=enable_temporal,
                     temporal_options=temporal_options,
                 )
-
-                # Check repository size only if limit is configured
-                if self.resource_config.max_repo_size_bytes is not None:
-                    repo_size = self._get_repository_size(clone_path)
-                    if repo_size > self.resource_config.max_repo_size_bytes:
-                        # Clean up cloned repository
-                        self._cleanup_repository_files(clone_path)
-                        size_gb = repo_size / (1024 * 1024 * 1024)
-                        limit_gb = self.resource_config.max_repo_size_bytes / (
-                            1024 * 1024 * 1024
-                        )
-                        raise ResourceLimitError(
-                            f"Repository size ({size_gb:.1f}GB) exceeds limit ({limit_gb:.1f}GB)"
-                        )
 
                 # Create golden repository record
                 created_at = datetime.now(timezone.utc).isoformat()
@@ -734,27 +704,6 @@ class GoldenRepoManager:
                 f"{type(error).__name__}: {error}"
             )
             raise GitOperationError(f"Unexpected cleanup failure: {str(error)}")
-
-    def _get_repository_size(self, repo_path: str) -> int:
-        """
-        Calculate total size of repository in bytes.
-
-        Args:
-            repo_path: Path to repository directory
-
-        Returns:
-            Total size in bytes
-        """
-        total_size = 0
-        for dirpath, dirnames, filenames in os.walk(repo_path):
-            for filename in filenames:
-                filepath = os.path.join(dirpath, filename)
-                try:
-                    total_size += os.path.getsize(filepath)
-                except OSError:
-                    # Skip files we can't access
-                    pass
-        return total_size
 
     def _execute_post_clone_workflow(
         self,

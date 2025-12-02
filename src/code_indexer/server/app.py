@@ -5800,6 +5800,13 @@ def create_app() -> FastAPI:
         manager = OAuthManager(db_path=str(oauth_db), issuer=None)
         return manager.get_discovery_metadata()
 
+    # Favicon redirect
+    @app.get("/favicon.ico")
+    async def favicon():
+        """Redirect favicon.ico to admin static files."""
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/admin/static/favicon.svg", status_code=302)
+
     return app
 
 

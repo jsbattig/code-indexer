@@ -95,6 +95,44 @@
     {% include "partials/golden_repos_list.html" %}
 </section>
 
+<!-- Activate Repository Modal -->
+<dialog id="activate-modal">
+    <article>
+        <header>
+            <button aria-label="Close" rel="prev" onclick="closeActivateModal()"></button>
+            <h3>Activate Repository</h3>
+        </header>
+        <form id="activate-form" method="post" action="/admin/golden-repos/activate">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" id="activate-golden-alias" name="golden_alias" value="">
+
+            <label for="activate-username">Username</label>
+            <select id="activate-username" name="username" required>
+                <option value="">Select a user...</option>
+                {% for user in users %}
+                <option value="{{ user.username }}">{{ user.username }}</option>
+                {% endfor %}
+            </select>
+            <small>User who will have access to this repository</small>
+
+            <label for="activate-user-alias">User Alias (optional)</label>
+            <input
+                type="text"
+                id="activate-user-alias"
+                name="user_alias"
+                placeholder="Leave blank to use golden repo name"
+                autocomplete="off"
+            >
+            <small>Custom name for this user's copy (defaults to golden repo name)</small>
+
+            <footer>
+                <button type="button" class="secondary" onclick="closeActivateModal()">Cancel</button>
+                <button type="submit">Activate</button>
+            </footer>
+        </form>
+    </article>
+</dialog>
+
 <!-- Auto-refresh for indexing repositories -->
 <div id="auto-refresh-container" style="display: none;"
     hx-get="/admin/partials/golden-repos-list"
@@ -126,6 +164,21 @@ function toggleDetails(alias) {
     if (details) {
         details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
     }
+}
+
+function showActivateModal(alias) {
+    const modal = document.getElementById('activate-modal');
+    const aliasInput = document.getElementById('activate-golden-alias');
+    const userAliasInput = document.getElementById('activate-user-alias');
+
+    aliasInput.value = alias;
+    userAliasInput.placeholder = alias + ' (default)';
+    modal.showModal();
+}
+
+function closeActivateModal() {
+    const modal = document.getElementById('activate-modal');
+    modal.close();
 }
 
 // Enable auto-refresh when there are indexing repositories

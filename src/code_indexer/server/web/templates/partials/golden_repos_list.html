@@ -1,11 +1,11 @@
 <h2>Golden Repositories</h2>
 
-<table class="golden-repos-table">
+<table class="golden-repos-table" role="grid">
     <thead>
         <tr>
             <th>Name</th>
             <th>Path/URL</th>
-            <th>Status</th>
+            <th style="min-width: 100px;">Status</th>
             <th>Last Indexed</th>
             <th>Actions</th>
         </tr>
@@ -16,7 +16,7 @@
         <tr>
             <td>{{ repo.alias }}</td>
             <td class="repo-url" title="{{ repo.repo_url }}">{{ repo.repo_url | truncate(50) }}</td>
-            <td class="status-cell">
+            <td class="status-cell" style="white-space: nowrap;">
                 {% if repo.status == 'indexing' %}
                 <span class="status-indicator status-indexing" title="Indexing in progress">
                     <span class="spinner"></span> Indexing
@@ -34,6 +34,7 @@
             <td>{{ repo.last_indexed or 'Never' }}</td>
             <td class="actions-cell">
                 <button class="outline small" onclick="toggleDetails('{{ repo.alias }}')" title="View details">Details</button>
+                <button class="small" onclick="showActivateModal('{{ repo.alias }}')" {% if repo.status == 'indexing' %}disabled title="Currently indexing"{% else %}title="Activate for a user"{% endif %}>Activate</button>
                 <button class="outline small" onclick="confirmRefresh('{{ repo.alias }}')" {% if repo.status == 'indexing' %}disabled title="Currently indexing"{% else %}title="Re-index repository"{% endif %}>Refresh</button>
                 <button class="outline small danger" onclick="confirmDelete('{{ repo.alias }}')" title="Delete repository">Delete</button>
             </td>

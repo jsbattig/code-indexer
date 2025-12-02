@@ -12,14 +12,14 @@
                         <td class="config-label">Host</td>
                         <td class="config-value">{{ config.server.host }}</td>
                         <td class="config-note">
-                            <small class="read-only-note">Requires server restart to change</small>
+                            <small class="read-only-note">Requires server restart</small>
                         </td>
                     </tr>
                     <tr>
                         <td class="config-label">Port</td>
                         <td class="config-value">{{ config.server.port }}</td>
                         <td class="config-note">
-                            <small class="read-only-note">Requires server restart to change</small>
+                            <small class="read-only-note">Requires server restart</small>
                         </td>
                     </tr>
                     <tr>
@@ -30,6 +30,11 @@
                     <tr>
                         <td class="config-label">Log Level</td>
                         <td class="config-value">{{ config.server.log_level }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">JWT Expiration (minutes)</td>
+                        <td class="config-value">{{ config.server.jwt_expiration_minutes }}</td>
                         <td class="config-note"></td>
                     </tr>
                 </tbody>
@@ -47,13 +52,13 @@
             <div class="form-grid">
                 <label for="server-host">
                     Host
-                    <input type="text" id="server-host" name="host" value="{{ config.server.host }}" readonly disabled>
-                    <small>Requires server restart to change</small>
+                    <input type="text" id="server-host" name="host" value="{{ config.server.host }}">
+                    <small>Server bind address</small>
                 </label>
                 <label for="server-port">
                     Port
-                    <input type="number" id="server-port" name="port" value="{{ config.server.port }}" min="1" max="65535" readonly disabled>
-                    <small>Requires server restart to change (1-65535)</small>
+                    <input type="number" id="server-port" name="port" value="{{ config.server.port }}" min="1" max="65535">
+                    <small>1-65535</small>
                 </label>
                 <label for="server-workers">
                     Workers
@@ -66,7 +71,12 @@
                         <option value="INFO" {% if config.server.log_level == 'INFO' %}selected{% endif %}>INFO</option>
                         <option value="WARNING" {% if config.server.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
                         <option value="ERROR" {% if config.server.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                        <option value="CRITICAL" {% if config.server.log_level == 'CRITICAL' %}selected{% endif %}>CRITICAL</option>
                     </select>
+                </label>
+                <label for="server-jwt-expiration">
+                    JWT Expiration (minutes)
+                    <input type="number" id="server-jwt-expiration" name="jwt_expiration_minutes" value="{{ config.server.jwt_expiration_minutes }}" min="1">
                 </label>
             </div>
             <div class="form-actions">
@@ -77,214 +87,307 @@
     </article>
 </details>
 
-<!-- Indexing Settings Section -->
-<details class="config-section" id="section-indexing">
+<!-- Cache Settings Section -->
+<details class="config-section" id="section-cache">
     <summary>
-        <h2>Indexing Settings</h2>
+        <h2>Cache Settings</h2>
     </summary>
     <article>
         <!-- Display Mode -->
-        <div id="display-indexing">
+        <div id="display-cache">
             <table class="config-table">
                 <tbody>
+                    <tr>
+                        <td class="config-label">Index Cache TTL (minutes)</td>
+                        <td class="config-value">{{ config.cache.index_cache_ttl_minutes }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Index Cache Cleanup Interval (sec)</td>
+                        <td class="config-value">{{ config.cache.index_cache_cleanup_interval }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Index Cache Max Size (MB)</td>
+                        <td class="config-value">{{ config.cache.index_cache_max_size_mb or 'Unlimited' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">FTS Cache TTL (minutes)</td>
+                        <td class="config-value">{{ config.cache.fts_cache_ttl_minutes }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">FTS Cache Cleanup Interval (sec)</td>
+                        <td class="config-value">{{ config.cache.fts_cache_cleanup_interval }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">FTS Cache Max Size (MB)</td>
+                        <td class="config-value">{{ config.cache.fts_cache_max_size_mb or 'Unlimited' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">FTS Reload on Access</td>
+                        <td class="config-value">{{ 'Yes' if config.cache.fts_cache_reload_on_access else 'No' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('cache')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-cache" method="post" action="/admin/config/cache" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.cache %}
+            <div class="validation-error">{{ validation_errors.cache }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="cache-index-ttl">
+                    Index Cache TTL (minutes)
+                    <input type="number" id="cache-index-ttl" name="index_cache_ttl_minutes" value="{{ config.cache.index_cache_ttl_minutes }}" min="1" step="0.1">
+                </label>
+                <label for="cache-index-cleanup">
+                    Index Cache Cleanup Interval (sec)
+                    <input type="number" id="cache-index-cleanup" name="index_cache_cleanup_interval" value="{{ config.cache.index_cache_cleanup_interval }}" min="1">
+                </label>
+                <label for="cache-fts-ttl">
+                    FTS Cache TTL (minutes)
+                    <input type="number" id="cache-fts-ttl" name="fts_cache_ttl_minutes" value="{{ config.cache.fts_cache_ttl_minutes }}" min="1" step="0.1">
+                </label>
+                <label for="cache-fts-cleanup">
+                    FTS Cache Cleanup Interval (sec)
+                    <input type="number" id="cache-fts-cleanup" name="fts_cache_cleanup_interval" value="{{ config.cache.fts_cache_cleanup_interval }}" min="1">
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('cache')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
+
+<!-- Reindexing Settings Section -->
+<details class="config-section" id="section-reindexing">
+    <summary>
+        <h2>Reindexing Settings</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-reindexing">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Change Threshold (%)</td>
+                        <td class="config-value">{{ config.reindexing.change_percentage_threshold }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Accuracy Threshold</td>
+                        <td class="config-value">{{ config.reindexing.accuracy_threshold }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Max Index Age (days)</td>
+                        <td class="config-value">{{ config.reindexing.max_index_age_days }}</td>
+                        <td class="config-note"></td>
+                    </tr>
                     <tr>
                         <td class="config-label">Batch Size</td>
-                        <td class="config-value">{{ config.indexing.batch_size }}</td>
+                        <td class="config-value">{{ config.reindexing.batch_size }}</td>
                         <td class="config-note"></td>
                     </tr>
                     <tr>
-                        <td class="config-label">Max File Size (bytes)</td>
-                        <td class="config-value">{{ config.indexing.max_file_size }}</td>
+                        <td class="config-label">Max Analysis Time (sec)</td>
+                        <td class="config-value">{{ config.reindexing.max_analysis_time_seconds }}</td>
                         <td class="config-note"></td>
                     </tr>
                     <tr>
-                        <td class="config-label">Excluded Patterns</td>
-                        <td class="config-value">{{ config.indexing.excluded_patterns | join(', ') }}</td>
+                        <td class="config-label">Max Memory Usage (MB)</td>
+                        <td class="config-value">{{ config.reindexing.max_memory_usage_mb }}</td>
                         <td class="config-note"></td>
                     </tr>
                 </tbody>
             </table>
             <div class="section-actions">
-                <button class="outline small" onclick="toggleEditMode('indexing')">Edit</button>
+                <button class="outline small" onclick="toggleEditMode('reindexing')">Edit</button>
             </div>
         </div>
         <!-- Edit Mode -->
-        <form id="edit-form-indexing" method="post" action="/admin/config/indexing" style="display: none;">
+        <form id="edit-form-reindexing" method="post" action="/admin/config/reindexing" style="display: none;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            {% if validation_errors.indexing %}
-            <div class="validation-error">{{ validation_errors.indexing }}</div>
+            {% if validation_errors.reindexing %}
+            <div class="validation-error">{{ validation_errors.reindexing }}</div>
             {% endif %}
             <div class="form-grid">
-                <label for="indexing-batch-size">
+                <label for="reindex-change">
+                    Change Threshold (%)
+                    <input type="number" id="reindex-change" name="change_percentage_threshold" value="{{ config.reindexing.change_percentage_threshold }}" min="0" max="100" step="0.1">
+                </label>
+                <label for="reindex-accuracy">
+                    Accuracy Threshold
+                    <input type="number" id="reindex-accuracy" name="accuracy_threshold" value="{{ config.reindexing.accuracy_threshold }}" min="0" max="1" step="0.01">
+                </label>
+                <label for="reindex-age">
+                    Max Index Age (days)
+                    <input type="number" id="reindex-age" name="max_index_age_days" value="{{ config.reindexing.max_index_age_days }}" min="1">
+                </label>
+                <label for="reindex-batch">
                     Batch Size
-                    <input type="number" id="indexing-batch-size" name="batch_size" value="{{ config.indexing.batch_size }}" min="1">
-                    <small>Must be a positive number</small>
+                    <input type="number" id="reindex-batch" name="batch_size" value="{{ config.reindexing.batch_size }}" min="1">
                 </label>
-                <label for="indexing-max-file-size">
-                    Max File Size (bytes)
-                    <input type="number" id="indexing-max-file-size" name="max_file_size" value="{{ config.indexing.max_file_size }}" min="1">
+                <label for="reindex-time">
+                    Max Analysis Time (sec)
+                    <input type="number" id="reindex-time" name="max_analysis_time_seconds" value="{{ config.reindexing.max_analysis_time_seconds }}" min="1">
                 </label>
-                <label for="indexing-excluded-patterns">
-                    Excluded Patterns
-                    <textarea id="indexing-excluded-patterns" name="excluded_patterns" rows="3">{{ config.indexing.excluded_patterns | join('\n') }}</textarea>
-                    <small>One pattern per line</small>
+                <label for="reindex-memory">
+                    Max Memory Usage (MB)
+                    <input type="number" id="reindex-memory" name="max_memory_usage_mb" value="{{ config.reindexing.max_memory_usage_mb }}" min="1">
                 </label>
             </div>
             <div class="form-actions">
                 <button type="submit" class="primary">Save</button>
-                <button type="button" class="secondary" onclick="cancelEdit('indexing')">Cancel</button>
+                <button type="button" class="secondary" onclick="cancelEdit('reindexing')">Cancel</button>
             </div>
         </form>
     </article>
 </details>
 
-<!-- Query Settings Section -->
-<details class="config-section" id="section-query">
+<!-- Timeout Settings Section -->
+<details class="config-section" id="section-timeouts">
     <summary>
-        <h2>Query Settings</h2>
+        <h2>Timeout Settings</h2>
     </summary>
     <article>
         <!-- Display Mode -->
-        <div id="display-query">
+        <div id="display-timeouts">
             <table class="config-table">
                 <tbody>
                     <tr>
-                        <td class="config-label">Default Limit</td>
-                        <td class="config-value">{{ config.query.default_limit }}</td>
+                        <td class="config-label">Git Clone Timeout (sec)</td>
+                        <td class="config-value">{{ config.timeouts.git_clone_timeout }}</td>
                         <td class="config-note"></td>
                     </tr>
                     <tr>
-                        <td class="config-label">Max Limit</td>
-                        <td class="config-value">{{ config.query.max_limit }}</td>
+                        <td class="config-label">Git Pull Timeout (sec)</td>
+                        <td class="config-value">{{ config.timeouts.git_pull_timeout }}</td>
                         <td class="config-note"></td>
                     </tr>
                     <tr>
-                        <td class="config-label">Timeout (seconds)</td>
-                        <td class="config-value">{{ config.query.timeout }}</td>
+                        <td class="config-label">Git Refresh Timeout (sec)</td>
+                        <td class="config-value">{{ config.timeouts.git_refresh_timeout }}</td>
                         <td class="config-note"></td>
                     </tr>
                     <tr>
-                        <td class="config-label">Min Score</td>
-                        <td class="config-value">{{ config.query.min_score }}</td>
+                        <td class="config-label">CIDX Index Timeout (sec)</td>
+                        <td class="config-value">{{ config.timeouts.cidx_index_timeout }}</td>
                         <td class="config-note"></td>
                     </tr>
                 </tbody>
             </table>
             <div class="section-actions">
-                <button class="outline small" onclick="toggleEditMode('query')">Edit</button>
+                <button class="outline small" onclick="toggleEditMode('timeouts')">Edit</button>
             </div>
         </div>
         <!-- Edit Mode -->
-        <form id="edit-form-query" method="post" action="/admin/config/query" style="display: none;">
+        <form id="edit-form-timeouts" method="post" action="/admin/config/timeouts" style="display: none;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            {% if validation_errors.query %}
-            <div class="validation-error">{{ validation_errors.query }}</div>
+            {% if validation_errors.timeouts %}
+            <div class="validation-error">{{ validation_errors.timeouts }}</div>
             {% endif %}
             <div class="form-grid">
-                <label for="query-default-limit">
-                    Default Limit
-                    <input type="number" id="query-default-limit" name="default_limit" value="{{ config.query.default_limit }}" min="1">
+                <label for="timeout-clone">
+                    Git Clone Timeout (sec)
+                    <input type="number" id="timeout-clone" name="git_clone_timeout" value="{{ config.timeouts.git_clone_timeout }}" min="1">
                 </label>
-                <label for="query-max-limit">
-                    Max Limit
-                    <input type="number" id="query-max-limit" name="max_limit" value="{{ config.query.max_limit }}" min="1">
+                <label for="timeout-pull">
+                    Git Pull Timeout (sec)
+                    <input type="number" id="timeout-pull" name="git_pull_timeout" value="{{ config.timeouts.git_pull_timeout }}" min="1">
                 </label>
-                <label for="query-timeout">
-                    Timeout (seconds)
-                    <input type="number" id="query-timeout" name="timeout" value="{{ config.query.timeout }}" min="1">
+                <label for="timeout-refresh">
+                    Git Refresh Timeout (sec)
+                    <input type="number" id="timeout-refresh" name="git_refresh_timeout" value="{{ config.timeouts.git_refresh_timeout }}" min="1">
                 </label>
-                <label for="query-min-score">
-                    Min Score
-                    <input type="number" id="query-min-score" name="min_score" value="{{ config.query.min_score }}" min="0" max="1" step="0.1">
+                <label for="timeout-index">
+                    CIDX Index Timeout (sec)
+                    <input type="number" id="timeout-index" name="cidx_index_timeout" value="{{ config.timeouts.cidx_index_timeout }}" min="1">
                 </label>
             </div>
             <div class="form-actions">
                 <button type="submit" class="primary">Save</button>
-                <button type="button" class="secondary" onclick="cancelEdit('query')">Cancel</button>
+                <button type="button" class="secondary" onclick="cancelEdit('timeouts')">Cancel</button>
             </div>
         </form>
     </article>
 </details>
 
-<!-- Storage Settings Section -->
-<details class="config-section" id="section-storage">
+<!-- Password Security Settings Section -->
+<details class="config-section" id="section-password_security">
     <summary>
-        <h2>Storage Settings</h2>
-        <small class="read-only-badge">Read-only</small>
-    </summary>
-    <article>
-        <!-- Display Mode (read-only, no edit mode) -->
-        <div id="display-storage">
-            <table class="config-table">
-                <tbody>
-                    <tr>
-                        <td class="config-label">Data Directory</td>
-                        <td class="config-value">{{ config.storage.data_directory }}</td>
-                        <td class="config-note">
-                            <small class="read-only-note">Requires server restart to change</small>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="config-label">Vector Store Path</td>
-                        <td class="config-value">{{ config.storage.vector_store_path }}</td>
-                        <td class="config-note">
-                            <small class="read-only-note">Requires server restart to change</small>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            <div class="section-actions">
-                <span class="read-only-status">All fields in this section are read-only</span>
-            </div>
-        </div>
-    </article>
-</details>
-
-<!-- Security Settings Section -->
-<details class="config-section" id="section-security">
-    <summary>
-        <h2>Security Settings</h2>
+        <h2>Password Security</h2>
     </summary>
     <article>
         <!-- Display Mode -->
-        <div id="display-security">
+        <div id="display-password_security">
             <table class="config-table">
                 <tbody>
                     <tr>
-                        <td class="config-label">Session Timeout (seconds)</td>
-                        <td class="config-value">{{ config.security.session_timeout }}</td>
+                        <td class="config-label">Minimum Length</td>
+                        <td class="config-value">{{ config.password_security.min_length }}</td>
                         <td class="config-note"></td>
                     </tr>
                     <tr>
-                        <td class="config-label">Token Expiration (seconds)</td>
-                        <td class="config-value">{{ config.security.token_expiration }}</td>
+                        <td class="config-label">Maximum Length</td>
+                        <td class="config-value">{{ config.password_security.max_length }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Required Character Classes</td>
+                        <td class="config-value">{{ config.password_security.required_char_classes }}</td>
+                        <td class="config-note"><small>1-4 (lowercase, uppercase, numbers, symbols)</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Minimum Entropy (bits)</td>
+                        <td class="config-value">{{ config.password_security.min_entropy_bits }}</td>
                         <td class="config-note"></td>
                     </tr>
                 </tbody>
             </table>
             <div class="section-actions">
-                <button class="outline small" onclick="toggleEditMode('security')">Edit</button>
+                <button class="outline small" onclick="toggleEditMode('password_security')">Edit</button>
             </div>
         </div>
         <!-- Edit Mode -->
-        <form id="edit-form-security" method="post" action="/admin/config/security" style="display: none;">
+        <form id="edit-form-password_security" method="post" action="/admin/config/password_security" style="display: none;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            {% if validation_errors.security %}
-            <div class="validation-error">{{ validation_errors.security }}</div>
+            {% if validation_errors.password_security %}
+            <div class="validation-error">{{ validation_errors.password_security }}</div>
             {% endif %}
             <div class="form-grid">
-                <label for="security-session-timeout">
-                    Session Timeout (seconds)
-                    <input type="number" id="security-session-timeout" name="session_timeout" value="{{ config.security.session_timeout }}" min="60">
+                <label for="pwd-min-length">
+                    Minimum Length
+                    <input type="number" id="pwd-min-length" name="min_length" value="{{ config.password_security.min_length }}" min="1">
                 </label>
-                <label for="security-token-expiration">
-                    Token Expiration (seconds)
-                    <input type="number" id="security-token-expiration" name="token_expiration" value="{{ config.security.token_expiration }}" min="60">
+                <label for="pwd-max-length">
+                    Maximum Length
+                    <input type="number" id="pwd-max-length" name="max_length" value="{{ config.password_security.max_length }}" min="1">
+                </label>
+                <label for="pwd-char-classes">
+                    Required Character Classes
+                    <input type="number" id="pwd-char-classes" name="required_char_classes" value="{{ config.password_security.required_char_classes }}" min="1" max="4">
+                    <small>1=lowercase, 2=+uppercase, 3=+numbers, 4=+symbols</small>
+                </label>
+                <label for="pwd-entropy">
+                    Minimum Entropy (bits)
+                    <input type="number" id="pwd-entropy" name="min_entropy_bits" value="{{ config.password_security.min_entropy_bits }}" min="1">
                 </label>
             </div>
             <div class="form-actions">
                 <button type="submit" class="primary">Save</button>
-                <button type="button" class="secondary" onclick="cancelEdit('security')">Cancel</button>
+                <button type="button" class="secondary" onclick="cancelEdit('password_security')">Cancel</button>
             </div>
         </form>
     </article>
