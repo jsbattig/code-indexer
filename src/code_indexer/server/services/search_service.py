@@ -215,8 +215,8 @@ class SemanticSearchService:
 
                 search_item = SearchResultItem(
                     file_path=payload.get("path", ""),
-                    line_start=payload.get("start_line", 0),
-                    line_end=payload.get("end_line", 0),
+                    line_start=payload.get("line_start", 0),
+                    line_end=payload.get("line_end", 0),
                     score=score,
                     content=source_content or payload.get("snippet", ""),
                     language=self._detect_language_from_path(payload.get("path", "")),

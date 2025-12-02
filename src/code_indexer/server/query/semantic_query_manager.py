@@ -968,9 +968,6 @@ class SemanticQueryManager:
             # Convert search results to QueryResult objects
             semantic_results = []
             for search_item in search_response.results:
-                # DEBUG: Log semantic search item
-                self.logger.info(f"[SEMANTIC DEBUG] search_item: file={search_item.file_path}, line_start={search_item.line_start}, score={search_item.score}")
-
                 # Apply min_score filter if specified
                 if min_score is not None and search_item.score < min_score:
                     continue
@@ -1587,10 +1584,6 @@ class SemanticQueryManager:
             # Convert FTS results to QueryResult objects
             query_results = []
             for result in fts_raw_results:
-                # DEBUG: Log what keys are in the FTS result
-                self.logger.info(f"[FTS DEBUG] Raw FTS result keys: {list(result.keys())}")
-                self.logger.info(f"[FTS DEBUG] Raw FTS result: {result}")
-
                 # FTS doesn't have similarity scores in the same sense as semantic search
                 # Use a normalized score based on result ordering (1.0 for first result)
                 score = 1.0 - (len(query_results) * 0.01)  # Decreasing score
@@ -1645,19 +1638,6 @@ class SemanticQueryManager:
         Returns:
             Merged and deduplicated list of QueryResult objects
         """
-        # DEBUG: Log input parameters
-        self.logger.info(f"[HYBRID DEBUG] Starting RRF merge: fts_results={len(fts_results)}, semantic_results={len(semantic_results)}, limit={limit}")
-
-        # DEBUG: Log all FTS results
-        self.logger.info("[HYBRID DEBUG] FTS Results:")
-        for i, result in enumerate(fts_results, 1):
-            self.logger.info(f"  FTS #{i}: {result.file_path}:{result.line_number} (score={result.similarity_score:.6f})")
-
-        # DEBUG: Log all semantic results
-        self.logger.info("[HYBRID DEBUG] Semantic Results:")
-        for i, result in enumerate(semantic_results, 1):
-            self.logger.info(f"  SEM #{i}: {result.file_path}:{result.line_number} (score={result.similarity_score:.6f})")
-
         # Use file_path + line_number as key for deduplication
         seen_keys = set()
         merged_results = []
@@ -1678,9 +1658,6 @@ class SemanticQueryManager:
             rrf_score = 1.0 / (k + rank)
             rrf_scores[key] = rrf_scores.get(key, 0) + rrf_score
 
-        # DEBUG: Log unique keys after RRF calculation
-        self.logger.info(f"[HYBRID DEBUG] Total unique (file, line) keys after RRF calculation: {len(rrf_scores)}")
-
         # Create a mapping of keys to results (prefer FTS for content)
         result_map = {}
         for result in semantic_results:
@@ -1693,10 +1670,6 @@ class SemanticQueryManager:
 
         # Sort by RRF score and build merged results
         sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
-
-        # DEBUG: Log sorted keys count before slicing
-        self.logger.info(f"[HYBRID DEBUG] Sorted keys count: {len(sorted_keys)}, will slice to limit: {limit}")
-        self.logger.info(f"[HYBRID DEBUG] Top 10 sorted keys by RRF score: {sorted_keys[:10]}")
 
         for key in sorted_keys[:limit]:
             if key in result_map:
@@ -1711,8 +1684,5 @@ class SemanticQueryManager:
                     source_repo=result.source_repo,
                 )
                 merged_results.append(merged_result)
-
-        # DEBUG: Log final merged results count
-        self.logger.info(f"[HYBRID DEBUG] Final merged_results count: {len(merged_results)}")
 
         return merged_results
