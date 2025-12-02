@@ -180,18 +180,28 @@ function toggleDetails(alias) {
 
 function restoreOpenDetails() {
     // Restore previously open details rows after content refresh
+    console.log('[CIDX] restoreOpenDetails() called');
+    console.log('[CIDX] openDetailsSet size:', openDetailsSet.size);
+    console.log('[CIDX] openDetailsSet contents:', Array.from(openDetailsSet));
+
     if (openDetailsSet.size > 0) {
-        console.log('[CIDX] Restoring open details for:', Array.from(openDetailsSet));
+        console.log('[CIDX] Attempting to restore open details...');
+        openDetailsSet.forEach(alias => {
+            console.log('[CIDX] Looking for element: details-' + alias);
+            const details = document.getElementById('details-' + alias);
+            console.log('[CIDX] Element found:', details !== null);
+            if (details) {
+                console.log('[CIDX] Current display style:', details.style.display);
+                details.style.display = 'table-row';
+                console.log('[CIDX] New display style:', details.style.display);
+                console.log('[CIDX] ✅ Restored details for:', alias);
+            } else {
+                console.error('[CIDX] ❌ Could not find details element for:', alias);
+            }
+        });
+    } else {
+        console.log('[CIDX] No details to restore (openDetailsSet is empty)');
     }
-    openDetailsSet.forEach(alias => {
-        const details = document.getElementById('details-' + alias);
-        if (details) {
-            details.style.display = 'table-row';
-            console.log('[CIDX] Restored details for:', alias);
-        } else {
-            console.warn('[CIDX] Could not find details element for:', alias);
-        }
-    });
 }
 
 function showActivateModal(alias) {

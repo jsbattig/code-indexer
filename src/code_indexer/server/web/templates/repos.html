@@ -138,20 +138,38 @@ function toggleDetails(username, userAlias) {
         // Track open/closed state
         if (isHidden) {
             openDetailsSet.add(key);
+            console.log('[CIDX] Opened details for:', key);
         } else {
             openDetailsSet.delete(key);
+            console.log('[CIDX] Closed details for:', key);
         }
     }
 }
 
 function restoreOpenDetails() {
     // Restore previously open details rows after content refresh
-    openDetailsSet.forEach(key => {
-        const details = document.getElementById('details-' + key);
-        if (details) {
-            details.style.display = 'table-row';
-        }
-    });
+    console.log('[CIDX] restoreOpenDetails() called');
+    console.log('[CIDX] openDetailsSet size:', openDetailsSet.size);
+    console.log('[CIDX] openDetailsSet contents:', Array.from(openDetailsSet));
+
+    if (openDetailsSet.size > 0) {
+        console.log('[CIDX] Attempting to restore open details...');
+        openDetailsSet.forEach(key => {
+            console.log('[CIDX] Looking for element: details-' + key);
+            const details = document.getElementById('details-' + key);
+            console.log('[CIDX] Element found:', details !== null);
+            if (details) {
+                console.log('[CIDX] Current display style:', details.style.display);
+                details.style.display = 'table-row';
+                console.log('[CIDX] New display style:', details.style.display);
+                console.log('[CIDX] ✅ Restored details for:', key);
+            } else {
+                console.error('[CIDX] ❌ Could not find details element for:', key);
+            }
+        });
+    } else {
+        console.log('[CIDX] No details to restore (openDetailsSet is empty)');
+    }
 }
 
 // Enable auto-refresh when there are syncing repositories
@@ -169,9 +187,19 @@ function checkForSyncing() {
 document.addEventListener('DOMContentLoaded', checkForSyncing);
 
 // Check after htmx swaps and restore open details
-document.body.addEventListener('htmx:afterSwap', function(event) {
-    checkForSyncing();
-    restoreOpenDetails();
+document.body.addEventListener('htmx:afterSettle', function(event) {
+    // Only restore for repos list swaps
+    const target = event.detail.target;
+    if (target && target.id === 'repos-list-section') {
+        checkForSyncing();
+        // Use requestAnimationFrame to ensure DOM is fully ready
+        requestAnimationFrame(() => {
+            restoreOpenDetails();
+        });
+    } else {
+        // Still check for syncing on other swaps
+        checkForSyncing();
+    }
 });
 </script>
 {% endblock %}
