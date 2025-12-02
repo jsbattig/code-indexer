@@ -1,0 +1,157 @@
+<h2>Activated Repositories</h2>
+
+<table class="repos-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>User</th>
+            <th>Golden Repo</th>
+            <th>Activated Date</th>
+            <th>File Count</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if repos %}
+        {% for repo in repos %}
+        <tr>
+            <td>
+                <a href="#" onclick="toggleDetails('{{ repo.username }}', '{{ repo.user_alias }}'); return false;">
+                    {{ repo.user_alias }}
+                </a>
+            </td>
+            <td>{{ repo.username }}</td>
+            <td>{{ repo.golden_repo_alias or 'Composite' }}</td>
+            <td>{{ repo.activated_at[:10] if repo.activated_at else 'N/A' }}</td>
+            <td>{{ repo.file_count if repo.file_count is defined else 'N/A' }}</td>
+            <td class="status-cell">
+                {% if repo.status == 'syncing' %}
+                <span class="status-indicator status-syncing" title="Syncing in progress">
+                    <span class="spinner"></span> Syncing
+                </span>
+                {% elif repo.status == 'error' %}
+                <span class="status-indicator status-error" title="Error: {{ repo.error_message }}">
+                    Error
+                </span>
+                {% else %}
+                <span class="status-indicator status-active">
+                    Active
+                </span>
+                {% endif %}
+            </td>
+            <td class="actions-cell">
+                <button class="outline small" onclick="toggleDetails('{{ repo.username }}', '{{ repo.user_alias }}')" title="View details">Details</button>
+                <button class="outline small danger" onclick="confirmDeactivate('{{ repo.username }}', '{{ repo.user_alias }}')" title="Deactivate repository">Deactivate</button>
+            </td>
+        </tr>
+
+        <!-- Details Row (hidden by default) -->
+        <tr id="details-{{ repo.username }}-{{ repo.user_alias }}" class="details-row" style="display: none;">
+            <td colspan="7">
+                <article class="repo-details">
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <label>Name:</label>
+                            <span>{{ repo.user_alias }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>User:</label>
+                            <span>{{ repo.username }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Golden Repo Source:</label>
+                            <span>{{ repo.golden_repo_alias or 'Composite Repository' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Activation Timestamp:</label>
+                            <span>{{ repo.activated_at or 'N/A' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Current Branch:</label>
+                            <span>{{ repo.current_branch or 'N/A' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Last Accessed:</label>
+                            <span>{{ repo.last_accessed or 'N/A' }}</span>
+                        </div>
+                        {% if repo.file_count is defined %}
+                        <div class="detail-item">
+                            <label>File Count:</label>
+                            <span>{{ repo.file_count }}</span>
+                        </div>
+                        {% endif %}
+                        {% if repo.chunk_count is defined %}
+                        <div class="detail-item">
+                            <label>Chunk Count:</label>
+                            <span>{{ repo.chunk_count }}</span>
+                        </div>
+                        {% endif %}
+                        {% if repo.last_query_at is defined %}
+                        <div class="detail-item">
+                            <label>Last Query Timestamp:</label>
+                            <span>{{ repo.last_query_at or 'Never' }}</span>
+                        </div>
+                        {% endif %}
+                        <div class="detail-item">
+                            <label>Status:</label>
+                            <span>{{ repo.status or 'Active' }}</span>
+                        </div>
+                        {% if repo.is_composite %}
+                        <div class="detail-item">
+                            <label>Type:</label>
+                            <span>Composite Repository</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Component Repos:</label>
+                            <span>{{ repo.golden_repo_aliases | join(', ') if repo.golden_repo_aliases else 'N/A' }}</span>
+                        </div>
+                        {% endif %}
+                        {% if repo.error_message %}
+                        <div class="detail-item error-details">
+                            <label>Error:</label>
+                            <span class="error-text">{{ repo.error_message }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </article>
+            </td>
+        </tr>
+
+        <!-- Deactivate Form (hidden) -->
+        <form id="deactivate-form-{{ repo.username }}-{{ repo.user_alias }}" method="post" action="/admin/repos/{{ repo.username }}/{{ repo.user_alias }}/deactivate" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        </form>
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="7" class="no-data">No activated repositories. Users can activate repositories from golden repos.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{% if total_pages is defined and total_pages > 1 %}
+<!-- Pagination -->
+<nav class="pagination">
+    <ul>
+        {% if page > 1 %}
+        <li>
+            <a href="/admin/repos?page={{ page - 1 }}{% if search %}&search={{ search }}{% endif %}{% if golden_repo_filter %}&golden_repo={{ golden_repo_filter }}{% endif %}{% if user_filter %}&user={{ user_filter }}{% endif %}">&laquo; Previous</a>
+        </li>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+        <li>
+            <a href="/admin/repos?page={{ p }}{% if search %}&search={{ search }}{% endif %}{% if golden_repo_filter %}&golden_repo={{ golden_repo_filter }}{% endif %}{% if user_filter %}&user={{ user_filter }}{% endif %}" {% if p == page %}aria-current="page"{% endif %}>{{ p }}</a>
+        </li>
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <li>
+            <a href="/admin/repos?page={{ page + 1 }}{% if search %}&search={{ search }}{% endif %}{% if golden_repo_filter %}&golden_repo={{ golden_repo_filter }}{% endif %}{% if user_filter %}&user={{ user_filter }}{% endif %}">Next &raquo;</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

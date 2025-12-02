@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="jobs-header">
+    <h1>Job Monitoring</h1>
+    <div class="jobs-actions">
+        <button
+            id="refresh-btn"
+            class="outline"
+            hx-get="/admin/partials/jobs-list"
+            hx-target="#jobs-list-section"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-indicator"
+            hx-include="#filter-form"
+        >
+            Refresh
+        </button>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Filters Section -->
+<section id="filters-section" class="filters-section">
+    <form id="filter-form" method="get" action="/admin/jobs">
+        <div class="filter-row">
+            <div class="filter-item">
+                <label for="status_filter">Status</label>
+                <select
+                    id="status_filter"
+                    name="status_filter"
+                    hx-get="/admin/partials/jobs-list"
+                    hx-target="#jobs-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="change"
+                    hx-include="#filter-form"
+                >
+                    <option value="">All Status</option>
+                    <option value="queued" {% if status_filter == 'queued' %}selected{% endif %}>Queued</option>
+                    <option value="running" {% if status_filter == 'running' %}selected{% endif %}>Running</option>
+                    <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+                    <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <label for="job_type">Type</label>
+                <select
+                    id="job_type"
+                    name="job_type"
+                    hx-get="/admin/partials/jobs-list"
+                    hx-target="#jobs-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="change"
+                    hx-include="#filter-form"
+                >
+                    <option value="">All Types</option>
+                    <option value="add_golden_repo" {% if type_filter == 'add_golden_repo' %}selected{% endif %}>Add Golden Repo</option>
+                    <option value="remove_golden_repo" {% if type_filter == 'remove_golden_repo' %}selected{% endif %}>Remove Golden Repo</option>
+                    <option value="refresh_golden_repo" {% if type_filter == 'refresh_golden_repo' %}selected{% endif %}>Refresh Golden Repo</option>
+                    <option value="activate_repo" {% if type_filter == 'activate_repo' %}selected{% endif %}>Activate Repo</option>
+                    <option value="deactivate_repo" {% if type_filter == 'deactivate_repo' %}selected{% endif %}>Deactivate Repo</option>
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <label for="search">Search</label>
+                <input
+                    type="search"
+                    id="search"
+                    name="search"
+                    placeholder="Search by repository name..."
+                    value="{{ search or '' }}"
+                    hx-get="/admin/partials/jobs-list"
+                    hx-target="#jobs-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="keyup changed delay:300ms"
+                    hx-include="#filter-form"
+                >
+            </div>
+
+            <div class="filter-item filter-actions">
+                <label>&nbsp;</label>
+                <button type="button" class="outline" onclick="clearFilters()">Clear Filters</button>
+            </div>
+        </div>
+    </form>
+</section>
+
+<!-- Jobs List Section -->
+<section id="jobs-list-section">
+    {% include "partials/jobs_list.html" %}
+</section>
+
+<!-- Auto-refresh for running jobs -->
+<div id="auto-refresh-container" style="display: none;"
+    hx-get="/admin/partials/jobs-list"
+    hx-trigger="every 5s"
+    hx-target="#jobs-list-section"
+    hx-swap="innerHTML"
+    hx-include="#filter-form">
+</div>
+
+<script>
+function clearFilters() {
+    document.getElementById('status_filter').value = '';
+    document.getElementById('job_type').value = '';
+    document.getElementById('search').value = '';
+    // Trigger htmx request to refresh list
+    htmx.ajax('GET', '/admin/partials/jobs-list', {target: '#jobs-list-section', swap: 'innerHTML'});
+}
+
+function confirmCancel(jobId, jobType) {
+    if (confirm('Are you sure you want to cancel job "' + jobId.substring(0, 8) + '..." (' + jobType + ')? This action cannot be undone.')) {
+        document.getElementById('cancel-form-' + jobId).submit();
+    }
+}
+
+function toggleDetails(jobId) {
+    const details = document.getElementById('details-' + jobId);
+    if (details) {
+        details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
+    }
+}
+
+// Enable auto-refresh when there are running/queued jobs
+function checkForActiveJobs() {
+    const runningIndicators = document.querySelectorAll('.status-running, .status-queued');
+    const autoRefreshContainer = document.getElementById('auto-refresh-container');
+    if (runningIndicators.length > 0) {
+        autoRefreshContainer.style.display = 'block';
+    } else {
+        autoRefreshContainer.style.display = 'none';
+    }
+}
+
+// Check on page load
+document.addEventListener('DOMContentLoaded', checkForActiveJobs);
+
+// Check after htmx swaps
+document.body.addEventListener('htmx:afterSwap', checkForActiveJobs);
+</script>
+{% endblock %}

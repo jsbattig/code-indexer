@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="config-header">
+    <h1>Configuration Management</h1>
+    <div class="config-actions">
+        <button
+            id="refresh-btn"
+            class="outline"
+            hx-get="/admin/partials/config-section?section=all"
+            hx-target="#config-sections"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-indicator"
+        >
+            Refresh
+        </button>
+        <button
+            id="reset-defaults-btn"
+            class="outline danger"
+            onclick="confirmResetDefaults()"
+        >
+            Reset to Defaults
+        </button>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Configuration Sections -->
+<div id="config-sections">
+    {% include "partials/config_section.html" %}
+</div>
+
+<!-- Reset Confirmation Form (hidden) -->
+<form id="reset-form" method="post" action="/admin/config/reset" style="display: none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+</form>
+
+<script>
+function toggleEditMode(section) {
+    const form = document.getElementById('edit-form-' + section);
+    const display = document.getElementById('display-' + section);
+    if (form && display) {
+        const isEditing = form.style.display !== 'none';
+        form.style.display = isEditing ? 'none' : 'block';
+        display.style.display = isEditing ? 'block' : 'none';
+    }
+}
+
+function cancelEdit(section) {
+    // Reset form to original values
+    const form = document.getElementById('edit-form-' + section);
+    if (form) {
+        form.reset();
+    }
+    toggleEditMode(section);
+}
+
+function confirmResetDefaults() {
+    if (confirm('Are you sure you want to reset all configuration to default values? This action cannot be undone.')) {
+        document.getElementById('reset-form').submit();
+    }
+}
+</script>
+{% endblock %}

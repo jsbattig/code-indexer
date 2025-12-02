@@ -1,0 +1,87 @@
+<h2>Users</h2>
+
+<table class="users-table">
+    <thead>
+        <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Created Date</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if users %}
+        {% for user in users %}
+        <tr>
+            <td>{{ user.username }}</td>
+            <td>{{ user.role }}</td>
+            <td>{{ user.created_at }}</td>
+            <td class="actions-cell">
+                <button class="outline small" onclick="toggleEditForm('{{ user.username }}')">Edit Role</button>
+                <button class="outline small" onclick="togglePasswordForm('{{ user.username }}')">Change Password</button>
+                {% if user.username != current_username %}
+                <button class="outline small danger" onclick="confirmDelete('{{ user.username }}')">Delete</button>
+                {% else %}
+                <button class="outline small" disabled title="Cannot delete your own account">Delete</button>
+                {% endif %}
+            </td>
+        </tr>
+
+        <!-- Edit Role Form (hidden) -->
+        <tr id="edit-form-{{ user.username }}" class="form-row" style="display: none;">
+            <td colspan="4">
+                <article class="inline-form">
+                    <form method="post" action="/admin/users/{{ user.username }}/role">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <div class="form-inline">
+                            <label>Username:</label>
+                            <input type="text" value="{{ user.username }}" disabled readonly>
+
+                            <label>Role:</label>
+                            <select name="role" required>
+                                <option value="normal_user" {% if user.role == 'normal_user' %}selected{% endif %}>Normal User</option>
+                                <option value="power_user" {% if user.role == 'power_user' %}selected{% endif %}>Power User</option>
+                                <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                            </select>
+
+                            <button type="submit" class="primary small">Update Role</button>
+                            <button type="button" class="secondary small" onclick="toggleEditForm('{{ user.username }}')">Cancel</button>
+                        </div>
+                    </form>
+                </article>
+            </td>
+        </tr>
+
+        <!-- Change Password Form (hidden) -->
+        <tr id="password-form-{{ user.username }}" class="form-row" style="display: none;">
+            <td colspan="4">
+                <article class="inline-form">
+                    <form method="post" action="/admin/users/{{ user.username }}/password">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <div class="form-inline">
+                            <label>New Password:</label>
+                            <input type="password" name="new_password" placeholder="New password" required autocomplete="new-password">
+
+                            <label>Confirm:</label>
+                            <input type="password" name="confirm_password" placeholder="Confirm password" required autocomplete="new-password">
+
+                            <button type="submit" class="primary small">Change Password</button>
+                            <button type="button" class="secondary small" onclick="togglePasswordForm('{{ user.username }}')">Cancel</button>
+                        </div>
+                    </form>
+                </article>
+            </td>
+        </tr>
+
+        <!-- Delete Form (hidden) -->
+        <form id="delete-form-{{ user.username }}" method="post" action="/admin/users/{{ user.username }}/delete" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        </form>
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="4" class="no-data">No users found.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>

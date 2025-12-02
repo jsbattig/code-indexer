@@ -1,0 +1,291 @@
+<!-- Server Settings Section -->
+<details open class="config-section" id="section-server">
+    <summary>
+        <h2>Server Settings</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-server">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Host</td>
+                        <td class="config-value">{{ config.server.host }}</td>
+                        <td class="config-note">
+                            <small class="read-only-note">Requires server restart to change</small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Port</td>
+                        <td class="config-value">{{ config.server.port }}</td>
+                        <td class="config-note">
+                            <small class="read-only-note">Requires server restart to change</small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Workers</td>
+                        <td class="config-value">{{ config.server.workers }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Log Level</td>
+                        <td class="config-value">{{ config.server.log_level }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('server')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-server" method="post" action="/admin/config/server" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.server %}
+            <div class="validation-error">{{ validation_errors.server }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="server-host">
+                    Host
+                    <input type="text" id="server-host" name="host" value="{{ config.server.host }}" readonly disabled>
+                    <small>Requires server restart to change</small>
+                </label>
+                <label for="server-port">
+                    Port
+                    <input type="number" id="server-port" name="port" value="{{ config.server.port }}" min="1" max="65535" readonly disabled>
+                    <small>Requires server restart to change (1-65535)</small>
+                </label>
+                <label for="server-workers">
+                    Workers
+                    <input type="number" id="server-workers" name="workers" value="{{ config.server.workers }}" min="1" max="64">
+                </label>
+                <label for="server-log-level">
+                    Log Level
+                    <select id="server-log-level" name="log_level">
+                        <option value="DEBUG" {% if config.server.log_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                        <option value="INFO" {% if config.server.log_level == 'INFO' %}selected{% endif %}>INFO</option>
+                        <option value="WARNING" {% if config.server.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                        <option value="ERROR" {% if config.server.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                    </select>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('server')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
+
+<!-- Indexing Settings Section -->
+<details class="config-section" id="section-indexing">
+    <summary>
+        <h2>Indexing Settings</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-indexing">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Batch Size</td>
+                        <td class="config-value">{{ config.indexing.batch_size }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Max File Size (bytes)</td>
+                        <td class="config-value">{{ config.indexing.max_file_size }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Excluded Patterns</td>
+                        <td class="config-value">{{ config.indexing.excluded_patterns | join(', ') }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('indexing')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-indexing" method="post" action="/admin/config/indexing" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.indexing %}
+            <div class="validation-error">{{ validation_errors.indexing }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="indexing-batch-size">
+                    Batch Size
+                    <input type="number" id="indexing-batch-size" name="batch_size" value="{{ config.indexing.batch_size }}" min="1">
+                    <small>Must be a positive number</small>
+                </label>
+                <label for="indexing-max-file-size">
+                    Max File Size (bytes)
+                    <input type="number" id="indexing-max-file-size" name="max_file_size" value="{{ config.indexing.max_file_size }}" min="1">
+                </label>
+                <label for="indexing-excluded-patterns">
+                    Excluded Patterns
+                    <textarea id="indexing-excluded-patterns" name="excluded_patterns" rows="3">{{ config.indexing.excluded_patterns | join('\n') }}</textarea>
+                    <small>One pattern per line</small>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('indexing')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
+
+<!-- Query Settings Section -->
+<details class="config-section" id="section-query">
+    <summary>
+        <h2>Query Settings</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-query">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Default Limit</td>
+                        <td class="config-value">{{ config.query.default_limit }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Max Limit</td>
+                        <td class="config-value">{{ config.query.max_limit }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Timeout (seconds)</td>
+                        <td class="config-value">{{ config.query.timeout }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Min Score</td>
+                        <td class="config-value">{{ config.query.min_score }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('query')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-query" method="post" action="/admin/config/query" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.query %}
+            <div class="validation-error">{{ validation_errors.query }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="query-default-limit">
+                    Default Limit
+                    <input type="number" id="query-default-limit" name="default_limit" value="{{ config.query.default_limit }}" min="1">
+                </label>
+                <label for="query-max-limit">
+                    Max Limit
+                    <input type="number" id="query-max-limit" name="max_limit" value="{{ config.query.max_limit }}" min="1">
+                </label>
+                <label for="query-timeout">
+                    Timeout (seconds)
+                    <input type="number" id="query-timeout" name="timeout" value="{{ config.query.timeout }}" min="1">
+                </label>
+                <label for="query-min-score">
+                    Min Score
+                    <input type="number" id="query-min-score" name="min_score" value="{{ config.query.min_score }}" min="0" max="1" step="0.1">
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('query')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
+
+<!-- Storage Settings Section -->
+<details class="config-section" id="section-storage">
+    <summary>
+        <h2>Storage Settings</h2>
+        <small class="read-only-badge">Read-only</small>
+    </summary>
+    <article>
+        <!-- Display Mode (read-only, no edit mode) -->
+        <div id="display-storage">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Data Directory</td>
+                        <td class="config-value">{{ config.storage.data_directory }}</td>
+                        <td class="config-note">
+                            <small class="read-only-note">Requires server restart to change</small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Vector Store Path</td>
+                        <td class="config-value">{{ config.storage.vector_store_path }}</td>
+                        <td class="config-note">
+                            <small class="read-only-note">Requires server restart to change</small>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <span class="read-only-status">All fields in this section are read-only</span>
+            </div>
+        </div>
+    </article>
+</details>
+
+<!-- Security Settings Section -->
+<details class="config-section" id="section-security">
+    <summary>
+        <h2>Security Settings</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-security">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Session Timeout (seconds)</td>
+                        <td class="config-value">{{ config.security.session_timeout }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Token Expiration (seconds)</td>
+                        <td class="config-value">{{ config.security.token_expiration }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('security')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-security" method="post" action="/admin/config/security" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.security %}
+            <div class="validation-error">{{ validation_errors.security }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="security-session-timeout">
+                    Session Timeout (seconds)
+                    <input type="number" id="security-session-timeout" name="session_timeout" value="{{ config.security.session_timeout }}" min="60">
+                </label>
+                <label for="security-token-expiration">
+                    Token Expiration (seconds)
+                    <input type="number" id="security-token-expiration" name="token_expiration" value="{{ config.security.token_expiration }}" min="60">
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('security')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>

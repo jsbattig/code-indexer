@@ -1,0 +1,305 @@
+/**
+ * Admin UI Custom Styles
+ * Minimal custom styles that complement Pico CSS
+ */
+
+/* Navigation enhancements */
+nav.admin-nav {
+    margin-bottom: 1rem;
+}
+
+nav.admin-nav ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+nav.admin-nav li {
+    margin: 0;
+}
+
+nav.admin-nav a[aria-current="page"] {
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+/* Error message styling */
+.error-message {
+    color: var(--pico-color-red-550);
+    background-color: var(--pico-color-red-50);
+    padding: 0.75rem 1rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--pico-color-red-550);
+}
+
+.info-message {
+    color: var(--pico-color-blue-550);
+    background-color: var(--pico-color-blue-50);
+    padding: 0.75rem 1rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--pico-color-blue-550);
+}
+
+/* Login form centering */
+.login-container {
+    max-width: 400px;
+    margin: 2rem auto;
+}
+
+/* Dashboard grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+/* Header styling */
+header.admin-header {
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Logout button */
+.logout-btn {
+    margin-left: auto;
+}
+
+/* Dashboard Header */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.dashboard-header h1 {
+    margin: 0;
+}
+
+.dashboard-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.auto-refresh-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.auto-refresh-toggle input[type="checkbox"] {
+    margin: 0;
+    width: auto;
+}
+
+/* htmx indicator */
+.htmx-indicator {
+    display: none;
+    color: var(--pico-muted-color);
+    font-style: italic;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-indicator.htmx-request {
+    display: inline;
+}
+
+/* Dashboard Sections */
+.dashboard-section {
+    margin-bottom: 2rem;
+}
+
+/* Health Grid */
+.health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.health-card {
+    margin: 0;
+}
+
+.health-card header {
+    padding-bottom: 0.5rem;
+}
+
+.health-card header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.health-card .status-content {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+}
+
+.health-card footer {
+    padding-top: 0.5rem;
+}
+
+.health-card footer small {
+    color: var(--pico-muted-color);
+}
+
+/* Status Indicators */
+.status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.status-indicator.status-healthy {
+    background-color: #22c55e;
+}
+
+.status-indicator.status-degraded {
+    background-color: #eab308;
+}
+
+.status-indicator.status-unhealthy {
+    background-color: #ef4444;
+}
+
+.status-text {
+    font-weight: 500;
+}
+
+.response-time {
+    color: var(--pico-muted-color);
+    margin-left: auto;
+}
+
+.error-text {
+    color: #ef4444;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.stat-card {
+    margin: 0;
+    text-align: center;
+}
+
+.stat-card header {
+    padding-bottom: 0.25rem;
+}
+
+.stat-card header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--pico-muted-color);
+}
+
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    padding: 0.5rem 0;
+}
+
+.stat-card .stat-value a {
+    text-decoration: none;
+}
+
+.stat-card .stat-value a:hover {
+    text-decoration: underline;
+}
+
+.stat-card footer {
+    padding-top: 0.25rem;
+}
+
+.stat-card footer small {
+    color: var(--pico-muted-color);
+}
+
+.stat-card.stat-success .stat-value {
+    color: #22c55e;
+}
+
+.stat-card.stat-danger .stat-value {
+    color: #ef4444;
+}
+
+/* Recent Activity Table */
+.recent-activity {
+    margin-top: 1rem;
+}
+
+.recent-activity table {
+    margin-bottom: 0;
+}
+
+.job-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.job-status.status-completed {
+    background-color: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+}
+
+.job-status.status-failed {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.job-status.status-running {
+    background-color: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+
+.no-activity {
+    color: var(--pico-muted-color);
+    text-align: center;
+    padding: 2rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    nav.admin-nav ul {
+        flex-direction: column;
+    }
+
+    .login-container {
+        margin: 1rem;
+        max-width: none;
+    }
+
+    .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .dashboard-actions {
+        flex-wrap: wrap;
+    }
+
+    .health-grid,
+    .stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}

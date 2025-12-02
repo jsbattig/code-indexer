@@ -1,0 +1,50 @@
+{% if results %}
+<div class="results-info">
+    <p>Found <strong>{{ results|length }}</strong> result{% if results|length != 1 %}s{% endif %}{% if query_text %} for "{{ query_text }}"{% endif %}</p>
+</div>
+
+<div class="results-list">
+    {% for result in results %}
+    <article class="result-item">
+        <header class="result-header">
+            <div class="result-file-info">
+                <span class="result-file-path" title="{{ result.file_path }}">
+                    {{ result.file_path }}
+                </span>
+                {% if result.line_numbers %}
+                <span class="result-lines">
+                    Lines {{ result.line_numbers }}
+                </span>
+                {% endif %}
+            </div>
+            <div class="result-meta">
+                {% if result.score is defined %}
+                <span class="result-score" title="Similarity score">
+                    Score: {{ "%.3f"|format(result.score) }}
+                </span>
+                {% endif %}
+                {% if result.language %}
+                <span class="result-language">
+                    {{ result.language }}
+                </span>
+                {% endif %}
+            </div>
+        </header>
+        <div class="result-snippet">
+            <pre><code class="language-{{ result.language or 'plaintext' }}">{{ result.content }}</code></pre>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+
+{% elif query_executed %}
+<div class="no-results">
+    <p>No results found{% if query_text %} for "{{ query_text }}"{% endif %}.</p>
+    <p class="no-results-hint">Try different search terms or adjust your filters.</p>
+</div>
+
+{% else %}
+<div class="results-placeholder">
+    <p>Enter a query above and click Search to see results.</p>
+</div>
+{% endif %}

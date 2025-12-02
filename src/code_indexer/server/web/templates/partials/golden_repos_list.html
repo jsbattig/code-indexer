@@ -1,0 +1,110 @@
+<h2>Golden Repositories</h2>
+
+<table class="golden-repos-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Path/URL</th>
+            <th>Status</th>
+            <th>Last Indexed</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if repos %}
+        {% for repo in repos %}
+        <tr>
+            <td>{{ repo.alias }}</td>
+            <td class="repo-url" title="{{ repo.repo_url }}">{{ repo.repo_url | truncate(50) }}</td>
+            <td class="status-cell">
+                {% if repo.status == 'indexing' %}
+                <span class="status-indicator status-indexing" title="Indexing in progress">
+                    <span class="spinner"></span> Indexing
+                </span>
+                {% elif repo.status == 'error' %}
+                <span class="status-indicator status-error" title="Error: {{ repo.error_message }}">
+                    Error
+                </span>
+                {% else %}
+                <span class="status-indicator status-ready">
+                    Ready
+                </span>
+                {% endif %}
+            </td>
+            <td>{{ repo.last_indexed or 'Never' }}</td>
+            <td class="actions-cell">
+                <button class="outline small" onclick="toggleDetails('{{ repo.alias }}')" title="View details">Details</button>
+                <button class="outline small" onclick="confirmRefresh('{{ repo.alias }}')" {% if repo.status == 'indexing' %}disabled title="Currently indexing"{% else %}title="Re-index repository"{% endif %}>Refresh</button>
+                <button class="outline small danger" onclick="confirmDelete('{{ repo.alias }}')" title="Delete repository">Delete</button>
+            </td>
+        </tr>
+
+        <!-- Details Row (hidden by default) -->
+        <tr id="details-{{ repo.alias }}" class="details-row" style="display: none;">
+            <td colspan="5">
+                <article class="repo-details">
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <label>Name:</label>
+                            <span>{{ repo.alias }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Path/URL:</label>
+                            <span>{{ repo.repo_url }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Branch:</label>
+                            <span>{{ repo.default_branch or 'main' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Status:</label>
+                            <span>{{ repo.status or 'ready' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Created:</label>
+                            <span>{{ repo.created_at or 'N/A' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Last Indexed:</label>
+                            <span>{{ repo.last_indexed or 'Never' }}</span>
+                        </div>
+                        {% if repo.file_count is defined %}
+                        <div class="detail-item">
+                            <label>Files Indexed:</label>
+                            <span>{{ repo.file_count }}</span>
+                        </div>
+                        {% endif %}
+                        {% if repo.chunk_count is defined %}
+                        <div class="detail-item">
+                            <label>Chunks Indexed:</label>
+                            <span>{{ repo.chunk_count }}</span>
+                        </div>
+                        {% endif %}
+                        {% if repo.error_message %}
+                        <div class="detail-item error-details">
+                            <label>Error:</label>
+                            <span class="error-text">{{ repo.error_message }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </article>
+            </td>
+        </tr>
+
+        <!-- Delete Form (hidden) -->
+        <form id="delete-form-{{ repo.alias }}" method="post" action="/admin/golden-repos/{{ repo.alias }}/delete" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        </form>
+
+        <!-- Refresh Form (hidden) -->
+        <form id="refresh-form-{{ repo.alias }}" method="post" action="/admin/golden-repos/{{ repo.alias }}/refresh" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        </form>
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="5" class="no-data">No golden repositories configured. Click "Add Repository" to add one.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>

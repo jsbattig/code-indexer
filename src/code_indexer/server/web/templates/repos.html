@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Activated Repositories - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="repos-header">
+    <h1>Activated Repository Management</h1>
+    <div class="repos-actions">
+        <button
+            id="refresh-btn"
+            class="outline"
+            hx-get="/admin/partials/repos-list"
+            hx-target="#repos-list-section"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-indicator"
+        >
+            Refresh
+        </button>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Filters Section -->
+<section id="filters-section" class="filters-section">
+    <form id="filter-form" method="get" action="/admin/repos">
+        <div class="filter-row">
+            <div class="filter-item">
+                <label for="search">Search</label>
+                <input
+                    type="search"
+                    id="search"
+                    name="search"
+                    placeholder="Search by name, user, or golden repo..."
+                    value="{{ search or '' }}"
+                    hx-get="/admin/partials/repos-list"
+                    hx-target="#repos-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="keyup changed delay:300ms"
+                    hx-include="#filter-form"
+                >
+            </div>
+
+            <div class="filter-item">
+                <label for="golden_repo">Golden Repo</label>
+                <select
+                    id="golden_repo"
+                    name="golden_repo"
+                    hx-get="/admin/partials/repos-list"
+                    hx-target="#repos-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="change"
+                    hx-include="#filter-form"
+                >
+                    <option value="">All Golden Repos</option>
+                    {% for repo in golden_repos %}
+                    <option value="{{ repo }}" {% if golden_repo_filter == repo %}selected{% endif %}>{{ repo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <label for="user">User</label>
+                <select
+                    id="user"
+                    name="user"
+                    hx-get="/admin/partials/repos-list"
+                    hx-target="#repos-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="change"
+                    hx-include="#filter-form"
+                >
+                    <option value="">All Users</option>
+                    {% for u in users %}
+                    <option value="{{ u }}" {% if user_filter == u %}selected{% endif %}>{{ u }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-item filter-actions">
+                <label>&nbsp;</label>
+                <button type="button" class="outline" onclick="clearFilters()">Clear Filters</button>
+            </div>
+        </div>
+    </form>
+</section>
+
+<!-- Activated Repositories List Section -->
+<section id="repos-list-section">
+    {% include "partials/repos_list.html" %}
+</section>
+
+<!-- Auto-refresh for syncing repositories -->
+<div id="auto-refresh-container" style="display: none;"
+    hx-get="/admin/partials/repos-list"
+    hx-trigger="every 10s"
+    hx-target="#repos-list-section"
+    hx-swap="innerHTML"
+    hx-include="#filter-form">
+</div>
+
+<script>
+function clearFilters() {
+    document.getElementById('search').value = '';
+    document.getElementById('golden_repo').value = '';
+    document.getElementById('user').value = '';
+    // Trigger htmx request to refresh list
+    htmx.ajax('GET', '/admin/partials/repos-list', {target: '#repos-list-section', swap: 'innerHTML'});
+}
+
+function confirmDeactivate(username, userAlias) {
+    if (confirm('Are you sure you want to deactivate repository "' + userAlias + '" for user "' + username + '"? This action cannot be undone.')) {
+        document.getElementById('deactivate-form-' + username + '-' + userAlias).submit();
+    }
+}
+
+function toggleDetails(username, userAlias) {
+    const details = document.getElementById('details-' + username + '-' + userAlias);
+    if (details) {
+        details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
+    }
+}
+
+// Enable auto-refresh when there are syncing repositories
+function checkForSyncing() {
+    const syncingIndicators = document.querySelectorAll('.status-syncing');
+    const autoRefreshContainer = document.getElementById('auto-refresh-container');
+    if (syncingIndicators.length > 0) {
+        autoRefreshContainer.style.display = 'block';
+    } else {
+        autoRefreshContainer.style.display = 'none';
+    }
+}
+
+// Check on page load
+document.addEventListener('DOMContentLoaded', checkForSyncing);
+
+// Check after htmx swaps
+document.body.addEventListener('htmx:afterSwap', checkForSyncing);
+</script>
+{% endblock %}

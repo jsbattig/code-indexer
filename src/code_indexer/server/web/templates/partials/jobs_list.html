@@ -1,0 +1,197 @@
+<h2>Jobs</h2>
+
+<table class="jobs-table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Repository</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Started</th>
+            <th>Duration</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if jobs %}
+        {% for job in jobs %}
+        <tr>
+            <td>
+                <a href="#" onclick="toggleDetails('{{ job.job_id }}'); return false;" title="{{ job.job_id }}">
+                    {{ job.job_id[:8] }}...
+                </a>
+            </td>
+            <td>{{ job.job_type or job.operation_type or 'Unknown' }}</td>
+            <td>{{ job.repository_name or job.user_alias or 'N/A' }}</td>
+            <td class="status-cell">
+                {% if job.status == 'queued' or job.status == 'pending' %}
+                <span class="status-indicator status-queued" title="Waiting in queue">
+                    Queued
+                </span>
+                {% elif job.status == 'running' %}
+                <span class="status-indicator status-running" title="Currently executing">
+                    <span class="spinner"></span> Running
+                </span>
+                {% elif job.status == 'completed' %}
+                <span class="status-indicator status-completed" title="Completed successfully">
+                    Completed
+                </span>
+                {% elif job.status == 'failed' %}
+                <span class="status-indicator status-failed" title="{{ job.error_message or 'Job failed' }}">
+                    Failed
+                </span>
+                {% elif job.status == 'cancelled' %}
+                <span class="status-indicator status-cancelled" title="Cancelled by user">
+                    Cancelled
+                </span>
+                {% else %}
+                <span class="status-indicator status-unknown">
+                    {{ job.status }}
+                </span>
+                {% endif %}
+            </td>
+            <td class="progress-cell">
+                {% if job.status == 'running' %}
+                <div class="progress-container">
+                    <progress value="{{ job.progress or 0 }}" max="100"></progress>
+                    <span class="progress-text">{{ job.progress or 0 }}%</span>
+                </div>
+                {% if job.progress_info %}
+                <small class="progress-details">{{ job.progress_info }}</small>
+                {% endif %}
+                {% elif job.status == 'completed' %}
+                <span class="progress-complete">100%</span>
+                {% elif job.status == 'queued' or job.status == 'pending' %}
+                <span class="progress-waiting">Waiting...</span>
+                {% else %}
+                <span class="progress-na">-</span>
+                {% endif %}
+            </td>
+            <td>{{ job.started_at[:16] if job.started_at else (job.created_at[:16] if job.created_at else 'N/A') }}</td>
+            <td>
+                {% if job.duration_seconds is defined and job.duration_seconds is not none %}
+                {{ (job.duration_seconds // 60)|int }}m {{ (job.duration_seconds % 60)|int }}s
+                {% elif job.completed_at and job.started_at %}
+                -
+                {% else %}
+                -
+                {% endif %}
+            </td>
+            <td class="actions-cell">
+                <button class="outline small" onclick="toggleDetails('{{ job.job_id }}')" title="View details">Details</button>
+                {% if job.status == 'running' or job.status == 'queued' or job.status == 'pending' %}
+                <button class="outline small danger" onclick="confirmCancel('{{ job.job_id }}', '{{ job.job_type or job.operation_type }}')" title="Cancel job">Cancel</button>
+                {% endif %}
+            </td>
+        </tr>
+
+        <!-- Details Row (hidden by default) -->
+        <tr id="details-{{ job.job_id }}" class="details-row" style="display: none;">
+            <td colspan="8">
+                <article class="job-details">
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <label>Job ID:</label>
+                            <span>{{ job.job_id }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Type:</label>
+                            <span>{{ job.job_type or job.operation_type or 'Unknown' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Repository:</label>
+                            <span>{{ job.repository_name or job.user_alias or 'N/A' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>User:</label>
+                            <span>{{ job.username or 'N/A' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Status:</label>
+                            <span>{{ job.status }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Progress:</label>
+                            <span>{{ job.progress or 0 }}%</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Created:</label>
+                            <span>{{ job.created_at or 'N/A' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Started:</label>
+                            <span>{{ job.started_at or 'N/A' }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Completed:</label>
+                            <span>{{ job.completed_at or 'N/A' }}</span>
+                        </div>
+                        {% if job.queue_position is defined and job.queue_position %}
+                        <div class="detail-item">
+                            <label>Queue Position:</label>
+                            <span>{{ job.queue_position }}</span>
+                        </div>
+                        {% endif %}
+                        {% if job.estimated_wait_minutes is defined and job.estimated_wait_minutes %}
+                        <div class="detail-item">
+                            <label>Estimated Wait:</label>
+                            <span>{{ job.estimated_wait_minutes }} minutes</span>
+                        </div>
+                        {% endif %}
+                        {% if job.error_message %}
+                        <div class="detail-item error-details full-width">
+                            <label>Error:</label>
+                            <span class="error-text">{{ job.error_message }}</span>
+                        </div>
+                        {% endif %}
+                        {% if job.repository_url %}
+                        <div class="detail-item full-width">
+                            <label>Repository URL:</label>
+                            <span>{{ job.repository_url }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </article>
+            </td>
+        </tr>
+
+        <!-- Cancel Form (hidden) -->
+        {% if job.status == 'running' or job.status == 'queued' or job.status == 'pending' %}
+        <form id="cancel-form-{{ job.job_id }}" method="post" action="/admin/jobs/{{ job.job_id }}/cancel" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        </form>
+        {% endif %}
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="8" class="no-data">No jobs found. Jobs will appear here when repositories are added, refreshed, or activated.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{% if total_pages is defined and total_pages > 1 %}
+<!-- Pagination -->
+<nav class="pagination">
+    <ul>
+        {% if page > 1 %}
+        <li>
+            <a href="/admin/jobs?page={{ page - 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if type_filter %}&job_type={{ type_filter }}{% endif %}{% if search %}&search={{ search }}{% endif %}">&laquo; Previous</a>
+        </li>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+        <li>
+            <a href="/admin/jobs?page={{ p }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if type_filter %}&job_type={{ type_filter }}{% endif %}{% if search %}&search={{ search }}{% endif %}" {% if p == page %}aria-current="page"{% endif %}>{{ p }}</a>
+        </li>
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <li>
+            <a href="/admin/jobs?page={{ page + 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if type_filter %}&job_type={{ type_filter }}{% endif %}{% if search %}&search={{ search }}{% endif %}">Next &raquo;</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
