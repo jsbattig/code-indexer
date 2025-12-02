@@ -16,7 +16,6 @@ from typing import Dict, List, Any, Optional
 from code_indexer.server.auth.dependencies import get_current_user
 from code_indexer.server.auth.user_manager import User
 from code_indexer.global_repos.shared_operations import GlobalRepoOperations
-from code_indexer.server import app as app_module
 
 
 # Router with /global prefix
@@ -49,6 +48,9 @@ def _get_golden_repos_dir() -> str:
     # Check test override first
     if _golden_repos_dir:
         return _golden_repos_dir
+
+    # Lazy import to avoid circular dependency (app.py imports this module)
+    from code_indexer.server import app as app_module
 
     # Get from app.state
     golden_repos_dir: Optional[str] = cast(

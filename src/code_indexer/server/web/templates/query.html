@@ -45,7 +45,39 @@
                             {% if search_mode == 'hybrid' %}checked{% endif %}>
                         <span>Hybrid</span>
                     </label>
+                    <label>
+                        <input type="radio" name="search_mode" value="temporal"
+                            {% if search_mode == 'temporal' %}checked{% endif %}>
+                        <span>Temporal (Git History)</span>
+                    </label>
                 </div>
+            </fieldset>
+
+            <!-- FTS Search Options (shown only when FTS or Hybrid mode selected) -->
+            <fieldset id="fts-options-fieldset" class="fts-options-fieldset" style="{% if search_mode != 'fts' and search_mode != 'hybrid' %}display: none;{% endif %}">
+                <legend>Full-Text Search Options</legend>
+
+                <div class="fts-options-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="case_sensitive" value="true"
+                            {% if case_sensitive %}checked{% endif %}>
+                        Case sensitive
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="fuzzy" value="true"
+                            {% if fuzzy %}checked{% endif %}>
+                        Fuzzy matching
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="regex" value="true"
+                            {% if regex %}checked{% endif %}>
+                        Regex pattern
+                    </label>
+                </div>
+
+                <small class="field-hint">Note: Fuzzy and Regex are mutually exclusive</small>
             </fieldset>
 
             <!-- Query Text -->
@@ -62,11 +94,30 @@
             <label for="repository">Repository <span class="required">*</span></label>
             <select id="repository" name="repository" required>
                 <option value="">Select a repository...</option>
-                {% for repo in repositories %}
-                <option value="{{ repo.user_alias }}" {% if selected_repository == repo.user_alias %}selected{% endif %}>
-                    {{ repo.user_alias }} ({{ repo.username }})
-                </option>
-                {% endfor %}
+                {% set has_global = repositories | selectattr('is_global', 'true') | list | length > 0 %}
+                {% set has_user = repositories | rejectattr('is_global', 'true') | list | length > 0 %}
+                {% if has_global %}
+                <optgroup label="Global Repositories">
+                    {% for repo in repositories %}
+                    {% if repo.is_global %}
+                    <option value="{{ repo.user_alias }}" {% if selected_repository == repo.user_alias %}selected{% endif %}>
+                        {{ repo.user_alias }}
+                    </option>
+                    {% endif %}
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if has_user %}
+                <optgroup label="User Repositories">
+                    {% for repo in repositories %}
+                    {% if not repo.is_global %}
+                    <option value="{{ repo.user_alias }}" {% if selected_repository == repo.user_alias %}selected{% endif %}>
+                        {{ repo.user_alias }} ({{ repo.username }})
+                    </option>
+                    {% endif %}
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
             </select>
 
             <!-- Limit -->
@@ -80,6 +131,34 @@
                 value="{{ limit or 10 }}"
                 placeholder="10"
             >
+
+            <!-- Temporal Search Options (shown only when temporal mode selected) -->
+            <fieldset id="temporal-options-fieldset" class="temporal-options-fieldset" style="{% if search_mode != 'temporal' %}display: none;{% endif %}">
+                <legend>Temporal Search Options</legend>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" name="time_range_all" value="true"
+                        {% if time_range_all %}checked{% endif %}>
+                    Search all git history
+                </label>
+
+                <label for="time_range">Time Range</label>
+                <input type="text" id="time_range" name="time_range"
+                    placeholder="YYYY-MM-DD..YYYY-MM-DD"
+                    value="{{ time_range or '' }}">
+                <small class="field-hint">Format: 2024-01-01..2024-12-31</small>
+
+                <label for="at_commit">At Specific Commit</label>
+                <input type="text" id="at_commit" name="at_commit"
+                    placeholder="commit hash or ref"
+                    value="{{ at_commit or '' }}">
+
+                <label class="checkbox-label">
+                    <input type="checkbox" name="include_removed" value="true"
+                        {% if include_removed %}checked{% endif %}>
+                    Include removed files
+                </label>
+            </fieldset>
 
             <!-- Advanced Options (Collapsible) -->
             <details class="advanced-options">
@@ -178,6 +257,33 @@
 </section>
 
 <script>
+// Show/hide temporal and FTS options based on search mode
+function updateSearchModeOptions() {
+    const temporalFieldset = document.getElementById('temporal-options-fieldset');
+    const ftsFieldset = document.getElementById('fts-options-fieldset');
+    const selectedMode = document.querySelector('input[name="search_mode"]:checked');
+
+    if (!selectedMode) return;
+
+    // Temporal options: only for temporal mode
+    if (temporalFieldset) {
+        temporalFieldset.style.display = (selectedMode.value === 'temporal') ? 'block' : 'none';
+    }
+
+    // FTS options: for fts or hybrid modes
+    if (ftsFieldset) {
+        ftsFieldset.style.display = (selectedMode.value === 'fts' || selectedMode.value === 'hybrid') ? 'block' : 'none';
+    }
+}
+
+// Attach event listeners to search mode radios
+document.querySelectorAll('input[name="search_mode"]').forEach(radio => {
+    radio.addEventListener('change', updateSearchModeOptions);
+});
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', updateSearchModeOptions);
+
 function loadHistoryQuery(queryText, repository, searchMode) {
     // Fill form with history query
     document.getElementById('query_text').value = queryText;
@@ -188,6 +294,9 @@ function loadHistoryQuery(queryText, repository, searchMode) {
     modeRadios.forEach(radio => {
         radio.checked = (radio.value === searchMode);
     });
+
+    // Update search mode options visibility after setting search mode
+    updateSearchModeOptions();
 
     // Optionally auto-submit
     // document.getElementById('query-form').submit();

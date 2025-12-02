@@ -116,19 +116,8 @@ class BackgroundJobManager:
         Raises:
             Exception: If user has exceeded max jobs limit (if configured)
         """
-        # Check user job limit only if configured
-        if self.resource_config.max_jobs_per_user is not None:
-            with self._lock:
-                user_active_jobs = sum(
-                    1
-                    for job in self.jobs.values()
-                    if job.username == submitter_username
-                    and job.status in [JobStatus.PENDING, JobStatus.RUNNING]
-                )
-                if user_active_jobs >= self.resource_config.max_jobs_per_user:
-                    raise Exception(
-                        f"Maximum number of jobs exceeded for user {submitter_username} ({self.resource_config.max_jobs_per_user})"
-                    )
+        # NOTE: max_jobs_per_user limit has been removed as an artificial constraint
+        # Jobs are no longer limited per user
 
         job_id = str(uuid.uuid4())
 

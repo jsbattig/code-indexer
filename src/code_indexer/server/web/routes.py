@@ -1783,6 +1783,13 @@ def _create_query_page_response(
     query_executed: bool = False,
     error_message: Optional[str] = None,
     success_message: Optional[str] = None,
+    time_range_all: bool = False,
+    time_range: str = "",
+    at_commit: str = "",
+    include_removed: bool = False,
+    case_sensitive: bool = False,
+    fuzzy: bool = False,
+    regex: bool = False,
 ) -> HTMLResponse:
     """Create query page response with all necessary context."""
     csrf_token = generate_csrf_token()
@@ -1810,6 +1817,13 @@ def _create_query_page_response(
             "query_executed": query_executed,
             "error_message": error_message,
             "success_message": success_message,
+            "time_range_all": time_range_all,
+            "time_range": time_range,
+            "at_commit": at_commit,
+            "include_removed": include_removed,
+            "case_sensitive": case_sensitive,
+            "fuzzy": fuzzy,
+            "regex": regex,
         },
     )
 
@@ -1840,6 +1854,13 @@ async def query_submit(
     path_pattern: str = Form(""),
     min_score: str = Form(""),
     csrf_token: Optional[str] = Form(None),
+    time_range_all: bool = Form(False),
+    time_range: str = Form(""),
+    at_commit: str = Form(""),
+    include_removed: bool = Form(False),
+    case_sensitive: bool = Form(False),
+    fuzzy: bool = Form(False),
+    regex: bool = Form(False),
 ):
     """Process query form submission."""
     session = _require_admin_session(request)
@@ -1861,6 +1882,13 @@ async def query_submit(
             path_pattern=path_pattern,
             min_score=min_score,
             error_message="Invalid CSRF token",
+            time_range_all=time_range_all,
+            time_range=time_range,
+            at_commit=at_commit,
+            include_removed=include_removed,
+            case_sensitive=case_sensitive,
+            fuzzy=fuzzy,
+            regex=regex,
         )
 
     # Validate required fields
@@ -1876,6 +1904,13 @@ async def query_submit(
             path_pattern=path_pattern,
             min_score=min_score,
             error_message="Query text is required",
+            time_range_all=time_range_all,
+            time_range=time_range,
+            at_commit=at_commit,
+            include_removed=include_removed,
+            case_sensitive=case_sensitive,
+            fuzzy=fuzzy,
+            regex=regex,
         )
 
     if not repository:
@@ -1890,10 +1925,22 @@ async def query_submit(
             path_pattern=path_pattern,
             min_score=min_score,
             error_message="Please select a repository",
+            time_range_all=time_range_all,
+            time_range=time_range,
+            at_commit=at_commit,
+            include_removed=include_removed,
+            case_sensitive=case_sensitive,
+            fuzzy=fuzzy,
+            regex=regex,
         )
 
     # Add to query history
     _add_to_query_history(session.username, query_text.strip(), repository, search_mode)
+
+    # Handle temporal search mode - default to time_range_all if no specific temporal params
+    if search_mode == "temporal":
+        if not time_range and not at_commit and not time_range_all:
+            time_range_all = True
 
     # Parse min_score
     parsed_min_score = None
@@ -1988,9 +2035,16 @@ async def query_submit(
                     language=language if language else None,
                     path_filter=path_pattern if path_pattern else None,
                     search_mode=search_mode,
+                    time_range=time_range if time_range else None,
+                    time_range_all=time_range_all,
+                    at_commit=at_commit if at_commit else None,
+                    include_removed=include_removed,
+                    case_sensitive=case_sensitive,
+                    fuzzy=fuzzy,
+                    regex=regex,
                 )
 
-                # Convert results to template format
+                # Convert results to template format with full metadata
                 for result in query_response.get("results", []):
                     results.append({
                         "file_path": result.get("file_path", ""),
@@ -1998,6 +2052,10 @@ async def query_submit(
                         "content": result.get("code_snippet", ""),
                         "score": result.get("similarity_score", 0.0),
                         "language": _detect_language_from_path(result.get("file_path", "")),
+                        "repository_alias": result.get("repository_alias", ""),
+                        "source_repo": result.get("source_repo"),
+                        "metadata": result.get("metadata"),
+                        "temporal_context": result.get("temporal_context"),
                     })
 
     except Exception as e:
@@ -2017,6 +2075,13 @@ async def query_submit(
         results=results if not error_message else None,
         query_executed=query_executed,
         error_message=error_message,
+        time_range_all=time_range_all,
+        time_range=time_range,
+        at_commit=at_commit,
+        include_removed=include_removed,
+        case_sensitive=case_sensitive,
+        fuzzy=fuzzy,
+        regex=regex,
     )
 
 
@@ -2070,6 +2135,13 @@ async def query_results_partial_post(
     path_pattern: str = Form(""),
     min_score: str = Form(""),
     csrf_token: Optional[str] = Form(None),
+    time_range_all: bool = Form(False),
+    time_range: str = Form(""),
+    at_commit: str = Form(""),
+    include_removed: bool = Form(False),
+    case_sensitive: bool = Form(False),
+    fuzzy: bool = Form(False),
+    regex: bool = Form(False),
 ):
     """
     Execute query and return results partial via htmx.
@@ -2120,6 +2192,11 @@ async def query_results_partial_post(
     _add_to_query_history(
         session.username, query_text.strip(), repository, search_mode
     )
+
+    # Handle temporal search mode - default to time_range_all if no specific temporal params
+    if search_mode == "temporal":
+        if not time_range and not at_commit and not time_range_all:
+            time_range_all = True
 
     # Parse min_score
     parsed_min_score = None
@@ -2214,9 +2291,16 @@ async def query_results_partial_post(
                     language=language if language else None,
                     path_filter=path_pattern if path_pattern else None,
                     search_mode=search_mode,
+                    time_range=time_range if time_range else None,
+                    time_range_all=time_range_all,
+                    at_commit=at_commit if at_commit else None,
+                    include_removed=include_removed,
+                    case_sensitive=case_sensitive,
+                    fuzzy=fuzzy,
+                    regex=regex,
                 )
 
-                # Convert results to template format
+                # Convert results to template format with full metadata
                 for result in query_response.get("results", []):
                     results.append({
                         "file_path": result.get("file_path", ""),
@@ -2224,6 +2308,10 @@ async def query_results_partial_post(
                         "content": result.get("code_snippet", ""),
                         "score": result.get("similarity_score", 0.0),
                         "language": _detect_language_from_path(result.get("file_path", "")),
+                        "repository_alias": result.get("repository_alias", ""),
+                        "source_repo": result.get("source_repo"),
+                        "metadata": result.get("metadata"),
+                        "temporal_context": result.get("temporal_context"),
                     })
 
     except Exception as e:
@@ -2239,6 +2327,7 @@ async def query_results_partial_post(
             "query_executed": query_executed,
             "query_text": query_text,
             "error_message": error_message,
+            "search_mode": search_mode,
         },
     )
 

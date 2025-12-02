@@ -142,6 +142,9 @@
 </div>
 
 <script>
+// Track open details rows
+let openDetailsSet = new Set();
+
 function toggleAddForm() {
     const form = document.getElementById('add-repo-form');
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
@@ -162,8 +165,25 @@ function confirmRefresh(alias) {
 function toggleDetails(alias) {
     const details = document.getElementById('details-' + alias);
     if (details) {
-        details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
+        const isHidden = details.style.display === 'none';
+        details.style.display = isHidden ? 'table-row' : 'none';
+        // Track open/closed state
+        if (isHidden) {
+            openDetailsSet.add(alias);
+        } else {
+            openDetailsSet.delete(alias);
+        }
     }
+}
+
+function restoreOpenDetails() {
+    // Restore previously open details rows after content refresh
+    openDetailsSet.forEach(alias => {
+        const details = document.getElementById('details-' + alias);
+        if (details) {
+            details.style.display = 'table-row';
+        }
+    });
 }
 
 function showActivateModal(alias) {
@@ -195,7 +215,10 @@ function checkForIndexing() {
 // Check on page load
 document.addEventListener('DOMContentLoaded', checkForIndexing);
 
-// Check after htmx swaps
-document.body.addEventListener('htmx:afterSwap', checkForIndexing);
+// Check after htmx swaps and restore open details
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    checkForIndexing();
+    restoreOpenDetails();
+});
 </script>
 {% endblock %}

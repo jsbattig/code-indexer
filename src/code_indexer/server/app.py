@@ -1661,8 +1661,7 @@ def create_app() -> FastAPI:
     # Initialize managers with resource configuration
     data_dir = str(Path(server_data_dir) / "data")
     golden_repo_manager = GoldenRepoManager(
-        data_dir=data_dir,
-        resource_config=server_config.resource_config
+        data_dir=data_dir, resource_config=server_config.resource_config
     )
     background_job_manager = BackgroundJobManager(
         resource_config=server_config.resource_config
@@ -1670,6 +1669,7 @@ def create_app() -> FastAPI:
     # Inject BackgroundJobManager into GoldenRepoManager for async operations
     golden_repo_manager.background_job_manager = background_job_manager
     activated_repo_manager = ActivatedRepoManager(
+        data_dir=data_dir,
         golden_repo_manager=golden_repo_manager,
         background_job_manager=background_job_manager,
     )
@@ -1678,6 +1678,7 @@ def create_app() -> FastAPI:
         activated_repo_manager=activated_repo_manager,
     )
     semantic_query_manager = SemanticQueryManager(
+        data_dir=data_dir,
         activated_repo_manager=activated_repo_manager,
         background_job_manager=background_job_manager,
     )
@@ -2730,9 +2731,7 @@ def create_app() -> FastAPI:
                     repo_data.temporal_options.model_dump()
                 )
 
-            job_id = background_job_manager.submit_job(
-                "add_golden_repo",
-                golden_repo_manager.add_golden_repo,  # type: ignore[arg-type]
+            job_id = golden_repo_manager.add_golden_repo(
                 submitter_username=current_user.username,
                 **func_kwargs,  # type: ignore[arg-type]
             )
@@ -2770,10 +2769,8 @@ def create_app() -> FastAPI:
             HTTPException: If job submission fails
         """
         try:
-            # Submit background job for refreshing golden repo
-            job_id = background_job_manager.submit_job(
-                "refresh_golden_repo",
-                golden_repo_manager.refresh_golden_repo,  # type: ignore[arg-type]
+            # Directly call refresh_golden_repo which submits its own job internally
+            job_id = golden_repo_manager.refresh_golden_repo(
                 alias=alias,
                 submitter_username=current_user.username,
             )
@@ -4156,6 +4153,38 @@ def create_app() -> FastAPI:
                     current_user.username
                 )
 
+                # ALSO get global repos from GlobalRegistry (same pattern as semantic search)
+                global_repos_list = []
+                try:
+                    from pathlib import Path as PathLib
+                    from code_indexer.global_repos.global_registry import GlobalRegistry
+
+                    data_dir = PathLib(
+                        activated_repo_manager.activated_repos_dir
+                    ).parent
+                    golden_repos_dir = data_dir / "golden-repos"
+
+                    if golden_repos_dir.exists():
+                        registry = GlobalRegistry(str(golden_repos_dir))
+                        global_repos = registry.list_global_repos()
+
+                        for global_repo in global_repos:
+                            global_repos_list.append(
+                                {
+                                    "user_alias": global_repo["alias_name"],
+                                    "username": "global",
+                                    "is_global": True,
+                                    "repo_url": global_repo.get("repo_url", ""),
+                                }
+                            )
+                except Exception as e:
+                    import logging
+
+                    logging.warning(f"Failed to load global repos for FTS/hybrid: {e}")
+
+                # Merge user repos and global repos
+                activated_repos = activated_repos + global_repos_list
+
                 if not activated_repos:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -4179,12 +4208,22 @@ def create_app() -> FastAPI:
                 fts_available = False
                 repo_path = None
                 for repo in activated_repos:
-                    # Construct path from activated_repos_dir + username + user_alias
-                    repo_path = (
-                        PathLib(activated_repo_manager.activated_repos_dir)
-                        / current_user.username
-                        / repo["user_alias"]
-                    )
+                    # Construct path - different for global vs user repos
+                    if repo.get("is_global"):
+                        # Global repos: golden-repos/alias (strip -global suffix from alias_name)
+                        data_dir = PathLib(
+                            activated_repo_manager.activated_repos_dir
+                        ).parent
+                        # Strip -global suffix to get actual directory name
+                        repo_dir_name = repo["user_alias"].removesuffix("-global")
+                        repo_path = data_dir / "golden-repos" / repo_dir_name
+                    else:
+                        # User repos: activated-repos/username/alias
+                        repo_path = (
+                            PathLib(activated_repo_manager.activated_repos_dir)
+                            / current_user.username
+                            / repo["user_alias"]
+                        )
                     fts_index_dir = repo_path / ".code-indexer" / "tantivy_index"
                     if fts_index_dir.exists():
                         fts_available = True
@@ -5783,7 +5822,11 @@ def create_app() -> FastAPI:
     # Mount static files for web UI
     web_static_dir = PathLib(__file__).parent / "web" / "static"
     if web_static_dir.exists():
-        app.mount("/admin/static", StaticFiles(directory=str(web_static_dir)), name="admin_static")
+        app.mount(
+            "/admin/static",
+            StaticFiles(directory=str(web_static_dir)),
+            name="admin_static",
+        )
 
     # Include web router with /admin prefix
     app.include_router(web_router, prefix="/admin", tags=["admin"])
@@ -5805,6 +5848,7 @@ def create_app() -> FastAPI:
     async def favicon():
         """Redirect favicon.ico to admin static files."""
         from fastapi.responses import RedirectResponse
+
         return RedirectResponse(url="/admin/static/favicon.svg", status_code=302)
 
     return app

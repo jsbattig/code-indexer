@@ -89,6 +89,9 @@ class GlobalActivator:
                 temporal_options=temporal_options,
             )
 
+            # Step 3: Generate meta-directory description file (Story #523)
+            self._generate_meta_description_file(repo_name, repo_url, clone_path)
+
             logger.info(f"Global activation complete: {alias_name}")
 
         except Exception as e:
@@ -158,7 +161,6 @@ class GlobalActivator:
             repo_name: Repository name (used for .md filename)
         """
         import subprocess
-        from pathlib import Path
 
         meta_dir = self.golden_repos_dir / "cidx-meta"
 
@@ -205,6 +207,93 @@ class GlobalActivator:
                 logger.warning("cidx command not found for meta-directory re-indexing")
             except Exception as e:
                 logger.warning(f"Meta-directory re-indexing failed: {e}")
+
+    def _generate_meta_description_file(
+        self, repo_name: str, repo_url: str, clone_path: str
+    ) -> None:
+        """
+        Generate meta-directory description file for a newly activated repository.
+
+        Uses AI-powered analysis (Claude CLI) to generate comprehensive metadata.
+
+        Args:
+            repo_name: Repository name (used for .md filename)
+            repo_url: Git repository URL
+            clone_path: Path to the cloned repository
+        """
+        import subprocess
+
+        from .description_generator import DescriptionGenerator
+        from .repo_analyzer import RepoAnalyzer
+
+        meta_dir = self.golden_repos_dir / "cidx-meta"
+
+        try:
+            # Ensure meta-directory exists
+            meta_dir.mkdir(parents=True, exist_ok=True)
+
+            # Analyze repository with Claude CLI (or fallback to static)
+            analyzer = RepoAnalyzer(clone_path)
+            info = analyzer.extract_info()
+
+            # Generate description file
+            generator = DescriptionGenerator(str(meta_dir))
+            generator.create_description(
+                repo_name=repo_name,
+                repo_url=repo_url,
+                description=info.summary,
+                technologies=info.technologies,
+                purpose=info.purpose,
+                features=info.features,
+                use_cases=info.use_cases,
+            )
+
+            logger.info(f"Generated meta-directory description: {repo_name}.md")
+
+            # Initialize meta-directory if needed
+            if not (meta_dir / ".code-indexer").exists():
+                try:
+                    init_result = subprocess.run(
+                        ["cidx", "init"],
+                        cwd=str(meta_dir),
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if init_result.returncode == 0:
+                        logger.info(f"Initialized meta-directory: {meta_dir}")
+                    else:
+                        logger.warning(
+                            f"Meta-directory initialization failed: {init_result.stderr}"
+                        )
+                        return  # Can't index if init failed
+                except Exception as e:
+                    logger.warning(f"Meta-directory initialization failed: {e}")
+                    return
+
+            # Re-index meta-directory (always, since we created or already have .code-indexer)
+            try:
+                result = subprocess.run(
+                    ["cidx", "index"],
+                    cwd=str(meta_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if result.returncode == 0:
+                    logger.info(f"Re-indexed meta-directory: {meta_dir}")
+                else:
+                    logger.warning(
+                        f"Meta-directory re-indexing returned non-zero: {result.stderr}"
+                    )
+            except Exception as e:
+                logger.warning(f"Meta-directory re-indexing failed: {e}")
+
+        except Exception as e:
+            # Log but don't fail activation - description generation is best-effort
+            logger.warning(
+                f"Failed to generate meta-directory description for {repo_name}: {e}"
+            )
 
     def is_globally_active(self, repo_name: str) -> bool:
         """

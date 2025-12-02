@@ -400,17 +400,45 @@ class SemanticQueryManager:
         # Get user's activated repositories
         user_repos = self.activated_repo_manager.list_activated_repositories(username)
 
-        if not user_repos:
+        # ALSO get global repos from GlobalRegistry
+        global_repos_list = []
+        try:
+            from code_indexer.global_repos.global_registry import GlobalRegistry
+
+            # Get golden repos dir from activated_repo_manager's data_dir
+            data_dir = Path(self.activated_repo_manager.activated_repos_dir).parent
+            golden_repos_dir = data_dir / "golden-repos"
+
+            if golden_repos_dir.exists():
+                registry = GlobalRegistry(str(golden_repos_dir))
+                global_repos = registry.list_global_repos()
+
+                # Format global repos to match user_repos structure
+                for global_repo in global_repos:
+                    global_repos_list.append({
+                        "user_alias": global_repo["alias_name"],
+                        "username": "global",
+                        "is_global": True,
+                        "repo_url": global_repo.get("repo_url", ""),
+                    })
+        except Exception as e:
+            # Log but don't fail if global repos can't be loaded
+            self.logger.warning(f"Failed to load global repos: {e}")
+
+        # Merge user repos and global repos
+        all_repos = user_repos + global_repos_list
+
+        if not all_repos:
             raise SemanticQueryError(
                 f"No activated repositories found for user '{username}'"
             )
 
         # Filter to specific repository if requested
         if repository_alias:
-            user_repos = [
-                repo for repo in user_repos if repo["user_alias"] == repository_alias
+            all_repos = [
+                repo for repo in all_repos if repo["user_alias"] == repository_alias
             ]
-            if not user_repos:
+            if not all_repos:
                 raise SemanticQueryError(
                     f"Repository '{repository_alias}' not found for user '{username}'"
                 )
@@ -420,7 +448,7 @@ class SemanticQueryManager:
         try:
             results = self._perform_search(
                 username,
-                user_repos,
+                all_repos,
                 query_text,
                 limit,
                 min_score,
@@ -467,7 +495,7 @@ class SemanticQueryManager:
         metadata = QueryMetadata(
             query_text=query_text,
             execution_time_ms=execution_time_ms,
-            repositories_searched=len(user_repos),
+            repositories_searched=len(all_repos),
             timeout_occurred=timeout_occurred,
         )
 
@@ -665,8 +693,24 @@ class SemanticQueryManager:
             try:
                 repo_alias = repo_info["user_alias"]
 
-                # Check if repo_path is already provided (e.g., for global repos)
-                if "repo_path" in repo_info and repo_info["repo_path"]:
+                # Handle global repos differently - resolve via AliasManager
+                if repo_info.get("is_global"):
+                    from code_indexer.global_repos.alias_manager import AliasManager
+
+                    data_dir = Path(self.activated_repo_manager.activated_repos_dir).parent
+                    aliases_dir = data_dir / "golden-repos" / "aliases"
+                    alias_manager = AliasManager(str(aliases_dir))
+
+                    target_path = alias_manager.read_alias(repo_alias)
+                    if not target_path:
+                        self.logger.warning(
+                            f"Global repo alias '{repo_alias}' could not be resolved, skipping"
+                        )
+                        continue  # Skip if alias can't be resolved
+
+                    repo_path = target_path
+                # Check if repo_path is already provided
+                elif "repo_path" in repo_info and repo_info["repo_path"]:
                     repo_path = repo_info["repo_path"]
                 else:
                     # Fall back to activated repo manager for regular activated repos
@@ -1594,6 +1638,9 @@ class SemanticQueryManager:
         Returns:
             Merged and deduplicated list of QueryResult objects
         """
+        # DEBUG: Log input parameters
+        self.logger.info(f"[HYBRID DEBUG] Starting RRF merge: fts_results={len(fts_results)}, semantic_results={len(semantic_results)}, limit={limit}")
+
         # Use file_path + line_number as key for deduplication
         seen_keys = set()
         merged_results = []
@@ -1614,6 +1661,9 @@ class SemanticQueryManager:
             rrf_score = 1.0 / (k + rank)
             rrf_scores[key] = rrf_scores.get(key, 0) + rrf_score
 
+        # DEBUG: Log unique keys after RRF calculation
+        self.logger.info(f"[HYBRID DEBUG] Total unique (file, line) keys after RRF calculation: {len(rrf_scores)}")
+
         # Create a mapping of keys to results (prefer FTS for content)
         result_map = {}
         for result in semantic_results:
@@ -1626,6 +1676,10 @@ class SemanticQueryManager:
 
         # Sort by RRF score and build merged results
         sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
+
+        # DEBUG: Log sorted keys count before slicing
+        self.logger.info(f"[HYBRID DEBUG] Sorted keys count: {len(sorted_keys)}, will slice to limit: {limit}")
+        self.logger.info(f"[HYBRID DEBUG] Top 10 sorted keys by RRF score: {sorted_keys[:10]}")
 
         for key in sorted_keys[:limit]:
             if key in result_map:
@@ -1640,5 +1694,8 @@ class SemanticQueryManager:
                     source_repo=result.source_repo,
                 )
                 merged_results.append(merged_result)
+
+        # DEBUG: Log final merged results count
+        self.logger.info(f"[HYBRID DEBUG] Final merged_results count: {len(merged_results)}")
 
         return merged_results

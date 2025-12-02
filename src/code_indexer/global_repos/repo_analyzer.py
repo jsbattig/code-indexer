@@ -3,16 +3,36 @@ Repository Analyzer for extracting information from repositories.
 
 Analyzes repository contents (README, package files, directory structure)
 to extract metadata for generating semantic descriptions.
+
+Supports Claude CLI integration for enhanced AI-powered analysis when
+CIDX_USE_CLAUDE_FOR_META environment variable is set to 'true' (default).
 """
 
+import json
 import logging
+import os
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
 
 logger = logging.getLogger(__name__)
+
+# Prompt for Claude CLI to analyze repository
+CLAUDE_ANALYSIS_PROMPT = """Analyze this repository and provide a JSON response with these exact fields:
+{
+  "summary": "2-3 sentence comprehensive description of what this repo does",
+  "technologies": ["list", "of", "technologies", "and", "languages", "detected"],
+  "features": ["key feature 1", "key feature 2", "..."],
+  "use_cases": ["primary use case 1", "use case 2", "..."],
+  "purpose": "one of: api, service, library, cli-tool, web-application, data-structure, utility, framework, general-purpose"
+}
+
+Examine README.md, package files (setup.py, package.json, Cargo.toml, go.mod, pom.xml, *.dpr, *.lpi), source code files, and directory structure.
+Be thorough - detect ALL technologies from file extensions and content.
+Output ONLY valid JSON, no markdown code blocks."""
 
 
 @dataclass
@@ -55,6 +75,97 @@ class RepoAnalyzer:
     def extract_info(self) -> RepoInfo:
         """
         Extract information from the repository.
+
+        Uses Claude CLI for AI-powered analysis if available and enabled,
+        otherwise falls back to static regex-based analysis.
+
+        Returns:
+            RepoInfo object containing extracted metadata
+        """
+        # Check if Claude is enabled (default: true)
+        use_claude = os.environ.get("CIDX_USE_CLAUDE_FOR_META", "true").lower() == "true"
+
+        if use_claude:
+            claude_result = self._extract_info_with_claude()
+            if claude_result is not None:
+                return claude_result
+            logger.info(
+                "Claude CLI analysis failed or unavailable, "
+                "falling back to static analysis for %s",
+                self.repo_path,
+            )
+
+        return self._extract_info_static()
+
+    def _extract_info_with_claude(self) -> Optional[RepoInfo]:
+        """
+        Extract repository information using Claude CLI.
+
+        Invokes the Claude CLI with a prompt to analyze the repository
+        and returns structured metadata.
+
+        Returns:
+            RepoInfo if Claude succeeds and returns valid JSON,
+            None otherwise (fallback to static analysis)
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "claude",
+                    "-p",
+                    CLAUDE_ANALYSIS_PROMPT,
+                    "--print",
+                ],
+                cwd=str(self.repo_path),
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode != 0:
+                logger.debug(
+                    "Claude CLI returned non-zero exit code: %d, stderr: %s",
+                    result.returncode,
+                    result.stderr,
+                )
+                return None
+
+            # Parse JSON response
+            data = json.loads(result.stdout)
+
+            # Validate required fields
+            required_fields = ["summary", "technologies", "features", "use_cases", "purpose"]
+            for field in required_fields:
+                if field not in data:
+                    logger.debug("Claude response missing required field: %s", field)
+                    return None
+
+            return RepoInfo(
+                summary=data["summary"],
+                technologies=data.get("technologies", []),
+                features=data.get("features", []),
+                use_cases=data.get("use_cases", []),
+                purpose=data.get("purpose", "general-purpose"),
+            )
+
+        except FileNotFoundError:
+            logger.debug("Claude CLI not found in PATH")
+            return None
+        except subprocess.TimeoutExpired:
+            logger.debug("Claude CLI timed out after 60 seconds")
+            return None
+        except json.JSONDecodeError as e:
+            logger.debug("Failed to parse Claude CLI JSON response: %s", e)
+            return None
+        except Exception as e:
+            logger.debug("Unexpected error during Claude CLI execution: %s", e)
+            return None
+
+    def _extract_info_static(self) -> RepoInfo:
+        """
+        Extract information using static regex-based analysis.
+
+        Fallback method when Claude CLI is unavailable or disabled.
 
         Returns:
             RepoInfo object containing extracted metadata

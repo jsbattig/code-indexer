@@ -5,7 +5,11 @@
 
 {% elif results %}
 <div class="results-info">
-    <p>Found <strong>{{ results|length }}</strong> result{% if results|length != 1 %}s{% endif %}{% if query_text %} for "{{ query_text }}"{% endif %}</p>
+    <p>Found <strong>{{ results|length }}</strong> result{% if results|length != 1 %}s{% endif %}{% if query_text %} for "{{ query_text }}"{% endif %}
+    {% if search_mode %}
+    <span class="search-mode-badge search-mode-{{ search_mode }}">{{ search_mode | capitalize }}</span>
+    {% endif %}
+    </p>
 </div>
 
 <div class="results-list">
@@ -33,8 +37,40 @@
                     {{ result.language }}
                 </span>
                 {% endif %}
+                {% if result.repository_alias %}
+                <span class="result-repo" title="Repository">
+                    {{ result.repository_alias }}
+                </span>
+                {% endif %}
             </div>
         </header>
+
+        {% if result.metadata or result.temporal_context %}
+        <div class="result-temporal-info">
+            {% if result.metadata %}
+            {% if result.metadata.commit_hash %}
+            <span class="commit-hash" title="Commit {{ result.metadata.commit_hash }}">
+                {{ result.metadata.commit_hash[:7] }}
+            </span>
+            {% endif %}
+            {% if result.metadata.author %}
+            <span class="commit-author">{{ result.metadata.author }}</span>
+            {% endif %}
+            {% if result.metadata.commit_date %}
+            <span class="commit-date">{{ result.metadata.commit_date[:10] }}</span>
+            {% endif %}
+            {% endif %}
+            {% if result.temporal_context %}
+            {% if result.temporal_context.first_seen %}
+            <span class="temporal-first">First: {{ result.temporal_context.first_seen[:10] }}</span>
+            {% endif %}
+            {% if result.temporal_context.last_seen %}
+            <span class="temporal-last">Last: {{ result.temporal_context.last_seen[:10] }}</span>
+            {% endif %}
+            {% endif %}
+        </div>
+        {% endif %}
+
         <div class="result-snippet">
             <pre><code class="language-{{ result.language or 'plaintext' }}">{{ result.content }}</code></pre>
         </div>
@@ -53,3 +89,50 @@
     <p>Enter a query above and click Search to see results.</p>
 </div>
 {% endif %}
+
+<style>
+.search-mode-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-left: 10px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+.search-mode-semantic { background: #e3f2fd; color: #1565c0; }
+.search-mode-fts { background: #f3e5f5; color: #7b1fa2; }
+.search-mode-hybrid { background: #e8f5e9; color: #2e7d32; }
+
+.result-repo {
+    background: #fff3e0;
+    color: #e65100;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+}
+
+.result-temporal-info {
+    display: flex;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 0.8rem;
+    color: #666;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 8px;
+}
+.commit-hash {
+    font-family: monospace;
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+.commit-author {
+    color: #555;
+}
+.commit-date {
+    color: #777;
+}
+.temporal-first, .temporal-last {
+    color: #888;
+}
+</style>

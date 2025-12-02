@@ -3,9 +3,18 @@ Tests for AC3: AI Description Generation via RepoAnalyzer.
 
 Tests that RepoAnalyzer can extract information from various
 repository sources (README, package files, directory structure).
+
+Also tests Claude CLI integration for enhanced metadata generation.
 """
 
-from code_indexer.global_repos.repo_analyzer import RepoAnalyzer
+import json
+import os
+import subprocess
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from code_indexer.global_repos.repo_analyzer import RepoAnalyzer, RepoInfo
 
 
 class TestRepoAnalyzer:
@@ -273,3 +282,247 @@ Authentication service for microservices architecture.
 
         assert info.purpose is not None
         assert len(info.purpose) > 0
+
+
+class TestClaudeCLIIntegration:
+    """Test suite for Claude CLI integration in RepoAnalyzer."""
+
+    @pytest.fixture
+    def sample_claude_response(self):
+        """Provide a sample valid Claude CLI JSON response."""
+        return json.dumps({
+            "summary": "A comprehensive authentication library for Python applications.",
+            "technologies": ["Python", "FastAPI", "JWT", "OAuth2"],
+            "features": ["Token authentication", "Role-based access", "API key management"],
+            "use_cases": ["Web app authentication", "Microservice authorization"],
+            "purpose": "library"
+        })
+
+    def test_extract_info_with_claude_success(self, tmp_path, sample_claude_response):
+        """
+        Test successful Claude CLI response parsing.
+
+        When Claude CLI returns valid JSON, it should be parsed into RepoInfo.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+        (repo_dir / "README.md").write_text("# Test Project\nSome description.")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = sample_claude_response
+
+        with patch.object(subprocess, 'run', return_value=mock_result) as mock_run:
+            analyzer = RepoAnalyzer(str(repo_dir))
+            info = analyzer._extract_info_with_claude()
+
+            # Verify subprocess was called with correct arguments
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            assert call_args[0][0][0] == "claude"
+            assert "-p" in call_args[0][0]
+            assert "--print" in call_args[0][0]
+            assert call_args[1]["cwd"] == str(repo_dir)
+            assert call_args[1]["timeout"] == 60
+
+            # Verify parsed result
+            assert info is not None
+            assert info.summary == "A comprehensive authentication library for Python applications."
+            assert "Python" in info.technologies
+            assert "FastAPI" in info.technologies
+            assert len(info.features) == 3
+            assert len(info.use_cases) == 2
+            assert info.purpose == "library"
+
+    def test_extract_info_with_claude_cli_not_found(self, tmp_path):
+        """
+        Test fallback when Claude CLI is not installed.
+
+        Should return None when FileNotFoundError is raised.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+
+        with patch.object(subprocess, 'run', side_effect=FileNotFoundError("claude not found")):
+            analyzer = RepoAnalyzer(str(repo_dir))
+            result = analyzer._extract_info_with_claude()
+
+            assert result is None
+
+    def test_extract_info_with_claude_timeout(self, tmp_path):
+        """
+        Test fallback when Claude CLI times out.
+
+        Should return None when subprocess.TimeoutExpired is raised.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+
+        with patch.object(subprocess, 'run', side_effect=subprocess.TimeoutExpired("claude", 60)):
+            analyzer = RepoAnalyzer(str(repo_dir))
+            result = analyzer._extract_info_with_claude()
+
+            assert result is None
+
+    def test_extract_info_with_claude_invalid_json(self, tmp_path):
+        """
+        Test fallback when Claude CLI returns invalid JSON.
+
+        Should return None when JSON parsing fails.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "This is not valid JSON at all"
+
+        with patch.object(subprocess, 'run', return_value=mock_result):
+            analyzer = RepoAnalyzer(str(repo_dir))
+            result = analyzer._extract_info_with_claude()
+
+            assert result is None
+
+    def test_extract_info_with_claude_nonzero_exit(self, tmp_path):
+        """
+        Test fallback when Claude CLI returns non-zero exit code.
+
+        Should return None when returncode is not 0.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "Error: API key not configured"
+
+        with patch.object(subprocess, 'run', return_value=mock_result):
+            analyzer = RepoAnalyzer(str(repo_dir))
+            result = analyzer._extract_info_with_claude()
+
+            assert result is None
+
+    def test_extract_info_with_claude_missing_fields(self, tmp_path):
+        """
+        Test handling of Claude response with missing required fields.
+
+        Should return None if essential fields are missing.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+
+        # Missing 'summary' field
+        incomplete_response = json.dumps({
+            "technologies": ["Python"],
+            "features": [],
+            "use_cases": [],
+            "purpose": "library"
+        })
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = incomplete_response
+
+        with patch.object(subprocess, 'run', return_value=mock_result):
+            analyzer = RepoAnalyzer(str(repo_dir))
+            result = analyzer._extract_info_with_claude()
+
+            assert result is None
+
+
+class TestClaudeFallbackBehavior:
+    """Test suite for Claude CLI fallback to static analysis."""
+
+    def test_extract_info_uses_claude_by_default(self, tmp_path):
+        """
+        Test that extract_info() tries Claude first by default.
+
+        When CIDX_USE_CLAUDE_FOR_META is not set or is 'true',
+        Claude should be tried first.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+        (repo_dir / "README.md").write_text("# Test\nDescription.")
+
+        claude_response = json.dumps({
+            "summary": "Claude-generated summary",
+            "technologies": ["Python"],
+            "features": ["Feature A"],
+            "use_cases": ["Use case 1"],
+            "purpose": "library"
+        })
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = claude_response
+
+        # Ensure env var is true or not set
+        with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "true"}):
+            with patch.object(subprocess, 'run', return_value=mock_result):
+                analyzer = RepoAnalyzer(str(repo_dir))
+                info = analyzer.extract_info()
+
+                assert info.summary == "Claude-generated summary"
+
+    def test_extract_info_falls_back_on_claude_failure(self, tmp_path):
+        """
+        Test that extract_info() falls back to static analysis on Claude failure.
+
+        When Claude CLI fails, static analysis should be used.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+        (repo_dir / "setup.py").write_text("from setuptools import setup")
+        (repo_dir / "README.md").write_text("# Test Project\n\nA Python library for testing.")
+
+        with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "true"}):
+            with patch.object(subprocess, 'run', side_effect=FileNotFoundError()):
+                analyzer = RepoAnalyzer(str(repo_dir))
+                info = analyzer.extract_info()
+
+                # Should fall back to static analysis
+                assert info is not None
+                assert "Python" in info.technologies
+                # Static analysis produces different summary
+                assert "testing" in info.summary.lower() or "library" in info.summary.lower()
+
+    def test_extract_info_disabled_via_env_var(self, tmp_path):
+        """
+        Test that CIDX_USE_CLAUDE_FOR_META=false skips Claude.
+
+        When the env var is set to 'false', Claude should not be called.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+        (repo_dir / "setup.py").write_text("from setuptools import setup")
+        (repo_dir / "README.md").write_text("# Test\n\nStatic analysis test.")
+
+        with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "false"}):
+            with patch.object(subprocess, 'run') as mock_run:
+                analyzer = RepoAnalyzer(str(repo_dir))
+                info = analyzer.extract_info()
+
+                # Claude should NOT be called
+                mock_run.assert_not_called()
+
+                # Static analysis should provide results
+                assert info is not None
+                assert "Python" in info.technologies
+
+    def test_static_analysis_method_available(self, tmp_path):
+        """
+        Test that _extract_info_static() method exists and works.
+
+        The renamed static analysis method should be callable directly.
+        """
+        repo_dir = tmp_path / "test-repo"
+        repo_dir.mkdir()
+        (repo_dir / "package.json").write_text('{"name": "test", "dependencies": {}}')
+
+        analyzer = RepoAnalyzer(str(repo_dir))
+        info = analyzer._extract_info_static()
+
+        assert info is not None
+        assert isinstance(info, RepoInfo)
+        assert "JavaScript" in info.technologies or "Node.js" in info.technologies

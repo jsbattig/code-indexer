@@ -112,6 +112,9 @@
 </div>
 
 <script>
+// Track open details rows
+let openDetailsSet = new Set();
+
 function clearFilters() {
     document.getElementById('search').value = '';
     document.getElementById('golden_repo').value = '';
@@ -127,10 +130,28 @@ function confirmDeactivate(username, userAlias) {
 }
 
 function toggleDetails(username, userAlias) {
-    const details = document.getElementById('details-' + username + '-' + userAlias);
+    const key = username + '-' + userAlias;
+    const details = document.getElementById('details-' + key);
     if (details) {
-        details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
+        const isHidden = details.style.display === 'none';
+        details.style.display = isHidden ? 'table-row' : 'none';
+        // Track open/closed state
+        if (isHidden) {
+            openDetailsSet.add(key);
+        } else {
+            openDetailsSet.delete(key);
+        }
     }
+}
+
+function restoreOpenDetails() {
+    // Restore previously open details rows after content refresh
+    openDetailsSet.forEach(key => {
+        const details = document.getElementById('details-' + key);
+        if (details) {
+            details.style.display = 'table-row';
+        }
+    });
 }
 
 // Enable auto-refresh when there are syncing repositories
@@ -147,7 +168,10 @@ function checkForSyncing() {
 // Check on page load
 document.addEventListener('DOMContentLoaded', checkForSyncing);
 
-// Check after htmx swaps
-document.body.addEventListener('htmx:afterSwap', checkForSyncing);
+// Check after htmx swaps and restore open details
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    checkForSyncing();
+    restoreOpenDetails();
+});
 </script>
 {% endblock %}
