@@ -2047,74 +2047,21 @@ def _detect_language_from_path(file_path: str) -> str:
     return ext_to_lang.get(ext, "plaintext")
 
 
-def _get_default_config() -> dict:
-    """Get default configuration values matching ConfigService structure."""
-    return {
-        "server": {
-            "host": "127.0.0.1",
-            "port": 8000,
-            "workers": 4,
-            "log_level": "INFO",
-            "jwt_expiration_minutes": 60,
-        },
-        "cache": {
-            "index_cache_ttl_minutes": 10.0,
-            "index_cache_cleanup_interval": 60,
-            "index_cache_max_size_mb": None,
-            "fts_cache_ttl_minutes": 10.0,
-            "fts_cache_cleanup_interval": 60,
-            "fts_cache_max_size_mb": None,
-            "fts_cache_reload_on_access": True,
-        },
-        "reindexing": {
-            "change_percentage_threshold": 10.0,
-            "accuracy_threshold": 0.85,
-            "max_index_age_days": 30,
-            "batch_size": 100,
-            "max_analysis_time_seconds": 300,
-            "max_memory_usage_mb": 512,
-            "enable_structural_analysis": True,
-            "enable_config_change_detection": True,
-            "enable_corruption_detection": True,
-            "enable_periodic_check": True,
-            "parallel_analysis": True,
-        },
-        "timeouts": {
-            "git_clone_timeout": 3600,
-            "git_pull_timeout": 1800,
-            "git_refresh_timeout": 300,
-            "cidx_index_timeout": 7200,
-        },
-        "password_security": {
-            "min_length": 12,
-            "max_length": 128,
-            "required_char_classes": 3,
-            "min_entropy_bits": 50,
-        },
-    }
-
-
 def _get_current_config() -> dict:
     """Get current configuration from ConfigService (persisted to ~/.cidx-server/config.json)."""
     from ..services.config_service import get_config_service
 
-    try:
-        config_service = get_config_service()
-        settings = config_service.get_all_settings()
+    config_service = get_config_service()
+    settings = config_service.get_all_settings()
 
-        # Convert to template-friendly format
-        config = {
-            "server": settings["server"],
-            "cache": settings["cache"],
-            "reindexing": settings["reindexing"],
-            "timeouts": settings["timeouts"],
-            "password_security": settings["password_security"],
-        }
-        return config
-    except Exception as e:
-        logger.error("Failed to load config: %s", e)
-        # Return defaults on error
-        return _get_default_config()
+    # Convert to template-friendly format
+    return {
+        "server": settings["server"],
+        "cache": settings["cache"],
+        "reindexing": settings["reindexing"],
+        "timeouts": settings["timeouts"],
+        "password_security": settings["password_security"],
+    }
 
 
 def _validate_config_section(section: str, data: dict) -> Optional[str]:
