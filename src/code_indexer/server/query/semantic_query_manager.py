@@ -853,6 +853,7 @@ class SemanticQueryManager:
                     limit=limit,
                     min_score=min_score,
                     time_range=time_range,
+                    time_range_all=time_range_all,
                     at_commit=at_commit,
                     include_removed=include_removed,
                     show_evolution=show_evolution,
@@ -1275,10 +1276,11 @@ class SemanticQueryManager:
         limit: int,
         min_score: Optional[float],
         time_range: Optional[str],
-        at_commit: Optional[str],
-        include_removed: bool,
-        show_evolution: bool,
-        evolution_limit: Optional[int],
+        time_range_all: bool = False,
+        at_commit: Optional[str] = None,
+        include_removed: bool = False,
+        show_evolution: bool = False,
+        evolution_limit: Optional[int] = None,
         language: Optional[str] = None,
         exclude_language: Optional[str] = None,
         path_filter: Optional[str] = None,
@@ -1353,10 +1355,9 @@ class SemanticQueryManager:
             # Validate and parse temporal parameters
             if time_range:
                 time_range_tuple = temporal_service._validate_date_range(time_range)
-            elif at_commit:
-                # For at_commit, use a wide range and filter by commit later
-                # This is a simplified implementation - full at_commit support
-                # would require additional TemporalSearchService methods
+            elif time_range_all or at_commit:
+                # For time_range_all or at_commit, use entire git history
+                # This allows searching across all commits without date filtering
                 time_range_tuple = ("1970-01-01", "2100-12-31")
             else:
                 time_range_tuple = ("1970-01-01", "2100-12-31")
