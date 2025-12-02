@@ -63,6 +63,17 @@ def _get_golden_repos_dir() -> str:
     )
 
 
+def _get_query_tracker():
+    """Get QueryTracker from app.state.
+
+    Returns:
+        QueryTracker instance if configured, None otherwise.
+        Used for tracking active queries to prevent concurrent access issues
+        during repository removal operations.
+    """
+    return getattr(app_module.app.state, "query_tracker", None)
+
+
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
     try:
@@ -126,10 +137,18 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             ]
 
             # Call _perform_search directly with all query parameters
+            # Track query execution with QueryTracker for concurrency safety
             import time
+
+            query_tracker = _get_query_tracker()
+            index_path = target_path  # Use resolved path for tracking
 
             start_time = time.time()
             try:
+                # Increment ref count before query (if QueryTracker available)
+                if query_tracker is not None:
+                    query_tracker.increment_ref(index_path)
+
                 results = app_module.semantic_query_manager._perform_search(
                     username=user.username,
                     user_repos=mock_user_repos,
@@ -171,6 +190,10 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 if "timeout" in str(e).lower():
                     raise Exception(f"Query timed out: {str(e)}")
                 raise
+            finally:
+                # Always decrement ref count when query completes (if QueryTracker available)
+                if query_tracker is not None:
+                    query_tracker.decrement_ref(index_path)
 
             # Build response matching query_user_repositories format
             response_results = []

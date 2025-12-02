@@ -118,7 +118,8 @@ class GlobalActivator:
         """
         Deactivate a golden repository globally.
 
-        Removes the alias and unregisters from the global registry.
+        Removes the alias, unregisters from the global registry, and cleans up
+        the meta-directory description file.
 
         Args:
             repo_name: Repository name
@@ -135,12 +136,75 @@ class GlobalActivator:
             # Remove alias
             self.alias_manager.delete_alias(alias_name)
 
+            # Remove meta-directory description file (Story #532)
+            # File name is {repo_name}.md (NOT {alias_name}.md)
+            self._cleanup_meta_description_file(repo_name)
+
             logger.info(f"Global deactivation complete: {alias_name}")
 
         except Exception as e:
             error_msg = f"Global deactivation failed for {repo_name}: {e}"
             logger.error(error_msg)
             raise GlobalActivationError(error_msg) from e
+
+    def _cleanup_meta_description_file(self, repo_name: str) -> None:
+        """
+        Clean up meta-directory description file for a removed repository.
+
+        Also triggers re-indexing of the meta-directory if it exists and
+        has been initialized with cidx.
+
+        Args:
+            repo_name: Repository name (used for .md filename)
+        """
+        import subprocess
+        from pathlib import Path
+
+        meta_dir = self.golden_repos_dir / "cidx-meta"
+
+        # Delete the description file if it exists
+        meta_description_file = meta_dir / f"{repo_name}.md"
+        if meta_description_file.exists():
+            try:
+                meta_description_file.unlink()
+                logger.info(
+                    f"Deleted meta-directory description file: {meta_description_file}"
+                )
+            except OSError as e:
+                # Log but don't fail - file cleanup is best-effort
+                logger.warning(
+                    f"Failed to delete meta-directory description file "
+                    f"{meta_description_file}: {e}"
+                )
+        else:
+            logger.debug(
+                f"Meta-directory description file does not exist: {meta_description_file}"
+            )
+
+        # Re-index the meta-directory if it exists and has been initialized
+        if meta_dir.exists() and (meta_dir / ".code-indexer").exists():
+            try:
+                result = subprocess.run(
+                    ["cidx", "index"],
+                    cwd=str(meta_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,  # 1 minute timeout for meta-directory re-indexing
+                )
+                if result.returncode == 0:
+                    logger.info(f"Re-indexed meta-directory: {meta_dir}")
+                else:
+                    # Log but don't fail - re-indexing is best-effort
+                    logger.warning(
+                        f"Meta-directory re-indexing returned non-zero: "
+                        f"exit code {result.returncode}, stderr: {result.stderr}"
+                    )
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Meta-directory re-indexing timed out: {meta_dir}")
+            except FileNotFoundError:
+                logger.warning("cidx command not found for meta-directory re-indexing")
+            except Exception as e:
+                logger.warning(f"Meta-directory re-indexing failed: {e}")
 
     def is_globally_active(self, repo_name: str) -> bool:
         """

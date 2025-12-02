@@ -363,6 +363,24 @@ class GoldenRepoManager:
             # Per MESSI Rule 2: "Graceful failure over forced success"
             # Don't report "success with warnings" - either succeed or fail clearly
             if cleanup_successful:
+                # Deactivate global activation (Story #532)
+                # Remove GlobalRegistry entry, alias pointer file, meta-directory .md file
+                try:
+                    from code_indexer.global_repos.global_activation import (
+                        GlobalActivator,
+                    )
+
+                    global_activator = GlobalActivator(self.golden_repos_dir)
+                    global_activator.deactivate_golden_repo(alias)
+                    logging.info(f"Golden repository '{alias}' deactivated globally")
+                except Exception as deactivation_error:
+                    # Log error but don't fail removal - the repo files are already deleted
+                    # This is consistent with add_golden_repo() behavior (AC4)
+                    logging.error(
+                        f"Global deactivation failed for '{alias}': {deactivation_error}. "
+                        f"Golden repository removed but some global resources may remain."
+                    )
+
                 message = f"Golden repository '{alias}' removed successfully"
                 return {
                     "success": True,
