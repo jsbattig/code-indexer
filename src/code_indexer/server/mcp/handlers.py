@@ -233,6 +233,7 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             search_mode=params.get("search_mode", "semantic"),
             # Temporal query parameters (Story #446)
             time_range=params.get("time_range"),
+            time_range_all=params.get("time_range_all", False),
             at_commit=params.get("at_commit"),
             include_removed=params.get("include_removed", False),
             show_evolution=params.get("show_evolution", False),
