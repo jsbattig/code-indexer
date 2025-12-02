@@ -41,6 +41,11 @@ class QueryResult:
         - repository_alias: The repository name
         - source_repo: None (not a composite)
         - file_path: Relative path within repository
+
+    For temporal queries (Story #503 - Temporal Metadata):
+        - metadata: Contains commit_hash, commit_date, author_name, author_email,
+                   commit_message, diff_type for each result
+        - temporal_context: Contains first_seen, last_seen, commit_count, commits
     """
 
     file_path: str
@@ -49,6 +54,9 @@ class QueryResult:
     similarity_score: float
     repository_alias: str
     source_repo: Optional[str] = None  # Which component repo (for composite repos)
+    # Temporal metadata fields (Story #503 - MCP/REST API parity with CLI)
+    metadata: Optional[Dict[str, Any]] = None  # Commit info: hash, date, author, message, diff_type
+    temporal_context: Optional[Dict[str, Any]] = None  # Aggregate: first_seen, last_seen, commit_count
 
     @classmethod
     def from_search_result(
@@ -66,7 +74,7 @@ class QueryResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API response."""
-        return {
+        result = {
             "file_path": self.file_path,
             "line_number": self.line_number,
             "code_snippet": self.code_snippet,
@@ -74,6 +82,12 @@ class QueryResult:
             "repository_alias": self.repository_alias,
             "source_repo": self.source_repo,
         }
+        # Include temporal metadata if present (Story #503)
+        if self.metadata is not None:
+            result["metadata"] = self.metadata
+        if self.temporal_context is not None:
+            result["temporal_context"] = self.temporal_context
+        return result
 
 
 @dataclass
@@ -1377,7 +1391,19 @@ class SemanticQueryManager:
             # Convert temporal results to QueryResult objects
             query_results = []
             for temporal_result in temporal_results.results:
+                # Extract individual result metadata (Story #503 - MCP/REST parity)
+                # Contains commit-level info for each result
+                result_metadata = {
+                    "commit_hash": temporal_result.metadata.get("commit_hash"),
+                    "commit_date": temporal_result.metadata.get("commit_date"),
+                    "author_name": temporal_result.metadata.get("author_name"),
+                    "author_email": temporal_result.metadata.get("author_email"),
+                    "commit_message": temporal_result.metadata.get("commit_message"),
+                    "diff_type": temporal_result.metadata.get("diff_type"),
+                }
+
                 # Build temporal context (Acceptance Criterion 7)
+                # Contains aggregate info across all commits for this file
                 temporal_context = {
                     "first_seen": temporal_result.temporal_context.get("first_seen"),
                     "last_seen": temporal_result.temporal_context.get("last_seen"),
@@ -1402,7 +1428,8 @@ class SemanticQueryManager:
                         evolution_data = evolution_data[:evolution_limit]
                     temporal_context["evolution"] = evolution_data
 
-                # Create QueryResult with temporal context
+                # Create QueryResult with both metadata and temporal_context
+                # (Story #503 - MCP/REST API parity with CLI)
                 query_result = QueryResult(
                     file_path=temporal_result.file_path,
                     line_number=1,  # Temporal results don't have line numbers
@@ -1410,19 +1437,8 @@ class SemanticQueryManager:
                     similarity_score=temporal_result.score,
                     repository_alias=repository_alias,
                     source_repo=None,
-                )
-
-                # Add temporal_context to result dict
-                result_dict = query_result.to_dict()
-                result_dict["temporal_context"] = temporal_context
-
-                # Convert back to QueryResult (preserve structure)
-                # Note: QueryResult dataclass doesn't have temporal_context field,
-                # so we'll add it as custom attribute
-                query_result_with_temporal = query_result
-                # Store temporal context as custom attribute for later serialization
-                setattr(
-                    query_result_with_temporal, "_temporal_context", temporal_context
+                    metadata=result_metadata,
+                    temporal_context=temporal_context,
                 )
 
                 query_results.append(query_result)
