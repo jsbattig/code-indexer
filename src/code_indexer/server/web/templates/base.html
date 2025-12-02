@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CIDX Admin{% endblock %}</title>
+    <link rel="stylesheet" href="/admin/static/pico.min.css">
+    <link rel="stylesheet" href="/admin/static/admin.css">
+    <script src="/admin/static/htmx.min.js"></script>
+</head>
+<body>
+    <main class="container">
+        {% if show_nav %}
+        <header class="admin-header">
+            <nav class="admin-nav">
+                <ul>
+                    <li><a href="/admin/" {% if current_page == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a></li>
+                    <li><a href="/admin/users" {% if current_page == 'users' %}aria-current="page"{% endif %}>Users</a></li>
+                    <li><a href="/admin/golden-repos" {% if current_page == 'golden-repos' %}aria-current="page"{% endif %}>Golden Repos</a></li>
+                    <li><a href="/admin/repos" {% if current_page == 'repos' %}aria-current="page"{% endif %}>Repositories</a></li>
+                    <li><a href="/admin/jobs" {% if current_page == 'jobs' %}aria-current="page"{% endif %}>Jobs</a></li>
+                    <li><a href="/admin/query" {% if current_page == 'query' %}aria-current="page"{% endif %}>Query</a></li>
+                    <li><a href="/admin/config" {% if current_page == 'config' %}aria-current="page"{% endif %}>Config</a></li>
+                    <li class="logout-btn"><a href="/admin/logout" role="button" class="outline">Logout</a></li>
+                </ul>
+            </nav>
+        </header>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

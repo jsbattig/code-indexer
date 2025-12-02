@@ -1,0 +1,127 @@
+<!-- Job Statistics Section -->
+<h2>Jobs</h2>
+
+<div class="stats-grid">
+    <article class="stat-card">
+        <header>
+            <h3>Running</h3>
+        </header>
+        <div class="stat-value">
+            <a href="/admin/jobs?status=running">{{ job_counts.running if job_counts else 0 }}</a>
+        </div>
+        <footer>
+            <small>Currently executing</small>
+        </footer>
+    </article>
+
+    <article class="stat-card">
+        <header>
+            <h3>Queued</h3>
+        </header>
+        <div class="stat-value">
+            <a href="/admin/jobs?status=pending">{{ job_counts.queued if job_counts else 0 }}</a>
+        </div>
+        <footer>
+            <small>Waiting to run</small>
+        </footer>
+    </article>
+
+    <article class="stat-card stat-success">
+        <header>
+            <h3>Completed (24h)</h3>
+        </header>
+        <div class="stat-value">
+            <a href="/admin/jobs?status=completed">{{ job_counts.completed_24h if job_counts else 0 }}</a>
+        </div>
+        <footer>
+            <small>Last 24 hours</small>
+        </footer>
+    </article>
+
+    <article class="stat-card stat-danger">
+        <header>
+            <h3>Failed (24h)</h3>
+        </header>
+        <div class="stat-value">
+            <a href="/admin/jobs?status=failed">{{ job_counts.failed_24h if job_counts else 0 }}</a>
+        </div>
+        <footer>
+            <small>Last 24 hours</small>
+        </footer>
+    </article>
+</div>
+
+<!-- Repository Statistics Section -->
+<h2>Repositories</h2>
+
+<div class="stats-grid">
+    <article class="stat-card">
+        <header>
+            <h3>Golden Repos</h3>
+        </header>
+        <div class="stat-value">
+            <a href="/admin/golden-repos">{{ repo_counts.golden if repo_counts else 0 }}</a>
+        </div>
+        <footer>
+            <small>Source repositories</small>
+        </footer>
+    </article>
+
+    <article class="stat-card">
+        <header>
+            <h3>Activated Repos</h3>
+        </header>
+        <div class="stat-value">
+            <a href="/admin/repos">{{ repo_counts.activated if repo_counts else 0 }}</a>
+        </div>
+        <footer>
+            <small>User activated</small>
+        </footer>
+    </article>
+
+    <article class="stat-card">
+        <header>
+            <h3>Total Files</h3>
+        </header>
+        <div class="stat-value">
+            {{ repo_counts.total_files if repo_counts else 0 }}
+        </div>
+        <footer>
+            <small>Indexed files</small>
+        </footer>
+    </article>
+</div>
+
+<!-- Recent Activity Section -->
+<h2>Recent Activity</h2>
+
+<div class="recent-activity">
+    {% if recent_jobs and recent_jobs|length > 0 %}
+    <table role="grid">
+        <thead>
+            <tr>
+                <th>Repository</th>
+                <th>Job Type</th>
+                <th>Completed</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in recent_jobs %}
+            <tr>
+                <td>
+                    <a href="/admin/jobs?job_id={{ job.job_id }}">{{ job.repo_name }}</a>
+                </td>
+                <td>{{ job.job_type }}</td>
+                <td>{{ job.completion_time[:19] if job.completion_time else 'N/A' }}</td>
+                <td>
+                    <span class="job-status status-{{ job.status }}">{{ job.status | capitalize }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="no-activity">No recent activity to display.</p>
+    {% endif %}
+</div>

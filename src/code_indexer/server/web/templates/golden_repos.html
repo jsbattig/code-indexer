@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Golden Repositories - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="golden-repos-header">
+    <h1>Golden Repository Management</h1>
+    <div class="golden-repos-actions">
+        <button
+            id="add-repo-btn"
+            class="primary"
+            onclick="toggleAddForm()"
+        >
+            Add Repository
+        </button>
+        <button
+            id="refresh-btn"
+            class="outline"
+            hx-get="/admin/partials/golden-repos-list"
+            hx-target="#repos-list-section"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-indicator"
+        >
+            Refresh
+        </button>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Add Repository Form (hidden by default) -->
+<section id="add-repo-form" class="form-section" style="display: none;">
+    <article>
+        <header>
+            <h2>Add New Golden Repository</h2>
+        </header>
+        <form method="post" action="/admin/golden-repos/add">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <label for="alias">Repository Name (Alias)</label>
+            <input
+                type="text"
+                id="alias"
+                name="alias"
+                placeholder="Enter unique repository name"
+                required
+                autocomplete="off"
+            >
+            <small>A unique name to identify this repository (e.g., "my-project")</small>
+
+            <label for="repo_url">Repository Path or URL</label>
+            <input
+                type="text"
+                id="repo_url"
+                name="repo_url"
+                placeholder="Enter local path or git URL"
+                required
+                autocomplete="off"
+            >
+            <small>Local path (e.g., /home/user/project) or remote URL (e.g., https://github.com/user/repo)</small>
+
+            <label for="default_branch">Branch (optional)</label>
+            <input
+                type="text"
+                id="default_branch"
+                name="default_branch"
+                placeholder="main"
+                value="main"
+                autocomplete="off"
+            >
+            <small>Default branch to index (default: main)</small>
+
+            <div class="form-actions">
+                <button type="submit" class="primary">Add Repository</button>
+                <button type="button" class="secondary" onclick="toggleAddForm()">Cancel</button>
+            </div>
+        </form>
+    </article>
+</section>
+
+<!-- Golden Repositories List Section -->
+<section id="repos-list-section">
+    {% include "partials/golden_repos_list.html" %}
+</section>
+
+<!-- Auto-refresh for indexing repositories -->
+<div id="auto-refresh-container" style="display: none;"
+    hx-get="/admin/partials/golden-repos-list"
+    hx-trigger="every 10s"
+    hx-target="#repos-list-section"
+    hx-swap="innerHTML">
+</div>
+
+<script>
+function toggleAddForm() {
+    const form = document.getElementById('add-repo-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function confirmDelete(alias) {
+    if (confirm('Are you sure you want to delete repository "' + alias + '"? This action cannot be undone.')) {
+        document.getElementById('delete-form-' + alias).submit();
+    }
+}
+
+function confirmRefresh(alias) {
+    if (confirm('Re-index repository "' + alias + '"? This may take some time.')) {
+        document.getElementById('refresh-form-' + alias).submit();
+    }
+}
+
+function toggleDetails(alias) {
+    const details = document.getElementById('details-' + alias);
+    if (details) {
+        details.style.display = details.style.display === 'none' ? 'table-row' : 'none';
+    }
+}
+
+// Enable auto-refresh when there are indexing repositories
+function checkForIndexing() {
+    const indexingIndicators = document.querySelectorAll('.status-indexing');
+    const autoRefreshContainer = document.getElementById('auto-refresh-container');
+    if (indexingIndicators.length > 0) {
+        autoRefreshContainer.style.display = 'block';
+    } else {
+        autoRefreshContainer.style.display = 'none';
+    }
+}
+
+// Check on page load
+document.addEventListener('DOMContentLoaded', checkForIndexing);
+
+// Check after htmx swaps
+document.body.addEventListener('htmx:afterSwap', checkForIndexing);
+</script>
+{% endblock %}

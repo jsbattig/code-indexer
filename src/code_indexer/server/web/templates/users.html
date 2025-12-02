@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Users - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="users-header">
+    <h1>User Management</h1>
+    <div class="users-actions">
+        <button
+            id="create-user-btn"
+            class="primary"
+            onclick="toggleCreateForm()"
+        >
+            Create User
+        </button>
+        <button
+            id="refresh-btn"
+            class="outline"
+            hx-get="/admin/partials/users-list"
+            hx-target="#users-list-section"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-indicator"
+        >
+            Refresh
+        </button>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Create User Form (hidden by default) -->
+<section id="create-user-form" class="form-section" style="display: none;">
+    <article>
+        <header>
+            <h2>Create New User</h2>
+        </header>
+        <form method="post" action="/admin/users/create">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <label for="new_username">Username</label>
+            <input
+                type="text"
+                id="new_username"
+                name="new_username"
+                placeholder="Enter username"
+                required
+                autocomplete="off"
+            >
+
+            <label for="new_password">Password</label>
+            <input
+                type="password"
+                id="new_password"
+                name="new_password"
+                placeholder="Enter password"
+                required
+                autocomplete="new-password"
+            >
+
+            <label for="confirm_password">Confirm Password</label>
+            <input
+                type="password"
+                id="confirm_password"
+                name="confirm_password"
+                placeholder="Confirm password"
+                required
+                autocomplete="new-password"
+            >
+
+            <label for="role">Role</label>
+            <select id="role" name="role" required>
+                <option value="normal_user">Normal User</option>
+                <option value="power_user">Power User</option>
+                <option value="admin">Admin</option>
+            </select>
+
+            <div class="form-actions">
+                <button type="submit" class="primary">Create User</button>
+                <button type="button" class="secondary" onclick="toggleCreateForm()">Cancel</button>
+            </div>
+        </form>
+    </article>
+</section>
+
+<!-- Users List Section -->
+<section id="users-list-section">
+    {% include "partials/users_list.html" %}
+</section>
+
+<script>
+function toggleCreateForm() {
+    const form = document.getElementById('create-user-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleEditForm(username) {
+    const form = document.getElementById('edit-form-' + username);
+    if (form) {
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+function togglePasswordForm(username) {
+    const form = document.getElementById('password-form-' + username);
+    if (form) {
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+function confirmDelete(username) {
+    if (confirm('Are you sure you want to delete user "' + username + '"? This action cannot be undone.')) {
+        document.getElementById('delete-form-' + username).submit();
+    }
+}
+</script>
+{% endblock %}

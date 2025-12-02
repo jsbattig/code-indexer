@@ -1,0 +1,105 @@
+<h2>System Health</h2>
+
+<div class="health-grid">
+    {% if health %}
+    <!-- Overall Status -->
+    <article class="health-card overall-status">
+        <header>
+            <h3>Server Status</h3>
+        </header>
+        <div class="status-content">
+            <span class="status-indicator status-{{ health.status.value }}"></span>
+            <span class="status-text">{{ health.status.value | capitalize }}</span>
+        </div>
+        <footer>
+            <small>Last checked: {{ health.timestamp.strftime('%Y-%m-%d %H:%M:%S') if health.timestamp else 'N/A' }}</small>
+        </footer>
+    </article>
+
+    <!-- Database Status -->
+    <article class="health-card">
+        <header>
+            <h3>Database</h3>
+        </header>
+        <div class="status-content">
+            {% set db_status = health.services.get('database') %}
+            {% if db_status %}
+            <span class="status-indicator status-{{ db_status.status.value }}"></span>
+            <span class="status-text">{{ db_status.status.value | capitalize }}</span>
+            {% if db_status.response_time_ms %}
+            <small class="response-time">{{ db_status.response_time_ms }}ms</small>
+            {% endif %}
+            {% else %}
+            <span class="status-indicator status-unhealthy"></span>
+            <span class="status-text">Unknown</span>
+            {% endif %}
+        </div>
+        {% if db_status and db_status.error_message %}
+        <footer>
+            <small class="error-text">{{ db_status.error_message }}</small>
+        </footer>
+        {% endif %}
+    </article>
+
+    <!-- Vector Store Status -->
+    <article class="health-card">
+        <header>
+            <h3>Vector Store</h3>
+        </header>
+        <div class="status-content">
+            {% set vs_status = health.services.get('vector_store') %}
+            {% if vs_status %}
+            <span class="status-indicator status-{{ vs_status.status.value }}"></span>
+            <span class="status-text">{{ vs_status.status.value | capitalize }}</span>
+            {% if vs_status.response_time_ms %}
+            <small class="response-time">{{ vs_status.response_time_ms }}ms</small>
+            {% endif %}
+            {% else %}
+            <span class="status-indicator status-unhealthy"></span>
+            <span class="status-text">Unknown</span>
+            {% endif %}
+        </div>
+        {% if vs_status and vs_status.error_message %}
+        <footer>
+            <small class="error-text">{{ vs_status.error_message }}</small>
+        </footer>
+        {% endif %}
+    </article>
+
+    <!-- Storage Status -->
+    <article class="health-card">
+        <header>
+            <h3>Storage</h3>
+        </header>
+        <div class="status-content">
+            {% set storage_status = health.services.get('storage') %}
+            {% if storage_status %}
+            <span class="status-indicator status-{{ storage_status.status.value }}"></span>
+            <span class="status-text">{{ storage_status.status.value | capitalize }}</span>
+            {% else %}
+            <span class="status-indicator status-unhealthy"></span>
+            <span class="status-text">Unknown</span>
+            {% endif %}
+        </div>
+        {% if health.system %}
+        <footer>
+            <small>
+                CPU: {{ "%.1f"|format(health.system.cpu_usage_percent) }}% |
+                Memory: {{ "%.1f"|format(health.system.memory_usage_percent) }}% |
+                Disk: {{ "%.1f"|format(health.system.disk_free_space_gb) if health.system.disk_free_space_gb else 'N/A' }}GB free
+            </small>
+        </footer>
+        {% endif %}
+    </article>
+    {% else %}
+    <article class="health-card">
+        <header>
+            <h3>Status</h3>
+        </header>
+        <div class="status-content">
+            <span class="status-indicator status-unhealthy"></span>
+            <span class="status-text">Unable to fetch health data</span>
+        </div>
+    </article>
+    {% endif %}
+</div>

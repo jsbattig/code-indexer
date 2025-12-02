@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>Dashboard</h1>
+    <div class="dashboard-actions">
+        <button
+            id="refresh-btn"
+            class="outline"
+            hx-get="/admin/partials/dashboard-health"
+            hx-target="#health-section"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-indicator"
+            onclick="refreshAll()"
+        >
+            Refresh
+        </button>
+        <label class="auto-refresh-toggle">
+            <input type="checkbox" id="auto-refresh-checkbox" onchange="toggleAutoRefresh()">
+            <span>Auto-refresh (30s)</span>
+        </label>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+    </div>
+</div>
+
+<p>Welcome, <strong>{{ username }}</strong>!</p>
+
+<!-- System Health Section -->
+<section id="health-section" class="dashboard-section">
+    {% include "partials/dashboard_health.html" %}
+</section>
+
+<!-- Statistics Section -->
+<section id="stats-section" class="dashboard-section">
+    {% include "partials/dashboard_stats.html" %}
+</section>
+
+<script>
+let autoRefreshInterval = null;
+
+function toggleAutoRefresh() {
+    const checkbox = document.getElementById('auto-refresh-checkbox');
+    if (checkbox.checked) {
+        // Start auto-refresh every 30 seconds
+        autoRefreshInterval = setInterval(refreshAll, 30000);
+    } else {
+        // Stop auto-refresh
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    }
+}
+
+function refreshAll() {
+    // Trigger htmx refresh for both sections
+    htmx.ajax('GET', '/admin/partials/dashboard-health', {target: '#health-section', swap: 'innerHTML'});
+    htmx.ajax('GET', '/admin/partials/dashboard-stats', {target: '#stats-section', swap: 'innerHTML'});
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+});
+</script>
+{% endblock %}
