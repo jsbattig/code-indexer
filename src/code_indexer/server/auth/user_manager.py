@@ -247,19 +247,41 @@ class UserManager:
         Get all users.
 
         Returns:
-            List of User objects
+            List of User objects (skips malformed entries)
         """
         users_data = self._load_users()
 
         users = []
+        required_fields = {"password_hash", "role", "created_at"}
         for username, user_data in users_data.items():
-            user = User(
-                username=username,
-                password_hash=user_data["password_hash"],
-                role=UserRole(user_data["role"]),
-                created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
-            )
-            users.append(user)
+            # Skip malformed entries that are missing required fields
+            if not isinstance(user_data, dict):
+                continue
+            missing_fields = required_fields - set(user_data.keys())
+            if missing_fields:
+                # Log warning but don't crash - data corruption shouldn't break the UI
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    f"Skipping malformed user entry '{username}': missing {missing_fields}"
+                )
+                continue
+
+            try:
+                user = User(
+                    username=username,
+                    password_hash=user_data["password_hash"],
+                    role=UserRole(user_data["role"]),
+                    created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                )
+                users.append(user)
+            except (KeyError, ValueError) as e:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    f"Skipping invalid user entry '{username}': {e}"
+                )
+                continue
 
         return users
 
