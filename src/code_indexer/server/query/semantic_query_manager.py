@@ -326,6 +326,8 @@ class SemanticQueryManager:
         path_filter: Optional[str] = None,
         exclude_path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        # Search mode parameter (Story #503 - FTS Bug Fix)
+        search_mode: str = "semantic",
         # Temporal query parameters (Story #446)
         time_range: Optional[str] = None,
         time_range_all: bool = False,
@@ -359,6 +361,7 @@ class SemanticQueryManager:
             path_filter: Filter by file path pattern using glob syntax (e.g., '*/tests/*')
             exclude_path: Exclude files matching path pattern (e.g., '*/node_modules/*')
             accuracy: Search accuracy profile ('fast', 'balanced', 'high')
+            search_mode: Search mode - 'semantic' (default), 'fts', or 'hybrid'
             time_range: Time range filter for temporal queries (format: YYYY-MM-DD..YYYY-MM-DD)
             time_range_all: Query across all git history without time range limit
             at_commit: Query code at specific commit hash or ref
@@ -413,6 +416,8 @@ class SemanticQueryManager:
                 path_filter,
                 exclude_path,
                 accuracy,
+                # Search mode (Story #503 - FTS Bug Fix)
+                search_mode=search_mode,
                 # Temporal parameters (Story #446)
                 time_range=time_range,
                 time_range_all=time_range_all,
@@ -583,6 +588,8 @@ class SemanticQueryManager:
         path_filter: Optional[str] = None,
         exclude_path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        # Search mode parameter (Story #503 - FTS Bug Fix)
+        search_mode: str = "semantic",
         # Temporal parameters (Story #446)
         time_range: Optional[str] = None,
         time_range_all: bool = False,
@@ -602,7 +609,12 @@ class SemanticQueryManager:
         chunk_type: Optional[str] = None,
     ) -> List[QueryResult]:
         """
-        Perform the actual semantic search across user repositories.
+        Perform the actual search across user repositories.
+
+        Supports three search modes:
+        - 'semantic': Vector-based semantic similarity search (default)
+        - 'fts': Full-text search using Tantivy index
+        - 'hybrid': Combined FTS + semantic search with result fusion
 
         Args:
             username: Username performing the query
@@ -616,6 +628,7 @@ class SemanticQueryManager:
             path_filter: Filter by file path pattern
             exclude_path: Exclude files matching path pattern
             accuracy: Search accuracy profile
+            search_mode: Search mode - 'semantic' (default), 'fts', or 'hybrid'
             time_range: Time range filter for temporal queries
             time_range_all: Query across all git history without time range limit
             at_commit: Query at specific commit
@@ -661,6 +674,8 @@ class SemanticQueryManager:
                     path_filter,
                     exclude_path,
                     accuracy,
+                    # Search mode (Story #503 - FTS Bug Fix)
+                    search_mode=search_mode,
                     # Temporal parameters (Story #446)
                     time_range=time_range,
                     time_range_all=time_range_all,
@@ -713,6 +728,8 @@ class SemanticQueryManager:
         path_filter: Optional[str] = None,
         exclude_path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        # Search mode parameter (Story #503 - FTS Bug Fix)
+        search_mode: str = "semantic",
         # Temporal parameters (Story #446)
         time_range: Optional[str] = None,
         time_range_all: bool = False,
@@ -732,7 +749,12 @@ class SemanticQueryManager:
         chunk_type: Optional[str] = None,
     ) -> List[QueryResult]:
         """
-        Search a single repository using the SemanticSearchService or TemporalSearchService.
+        Search a single repository using the appropriate search service.
+
+        Supports three search modes:
+        - 'semantic': Vector-based semantic similarity search (default)
+        - 'fts': Full-text search using Tantivy index
+        - 'hybrid': Combined FTS + semantic search with result fusion
 
         For temporal queries (when time_range, at_commit, or show_evolution provided),
         uses TemporalSearchService with graceful fallback to regular search if temporal
@@ -757,6 +779,7 @@ class SemanticQueryManager:
             path_filter: Filter by file path pattern
             exclude_path: Exclude files matching path pattern
             accuracy: Search accuracy profile
+            search_mode: Search mode - 'semantic' (default), 'fts', or 'hybrid'
             time_range: Time range filter for temporal queries
             time_range_all: Query across all git history without time range limit
             at_commit: Query at specific commit
@@ -826,9 +849,38 @@ class SemanticQueryManager:
                     exclude_path=exclude_path,
                 )
 
-            # For non-composite repos, warn if advanced filters are used
+            # FTS SEARCH HANDLING (Story #503 - FTS Bug Fix)
+            # Execute FTS search when search_mode is 'fts' or 'hybrid'
+            if search_mode in ["fts", "hybrid"]:
+                fts_results = self._execute_fts_search(
+                    repo_path=repo_path_obj,
+                    repository_alias=repository_alias,
+                    query_text=query_text,
+                    limit=limit,
+                    min_score=min_score,
+                    language=language,
+                    exclude_language=exclude_language,
+                    path_filter=path_filter,
+                    exclude_path=exclude_path,
+                    case_sensitive=case_sensitive,
+                    fuzzy=fuzzy,
+                    edit_distance=edit_distance,
+                    snippet_lines=snippet_lines,
+                    regex=regex,
+                )
+
+                # For pure FTS mode, return FTS results directly
+                if search_mode == "fts":
+                    return fts_results
+
+                # For hybrid mode, continue to semantic search and merge results
+                # Fall through to semantic search below
+
+            # For non-composite repos with semantic search, warn if advanced filters are used
             # (they are not supported by SemanticSearchService)
-            if any([language, exclude_language, path_filter, exclude_path, accuracy]):
+            if search_mode in ["semantic", "hybrid"] and any(
+                [language, exclude_language, path_filter, exclude_path, accuracy]
+            ):
                 self.logger.warning(
                     f"Advanced filter parameters (language={language}, exclude_language={exclude_language}, "
                     f"path_filter={path_filter}, exclude_path={exclude_path}, accuracy={accuracy}) "
@@ -836,6 +888,7 @@ class SemanticQueryManager:
                     "These filters will be ignored. Consider using file_extensions filter instead."
                 )
 
+            # SEMANTIC SEARCH
             # Import SemanticSearchService and related models
             from ..services.search_service import SemanticSearchService
             from ..models.api_models import SemanticSearchRequest
@@ -854,7 +907,7 @@ class SemanticQueryManager:
             )
 
             # Convert search results to QueryResult objects
-            query_results = []
+            semantic_results = []
             for search_item in search_response.results:
                 # Apply min_score filter if specified
                 if min_score is not None and search_item.score < min_score:
@@ -877,9 +930,15 @@ class SemanticQueryManager:
                     repository_alias=repository_alias,
                     source_repo=None,  # Single repository, no source_repo
                 )
-                query_results.append(query_result)
+                semantic_results.append(query_result)
 
-            return query_results
+            # For hybrid mode, merge FTS and semantic results
+            if search_mode == "hybrid":
+                return self._merge_hybrid_results(
+                    fts_results, semantic_results, limit
+                )
+
+            return semantic_results
 
         except Exception as e:
             self.logger.error(
@@ -1381,3 +1440,188 @@ class SemanticQueryManager:
             )
             # Re-raise to let caller handle
             raise SemanticQueryError(f"Temporal query failed: {str(e)}")
+
+    def _execute_fts_search(
+        self,
+        repo_path: Path,
+        repository_alias: str,
+        query_text: str,
+        limit: int,
+        min_score: Optional[float] = None,
+        language: Optional[str] = None,
+        exclude_language: Optional[str] = None,
+        path_filter: Optional[str] = None,
+        exclude_path: Optional[str] = None,
+        case_sensitive: bool = False,
+        fuzzy: bool = False,
+        edit_distance: int = 0,
+        snippet_lines: int = 5,
+        regex: bool = False,
+    ) -> List[QueryResult]:
+        """
+        Execute FTS search using TantivyIndexManager.
+
+        Story #503 - FTS Bug Fix: Implements FTS search for MCP handler.
+
+        Args:
+            repo_path: Path to the repository
+            repository_alias: Repository alias for result annotation
+            query_text: Search query
+            limit: Maximum results to return
+            min_score: Minimum similarity score threshold
+            language: Filter by programming language
+            exclude_language: Exclude files of specified language
+            path_filter: Filter by file path pattern
+            exclude_path: Exclude files matching path pattern
+            case_sensitive: Enable case-sensitive matching
+            fuzzy: Enable fuzzy matching
+            edit_distance: Fuzzy match tolerance 0-3
+            snippet_lines: Context lines around matches
+            regex: Interpret query as regex pattern
+
+        Returns:
+            List of QueryResult objects from FTS search
+
+        Raises:
+            SemanticQueryError: If FTS index not available or search fails
+        """
+        # Check if FTS index exists
+        fts_index_dir = repo_path / ".code-indexer" / "tantivy_index"
+        if not fts_index_dir.exists():
+            raise SemanticQueryError(
+                f"FTS index not available for repository '{repository_alias}'. "
+                "Build FTS index with 'cidx index --fts' in the repository."
+            )
+
+        try:
+            # Import TantivyIndexManager (lazy import to avoid startup overhead)
+            from ...services.tantivy_index_manager import TantivyIndexManager
+
+            # Initialize Tantivy manager
+            tantivy_manager = TantivyIndexManager(fts_index_dir)
+            tantivy_manager.initialize_index(create_new=False)
+
+            # Handle fuzzy flag
+            effective_edit_distance = edit_distance
+            if fuzzy and edit_distance == 0:
+                effective_edit_distance = 1
+
+            # Execute FTS query
+            fts_raw_results = tantivy_manager.search(
+                query_text=query_text,
+                case_sensitive=case_sensitive,
+                edit_distance=effective_edit_distance,
+                snippet_lines=snippet_lines,
+                limit=limit,
+                language_filter=language,
+                path_filter=path_filter,
+                exclude_languages=[exclude_language] if exclude_language else None,
+                exclude_paths=[exclude_path] if exclude_path else None,
+                use_regex=regex,
+            )
+
+            # Convert FTS results to QueryResult objects
+            query_results = []
+            for result in fts_raw_results:
+                # FTS doesn't have similarity scores in the same sense as semantic search
+                # Use a normalized score based on result ordering (1.0 for first result)
+                score = 1.0 - (len(query_results) * 0.01)  # Decreasing score
+
+                # Apply min_score filter if specified
+                if min_score is not None and score < min_score:
+                    continue
+
+                query_result = QueryResult(
+                    file_path=result.get("path", ""),
+                    line_number=result.get("line_start", 0),
+                    code_snippet=result.get("snippet", ""),
+                    similarity_score=score,
+                    repository_alias=repository_alias,
+                    source_repo=None,
+                )
+                query_results.append(query_result)
+
+            self.logger.debug(
+                f"FTS search completed for '{repository_alias}': "
+                f"{len(query_results)} results"
+            )
+            return query_results
+
+        except ImportError as e:
+            raise SemanticQueryError(
+                f"Tantivy library not available: {str(e)}. "
+                "Install with: pip install tantivy==0.25.0"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"FTS search failed for repository '{repository_alias}': {str(e)}"
+            )
+            raise SemanticQueryError(f"FTS search failed: {str(e)}")
+
+    def _merge_hybrid_results(
+        self,
+        fts_results: List[QueryResult],
+        semantic_results: List[QueryResult],
+        limit: int,
+    ) -> List[QueryResult]:
+        """
+        Merge FTS and semantic search results for hybrid mode.
+
+        Uses reciprocal rank fusion (RRF) to combine results from both search types.
+
+        Args:
+            fts_results: Results from FTS search
+            semantic_results: Results from semantic search
+            limit: Maximum results to return
+
+        Returns:
+            Merged and deduplicated list of QueryResult objects
+        """
+        # Use file_path + line_number as key for deduplication
+        seen_keys = set()
+        merged_results = []
+        rrf_scores = {}
+
+        # Constant for RRF scoring (typically 60)
+        k = 60
+
+        # Calculate RRF scores for FTS results
+        for rank, result in enumerate(fts_results, start=1):
+            key = (result.file_path, result.line_number)
+            rrf_score = 1.0 / (k + rank)
+            rrf_scores[key] = rrf_scores.get(key, 0) + rrf_score
+
+        # Calculate RRF scores for semantic results
+        for rank, result in enumerate(semantic_results, start=1):
+            key = (result.file_path, result.line_number)
+            rrf_score = 1.0 / (k + rank)
+            rrf_scores[key] = rrf_scores.get(key, 0) + rrf_score
+
+        # Create a mapping of keys to results (prefer FTS for content)
+        result_map = {}
+        for result in semantic_results:
+            key = (result.file_path, result.line_number)
+            result_map[key] = result
+
+        for result in fts_results:
+            key = (result.file_path, result.line_number)
+            result_map[key] = result  # FTS overwrites semantic for same key
+
+        # Sort by RRF score and build merged results
+        sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
+
+        for key in sorted_keys[:limit]:
+            if key in result_map:
+                result = result_map[key]
+                # Update similarity score to RRF score
+                merged_result = QueryResult(
+                    file_path=result.file_path,
+                    line_number=result.line_number,
+                    code_snippet=result.code_snippet,
+                    similarity_score=rrf_scores[key],
+                    repository_alias=result.repository_alias,
+                    source_repo=result.source_repo,
+                )
+                merged_results.append(merged_result)
+
+        return merged_results

@@ -161,6 +161,8 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                     path_filter=params.get("path_filter"),
                     exclude_path=params.get("exclude_path"),
                     accuracy=params.get("accuracy", "balanced"),
+                    # Search mode (Story #503 - FTS Bug Fix)
+                    search_mode=params.get("search_mode", "semantic"),
                     # Temporal query parameters (Story #446)
                     time_range=params.get("time_range"),
                     time_range_all=params.get("time_range_all", False),
@@ -227,6 +229,8 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             path_filter=params.get("path_filter"),
             exclude_path=params.get("exclude_path"),
             accuracy=params.get("accuracy", "balanced"),
+            # Search mode (Story #503 - FTS Bug Fix)
+            search_mode=params.get("search_mode", "semantic"),
             # Temporal query parameters (Story #446)
             time_range=params.get("time_range"),
             at_commit=params.get("at_commit"),

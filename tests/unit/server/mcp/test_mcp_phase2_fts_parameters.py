@@ -31,7 +31,7 @@ class TestCaseSensitiveParameter:
     @pytest.mark.asyncio
     async def test_case_sensitive_accepts_true(self, mock_user):
         """Test case_sensitive accepts True value."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -66,7 +66,7 @@ class TestCaseSensitiveParameter:
     @pytest.mark.asyncio
     async def test_case_sensitive_defaults_to_false(self, mock_user):
         """Test case_sensitive defaults to False when not provided."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -98,7 +98,7 @@ class TestFuzzyParameter:
     @pytest.mark.asyncio
     async def test_fuzzy_accepts_true(self, mock_user):
         """Test fuzzy accepts True value."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -127,7 +127,7 @@ class TestFuzzyParameter:
     @pytest.mark.asyncio
     async def test_fuzzy_defaults_to_false(self, mock_user):
         """Test fuzzy defaults to False when not provided."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -159,7 +159,7 @@ class TestEditDistanceParameter:
     @pytest.mark.asyncio
     async def test_edit_distance_accepts_valid_range(self, mock_user):
         """Test edit_distance accepts values 0-3."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -190,7 +190,7 @@ class TestEditDistanceParameter:
     @pytest.mark.asyncio
     async def test_edit_distance_defaults_to_zero(self, mock_user):
         """Test edit_distance defaults to 0 when not provided."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -222,7 +222,7 @@ class TestSnippetLinesParameter:
     @pytest.mark.asyncio
     async def test_snippet_lines_accepts_valid_range(self, mock_user):
         """Test snippet_lines accepts values 0-50."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -253,7 +253,7 @@ class TestSnippetLinesParameter:
     @pytest.mark.asyncio
     async def test_snippet_lines_defaults_to_five(self, mock_user):
         """Test snippet_lines defaults to 5 when not provided."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -285,7 +285,7 @@ class TestRegexParameter:
     @pytest.mark.asyncio
     async def test_regex_accepts_true_with_fts_mode(self, mock_user):
         """Test regex accepts True with search_mode='fts'."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -314,7 +314,7 @@ class TestRegexParameter:
     @pytest.mark.asyncio
     async def test_regex_accepts_true_with_hybrid_mode(self, mock_user):
         """Test regex accepts True with search_mode='hybrid'."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -343,7 +343,7 @@ class TestRegexParameter:
     @pytest.mark.asyncio
     async def test_regex_defaults_to_false(self, mock_user):
         """Test regex defaults to False when not provided."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -375,7 +375,7 @@ class TestParameterCombinations:
     @pytest.mark.asyncio
     async def test_all_phase2_parameters_together(self, mock_user):
         """Test all Phase 2 parameters can be used together (except incompatible ones)."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
@@ -413,7 +413,7 @@ class TestParameterCombinations:
     @pytest.mark.asyncio
     async def test_regex_with_case_sensitive_and_snippet_lines(self, mock_user):
         """Test regex can be combined with case_sensitive and snippet_lines (not fuzzy/edit_distance)."""
-        with patch("code_indexer.server.app") as mock_app:
+        with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.semantic_query_manager.query_user_repositories.return_value = {
                 "results": [],
                 "total_results": 0,
