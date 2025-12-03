@@ -4,20 +4,20 @@ Repository Analyzer for extracting information from repositories.
 Analyzes repository contents (README, package files, directory structure)
 to extract metadata for generating semantic descriptions.
 
-Supports Anthropic SDK integration for enhanced AI-powered analysis when
+Supports Claude CLI integration for enhanced AI-powered analysis when
 CIDX_USE_CLAUDE_FOR_META environment variable is set to 'true' (default).
-Requires ANTHROPIC_API_KEY environment variable to be set.
+Requires ANTHROPIC_API_KEY environment variable and 'claude' CLI in PATH.
 """
 
 import json
 import logging
 import os
 import re
+import shlex
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
-
-import anthropic
 
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class RepoAnalyzer:
         """
         Extract information from the repository.
 
-        Uses Anthropic SDK for AI-powered analysis if available and enabled,
+        Uses Claude CLI for AI-powered analysis if available and enabled,
         otherwise falls back to static regex-based analysis.
 
         Returns:
@@ -89,128 +89,91 @@ class RepoAnalyzer:
 
     def _extract_info_with_claude(self) -> Optional[RepoInfo]:
         """
-        Extract repository information using Anthropic SDK.
+        Extract repository information using Claude CLI with tool support.
 
-        Reads repository files and sends them to Claude for analysis.
+        Uses Claude Code CLI which can read files, explore directories,
+        and provide much richer analysis than SDK-only approaches.
 
         Returns:
             RepoInfo if Claude succeeds and returns valid JSON,
             None otherwise (fallback to static analysis)
         """
         try:
-            # Get API key from environment
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
-            if not api_key:
-                logger.debug("ANTHROPIC_API_KEY not set, skipping Claude analysis")
+            # Check if Claude CLI is available
+            which_result = subprocess.run(
+                ["which", "claude"], capture_output=True, text=True, timeout=5
+            )
+            if which_result.returncode != 0:
+                logger.debug("Claude CLI not found in PATH")
                 return None
 
-            # Collect repository context
-            context_parts = []
-
-            # Read README if exists
-            readme = self._find_readme()
-            if readme:
-                try:
-                    content = readme.read_text(errors="ignore")[:10000]  # Limit size
-                    context_parts.append(f"=== README ({readme.name}) ===\n{content}")
-                except Exception as e:
-                    logger.debug("Could not read README: %s", e)
-
-            # List directory structure (top 2 levels)
-            try:
-                files = []
-                for item in self.repo_path.rglob("*"):
-                    rel_path = item.relative_to(self.repo_path)
-                    if len(rel_path.parts) <= 2 and not any(
-                        p.startswith(".") for p in rel_path.parts
-                    ):
-                        files.append(str(rel_path))
-                if files:
-                    context_parts.append(
-                        "=== Directory Structure ===\n"
-                        + "\n".join(sorted(files)[:100])
-                    )
-            except Exception as e:
-                logger.debug("Could not list directory: %s", e)
-
-            # Check for package files
-            package_files = [
-                "setup.py",
-                "pyproject.toml",
-                "package.json",
-                "Cargo.toml",
-                "go.mod",
-                "pom.xml",
-                "build.gradle",
-                "*.dpr",
-                "*.lpi",
-            ]
-            for pattern in package_files:
-                for pfile in self.repo_path.glob(pattern):
-                    try:
-                        content = pfile.read_text(errors="ignore")[:3000]
-                        context_parts.append(f"=== {pfile.name} ===\n{content}")
-                    except Exception:
-                        pass
-
-            if not context_parts:
-                logger.debug("No repository context found")
-                return None
-
-            repo_context = "\n\n".join(context_parts)
-
-            # Build prompt
-            prompt = f"""Analyze this repository and provide a JSON response with these exact fields:
-{{
-  "summary": "2-3 sentence comprehensive description of what this repo does",
-  "technologies": ["list", "of", "technologies", "and", "languages", "detected"],
-  "features": ["key feature 1", "key feature 2", "..."],
-  "use_cases": ["primary use case 1", "use case 2", "..."],
+            # Build the analysis prompt
+            prompt = """Analyze this repository. Examine the README, source files, and package files.
+Output ONLY a JSON object (no markdown, no explanation) with these exact fields:
+{
+  "summary": "2-3 sentence description of what this repository does",
+  "technologies": ["list", "of", "all", "technologies", "and", "tools", "detected"],
+  "features": ["key feature 1", "key feature 2", ...],
+  "use_cases": ["primary use case 1", "use case 2", ...],
   "purpose": "one of: api, service, library, cli-tool, web-application, data-structure, utility, framework, general-purpose"
-}}
+}"""
 
-Repository: {self.repo_path.name}
+            # Use script to provide pseudo-TTY (required for Claude CLI in non-interactive environments)
+            # The command: script -q -c 'timeout 90 claude -p "..." --print --dangerously-skip-permissions' /dev/null
+            claude_cmd = f"timeout 90 claude -p {shlex.quote(prompt)} --print --dangerously-skip-permissions"
+            full_cmd = ["script", "-q", "-c", claude_cmd, "/dev/null"]
 
-{repo_context}
-
-Be thorough - detect ALL technologies from file extensions and content.
-Output ONLY valid JSON, no markdown code blocks or explanations."""
-
-            # Call Anthropic API
-            client = anthropic.Anthropic(api_key=api_key)
-            message = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
+            result = subprocess.run(
+                full_cmd,
+                cwd=str(self.repo_path),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env={**os.environ},  # Inherit environment including ANTHROPIC_API_KEY
             )
 
-            response_text = message.content[0].text.strip()
+            if result.returncode != 0:
+                logger.debug("Claude CLI returned non-zero: %d", result.returncode)
+                return None
 
-            # Handle markdown code blocks if present
-            if response_text.startswith("```"):
-                lines = response_text.split("\n")
-                response_text = "\n".join(
-                    lines[1:-1] if lines[-1] == "```" else lines[1:]
-                )
+            # Clean output (remove ANSI escape codes and carriage returns)
+            output = result.stdout
+            output = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", output)  # Remove ANSI escapes
+            output = output.replace("\r\n", "\n").replace(
+                "\r", ""
+            )  # Normalize line endings
+            output = output.strip()
+
+            # Extract JSON from response (may be wrapped in markdown code blocks)
+            if "```json" in output:
+                match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
+                if match:
+                    output = match.group(1)
+            elif "```" in output:
+                match = re.search(r"```\s*(.*?)\s*```", output, re.DOTALL)
+                if match:
+                    output = match.group(1)
+
+            # Find JSON object in output
+            json_match = re.search(
+                r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", output, re.DOTALL
+            )
+            if json_match:
+                output = json_match.group(0)
 
             # Parse JSON response
-            data = json.loads(response_text)
+            data = json.loads(output)
 
             # Validate required fields
-            required_fields = [
-                "summary",
-                "technologies",
-                "features",
-                "use_cases",
-                "purpose",
-            ]
+            required_fields = ["summary", "technologies", "purpose"]
             for field in required_fields:
                 if field not in data:
                     logger.debug("Claude response missing required field: %s", field)
                     return None
 
             logger.info(
-                "Successfully analyzed repository with Claude: %s", self.repo_path.name
+                "Successfully analyzed repository with Claude CLI: %s",
+                self.repo_path.name,
             )
 
             return RepoInfo(
@@ -221,14 +184,17 @@ Output ONLY valid JSON, no markdown code blocks or explanations."""
                 purpose=data.get("purpose", "general-purpose"),
             )
 
-        except anthropic.APIError as e:
-            logger.debug("Anthropic API error: %s", e)
+        except FileNotFoundError:
+            logger.debug("script command not found")
+            return None
+        except subprocess.TimeoutExpired:
+            logger.debug("Claude CLI timed out after 120 seconds")
             return None
         except json.JSONDecodeError as e:
-            logger.debug("Failed to parse Claude JSON response: %s", e)
+            logger.debug("Failed to parse Claude CLI JSON response: %s", e)
             return None
         except Exception as e:
-            logger.debug("Unexpected error during Claude analysis: %s", e)
+            logger.debug("Unexpected error during Claude CLI execution: %s", e)
             return None
 
     def _extract_info_static(self) -> RepoInfo:
