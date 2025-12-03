@@ -4,12 +4,11 @@ Tests for AC3: AI Description Generation via RepoAnalyzer.
 Tests that RepoAnalyzer can extract information from various
 repository sources (README, package files, directory structure).
 
-Also tests Claude CLI integration for enhanced metadata generation.
+Also tests Anthropic SDK integration for enhanced metadata generation.
 """
 
 import json
 import os
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -285,65 +284,78 @@ Authentication service for microservices architecture.
 
 
 class TestClaudeCLIIntegration:
-    """Test suite for Claude CLI integration in RepoAnalyzer."""
+    """Test suite for Anthropic SDK integration in RepoAnalyzer."""
 
     @pytest.fixture
     def sample_claude_response(self):
-        """Provide a sample valid Claude CLI JSON response."""
-        return json.dumps({
+        """Provide a sample valid Claude SDK JSON response."""
+        return {
             "summary": "A comprehensive authentication library for Python applications.",
             "technologies": ["Python", "FastAPI", "JWT", "OAuth2"],
-            "features": ["Token authentication", "Role-based access", "API key management"],
+            "features": [
+                "Token authentication",
+                "Role-based access",
+                "API key management",
+            ],
             "use_cases": ["Web app authentication", "Microservice authorization"],
-            "purpose": "library"
-        })
+            "purpose": "library",
+        }
 
     def test_extract_info_with_claude_success(self, tmp_path, sample_claude_response):
         """
-        Test successful Claude CLI response parsing.
+        Test successful Claude SDK response parsing.
 
-        When Claude CLI returns valid JSON, it should be parsed into RepoInfo.
+        When Claude SDK returns valid JSON, it should be parsed into RepoInfo.
         """
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
         (repo_dir / "README.md").write_text("# Test Project\nSome description.")
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = sample_claude_response
+        # Mock Anthropic SDK response
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text=json.dumps(sample_claude_response))]
 
-        with patch.object(subprocess, 'run', return_value=mock_result) as mock_run:
-            analyzer = RepoAnalyzer(str(repo_dir))
-            info = analyzer._extract_info_with_claude()
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_message
 
-            # Verify subprocess was called with correct arguments
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args
-            assert call_args[0][0][0] == "claude"
-            assert "-p" in call_args[0][0]
-            assert "--print" in call_args[0][0]
-            assert call_args[1]["cwd"] == str(repo_dir)
-            assert call_args[1]["timeout"] == 60
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-api-key"}):
+            with patch(
+                "anthropic.Anthropic", return_value=mock_client
+            ) as mock_anthropic:
+                analyzer = RepoAnalyzer(str(repo_dir))
+                info = analyzer._extract_info_with_claude()
 
-            # Verify parsed result
-            assert info is not None
-            assert info.summary == "A comprehensive authentication library for Python applications."
-            assert "Python" in info.technologies
-            assert "FastAPI" in info.technologies
-            assert len(info.features) == 3
-            assert len(info.use_cases) == 2
-            assert info.purpose == "library"
+                # Verify Anthropic client was created
+                mock_anthropic.assert_called_once_with(api_key="test-api-key")
+
+                # Verify messages.create was called
+                mock_client.messages.create.assert_called_once()
+                call_kwargs = mock_client.messages.create.call_args[1]
+                assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+                assert call_kwargs["max_tokens"] == 1024
+
+                # Verify parsed result
+                assert info is not None
+                assert (
+                    info.summary
+                    == "A comprehensive authentication library for Python applications."
+                )
+                assert "Python" in info.technologies
+                assert "FastAPI" in info.technologies
+                assert len(info.features) == 3
+                assert len(info.use_cases) == 2
+                assert info.purpose == "library"
 
     def test_extract_info_with_claude_cli_not_found(self, tmp_path):
         """
-        Test fallback when Claude CLI is not installed.
+        Test fallback when ANTHROPIC_API_KEY is not set.
 
-        Should return None when FileNotFoundError is raised.
+        Should return None when API key is missing.
         """
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
 
-        with patch.object(subprocess, 'run', side_effect=FileNotFoundError("claude not found")):
+        with patch.dict(os.environ, {}, clear=True):
             analyzer = RepoAnalyzer(str(repo_dir))
             result = analyzer._extract_info_with_claude()
 
@@ -351,57 +363,67 @@ class TestClaudeCLIIntegration:
 
     def test_extract_info_with_claude_timeout(self, tmp_path):
         """
-        Test fallback when Claude CLI times out.
+        Test fallback when Anthropic API raises an error.
 
-        Should return None when subprocess.TimeoutExpired is raised.
+        Should return None when API error occurs.
         """
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
+        (repo_dir / "README.md").write_text("# Test")
 
-        with patch.object(subprocess, 'run', side_effect=subprocess.TimeoutExpired("claude", 60)):
-            analyzer = RepoAnalyzer(str(repo_dir))
-            result = analyzer._extract_info_with_claude()
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = Exception("API timeout")
 
-            assert result is None
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                analyzer = RepoAnalyzer(str(repo_dir))
+                result = analyzer._extract_info_with_claude()
+
+                assert result is None
 
     def test_extract_info_with_claude_invalid_json(self, tmp_path):
         """
-        Test fallback when Claude CLI returns invalid JSON.
+        Test fallback when Claude SDK returns invalid JSON.
 
         Should return None when JSON parsing fails.
         """
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
+        (repo_dir / "README.md").write_text("# Test")
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "This is not valid JSON at all"
+        # Mock SDK to return invalid JSON
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text="This is not valid JSON at all")]
 
-        with patch.object(subprocess, 'run', return_value=mock_result):
-            analyzer = RepoAnalyzer(str(repo_dir))
-            result = analyzer._extract_info_with_claude()
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_message
 
-            assert result is None
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                analyzer = RepoAnalyzer(str(repo_dir))
+                result = analyzer._extract_info_with_claude()
+
+                assert result is None
 
     def test_extract_info_with_claude_nonzero_exit(self, tmp_path):
         """
-        Test fallback when Claude CLI returns non-zero exit code.
+        Test fallback when Anthropic API raises exception.
 
-        Should return None when returncode is not 0.
+        Should return None when API call fails.
         """
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
+        (repo_dir / "README.md").write_text("# Test")
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        mock_result.stderr = "Error: API key not configured"
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = Exception("API error")
 
-        with patch.object(subprocess, 'run', return_value=mock_result):
-            analyzer = RepoAnalyzer(str(repo_dir))
-            result = analyzer._extract_info_with_claude()
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                analyzer = RepoAnalyzer(str(repo_dir))
+                result = analyzer._extract_info_with_claude()
 
-            assert result is None
+                assert result is None
 
     def test_extract_info_with_claude_missing_fields(self, tmp_path):
         """
@@ -411,28 +433,34 @@ class TestClaudeCLIIntegration:
         """
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
+        (repo_dir / "README.md").write_text("# Test")
 
         # Missing 'summary' field
-        incomplete_response = json.dumps({
-            "technologies": ["Python"],
-            "features": [],
-            "use_cases": [],
-            "purpose": "library"
-        })
+        incomplete_response = json.dumps(
+            {
+                "technologies": ["Python"],
+                "features": [],
+                "use_cases": [],
+                "purpose": "library",
+            }
+        )
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = incomplete_response
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text=incomplete_response)]
 
-        with patch.object(subprocess, 'run', return_value=mock_result):
-            analyzer = RepoAnalyzer(str(repo_dir))
-            result = analyzer._extract_info_with_claude()
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_message
 
-            assert result is None
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                analyzer = RepoAnalyzer(str(repo_dir))
+                result = analyzer._extract_info_with_claude()
+
+                assert result is None
 
 
 class TestClaudeFallbackBehavior:
-    """Test suite for Claude CLI fallback to static analysis."""
+    """Test suite for Anthropic SDK fallback to static analysis."""
 
     def test_extract_info_uses_claude_by_default(self, tmp_path):
         """
@@ -445,21 +473,26 @@ class TestClaudeFallbackBehavior:
         repo_dir.mkdir()
         (repo_dir / "README.md").write_text("# Test\nDescription.")
 
-        claude_response = json.dumps({
+        claude_response = {
             "summary": "Claude-generated summary",
             "technologies": ["Python"],
             "features": ["Feature A"],
             "use_cases": ["Use case 1"],
-            "purpose": "library"
-        })
+            "purpose": "library",
+        }
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = claude_response
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text=json.dumps(claude_response))]
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_message
 
         # Ensure env var is true or not set
-        with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "true"}):
-            with patch.object(subprocess, 'run', return_value=mock_result):
+        with patch.dict(
+            os.environ,
+            {"CIDX_USE_CLAUDE_FOR_META": "true", "ANTHROPIC_API_KEY": "test-key"},
+        ):
+            with patch("anthropic.Anthropic", return_value=mock_client):
                 analyzer = RepoAnalyzer(str(repo_dir))
                 info = analyzer.extract_info()
 
@@ -469,23 +502,30 @@ class TestClaudeFallbackBehavior:
         """
         Test that extract_info() falls back to static analysis on Claude failure.
 
-        When Claude CLI fails, static analysis should be used.
+        When Claude SDK fails, static analysis should be used.
         """
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
         (repo_dir / "setup.py").write_text("from setuptools import setup")
-        (repo_dir / "README.md").write_text("# Test Project\n\nA Python library for testing.")
+        (repo_dir / "README.md").write_text(
+            "# Test Project\n\nA Python library for testing."
+        )
 
         with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "true"}):
-            with patch.object(subprocess, 'run', side_effect=FileNotFoundError()):
-                analyzer = RepoAnalyzer(str(repo_dir))
-                info = analyzer.extract_info()
+            # No API key set - Claude should fail
+            with patch.dict(os.environ, {}, clear=True):
+                with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "true"}):
+                    analyzer = RepoAnalyzer(str(repo_dir))
+                    info = analyzer.extract_info()
 
-                # Should fall back to static analysis
-                assert info is not None
-                assert "Python" in info.technologies
-                # Static analysis produces different summary
-                assert "testing" in info.summary.lower() or "library" in info.summary.lower()
+                    # Should fall back to static analysis
+                    assert info is not None
+                    assert "Python" in info.technologies
+                    # Static analysis produces different summary
+                    assert (
+                        "testing" in info.summary.lower()
+                        or "library" in info.summary.lower()
+                    )
 
     def test_extract_info_disabled_via_env_var(self, tmp_path):
         """
@@ -499,12 +539,12 @@ class TestClaudeFallbackBehavior:
         (repo_dir / "README.md").write_text("# Test\n\nStatic analysis test.")
 
         with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "false"}):
-            with patch.object(subprocess, 'run') as mock_run:
+            with patch("anthropic.Anthropic") as mock_anthropic:
                 analyzer = RepoAnalyzer(str(repo_dir))
                 info = analyzer.extract_info()
 
-                # Claude should NOT be called
-                mock_run.assert_not_called()
+                # Anthropic SDK should NOT be instantiated
+                mock_anthropic.assert_not_called()
 
                 # Static analysis should provide results
                 assert info is not None
