@@ -51,18 +51,27 @@ class TestMigrateLegacyCidxMeta:
         # Create mock golden_repo_manager
         mock_manager = Mock()
         mock_manager.golden_repo_exists = Mock(return_value=False)
-        mock_manager.add_golden_repo = Mock()
+        mock_manager.golden_repos = {}  # Add golden_repos dictionary
+        mock_manager._save_metadata = Mock()
 
-        # Execute migration
-        from code_indexer.server.app import migrate_legacy_cidx_meta
+        # Mock GlobalActivator to avoid actual global activation
+        with patch(
+            "code_indexer.global_repos.global_activation.GlobalActivator"
+        ) as mock_activator_class:
+            mock_activator = Mock()
+            mock_activator_class.return_value = mock_activator
 
-        migrate_legacy_cidx_meta(mock_manager, str(golden_repos_dir))
+            # Execute migration
+            from code_indexer.server.app import migrate_legacy_cidx_meta
 
-        # Verify: add_golden_repo was called with local:// URL
-        mock_manager.add_golden_repo.assert_called_once()
-        call_args = mock_manager.add_golden_repo.call_args
-        assert call_args[1]["repo_url"] == "local://cidx-meta"
-        assert call_args[1]["alias"] == "cidx-meta"
+            migrate_legacy_cidx_meta(mock_manager, str(golden_repos_dir))
+
+            # Verify: cidx-meta was registered with local:// URL
+            assert "cidx-meta" in mock_manager.golden_repos
+            repo = mock_manager.golden_repos["cidx-meta"]
+            assert repo.repo_url == "local://cidx-meta"
+            assert repo.alias == "cidx-meta"
+            mock_manager._save_metadata.assert_called_once()
 
     def test_migrates_repo_url_none_to_local_scheme(
         self, golden_repos_dir, metadata_file
@@ -161,18 +170,49 @@ class TestBootstrapCidxMeta:
         # Create mock manager
         mock_manager = Mock()
         mock_manager.golden_repo_exists = Mock(return_value=False)
-        mock_manager.add_golden_repo = Mock()
+        mock_manager.golden_repos = {}
+        mock_manager._save_metadata = Mock()
 
-        # Execute bootstrap
-        from code_indexer.server.app import bootstrap_cidx_meta
+        # Mock GlobalActivator to avoid actual global activation
+        with patch(
+            "code_indexer.global_repos.global_activation.GlobalActivator"
+        ) as mock_activator_class:
+            mock_activator = Mock()
+            mock_activator_class.return_value = mock_activator
 
-        bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+            # Mock subprocess.run to verify cidx init/index calls
+            with patch("subprocess.run") as mock_subprocess:
+                # Execute bootstrap
+                from code_indexer.server.app import bootstrap_cidx_meta
 
-        # Verify: cidx-meta was created with local:// URL
-        mock_manager.add_golden_repo.assert_called_once()
-        call_args = mock_manager.add_golden_repo.call_args
-        assert call_args[1]["repo_url"] == "local://cidx-meta"
-        assert call_args[1]["alias"] == "cidx-meta"
+                bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+
+                # Verify: cidx-meta was created with local:// URL
+                assert "cidx-meta" in mock_manager.golden_repos
+                repo = mock_manager.golden_repos["cidx-meta"]
+                assert repo.repo_url == "local://cidx-meta"
+                assert repo.alias == "cidx-meta"
+
+                # Verify: cidx init was called
+                cidx_meta_path = golden_repos_dir / "cidx-meta"
+                init_call = [
+                    call
+                    for call in mock_subprocess.call_args_list
+                    if call[0][0] == ["cidx", "init"]
+                ]
+                assert len(init_call) == 1
+                assert init_call[0][1]["cwd"] == str(cidx_meta_path)
+                assert init_call[0][1]["check"] is True
+
+                # Verify: cidx index was called
+                index_call = [
+                    call
+                    for call in mock_subprocess.call_args_list
+                    if call[0][0] == ["cidx", "index"]
+                ]
+                assert len(index_call) == 1
+                assert index_call[0][1]["cwd"] == str(cidx_meta_path)
+                assert index_call[0][1]["check"] is True
 
     def test_no_op_when_cidx_meta_already_exists(self, golden_repos_dir):
         """Test that bootstrap is no-op when cidx-meta already exists."""
@@ -181,15 +221,17 @@ class TestBootstrapCidxMeta:
         # Create mock manager
         mock_manager = Mock()
         mock_manager.golden_repo_exists = Mock(return_value=True)
-        mock_manager.add_golden_repo = Mock()
+        mock_manager.golden_repos = {}
 
-        # Execute bootstrap
-        from code_indexer.server.app import bootstrap_cidx_meta
+        # Mock subprocess to ensure it's NOT called
+        with patch("subprocess.run") as mock_subprocess:
+            # Execute bootstrap
+            from code_indexer.server.app import bootstrap_cidx_meta
 
-        bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+            bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
 
-        # Verify: No creation attempted
-        mock_manager.add_golden_repo.assert_not_called()
+            # Verify: No cidx commands were executed
+            mock_subprocess.assert_not_called()
 
     def test_creates_directory_structure(self, golden_repos_dir):
         """Test that bootstrap creates the cidx-meta directory."""
@@ -198,14 +240,136 @@ class TestBootstrapCidxMeta:
         # Create mock manager
         mock_manager = Mock()
         mock_manager.golden_repo_exists = Mock(return_value=False)
-        mock_manager.add_golden_repo = Mock()
+        mock_manager.golden_repos = {}
+        mock_manager._save_metadata = Mock()
 
-        # Execute bootstrap
-        from code_indexer.server.app import bootstrap_cidx_meta
+        # Mock GlobalActivator to avoid actual global activation
+        with patch(
+            "code_indexer.global_repos.global_activation.GlobalActivator"
+        ) as mock_activator_class:
+            mock_activator = Mock()
+            mock_activator_class.return_value = mock_activator
 
-        bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+            # Mock subprocess to avoid actual cidx calls
+            with patch("subprocess.run") as mock_subprocess:
+                # Execute bootstrap
+                from code_indexer.server.app import bootstrap_cidx_meta
 
-        # Verify: Directory was created
+                bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+
+                # Verify: Directory was created
+                cidx_meta_path = golden_repos_dir / "cidx-meta"
+                assert cidx_meta_path.exists()
+                assert cidx_meta_path.is_dir()
+
+    def test_init_skipped_when_code_indexer_exists(self, golden_repos_dir):
+        """Test that cidx init is skipped when .code-indexer directory already exists."""
+        # Setup: Create cidx-meta directory with existing .code-indexer
         cidx_meta_path = golden_repos_dir / "cidx-meta"
-        assert cidx_meta_path.exists()
-        assert cidx_meta_path.is_dir()
+        cidx_meta_path.mkdir(parents=True)
+        (cidx_meta_path / ".code-indexer").mkdir()
+
+        # Create mock manager
+        mock_manager = Mock()
+        mock_manager.golden_repo_exists = Mock(return_value=False)
+        mock_manager.golden_repos = {}
+        mock_manager._save_metadata = Mock()
+
+        # Mock GlobalActivator
+        with patch(
+            "code_indexer.global_repos.global_activation.GlobalActivator"
+        ) as mock_activator_class:
+            mock_activator = Mock()
+            mock_activator_class.return_value = mock_activator
+
+            # Mock subprocess
+            with patch("subprocess.run") as mock_subprocess:
+                # Execute bootstrap
+                from code_indexer.server.app import bootstrap_cidx_meta
+
+                bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+
+                # Verify: cidx init was NOT called
+                init_calls = [
+                    call
+                    for call in mock_subprocess.call_args_list
+                    if call[0][0] == ["cidx", "init"]
+                ]
+                assert len(init_calls) == 0
+
+                # Verify: cidx index WAS still called
+                index_calls = [
+                    call
+                    for call in mock_subprocess.call_args_list
+                    if call[0][0] == ["cidx", "index"]
+                ]
+                assert len(index_calls) == 1
+
+    def test_subprocess_error_handling(self, golden_repos_dir):
+        """Test that bootstrap handles subprocess errors gracefully."""
+        # Setup: No cidx-meta exists
+        mock_manager = Mock()
+        mock_manager.golden_repo_exists = Mock(return_value=False)
+        mock_manager.golden_repos = {}
+        mock_manager._save_metadata = Mock()
+
+        # Mock GlobalActivator
+        with patch(
+            "code_indexer.global_repos.global_activation.GlobalActivator"
+        ) as mock_activator_class:
+            mock_activator = Mock()
+            mock_activator_class.return_value = mock_activator
+
+            # Mock subprocess to raise an error
+            with patch("subprocess.run") as mock_subprocess:
+                import subprocess
+
+                mock_subprocess.side_effect = subprocess.CalledProcessError(
+                    1, ["cidx", "init"], stderr="Error running cidx init"
+                )
+
+                # Execute bootstrap - should not raise exception
+                from code_indexer.server.app import bootstrap_cidx_meta
+
+                # Should complete without raising exception
+                bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+
+                # Verify: Directory and registration still happened
+                cidx_meta_path = golden_repos_dir / "cidx-meta"
+                assert cidx_meta_path.exists()
+                assert "cidx-meta" in mock_manager.golden_repos
+
+    def test_idempotent_multiple_calls(self, golden_repos_dir):
+        """Test that multiple bootstrap calls are safe (idempotent)."""
+        # Setup
+        mock_manager = Mock()
+        mock_manager.golden_repos = {}
+        mock_manager._save_metadata = Mock()
+
+        # First call: golden_repo_exists returns False
+        mock_manager.golden_repo_exists = Mock(return_value=False)
+
+        # Mock GlobalActivator
+        with patch(
+            "code_indexer.global_repos.global_activation.GlobalActivator"
+        ) as mock_activator_class:
+            mock_activator = Mock()
+            mock_activator_class.return_value = mock_activator
+
+            # Mock subprocess
+            with patch("subprocess.run") as mock_subprocess:
+                # Execute bootstrap first time
+                from code_indexer.server.app import bootstrap_cidx_meta
+
+                bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+
+                first_call_count = mock_subprocess.call_count
+
+                # Second call: golden_repo_exists returns True (already exists)
+                mock_manager.golden_repo_exists = Mock(return_value=True)
+                mock_subprocess.reset_mock()
+
+                bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
+
+                # Verify: Second call didn't execute any cidx commands
+                assert mock_subprocess.call_count == 0
