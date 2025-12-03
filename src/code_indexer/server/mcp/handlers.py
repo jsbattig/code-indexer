@@ -548,7 +548,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
         limit = params.get("limit", 500)
         sort_by = params.get("sort_by", "path")
 
-        logger.info(f"DEBUG browse_directory: repository_alias={repository_alias}, path={path}")
+        logger.info(
+            f"DEBUG browse_directory: repository_alias={repository_alias}, path={path}"
+        )
 
         # Validate limit range
         if limit < 1:
@@ -602,15 +604,17 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             # Use resolved path instead of alias for file_service
             repository_alias = target_path
             is_global_repo = True
-            logger.info(f"DEBUG browse_directory: is_global_repo={is_global_repo}, resolved repo={repository_alias}")
+            logger.info(
+                f"DEBUG browse_directory: is_global_repo={is_global_repo}, resolved repo={repository_alias}"
+            )
         else:
             is_global_repo = False
 
         # Build path pattern combining path and user's pattern
         final_path_pattern = None
+        # Normalize path first (remove trailing slash) - "/" becomes ""
+        path = path.rstrip("/") if path else ""
         if path:
-            # Normalize path (remove trailing slash)
-            path = path.rstrip("/")
             # Base pattern for the specified directory
             base_pattern = f"{path}/**/*" if recursive else f"{path}/*"
             if user_path_pattern:
@@ -636,7 +640,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             sort_by=sort_by,
         )
 
-        logger.info(f"DEBUG browse_directory: query_params.path_pattern={query_params.path_pattern}")
+        logger.info(
+            f"DEBUG browse_directory: query_params.path_pattern={query_params.path_pattern}"
+        )
 
         if is_global_repo:
             result = app_module.file_service.list_files_by_path(
@@ -650,7 +656,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
                 query_params=query_params,
             )
 
-        logger.info(f"DEBUG browse_directory: result.files count={len(result.files) if hasattr(result, 'files') else 'N/A'}")
+        logger.info(
+            f"DEBUG browse_directory: result.files count={len(result.files) if hasattr(result, 'files') else 'N/A'}"
+        )
 
         # Convert FileInfo objects to dict structure
         files_data = (
