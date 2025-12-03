@@ -1526,17 +1526,14 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
     and initializes the CIDX index structure.
     This is idempotent - safe to call multiple times.
 
+    ALWAYS re-indexes cidx-meta on each server startup to pick up new files
+    added during golden repo registration.
+
     Args:
         golden_repo_manager: GoldenRepoManager instance
         golden_repos_dir: Path to golden-repos directory
     """
-    # Check if cidx-meta already exists
-    if golden_repo_manager.golden_repo_exists("cidx-meta"):
-        return  # Already bootstrapped, nothing to do
-
-    logger.info("Bootstrapping cidx-meta as regular golden repo")
-
-    # Import GoldenRepo for direct registration
+    # Import dependencies
     from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
     from datetime import datetime, timezone
     import subprocess
@@ -1545,69 +1542,77 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
     cidx_meta_path = Path(golden_repos_dir) / "cidx-meta"
     cidx_meta_path.mkdir(parents=True, exist_ok=True)
 
-    # Initialize CIDX index structure if not already done
-    if not (cidx_meta_path / ".code-indexer").exists():
+    # Check if cidx-meta already exists
+    already_registered = golden_repo_manager.golden_repo_exists("cidx-meta")
+
+    if not already_registered:
+        logger.info("Bootstrapping cidx-meta as regular golden repo")
+
+        # Initialize CIDX index structure if not already done
+        if not (cidx_meta_path / ".code-indexer").exists():
+            try:
+                logger.info("Initializing cidx-meta index structure")
+                subprocess.run(
+                    ["cidx", "init"],
+                    cwd=str(cidx_meta_path),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                logger.info("Successfully initialized cidx-meta index structure")
+            except subprocess.CalledProcessError as e:
+                logger.error(
+                    f"Failed to initialize cidx-meta: {e.stderr if e.stderr else str(e)}"
+                )
+                # Continue with registration even if init fails - don't break server startup
+            except Exception as e:
+                logger.error(f"Unexpected error during cidx-meta initialization: {e}")
+                # Continue with registration even if init fails - don't break server startup
+
+        # Register directly in metadata without background job (startup hasn't initialized background_job_manager yet)
+        repo = GoldenRepo(
+            alias="cidx-meta",
+            repo_url="local://cidx-meta",
+            default_branch="main",  # Not used for local:// repos
+            clone_path=str(cidx_meta_path),
+            created_at=datetime.now(timezone.utc).isoformat(),
+            enable_temporal=False,  # No temporal for local:// repos
+        )
+        golden_repo_manager.golden_repos["cidx-meta"] = repo
+        golden_repo_manager._save_metadata()
+        logger.info("Bootstrapped cidx-meta at local://cidx-meta")
+
+        # Activate cidx-meta globally (create global registry entry + alias)
+        from code_indexer.global_repos.global_activation import GlobalActivator
+
+        global_activator = GlobalActivator(str(Path(golden_repos_dir)))
+        global_activator.activate_golden_repo(
+            repo_name="cidx-meta",
+            repo_url="local://cidx-meta",
+            clone_path=str(cidx_meta_path),
+            enable_temporal=False,
+        )
+        logger.info("Bootstrapped cidx-meta activated globally")
+
+    # ALWAYS re-index cidx-meta to pick up new files (even if already registered)
+    # This ensures .md files added during golden repo registration are indexed
+    if cidx_meta_path.exists():
         try:
-            logger.info("Initializing cidx-meta index structure")
+            logger.info("Re-indexing cidx-meta content")
             subprocess.run(
-                ["cidx", "init"],
+                ["cidx", "index"],
                 cwd=str(cidx_meta_path),
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            logger.info("Successfully initialized cidx-meta index structure")
+            logger.info("Successfully re-indexed cidx-meta content")
         except subprocess.CalledProcessError as e:
-            logger.error(
-                f"Failed to initialize cidx-meta: {e.stderr if e.stderr else str(e)}"
-            )
-            # Continue with registration even if init fails - don't break server startup
+            logger.error(f"Failed to index cidx-meta: {e.stderr if e.stderr else str(e)}")
+            # Don't break server startup if indexing fails - cidx-meta can be indexed later
         except Exception as e:
-            logger.error(f"Unexpected error during cidx-meta initialization: {e}")
-            # Continue with registration even if init fails - don't break server startup
-
-    # Register directly in metadata without background job (startup hasn't initialized background_job_manager yet)
-    repo = GoldenRepo(
-        alias="cidx-meta",
-        repo_url="local://cidx-meta",
-        default_branch="main",  # Not used for local:// repos
-        clone_path=str(cidx_meta_path),
-        created_at=datetime.now(timezone.utc).isoformat(),
-        enable_temporal=False,  # No temporal for local:// repos
-    )
-    golden_repo_manager.golden_repos["cidx-meta"] = repo
-    golden_repo_manager._save_metadata()
-    logger.info("Bootstrapped cidx-meta at local://cidx-meta")
-
-    # Activate cidx-meta globally (create global registry entry + alias)
-    from code_indexer.global_repos.global_activation import GlobalActivator
-
-    global_activator = GlobalActivator(str(Path(golden_repos_dir)))
-    global_activator.activate_golden_repo(
-        repo_name="cidx-meta",
-        repo_url="local://cidx-meta",
-        clone_path=str(cidx_meta_path),
-        enable_temporal=False,
-    )
-    logger.info("Bootstrapped cidx-meta activated globally")
-
-    # Index the content (may be empty initially, that's ok)
-    try:
-        logger.info("Indexing cidx-meta content")
-        subprocess.run(
-            ["cidx", "index"],
-            cwd=str(cidx_meta_path),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        logger.info("Successfully indexed cidx-meta content")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to index cidx-meta: {e.stderr if e.stderr else str(e)}")
-        # Don't break server startup if indexing fails - cidx-meta can be indexed later
-    except Exception as e:
-        logger.error(f"Unexpected error during cidx-meta indexing: {e}")
-        # Don't break server startup if indexing fails - cidx-meta can be indexed later
+            logger.error(f"Unexpected error during cidx-meta indexing: {e}")
+            # Don't break server startup if indexing fails - cidx-meta can be indexed later
 
 
 def create_app() -> FastAPI:
