@@ -9,7 +9,6 @@ meta directory management code.
 import logging
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -102,11 +101,9 @@ def on_repo_removed(repo_name: str, golden_repos_dir: str) -> None:
         logger.debug(f"No meta description file to delete for {repo_name}")
 
 
-def _generate_repo_description(
-    repo_name: str, repo_url: str, clone_path: str
-) -> str:
+def _generate_repo_description(repo_name: str, repo_url: str, clone_path: str) -> str:
     """
-    Generate .md file content for a repository.
+    Generate .md file content for a repository using RepoAnalyzer.
 
     Args:
         repo_name: Repository name/alias
@@ -114,68 +111,57 @@ def _generate_repo_description(
         clone_path: Path to cloned repository
 
     Returns:
-        Markdown content for .md file
-
-    Note:
-        Uses simple template-based generation. Future enhancement could
-        integrate with RepoAnalyzer for richer metadata extraction.
+        Markdown content for .md file with rich metadata from Claude analysis
     """
     from datetime import datetime, timezone
 
-    # Basic template for now - can be enhanced later with RepoAnalyzer
+    from .repo_analyzer import RepoAnalyzer
+
     now = datetime.now(timezone.utc).isoformat()
 
-    # Try to extract README content for description
-    description = _extract_readme_summary(clone_path)
+    # Use RepoAnalyzer for rich metadata extraction (uses Claude SDK if available)
+    analyzer = RepoAnalyzer(clone_path)
+    info = analyzer.extract_info()
+
+    # Build YAML frontmatter with rich metadata
+    tech_list = (
+        "\n".join(f"  - {tech}" for tech in info.technologies)
+        if info.technologies
+        else "  []"
+    )
 
     frontmatter = f"""---
 name: {repo_name}
 url: {repo_url}
+technologies:
+{tech_list}
+purpose: {info.purpose}
 last_analyzed: {now}
 ---
 """
 
+    # Build body with summary and details
     body = f"""
 # {repo_name}
 
-{description}
+{info.summary}
 
 **Repository URL**: {repo_url}
 """
 
+    # Add features section if available
+    if info.features:
+        body += "\n## Features\n\n"
+        for feat in info.features[:10]:
+            body += f"- {feat}\n"
+
+    # Add use cases section if available
+    if info.use_cases:
+        body += "\n## Use Cases\n\n"
+        for uc in info.use_cases[:5]:
+            body += f"- {uc}\n"
+
     return frontmatter + body
-
-
-def _extract_readme_summary(clone_path: str) -> str:
-    """
-    Extract summary from README file if available.
-
-    Args:
-        clone_path: Path to repository
-
-    Returns:
-        Summary text or generic description
-    """
-    clone_path_obj = Path(clone_path)
-
-    # Look for README files
-    readme_files = ["README.md", "README.txt", "README", "readme.md"]
-    for readme_name in readme_files:
-        readme_path = clone_path_obj / readme_name
-        if readme_path.exists():
-            try:
-                content = readme_path.read_text(encoding="utf-8", errors="ignore")
-                # Extract first non-empty paragraph (simple heuristic)
-                lines = content.split("\n")
-                for line in lines:
-                    line = line.strip()
-                    if line and not line.startswith("#") and len(line) > 20:
-                        return line[:500]  # First substantial line, max 500 chars
-            except Exception as e:
-                logger.debug(f"Failed to read README from {readme_path}: {e}")
-                continue
-
-    return f"Golden repository: {Path(clone_path).name}"
 
 
 def _reindex_cidx_meta(cidx_meta_path: Path) -> None:
