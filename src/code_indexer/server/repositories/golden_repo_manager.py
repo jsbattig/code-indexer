@@ -173,10 +173,12 @@ class GoldenRepoManager:
         if alias in self.golden_repos:
             raise GoldenRepoError(f"Golden repository alias '{alias}' already exists")
 
-        if not self._validate_git_repository(repo_url):
-            raise GitOperationError(
-                f"Invalid or inaccessible git repository: {repo_url}"
-            )
+        # Skip git validation for local:// URLs (Story #538)
+        if not repo_url.startswith("local://"):
+            if not self._validate_git_repository(repo_url):
+                raise GitOperationError(
+                    f"Invalid or inaccessible git repository: {repo_url}"
+                )
 
         # Create no-args wrapper for background execution
         def background_worker() -> Dict[str, Any]:
@@ -235,6 +237,25 @@ class GoldenRepoManager:
                         f"Manual global activation can be retried later."
                     )
                     # Continue with successful registration response
+
+                # Lifecycle hook: Create .md file in cidx-meta (Story #538)
+                try:
+                    from code_indexer.global_repos.meta_description_hook import (
+                        on_repo_added,
+                    )
+
+                    on_repo_added(
+                        repo_name=alias,
+                        repo_url=repo_url,
+                        clone_path=clone_path,
+                        golden_repos_dir=self.golden_repos_dir,
+                    )
+                except Exception as hook_error:
+                    # Log error but don't fail the golden repo registration
+                    logging.error(
+                        f"Meta description hook failed for '{alias}': {hook_error}. "
+                        f"Golden repository added but meta description not created."
+                    )
 
                 return {
                     "success": True,
@@ -351,6 +372,22 @@ class GoldenRepoManager:
                         f"Golden repository removed but some global resources may remain."
                     )
 
+                # Lifecycle hook: Delete .md file from cidx-meta (Story #538)
+                try:
+                    from code_indexer.global_repos.meta_description_hook import (
+                        on_repo_removed,
+                    )
+
+                    on_repo_removed(
+                        repo_name=alias, golden_repos_dir=self.golden_repos_dir
+                    )
+                except Exception as hook_error:
+                    # Log error but don't fail removal - the repo is already removed
+                    logging.error(
+                        f"Meta description hook failed for '{alias}': {hook_error}. "
+                        f"Golden repository removed but meta description not deleted."
+                    )
+
                 message = f"Golden repository '{alias}' removed successfully"
                 return {
                     "success": True,
@@ -431,7 +468,7 @@ class GoldenRepoManager:
         Returns:
             True if it's a local path, False if remote
         """
-        return repo_url.startswith("/") or repo_url.startswith("file://")
+        return repo_url.startswith("/") or repo_url.startswith("file://") or repo_url.startswith("local://")
 
     def _clone_local_repository_with_regular_copy(
         self, repo_url: str, clone_path: str
@@ -453,14 +490,28 @@ class GoldenRepoManager:
         Raises:
             GitOperationError: If cloning fails
         """
-        # Normalize file:// URLs
-        source_path = (
-            repo_url.replace("file://", "")
-            if repo_url.startswith("file://")
-            else repo_url
-        )
+        # Normalize file:// and local:// URLs
+        if repo_url.startswith("file://"):
+            source_path = repo_url.replace("file://", "")
+        elif repo_url.startswith("local://"):
+            # local://cidx-meta -> Use the target directory directly (no source to copy)
+            # The directory should already exist (created by bootstrap_cidx_meta)
+            source_path = None
+        else:
+            source_path = repo_url
 
         try:
+            # For local:// URLs, the directory should already exist (no copy needed)
+            if source_path is None:
+                if not os.path.exists(clone_path):
+                    raise GitOperationError(
+                        f"Local repository directory does not exist: {clone_path}"
+                    )
+                logging.info(
+                    f"Using existing local directory for {repo_url}: {clone_path}"
+                )
+                return clone_path
+
             # Always use regular copy for golden repository registration
             # This avoids cross-device link issues that occur with CoW cloning
             shutil.copytree(source_path, clone_path, symlinks=True)

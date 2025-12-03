@@ -198,6 +198,74 @@ class TestHNSWIncrementalMethods:
         # Should return other vectors (at least 1, since we have 4 remaining after delete)
         assert len(result_ids) >= 1
 
+    def test_remove_vector_cleans_up_mappings(
+        self, hnsw_manager, temp_collection_path, sample_vectors
+    ):
+        """Test that remove_vector() cleans up id_to_label and label_to_id mappings.
+
+        This is critical to prevent stale metadata from causing duplicate results in queries.
+        Story #540 requires that when vectors are soft-deleted, their mappings are removed
+        to avoid returning non-existent vectors.
+        """
+        vectors, ids = sample_vectors
+
+        # Build initial index with 5 vectors
+        hnsw_manager.build_index(
+            collection_path=temp_collection_path, vectors=vectors[:5], ids=ids[:5]
+        )
+
+        # Load index for incremental update
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
+        )
+
+        # Verify initial state: all 5 vectors should be in mappings
+        assert len(id_to_label) == 5
+        assert len(label_to_id) == 5
+        for i in range(5):
+            assert ids[i] in id_to_label
+            label = id_to_label[ids[i]]
+            assert label in label_to_id
+            assert label_to_id[label] == ids[i]
+
+        # Remove a vector
+        delete_id = ids[0]
+        delete_label = id_to_label[delete_id]
+        hnsw_manager.remove_vector(
+            index=index, point_id=delete_id, id_to_label=id_to_label, label_to_id=label_to_id
+        )
+
+        # CRITICAL: Verify mappings are cleaned up
+        assert delete_id not in id_to_label, "Deleted point_id should be removed from id_to_label"
+        assert delete_label not in label_to_id, "Deleted label should be removed from label_to_id"
+
+        # Verify remaining mappings are still correct
+        assert len(id_to_label) == 4
+        assert len(label_to_id) == 4
+        for i in range(1, 5):  # ids[1] through ids[4]
+            assert ids[i] in id_to_label
+            label = id_to_label[ids[i]]
+            assert label in label_to_id
+            assert label_to_id[label] == ids[i]
+
+        # Save the index with cleaned mappings
+        hnsw_manager.save_incremental_update(
+            index=index,
+            collection_path=temp_collection_path,
+            id_to_label=id_to_label,
+            label_to_id=label_to_id,
+            vector_count=4,
+        )
+
+        # Reload and verify persisted mappings don't contain deleted entries
+        index_reloaded, id_to_label_reloaded, label_to_id_reloaded, _ = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
+        )
+        assert delete_id not in id_to_label_reloaded, "Deleted point_id should not be in persisted id_to_label"
+        assert delete_label not in label_to_id_reloaded, "Deleted label should not be in persisted label_to_id"
+        assert len(id_to_label_reloaded) == 4
+        assert len(label_to_id_reloaded) == 4
+
     def test_save_incremental_update(
         self, hnsw_manager, temp_collection_path, sample_vectors
     ):

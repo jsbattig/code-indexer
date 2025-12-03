@@ -1446,6 +1446,119 @@ def is_token_blacklisted(jti: str) -> bool:
     return jti in token_blacklist
 
 
+def migrate_legacy_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
+    """
+    Migrate cidx-meta from legacy special-case to regular golden repo.
+
+    This is a REGISTRY-ONLY migration. No file movement occurs because:
+    - Versioning is for auto-refresh (cidx-meta has no remote)
+    - cidx-meta stays at golden-repos/cidx-meta/ (NOT moved to .versioned/)
+
+    Legacy detection scenarios:
+    1. cidx-meta directory exists BUT not in metadata.json -> register it
+    2. cidx-meta exists in metadata.json with repo_url=None -> update to local://cidx-meta
+
+    Args:
+        golden_repo_manager: GoldenRepoManager instance
+        golden_repos_dir: Path to golden-repos directory
+    """
+    cidx_meta_path = Path(golden_repos_dir) / "cidx-meta"
+
+    # Scenario 1: Directory exists but NOT registered in metadata.json
+    if cidx_meta_path.exists() and not golden_repo_manager.golden_repo_exists("cidx-meta"):
+        logger.info("Detected legacy cidx-meta (directory exists, not in metadata.json)")
+        logger.info("Migrating to regular golden repo (registry-only, no file movement)")
+
+        # Import GoldenRepo for direct registration
+        from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
+        from datetime import datetime, timezone
+
+        # Register directly in metadata without background job (startup hasn't initialized background_job_manager yet)
+        repo = GoldenRepo(
+            alias="cidx-meta",
+            repo_url="local://cidx-meta",
+            default_branch="main",  # Not used for local:// repos
+            clone_path=str(cidx_meta_path),
+            created_at=datetime.now(timezone.utc).isoformat(),
+            enable_temporal=False  # No temporal for local:// repos
+        )
+        golden_repo_manager.golden_repos["cidx-meta"] = repo
+        golden_repo_manager._save_metadata()
+        logger.info("Legacy cidx-meta migrated: added to metadata.json")
+
+        # Activate cidx-meta globally (create global registry entry + alias)
+        from code_indexer.global_repos.global_activation import GlobalActivator
+        global_activator = GlobalActivator(str(golden_repos_dir))
+        global_activator.activate_golden_repo(
+            repo_name="cidx-meta",
+            repo_url="local://cidx-meta",
+            clone_path=str(cidx_meta_path),
+            enable_temporal=False
+        )
+        logger.info("Legacy cidx-meta activated globally")
+
+    # Scenario 2: Registered with repo_url=None (old special marker)
+    elif golden_repo_manager.golden_repo_exists("cidx-meta"):
+        repo = golden_repo_manager.get_golden_repo("cidx-meta")
+        if repo and repo.repo_url is None:
+            logger.info("Detected legacy cidx-meta (repo_url=None in metadata.json)")
+
+            # Update repo_url from None to local://cidx-meta
+            repo.repo_url = "local://cidx-meta"
+            golden_repo_manager._save_metadata()
+            logger.info("Legacy cidx-meta migrated: repo_url updated to local://cidx-meta")
+
+
+def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
+    """
+    Bootstrap cidx-meta as a regular golden repo on fresh installations.
+
+    Creates cidx-meta directory and registers it with local://cidx-meta URL.
+    This is idempotent - safe to call multiple times.
+
+    Args:
+        golden_repo_manager: GoldenRepoManager instance
+        golden_repos_dir: Path to golden-repos directory
+    """
+    # Check if cidx-meta already exists
+    if golden_repo_manager.golden_repo_exists("cidx-meta"):
+        return  # Already bootstrapped, nothing to do
+
+    logger.info("Bootstrapping cidx-meta as regular golden repo")
+
+    # Import GoldenRepo for direct registration
+    from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
+    from datetime import datetime, timezone
+
+    # Create directory structure
+    cidx_meta_path = Path(golden_repos_dir) / "cidx-meta"
+    cidx_meta_path.mkdir(parents=True, exist_ok=True)
+
+    # Register directly in metadata without background job (startup hasn't initialized background_job_manager yet)
+    repo = GoldenRepo(
+        alias="cidx-meta",
+        repo_url="local://cidx-meta",
+        default_branch="main",  # Not used for local:// repos
+        clone_path=str(cidx_meta_path),
+        created_at=datetime.now(timezone.utc).isoformat(),
+        enable_temporal=False  # No temporal for local:// repos
+    )
+    golden_repo_manager.golden_repos["cidx-meta"] = repo
+    golden_repo_manager._save_metadata()
+    logger.info("Bootstrapped cidx-meta at local://cidx-meta")
+
+    # Activate cidx-meta globally (create global registry entry + alias)
+    from code_indexer.global_repos.global_activation import GlobalActivator
+    global_activator = GlobalActivator(str(Path(golden_repos_dir)))
+    global_activator.activate_golden_repo(
+        repo_name="cidx-meta",
+        repo_url="local://cidx-meta",
+        clone_path=str(cidx_meta_path),
+        enable_temporal=False
+    )
+    logger.info("Bootstrapped cidx-meta activated globally")
+
+
 def create_app() -> FastAPI:
     """
     Create and configure FastAPI application.
@@ -1500,44 +1613,30 @@ def create_app() -> FastAPI:
         )
         golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
 
-        # Startup: Auto-populate meta-directory
-        logger.info("Server startup: Initializing meta-directory population")
+        # Startup: Migrate legacy cidx-meta and bootstrap if needed
+        logger.info("Server startup: Checking cidx-meta migration and bootstrap")
         try:
-            from code_indexer.server.lifecycle.startup_meta_populator import (
-                StartupMetaPopulator,
-            )
-            from code_indexer.global_repos.global_registry import GlobalRegistry
-
-            meta_dir = golden_repos_dir / "cidx-meta"
-
-            # Create registry instance
-            registry = GlobalRegistry(str(golden_repos_dir))
-
-            # Create populator and run startup population
-            populator = StartupMetaPopulator(
-                meta_dir=str(meta_dir),
-                golden_repos_dir=str(golden_repos_dir),
-                registry=registry,
+            from code_indexer.server.repositories.golden_repo_manager import (
+                GoldenRepoManager,
             )
 
-            result = populator.populate_on_startup()
+            # Create GoldenRepoManager instance for migration/bootstrap
+            # NOTE: GoldenRepoManager expects data_dir (e.g., ~/.cidx-server/data), NOT golden-repos path
+            data_dir = Path(server_data_dir) / "data"
+            golden_repo_manager = GoldenRepoManager(str(data_dir))
 
-            if result["populated"]:
-                logger.info(
-                    f"Meta-directory populated: {result['repos_processed']} repositories processed"
-                )
-            else:
-                logger.info(f"Meta-directory population: {result['message']}")
+            # Phase 1: Migrate legacy cidx-meta (if it exists in old format)
+            migrate_legacy_cidx_meta(golden_repo_manager, str(golden_repos_dir))
 
-            if "error" in result:
-                logger.warning(
-                    f"Meta-directory population encountered error: {result['error']}"
-                )
+            # Phase 2: Bootstrap cidx-meta (if it doesn't exist)
+            bootstrap_cidx_meta(golden_repo_manager, str(golden_repos_dir))
+
+            logger.info("cidx-meta migration and bootstrap completed")
 
         except Exception as e:
             # Log error but don't block server startup
             logger.error(
-                f"Failed to populate meta-directory on startup: {e}", exc_info=True
+                f"Failed to migrate/bootstrap cidx-meta on startup: {e}", exc_info=True
             )
 
         # Startup: Initialize and start global repos background services

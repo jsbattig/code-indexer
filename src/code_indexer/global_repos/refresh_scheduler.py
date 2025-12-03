@@ -18,7 +18,6 @@ from code_indexer.config import ConfigManager
 from .alias_manager import AliasManager
 from .global_registry import GlobalRegistry
 from .git_pull_updater import GitPullUpdater
-from .meta_directory_updater import MetaDirectoryUpdater
 from .query_tracker import QueryTracker
 from .cleanup_manager import CleanupManager
 from .shared_operations import GlobalRepoOperations
@@ -203,13 +202,14 @@ class RefreshScheduler:
             # Get golden repo path from alias (registry path becomes stale after refresh)
             golden_repo_path = current_target
 
+            # Skip refresh for local:// repos (no remote = no refresh = no versioning)
+            repo_url = repo_info.get("repo_url")
+            if repo_url and repo_url.startswith("local://"):
+                logger.info(f"Skipping refresh for local repo: {alias_name} ({repo_url})")
+                return
+
             # Create updater for this repo
-            # Meta-directory (repo_url=None) uses MetaDirectoryUpdater
-            # Normal repos use GitPullUpdater
-            if repo_info.get("repo_url") is None:
-                updater = MetaDirectoryUpdater(golden_repo_path, self.registry)
-            else:
-                updater = GitPullUpdater(golden_repo_path)
+            updater = GitPullUpdater(golden_repo_path)
 
             # Check for changes
             has_changes = updater.has_changes()

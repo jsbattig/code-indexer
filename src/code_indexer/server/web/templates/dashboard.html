@@ -12,16 +12,10 @@
             hx-get="/admin/partials/dashboard-health"
             hx-target="#health-section"
             hx-swap="innerHTML"
-            hx-indicator="#refresh-indicator"
             onclick="refreshAll()"
         >
             Refresh
         </button>
-        <label class="auto-refresh-toggle">
-            <input type="checkbox" id="auto-refresh-checkbox" onchange="toggleAutoRefresh()">
-            <span>Auto-refresh (30s)</span>
-        </label>
-        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
     </div>
 </div>
 
@@ -40,25 +34,16 @@
 <script>
 let autoRefreshInterval = null;
 
-function toggleAutoRefresh() {
-    const checkbox = document.getElementById('auto-refresh-checkbox');
-    if (checkbox.checked) {
-        // Start auto-refresh every 30 seconds
-        autoRefreshInterval = setInterval(refreshAll, 30000);
-    } else {
-        // Stop auto-refresh
-        if (autoRefreshInterval) {
-            clearInterval(autoRefreshInterval);
-            autoRefreshInterval = null;
-        }
-    }
-}
-
 function refreshAll() {
     // Trigger htmx refresh for both sections
     htmx.ajax('GET', '/admin/partials/dashboard-health', {target: '#health-section', swap: 'innerHTML'});
     htmx.ajax('GET', '/admin/partials/dashboard-stats', {target: '#stats-section', swap: 'innerHTML'});
 }
+
+// Start auto-refresh on page load (every 5 seconds)
+document.addEventListener('DOMContentLoaded', function() {
+    autoRefreshInterval = setInterval(refreshAll, 5000);
+});
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', function() {

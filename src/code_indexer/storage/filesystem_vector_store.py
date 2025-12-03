@@ -10,14 +10,124 @@ import os
 import random
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import List, Dict, Any, Optional, Tuple, Union, Set
 from datetime import datetime
 import threading
 import numpy as np
 import logging
+import msgpack
 
 from .vector_quantizer import VectorQuantizer
 from .projection_matrix_manager import ProjectionMatrixManager
+
+
+class PathIndex:
+    """Reverse index mapping file_path -> Set[point_id].
+
+    Prevents duplicate chunks when files are re-indexed by maintaining
+    a mapping from file paths to all point IDs associated with that file.
+    This enables pre-upsert cleanup of old vectors before inserting new ones.
+
+    Story #540: Fix duplicate chunks bug.
+    """
+
+    def __init__(self) -> None:
+        """Initialize empty path index."""
+        self._path_index: Dict[str, Set[str]] = {}
+
+    def add_point(self, file_path: str, point_id: str) -> None:
+        """Add a point_id to a file's set of point_ids.
+
+        Args:
+            file_path: Path to the file
+            point_id: Point ID to add
+
+        Note:
+            If file_path doesn't exist in index, creates new set.
+            Adding duplicate point_id is idempotent (set behavior).
+        """
+        if file_path not in self._path_index:
+            self._path_index[file_path] = set()
+        self._path_index[file_path].add(point_id)
+
+    def remove_point(self, file_path: str, point_id: str) -> None:
+        """Remove a point_id from a file's set of point_ids.
+
+        Args:
+            file_path: Path to the file
+            point_id: Point ID to remove
+
+        Note:
+            If point_id is the last one for file_path, deletes the file's entry entirely.
+            Removing nonexistent point_id or file_path is safe (no-op).
+        """
+        if file_path in self._path_index:
+            self._path_index[file_path].discard(point_id)
+            if not self._path_index[file_path]:
+                del self._path_index[file_path]
+
+    def get_point_ids(self, file_path: str) -> Set[str]:
+        """Get all point_ids for a given file_path.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            Copy of the set of point_ids for this file (empty set if file not found)
+
+        Note:
+            Returns a copy to prevent external modification of internal state.
+        """
+        return self._path_index.get(file_path, set()).copy()
+
+    def save(self, path: Path) -> None:
+        """Save path index to disk using msgpack.
+
+        Args:
+            path: File path to save to (will create parent directories)
+
+        Note:
+            Sets are serialized as lists in msgpack format.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Convert sets to lists for msgpack serialization
+        serializable_data = {
+            file_path: list(point_ids)
+            for file_path, point_ids in self._path_index.items()
+        }
+
+        with open(path, "wb") as f:
+            msgpack.dump(serializable_data, f)
+
+    @classmethod
+    def load(cls, path: Path) -> "PathIndex":
+        """Load path index from disk.
+
+        Args:
+            path: File path to load from
+
+        Returns:
+            PathIndex instance with loaded data (empty if file doesn't exist)
+
+        Note:
+            Lists are converted back to sets after deserialization.
+        """
+        instance = cls()
+
+        if not path.exists():
+            return instance
+
+        with open(path, "rb") as f:
+            serialized_data = msgpack.load(f)
+
+        # Convert lists back to sets
+        instance._path_index = {
+            file_path: set(point_ids)
+            for file_path, point_ids in serialized_data.items()
+        }
+
+        return instance
 
 
 class FilesystemVectorStore:
@@ -87,6 +197,11 @@ class FilesystemVectorStore:
         # Story #526: Server-side HNSW index cache for 1800x performance improvement
         # When set, caches hnswlib.Index objects with TTL-based eviction
         self.hnsw_index_cache = hnsw_index_cache
+
+        # Story #540: Path-to-point_ids reverse index for duplicate prevention
+        # Structure: {collection_name: PathIndex}
+        self._path_indexes: Dict[str, PathIndex] = {}
+        self._path_index_lock = threading.Lock()
 
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
@@ -183,6 +298,7 @@ class FilesystemVectorStore:
             performance by deferring index rebuilding until end_indexing().
 
             HNSW-001 & HNSW-002: Initializes change tracking for incremental HNSW updates.
+            Story #540: Loads PathIndex for duplicate prevention during upserts.
         """
         self.logger.info(
             f"Beginning indexing session for collection '{collection_name}'"
@@ -199,6 +315,13 @@ class FilesystemVectorStore:
             "updated": set(),
             "deleted": set(),
         }
+
+        # Story #540: Load PathIndex for duplicate prevention
+        with self._path_index_lock:
+            if collection_name not in self._path_indexes:
+                self._path_indexes[collection_name] = self._load_path_index(
+                    collection_name
+                )
 
         self.logger.debug(f"Change tracking initialized for '{collection_name}'")
 
@@ -312,6 +435,11 @@ class FilesystemVectorStore:
 
             if collection_name in self._id_index:
                 id_manager.save_index(collection_path, self._id_index[collection_name])
+
+        # Story #540: Save path index to disk
+        with self._path_index_lock:
+            if collection_name in self._path_indexes:
+                self._save_path_index(collection_name, self._path_indexes[collection_name])
 
         vector_count = len(self._id_index.get(collection_name, {}))
 
@@ -519,6 +647,79 @@ class FilesystemVectorStore:
             if collection_name not in self._file_path_cache:
                 self._file_path_cache[collection_name] = set()
 
+        # Story #540: Pre-upsert cleanup to prevent duplicates
+        # Group points by file_path and clean up old vectors before upserting new ones
+        from collections import defaultdict
+
+        points_by_file = defaultdict(list)
+        for point in points:
+            file_path = point.get("payload", {}).get("path", "")
+            if file_path:
+                points_by_file[file_path].append(point)
+
+        # CRITICAL FIX (Story #540 Code Review): Refactor to minimize lock hold time
+        # STEP 1: Gather orphan metadata INSIDE lock (fast, no I/O)
+        orphans_to_delete = []  # List of (file_path, orphan_id, vector_file_path)
+
+        with self._path_index_lock:
+            # CRITICAL FIX (Story #540 Code Review): Lazy-load path index if not already loaded
+            # This handles watch mode scenario where upsert_points can be called WITHOUT begin_indexing()
+            if collection_name not in self._path_indexes:
+                self._path_indexes[collection_name] = self._load_path_index(collection_name)
+
+            path_index = self._path_indexes[collection_name]
+
+            # Gather orphan point_ids for each file
+            for file_path, file_points in points_by_file.items():
+                # Get new point_ids that will be upserted
+                new_point_ids = {p["id"] for p in file_points}
+
+                # Get old point_ids from path index
+                old_point_ids = path_index.get_point_ids(file_path)
+
+                # Identify orphaned point_ids (in old but not in new)
+                orphan_point_ids = old_point_ids - new_point_ids
+
+                # Gather orphan metadata (just reading id_index, no I/O)
+                if orphan_point_ids:
+                    with self._id_index_lock:
+                        for orphan_id in orphan_point_ids:
+                            if orphan_id in self._id_index.get(collection_name, {}):
+                                vector_file = self._id_index[collection_name][orphan_id]
+                                orphans_to_delete.append((file_path, orphan_id, vector_file))
+
+        # STEP 2: Perform file deletions OUTSIDE lock (I/O operations)
+        # This releases both _path_index_lock and _id_index_lock before I/O
+        for file_path, orphan_id, vector_file in orphans_to_delete:
+            # Delete vector JSON file from disk
+            # Use try/except to handle race condition: another thread may delete same file
+            try:
+                if vector_file.exists():
+                    vector_file.unlink()
+            except FileNotFoundError:
+                # File already deleted by another thread - this is safe to ignore
+                pass
+
+        # STEP 3: Update indexes INSIDE lock (fast, just dict/set updates)
+        if orphans_to_delete:
+            with self._path_index_lock:
+                path_index = self._path_indexes[collection_name]
+
+                with self._id_index_lock:
+                    for file_path, orphan_id, vector_file in orphans_to_delete:
+                        # Remove from id_index
+                        if orphan_id in self._id_index.get(collection_name, {}):
+                            del self._id_index[collection_name][orphan_id]
+
+                        # Track deletion for HNSW incremental updates
+                        if collection_name in self._indexing_session_changes:
+                            self._indexing_session_changes[collection_name]["deleted"].add(
+                                orphan_id
+                            )
+
+                        # Remove from path index
+                        path_index.remove_point(file_path, orphan_id)
+
         # Process all points
         total_points = len(points)
         for idx, point in enumerate(points, 1):
@@ -620,6 +821,11 @@ class FilesystemVectorStore:
                             point_id
                         )
 
+            # Story #540: Update path index with new point_id
+            with self._path_index_lock:
+                if collection_name in self._path_indexes and file_path:
+                    self._path_indexes[collection_name].add_point(file_path, point_id)
+
         # HNSW-001: Watch mode real-time HNSW update
         if watch_mode:
             # In watch mode, update HNSW immediately for all upserted points
@@ -701,8 +907,18 @@ class FilesystemVectorStore:
                 if point_id in index:
                     vector_file = index[point_id]
 
-                    # Delete file if it exists
+                    # Story #540: Get file_path from vector data before deletion
+                    file_path = None
                     if vector_file.exists():
+                        try:
+                            with open(vector_file) as f:
+                                vector_data = json.load(f)
+                                file_path = vector_data.get("payload", {}).get("path")
+                        except (json.JSONDecodeError, KeyError, OSError):
+                            # If we can't read the file, continue with deletion
+                            pass
+
+                        # Delete file
                         vector_file.unlink()
                         deleted += 1
 
@@ -714,6 +930,14 @@ class FilesystemVectorStore:
                         self._indexing_session_changes[collection_name]["deleted"].add(
                             point_id
                         )
+
+                    # Story #540: Remove from path index
+                    if file_path:
+                        with self._path_index_lock:
+                            if collection_name in self._path_indexes:
+                                self._path_indexes[collection_name].remove_point(
+                                    file_path, point_id
+                                )
 
             # Clear file path cache since file structure changed
             if deleted > 0 and collection_name in self._file_path_cache:
@@ -960,6 +1184,46 @@ class FilesystemVectorStore:
                 continue
 
         return file_paths
+
+    def _load_path_index(self, collection_name: str) -> PathIndex:
+        """Load path index from persistent binary file.
+
+        Loads the reverse index mapping file_path -> Set[point_id] from
+        path_index.bin in the collection directory. Returns empty PathIndex
+        if file doesn't exist (new collection or pre-Story #540 index).
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            PathIndex instance with loaded mappings (empty if file doesn't exist)
+
+        Note:
+            Story #540: Prevents duplicate chunks by tracking all point_ids per file.
+        """
+        collection_path = self.base_path / collection_name
+        path_index_file = collection_path / "path_index.bin"
+
+        # Load from disk or return empty if file doesn't exist
+        return PathIndex.load(path_index_file)
+
+    def _save_path_index(self, collection_name: str, path_index: PathIndex) -> None:
+        """Save path index to persistent binary file.
+
+        Saves the reverse index mapping file_path -> Set[point_id] to
+        path_index.bin in the collection directory.
+
+        Args:
+            collection_name: Name of the collection
+            path_index: PathIndex instance to save
+
+        Note:
+            Story #540: Persists path index for duplicate prevention across sessions.
+        """
+        collection_path = self.base_path / collection_name
+        path_index_file = collection_path / "path_index.bin"
+
+        path_index.save(path_index_file)
 
     def _ensure_gitignore(self, collection_name: str) -> None:
         """Ensure collection directory is in .gitignore if in a git repo.
@@ -2925,7 +3189,7 @@ class FilesystemVectorStore:
 
         # Process deletions
         for point_id in changes["deleted"]:
-            hnsw_manager.remove_vector(index, point_id, id_to_label)
+            hnsw_manager.remove_vector(index, point_id, id_to_label, label_to_id)
             processed += 1
 
             # Report progress periodically

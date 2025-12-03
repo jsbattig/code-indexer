@@ -646,23 +646,32 @@ class HNSWIndexManager:
             return label, id_to_label, label_to_id, next_label + 1
 
     def remove_vector(
-        self, index: Any, point_id: str, id_to_label: Dict[str, int]
+        self, index: Any, point_id: str, id_to_label: Dict[str, int], label_to_id: Optional[Dict[int, str]] = None
     ) -> None:
-        """Remove vector from HNSW index using soft delete.
+        """Remove vector from HNSW index using soft delete and clean up mappings.
 
         Args:
             index: hnswlib.Index instance
             point_id: Point identifier to remove
             id_to_label: Current id_to_label mapping
+            label_to_id: Current label_to_id mapping (optional for backward compatibility)
 
         Note:
             Uses HNSW soft delete (mark_deleted) which filters results during search.
             Physical removal is NOT performed - the vector remains in the index structure
             but won't appear in search results.
+
+            CRITICAL: Also removes the point_id from id_to_label and label_to_id mappings
+            to prevent stale metadata from causing duplicate results in queries (Story #540).
         """
         if point_id in id_to_label:
             label = id_to_label[point_id]
             index.mark_deleted(label)
+
+            # Clean up mappings to prevent stale metadata (Story #540)
+            del id_to_label[point_id]
+            if label_to_id is not None and label in label_to_id:
+                del label_to_id[label]
 
     def save_incremental_update(
         self,

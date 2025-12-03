@@ -87,50 +87,5 @@ class TestGlobalRegistrySuffixValidation:
             error_msg = str(exc_info.value)
             assert "must end with '-global' suffix" in error_msg
 
-    def test_reserved_names_still_checked_before_suffix_validation(self, tmp_path):
-        """
-        Test that reserved name check happens before suffix validation.
-
-        Reserved names should be rejected even if they have -global suffix
-        (unless allow_reserved=True).
-        """
-        golden_repos_dir = tmp_path / "golden_repos"
-        registry = GlobalRegistry(str(golden_repos_dir))
-
-        # This has -global suffix BUT is a reserved name
-        # Should raise ReservedNameError, not ValueError for missing suffix
-        from code_indexer.global_repos.global_registry import ReservedNameError
-
-        with pytest.raises(ReservedNameError) as exc_info:
-            registry.register_global_repo(
-                repo_name="cidx-meta",
-                alias_name="cidx-meta-global",  # Reserved name
-                repo_url="https://github.com/org/cidx-meta",
-                index_path=str(tmp_path / "index"),
-                allow_reserved=False,
-            )
-
-        error_msg = str(exc_info.value)
-        assert "reserved" in error_msg.lower()
-
-    def test_allow_reserved_still_requires_global_suffix(self, tmp_path):
-        """
-        Test that allow_reserved=True bypasses reserved check but NOT suffix validation.
-
-        Even with allow_reserved=True, the -global suffix should still be required.
-        """
-        golden_repos_dir = tmp_path / "golden_repos"
-        registry = GlobalRegistry(str(golden_repos_dir))
-
-        # Even with allow_reserved=True, suffix validation should still apply
-        with pytest.raises(ValueError) as exc_info:
-            registry.register_global_repo(
-                repo_name="cidx-meta",
-                alias_name="cidx-meta",  # Missing -global suffix
-                repo_url=None,
-                index_path=str(tmp_path / "index"),
-                allow_reserved=True,  # Bypasses reserved check but not suffix check
-            )
-
-        error_msg = str(exc_info.value)
-        assert "must end with '-global' suffix" in error_msg
+    # NOTE: Reserved names tests removed as part of Story #538
+    # cidx-meta is now a regular golden repo, not a reserved name

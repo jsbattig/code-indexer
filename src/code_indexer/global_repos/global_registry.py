@@ -18,10 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 # Reserved names for well-known endpoints
-RESERVED_GLOBAL_NAMES = {
-    "cidx-meta-global": "meta-directory for repository discovery",
-    "cidx-meta": "alias for cidx-meta-global",
-}
+# Note: cidx-meta is now a regular golden repo (Story #538), not reserved
+RESERVED_GLOBAL_NAMES: dict[str, str] = {}
 
 
 class ReservedNameError(ValueError):
