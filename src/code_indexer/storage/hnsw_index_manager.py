@@ -194,17 +194,22 @@ class HNSWIndexManager:
         # Set ef parameter for query-time accuracy
         index.set_ef(ef)
 
-        # Get actual number of elements in index
-        num_elements = index.get_current_count()
+        # Load ID mapping from metadata (reflects actual non-deleted vectors)
+        id_mapping = self._load_id_mapping(collection_path)
 
-        # Limit k to available vectors
-        k_actual = min(k, num_elements)
+        # Get actual queryable vector count (excludes soft-deleted)
+        # Note: get_current_count() includes soft-deleted vectors, causing errors
+        queryable_count = len(id_mapping) if id_mapping else index.get_current_count()
+
+        # Limit k to available queryable vectors
+        k_actual = min(k, queryable_count)
+
+        # Ensure k_actual is at least 1 if there are any vectors
+        if k_actual == 0 and queryable_count > 0:
+            k_actual = 1
 
         # Query index (returns labels and distances)
         labels, distances = index.knn_query(query_vector, k=k_actual)
-
-        # Load ID mapping from metadata
-        id_mapping = self._load_id_mapping(collection_path)
 
         # Convert labels to IDs
         result_ids = [id_mapping.get(int(label), f"vec_{label}") for label in labels[0]]
