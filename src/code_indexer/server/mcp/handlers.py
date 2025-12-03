@@ -548,10 +548,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
         limit = params.get("limit", 500)
         sort_by = params.get("sort_by", "path")
 
-        logger.info(
-            f"DEBUG browse_directory: repository_alias={repository_alias}, path={path}"
-        )
-
         # Validate limit range
         if limit < 1:
             limit = 1
@@ -590,8 +586,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
             target_path = alias_manager.read_alias(repository_alias)
 
-            logger.info(f"DEBUG browse_directory: target_path from alias={target_path}")
-
             if not target_path:
                 return _mcp_response(
                     {
@@ -604,9 +598,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             # Use resolved path instead of alias for file_service
             repository_alias = target_path
             is_global_repo = True
-            logger.info(
-                f"DEBUG browse_directory: is_global_repo={is_global_repo}, resolved repo={repository_alias}"
-            )
         else:
             is_global_repo = False
 
@@ -640,10 +631,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             sort_by=sort_by,
         )
 
-        logger.info(
-            f"DEBUG browse_directory: query_params.path_pattern={query_params.path_pattern}"
-        )
-
         if is_global_repo:
             result = app_module.file_service.list_files_by_path(
                 repo_path=repository_alias,
@@ -655,10 +642,6 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
                 username=user.username,
                 query_params=query_params,
             )
-
-        logger.info(
-            f"DEBUG browse_directory: result.files count={len(result.files) if hasattr(result, 'files') else 'N/A'}"
-        )
 
         # Convert FileInfo objects to dict structure
         files_data = (
