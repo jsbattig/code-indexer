@@ -5,11 +5,13 @@ Tests that:
 1. .code-indexer/ directory is excluded from file listings
 2. .git/ directory is excluded from file listings
 3. .gitignore patterns are respected when present
+4. list_files_by_path works with direct filesystem paths
 """
 
 import pytest
 
 from src.code_indexer.server.services.file_service import FileListingService
+from src.code_indexer.server.models.api_models import FileListQueryParams
 
 
 class TestFileServiceExclusions:
@@ -297,3 +299,126 @@ src/generated/
         # .git/ directory contents should NOT be included
         for path in file_paths:
             assert not path.startswith(".git/"), f"Found .git/ file: {path}"
+
+
+class TestListFilesByPath:
+    """Test list_files_by_path method for global repository browsing."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path):
+        """Create a temporary repository structure for testing."""
+        # Create source code files
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "main.py").write_text("print('hello')")
+        (src_dir / "utils.py").write_text("def helper(): pass")
+
+        # Create test files
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_main.py").write_text("def test_main(): pass")
+
+        # Create root level files
+        (tmp_path / "README.md").write_text("# Project")
+        (tmp_path / "setup.py").write_text("setup()")
+
+        return tmp_path
+
+    @pytest.fixture
+    def service(self):
+        """Create FileListingService instance."""
+        # Create service without relying on database
+        service = FileListingService.__new__(FileListingService)
+        service.activated_repo_manager = None
+        return service
+
+    def test_list_files_by_path_with_valid_directory(self, temp_repo, service):
+        """Test that list_files_by_path works with a valid directory path."""
+        query_params = FileListQueryParams(page=1, limit=100)
+
+        result = service.list_files_by_path(
+            repo_path=str(temp_repo), query_params=query_params
+        )
+
+        assert result is not None
+        assert hasattr(result, "files")
+        assert len(result.files) > 0
+
+        file_paths = [f.path for f in result.files]
+        assert "src/main.py" in file_paths
+        assert "src/utils.py" in file_paths
+        assert "README.md" in file_paths
+
+    def test_list_files_by_path_raises_error_for_nonexistent_path(self, service):
+        """Test that list_files_by_path raises FileNotFoundError for nonexistent path."""
+        query_params = FileListQueryParams(page=1, limit=100)
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            service.list_files_by_path(
+                repo_path="/nonexistent/path/to/repo", query_params=query_params
+            )
+
+        assert "not found" in str(exc_info.value)
+
+    def test_list_files_by_path_with_filters(self, temp_repo, service):
+        """Test that list_files_by_path respects query parameters filters."""
+        query_params = FileListQueryParams(
+            page=1, limit=100, language="python", path_pattern="src/*.py"
+        )
+
+        result = service.list_files_by_path(
+            repo_path=str(temp_repo), query_params=query_params
+        )
+
+        file_paths = [f.path for f in result.files]
+
+        # Should only include Python files from src directory
+        assert "src/main.py" in file_paths
+        assert "src/utils.py" in file_paths
+        # Should NOT include files from other directories
+        assert "tests/test_main.py" not in file_paths
+        # Should NOT include non-Python files
+        assert "README.md" not in file_paths
+
+    def test_list_files_by_path_with_pagination(self, temp_repo, service):
+        """Test that list_files_by_path respects pagination parameters."""
+        # Create more files for pagination test
+        for i in range(10):
+            (temp_repo / f"file_{i}.txt").write_text(f"content {i}")
+
+        query_params = FileListQueryParams(page=1, limit=3)
+
+        result = service.list_files_by_path(
+            repo_path=str(temp_repo), query_params=query_params
+        )
+
+        assert len(result.files) == 3
+        assert result.pagination.total > 3
+        assert result.pagination.has_next is True
+
+    def test_list_files_by_path_excludes_system_directories(self, temp_repo, service):
+        """Test that list_files_by_path excludes .code-indexer and .git directories."""
+        # Create excluded directories
+        code_indexer_dir = temp_repo / ".code-indexer" / "index"
+        code_indexer_dir.mkdir(parents=True)
+        (code_indexer_dir / "vector.json").write_text("{}")
+
+        git_dir = temp_repo / ".git"
+        git_dir.mkdir()
+        (git_dir / "config").write_text("[core]")
+
+        query_params = FileListQueryParams(page=1, limit=100)
+
+        result = service.list_files_by_path(
+            repo_path=str(temp_repo), query_params=query_params
+        )
+
+        file_paths = [f.path for f in result.files]
+
+        # Verify excluded directories are not included
+        for path in file_paths:
+            assert ".code-indexer" not in path
+            assert not path.startswith(".git/")
+
+        # Verify source files ARE included
+        assert "src/main.py" in file_paths

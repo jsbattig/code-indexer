@@ -597,6 +597,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
             # Use resolved path instead of alias for file_service
             repository_alias = target_path
+            is_global_repo = True
+        else:
+            is_global_repo = False
 
         # Build path pattern combining path and user's pattern
         final_path_pattern = None
@@ -628,11 +631,17 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             sort_by=sort_by,
         )
 
-        result = app_module.file_service.list_files(
-            repo_id=repository_alias,
-            username=user.username,
-            query_params=query_params,
-        )
+        if is_global_repo:
+            result = app_module.file_service.list_files_by_path(
+                repo_path=repository_alias,
+                query_params=query_params,
+            )
+        else:
+            result = app_module.file_service.list_files(
+                repo_id=repository_alias,
+                username=user.username,
+                query_params=query_params,
+            )
 
         # Convert FileInfo objects to dict structure
         files_data = (

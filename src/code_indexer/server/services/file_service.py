@@ -127,6 +127,36 @@ class FileListingService:
 
         return FileListResponse(files=paginated_files, pagination=pagination_info)
 
+    def list_files_by_path(
+        self, repo_path: str, query_params: FileListQueryParams
+    ) -> FileListResponse:
+        """
+        List files from a direct filesystem path (for global repos).
+
+        Unlike list_files() which looks up activated repos by alias,
+        this method accepts a direct path for global repository browsing.
+
+        Args:
+            repo_path: Direct filesystem path to repository
+            query_params: Query parameters for filtering and pagination
+
+        Returns:
+            File list response with pagination
+
+        Raises:
+            FileNotFoundError: If path doesn't exist
+        """
+        if not os.path.exists(repo_path):
+            raise FileNotFoundError(f"Path {repo_path} not found")
+
+        all_files = self._collect_files(repo_path)
+        filtered_files = self._apply_filters(all_files, query_params)
+        sorted_files = self._apply_sorting(filtered_files, query_params.sort_by)
+        paginated_files, pagination_info = self._apply_pagination(
+            sorted_files, query_params.page, query_params.limit
+        )
+        return FileListResponse(files=paginated_files, pagination=pagination_info)
+
     def _get_repository_path(self, repo_id: str, username: str) -> str:
         """
         Get file system path for repository from activated repositories.
