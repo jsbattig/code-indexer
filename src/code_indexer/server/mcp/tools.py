@@ -8,7 +8,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Tools 1-2: Search
     "search_code": {
         "name": "search_code",
-        "description": "Search code using semantic search, FTS, or hybrid mode. ALIAS GLOSSARY: 'repository_alias' is what you search with - global repos end in '-global' (e.g., 'backend-global'), activated repos use custom aliases. Use list_global_repos to discover available global repo aliases. DISCOVERY WORKFLOW: For exploring unfamiliar codebases, start with 'cidx-meta-global' which contains .md descriptions of all registered repositories. IMPORTANT: cidx-meta-global is a catalog directory, NOT a searchable codebase. Use browse_directory(repository_alias='cidx-meta-global') to list repository descriptions, then get_file_content to read them. Do NOT use search_code on cidx-meta-global - it has too few files for semantic search to work reliably. Each .md file contains technologies, features, and use cases for that repository. Then query specific repositories for detailed code. Example: browse_directory(repository_alias='cidx-meta-global'), then get_file_content for repos of interest, then search_code('user authentication endpoint', repository_alias='backend-global') for implementation details. TROUBLESHOOTING: Common issues and solutions: (1) '0 results' for valid query? Check: repository_alias ends in '-global' for global repos, verify repo is indexed via list_global_repos, try broader terms, check language/path filters aren't too restrictive. (2) 'Repository not found'? Run list_global_repos first to see available aliases. (3) Temporal query empty? Verify repository has enable_temporal=true via global_repo_status - most repos don't have temporal indexing. (4) Slow queries? Reduce limit (start with 5), use path_filter to narrow scope, use 'fts' mode for exact matches. (5) cidx-meta-global search returns 0 or fails? This is expected - cidx-meta is a catalog directory with very few files, too small for reliable semantic search. ALWAYS use browse_directory + get_file_content for cidx-meta, never search_code.",
+        "description": "TL;DR: Search code using pre-built indexes. Use semantic mode for conceptual queries, FTS for exact text. SEARCH MODE DECISION: 'authentication logic' (concept) -> semantic | 'def authenticate_user' (exact text) -> fts | unsure -> hybrid. CRITICAL - SEMANTIC SEARCH IS NOT TEXT SEARCH: Semantic mode finds code by MEANING, not exact text. Results are APPROXIMATE and help identify areas of concern for a topic. For exhaustive exact-text results, use FTS mode or regex_search tool. QUICK START: search_code('user authentication', repository_alias='myrepo-global', search_mode='semantic', limit=5). DISCOVERY: Run list_global_repos first to see available repositories. ALIAS FORMAT: Global repos end in '-global' (e.g., 'backend-global'). CIDX-META: For exploring unfamiliar codebases, cidx-meta-global contains .md descriptions of all repos - use browse_directory + get_file_content (NOT search_code) since it's a small catalog. TROUBLESHOOTING: (1) 0 results? Verify alias with list_global_repos, try broader terms, check filters. (2) Temporal queries empty? Check enable_temporal via global_repo_status. (3) Slow? Start with limit=5, use path_filter. RELATED TOOLS: regex_search (comprehensive pattern matching without index), git_search_diffs (find when code was added/removed).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -740,7 +740,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "browse_directory": {
         "name": "browse_directory",
-        "description": "Browse directory structure of an indexed repository with filtering and sorting. Returns file metadata (path, size, language, modification time) for matching files. Automatically excludes .code-indexer/, .git/, and files matching .gitignore patterns. Use for exploring repository structure, finding files by pattern, or understanding codebase organization before performing targeted searches. INTERNAL FILES: You may see '.code-indexer-override.yaml' in some repositories - this controls indexing behavior (include/exclude patterns, chunk size, embedding settings). It's an internal configuration file, not relevant to code search queries.",
+        "description": "TL;DR: List files with metadata (size, language, modified date) - flat list for filtering/sorting. WHEN TO USE: (1) Find files by pattern, (2) Filter by language/size, (3) Programmatic file listing. COMPARISON: browse_directory = flat list with metadata | directory_tree = visual ASCII hierarchy. RELATED TOOLS: directory_tree (visual hierarchy), get_file_content (read files), list_files (simple file listing).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1513,16 +1513,16 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "regex_search": {
         "name": "regex_search",
         "description": (
-            "Search for regex patterns in repository files using ripgrep (with grep "
-            "fallback). Performs ad-hoc searches directly on the filesystem without "
-            "requiring pre-indexing. Use this for pattern matching when you need to "
-            "find code by syntax patterns, identifiers, or text content. Supports glob "
-            "patterns for file filtering. WHEN TO USE: (1) Find exact identifiers like "
-            "'def authenticate_user', (2) Pattern match syntax like 'class.*Controller', "
-            "(3) Find TODO/FIXME comments, (4) Search for specific imports or requires. "
-            "COMPARED TO search_code: regex_search is literal text/pattern matching; "
-            "search_code is semantic (understands meaning). Use regex_search when you "
-            "know exact text; use search_code when searching by concept."
+            "TL;DR: Direct pattern search on files without index - comprehensive but slower. "
+            "WHEN TO USE: (1) Find exact text/identifiers: 'def authenticate_user', "
+            "(2) Complex patterns: 'class.*Controller', (3) TODO/FIXME comments, "
+            "(4) Comprehensive search when you need ALL matches (not approximate). "
+            "WHEN NOT TO USE: (1) Conceptual queries like 'authentication logic' -> use search_code(semantic), "
+            "(2) Fast repeated searches -> use search_code(fts) which is indexed. "
+            "COMPARISON: regex_search = comprehensive/slower (searches files directly) | "
+            "search_code(fts) = fast/indexed (may miss unindexed files) | "
+            "search_code(semantic) = conceptual/approximate (finds by meaning, not text). "
+            "RELATED TOOLS: search_code (pre-indexed semantic/FTS search), git_search_diffs (find code changes in git history)."
         ),
         "inputSchema": {
             "type": "object",
@@ -1967,12 +1967,10 @@ TOOL_REGISTRY["git_diff"] = {
 TOOL_REGISTRY["git_blame"] = {
     "name": "git_blame",
     "description": (
-        "Get line-by-line blame annotations showing who last modified each line and when. "
-        "Essential for code archaeology: understanding code ownership, finding who introduced "
-        "a bug, or identifying the commit that added specific logic. Each line shows the "
-        "commit hash, author, date, and line content. Use this when you need to trace "
-        "responsibility for specific lines, not just file-level history (use git_file_history "
-        "for that) or commit-level changes (use git_show_commit for that). Related tools: git_file_history (commits that modified file), git_file_at_revision (view file at any point)."
+        "TL;DR: See who wrote each line of a file and when (line-by-line attribution). "
+        "WHEN TO USE: (1) 'Who wrote this code?', (2) Find who introduced a bug, (3) Understand code ownership. "
+        "WHEN NOT TO USE: File's commit history -> git_file_history | Full commit details -> git_show_commit. "
+        "RELATED TOOLS: git_file_history (commits that modified file), git_show_commit (commit details), git_file_at_revision (view file at any commit)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2034,14 +2032,10 @@ TOOL_REGISTRY["git_blame"] = {
 TOOL_REGISTRY["git_file_history"] = {
     "name": "git_file_history",
     "description": (
-        "Get the commit history for a specific file, showing all commits that modified it. "
-        "Use this to understand how a file evolved over time, find when bugs were introduced, "
-        "or see who has worked on a file. Unlike git_log (repository-wide history), this "
-        "focuses on a single file's changes. Unlike git_blame (line-by-line attribution), "
-        "this shows the sequence of commits. Combine with git_file_at_revision to see "
-        "the file contents at any point in its history. "
-        "Related tools: git_file_at_revision (view file at any commit), git_blame "
-        "(line-by-line attribution)."
+        "TL;DR: Get all commits that modified a specific file. "
+        "WHEN TO USE: (1) Track file evolution, (2) Find when bug was introduced, (3) See who worked on a file. "
+        "WHEN NOT TO USE: Repo-wide history -> git_log | Line attribution -> git_blame | View old version -> git_file_at_revision. "
+        "RELATED TOOLS: git_log (repo-wide history, can also filter by path), git_blame (who wrote each line), git_file_at_revision (view file at commit)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2201,10 +2195,12 @@ TOOL_REGISTRY["git_search_commits"] = {
 TOOL_REGISTRY["git_search_diffs"] = {
     "name": "git_search_diffs",
     "description": (
-        "Find commits that introduced or removed specific code (pickaxe search). Searches "
-        "through the actual diff content of commits, not just messages. Use this for 'git "
-        "archaeology' - finding when a function was added, when a bug was introduced, or "
-        "tracking changes to specific code patterns. Related tools: git_show_commit (view the commit that changed code), git_diff (see full diff), git_blame (who wrote the code)."
+        "TL;DR: Find when specific code was added/removed in git history (pickaxe search). "
+        "WHAT IS PICKAXE? Git's term for searching code CHANGES (not commit messages). Finds commits where text was introduced or deleted. "
+        "WHEN TO USE: (1) 'When was this function added?', (2) 'Who introduced this bug?', (3) Track code pattern evolution. "
+        "WHEN NOT TO USE: Search commit messages -> use git_search_commits instead. "
+        "WARNING: Can be slow on large repos (may take 1-3+ minutes). Start with limit=5. "
+        "RELATED TOOLS: git_search_commits (searches commit messages), git_blame (who wrote current code), git_show_commit (view commit details)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2323,11 +2319,10 @@ TOOL_REGISTRY["git_search_diffs"] = {
 TOOL_REGISTRY["directory_tree"] = {
     "name": "directory_tree",
     "description": (
-        "Generate a hierarchical tree view of repository directory structure, similar to "
-        "the 'tree' command. Provides a visual overview of how code is organized. Use this "
-        "to understand project structure, find where files are located, or explore an "
-        "unfamiliar codebase. Unlike browse_directory which lists files, this shows the "
-        "hierarchical relationship between directories. Related tools: browse_directory (list files with details), git_file_at_revision (view file contents)."
+        "TL;DR: Visual ASCII tree of directory structure (like 'tree' command). "
+        "WHEN TO USE: (1) Understand project layout, (2) Explore unfamiliar codebase, (3) Find where files are located. "
+        "COMPARISON: directory_tree = visual hierarchy | browse_directory = flat list with metadata (size, language, dates). "
+        "RELATED TOOLS: browse_directory (flat list with file details), get_file_content (read files)."
     ),
     "inputSchema": {
         "type": "object",
