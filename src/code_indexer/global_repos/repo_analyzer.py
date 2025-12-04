@@ -17,8 +17,10 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from code_indexer.server.services.claude_cli_manager import ClaudeCliManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +53,23 @@ class RepoAnalyzer:
     to infer technologies, features, and purpose.
     """
 
-    def __init__(self, repo_path: str):
+    def __init__(
+        self,
+        repo_path: str,
+        claude_cli_manager: Optional["ClaudeCliManager"] = None,
+    ):
         """
         Initialize the repository analyzer.
 
         Args:
             repo_path: Path to the repository to analyze
+            claude_cli_manager: Optional ClaudeCliManager for managed
+                Claude CLI invocations (server mode). When provided,
+                uses manager's CLI availability checking and API key
+                synchronization. If None, uses direct invocation (CLI mode).
         """
         self.repo_path = Path(repo_path)
+        self.claude_cli_manager = claude_cli_manager
 
     def extract_info(self) -> RepoInfo:
         """
@@ -94,18 +105,35 @@ class RepoAnalyzer:
         Uses Claude Code CLI which can read files, explore directories,
         and provide much richer analysis than SDK-only approaches.
 
+        If claude_cli_manager is provided, uses it for CLI availability
+        checking and API key synchronization.
+
         Returns:
             RepoInfo if Claude succeeds and returns valid JSON,
             None otherwise (fallback to static analysis)
         """
         try:
             # Check if Claude CLI is available
-            which_result = subprocess.run(
-                ["which", "claude"], capture_output=True, text=True, timeout=5
-            )
-            if which_result.returncode != 0:
-                logger.debug("Claude CLI not found in PATH")
-                return None
+            if self.claude_cli_manager is not None:
+                # Use manager's CLI availability check (with caching)
+                if not self.claude_cli_manager.check_cli_available():
+                    logger.debug("Claude CLI not available (via manager)")
+                    return None
+
+                # Sync API key before invocation
+                try:
+                    self.claude_cli_manager.sync_api_key()
+                except Exception as e:
+                    logger.warning("API key sync failed: %s", e)
+                    # Continue anyway - sync failure shouldn't block analysis
+            else:
+                # Direct check for CLI mode (no manager available)
+                which_result = subprocess.run(
+                    ["which", "claude"], capture_output=True, text=True, timeout=5
+                )
+                if which_result.returncode != 0:
+                    logger.debug("Claude CLI not found in PATH")
+                    return None
 
             # Build the analysis prompt
             prompt = """Analyze this repository. Examine the README, source files, and package files.
