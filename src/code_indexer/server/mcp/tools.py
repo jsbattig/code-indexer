@@ -1667,17 +1667,17 @@ def filter_tools_by_role(user: User) -> List[Dict[str, Any]]:
 
     return filtered_tools
 
+
 # Append regex_search tool definition - temporary workaround
 
 # Tools 24-26: Git Exploration (Story #554 - Remote Repository Exploration)
 TOOL_REGISTRY["git_log"] = {
     "name": "git_log",
     "description": (
-        "Retrieve commit history from a git repository. Returns commit metadata "
-        "including hash, author, date, and message. Supports filtering by path, "
-        "author, date range, and branch. Does not require temporal indexing - "
-        "operates directly on git. Use this to understand project history, find "
-        "when changes were made, or identify who made specific changes. Related tools: git_show_commit (view commit details), git_file_at_revision (view file at commit), git_diff (compare revisions)."
+        "TL;DR: Browse commit history with filtering by path, author, date, or branch. "
+        "WHEN TO USE: (1) View recent commits, (2) Find when changes were made, (3) Filter history by author/date/path. "
+        "WHEN NOT TO USE: Search commit messages for keywords -> git_search_commits | Find when code was added/removed -> git_search_diffs | Single commit details -> git_show_commit. "
+        "RELATED TOOLS: git_show_commit (commit details), git_search_commits (search messages), git_diff (compare revisions)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1743,28 +1743,64 @@ TOOL_REGISTRY["git_log"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
             "commits": {
                 "type": "array",
                 "description": "List of commits matching filters",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "hash": {"type": "string", "description": "Full 40-char commit SHA"},
-                        "short_hash": {"type": "string", "description": "Abbreviated SHA"},
+                        "hash": {
+                            "type": "string",
+                            "description": "Full 40-char commit SHA",
+                        },
+                        "short_hash": {
+                            "type": "string",
+                            "description": "Abbreviated SHA",
+                        },
                         "author_name": {"type": "string", "description": "Author name"},
-                        "author_email": {"type": "string", "description": "Author email"},
-                        "author_date": {"type": "string", "description": "Author date (ISO 8601)"},
-                        "committer_name": {"type": "string", "description": "Committer name"},
-                        "committer_email": {"type": "string", "description": "Committer email"},
-                        "committer_date": {"type": "string", "description": "Committer date (ISO 8601)"},
-                        "subject": {"type": "string", "description": "Commit subject line"},
-                        "body": {"type": "string", "description": "Full commit message body"},
+                        "author_email": {
+                            "type": "string",
+                            "description": "Author email",
+                        },
+                        "author_date": {
+                            "type": "string",
+                            "description": "Author date (ISO 8601)",
+                        },
+                        "committer_name": {
+                            "type": "string",
+                            "description": "Committer name",
+                        },
+                        "committer_email": {
+                            "type": "string",
+                            "description": "Committer email",
+                        },
+                        "committer_date": {
+                            "type": "string",
+                            "description": "Committer date (ISO 8601)",
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Commit subject line",
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Full commit message body",
+                        },
                     },
                 },
             },
-            "total_count": {"type": "integer", "description": "Number of commits returned"},
-            "truncated": {"type": "boolean", "description": "Whether results were truncated"},
+            "total_count": {
+                "type": "integer",
+                "description": "Number of commits returned",
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "Whether results were truncated",
+            },
             "error": {"type": "string", "description": "Error message if failed"},
         },
         "required": ["success"],
@@ -1774,9 +1810,10 @@ TOOL_REGISTRY["git_log"] = {
 TOOL_REGISTRY["git_show_commit"] = {
     "name": "git_show_commit",
     "description": (
-        "Get detailed information about a specific commit including full message, "
-        "author/committer info, file change statistics, and optionally the full diff. "
-        "Use this to examine what changed in a particular commit. Related tools: git_log (find commits), git_diff (compare changes), git_file_at_revision (view files at this commit)."
+        "TL;DR: View detailed info about a single commit (message, stats, diff). "
+        "WHEN TO USE: (1) Examine a specific commit, (2) See what files changed, (3) Get full diff of one commit. "
+        "WHEN NOT TO USE: Browse commit history -> git_log | Compare two different revisions -> git_diff | View file at commit -> git_file_at_revision. "
+        "RELATED TOOLS: git_log (find commits), git_diff (compare revisions), git_file_at_revision (view file content)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1821,7 +1858,10 @@ TOOL_REGISTRY["git_show_commit"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
             "commit": {
                 "type": "object",
                 "description": "Commit metadata",
@@ -1847,12 +1887,22 @@ TOOL_REGISTRY["git_show_commit"] = {
                         "path": {"type": "string"},
                         "insertions": {"type": "integer"},
                         "deletions": {"type": "integer"},
-                        "status": {"type": "string", "enum": ["added", "modified", "deleted", "renamed"]},
+                        "status": {
+                            "type": "string",
+                            "enum": ["added", "modified", "deleted", "renamed"],
+                        },
                     },
                 },
             },
-            "diff": {"type": ["string", "null"], "description": "Full diff (when include_diff=true)"},
-            "parents": {"type": "array", "items": {"type": "string"}, "description": "Parent commit SHAs"},
+            "diff": {
+                "type": ["string", "null"],
+                "description": "Full diff (when include_diff=true)",
+            },
+            "parents": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Parent commit SHAs",
+            },
             "error": {"type": "string", "description": "Error message if failed"},
         },
         "required": ["success"],
@@ -1862,9 +1912,10 @@ TOOL_REGISTRY["git_show_commit"] = {
 TOOL_REGISTRY["git_file_at_revision"] = {
     "name": "git_file_at_revision",
     "description": (
-        "Retrieve the contents of a file as it existed at a specific commit, branch, or tag. "
-        "Use this to view historical versions of files without checking out the revision. "
-        "Useful for comparing how code looked before/after changes. Related tools: git_file_history (find commits that modified file), git_blame (see who wrote each line), git_show_commit (view commit details)."
+        "TL;DR: View a file's contents as it existed at any commit, branch, or tag. "
+        "WHEN TO USE: (1) See old version of a file, (2) Compare file before/after changes, (3) View file at specific tag. "
+        "WHEN NOT TO USE: Commits that modified file -> git_file_history | Who wrote each line -> git_blame | Full commit details -> git_show_commit. "
+        "RELATED TOOLS: git_file_history (commits modifying file), git_blame (line attribution), git_show_commit (commit details)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1900,12 +1951,24 @@ TOOL_REGISTRY["git_file_at_revision"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
             "path": {"type": "string", "description": "File path requested"},
             "revision": {"type": "string", "description": "Revision requested"},
-            "resolved_revision": {"type": "string", "description": "Resolved full commit SHA"},
-            "content": {"type": "string", "description": "File content at the revision"},
-            "size_bytes": {"type": "integer", "description": "Size of the file in bytes"},
+            "resolved_revision": {
+                "type": "string",
+                "description": "Resolved full commit SHA",
+            },
+            "content": {
+                "type": "string",
+                "description": "File content at the revision",
+            },
+            "size_bytes": {
+                "type": "integer",
+                "description": "Size of the file in bytes",
+            },
             "error": {"type": "string", "description": "Error message if failed"},
         },
         "required": ["success"],
@@ -1916,12 +1979,10 @@ TOOL_REGISTRY["git_file_at_revision"] = {
 TOOL_REGISTRY["git_diff"] = {
     "name": "git_diff",
     "description": (
-        "Get unified diff output showing line-by-line changes between two revisions. "
-        "Returns the actual code changes with context lines. Use this to understand "
-        "WHAT changed between commits, branches, or any two points in history. "
-        "Unlike git_search_diffs (which finds commits containing specific code changes), "
-        "this shows the complete diff between two known revisions. Unlike git_show_commit "
-        "(which shows a single commit's changes), this compares ANY two points. Related tools: git_show_commit (single commit changes), git_log (find commits to diff)."
+        "TL;DR: Show line-by-line changes between two revisions (commits, branches, tags). "
+        "WHEN TO USE: (1) Compare two commits/branches, (2) See what changed between releases, (3) Review branch differences. "
+        "WHEN NOT TO USE: Find commits where code was added/removed -> git_search_diffs | Single commit's changes -> git_show_commit | Browse history -> git_log. "
+        "RELATED TOOLS: git_show_commit (single commit diff), git_search_diffs (find code changes), git_log (find commits)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2111,9 +2172,10 @@ TOOL_REGISTRY["git_file_history"] = {
 TOOL_REGISTRY["git_search_commits"] = {
     "name": "git_search_commits",
     "description": (
-        "Search through commit messages to find commits mentioning specific text or patterns. "
-        "Useful for finding commits related to features, bug fixes, or ticket numbers. "
-        "Searches the full commit message (subject and body). Does not require temporal indexing. Related tools: git_show_commit (view matching commit details), git_log (browse recent history)."
+        "TL;DR: Search commit messages for keywords, ticket numbers, or patterns. "
+        "WHEN TO USE: (1) Find commits mentioning 'JIRA-123', (2) Search for 'fix bug', (3) Find feature-related commits by message. "
+        "WHEN NOT TO USE: Find when code was added/removed -> git_search_diffs | Browse recent history -> git_log | Commit details -> git_show_commit. "
+        "RELATED TOOLS: git_search_diffs (search code changes), git_show_commit (view commit), git_log (browse history)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2181,22 +2243,46 @@ TOOL_REGISTRY["git_search_commits"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
             "query": {"type": "string", "description": "Search query used"},
-            "is_regex": {"type": "boolean", "description": "Whether regex mode was used"},
+            "is_regex": {
+                "type": "boolean",
+                "description": "Whether regex mode was used",
+            },
             "matches": {
                 "type": "array",
                 "description": "List of matching commits",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "hash": {"type": "string", "description": "Full 40-char commit SHA"},
-                        "short_hash": {"type": "string", "description": "Abbreviated SHA"},
+                        "hash": {
+                            "type": "string",
+                            "description": "Full 40-char commit SHA",
+                        },
+                        "short_hash": {
+                            "type": "string",
+                            "description": "Abbreviated SHA",
+                        },
                         "author_name": {"type": "string", "description": "Author name"},
-                        "author_email": {"type": "string", "description": "Author email"},
-                        "author_date": {"type": "string", "description": "Author date (ISO 8601)"},
-                        "subject": {"type": "string", "description": "Commit subject line"},
-                        "body": {"type": "string", "description": "Full commit message body"},
+                        "author_email": {
+                            "type": "string",
+                            "description": "Author email",
+                        },
+                        "author_date": {
+                            "type": "string",
+                            "description": "Author date (ISO 8601)",
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Commit subject line",
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Full commit message body",
+                        },
                         "match_highlights": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -2205,9 +2291,18 @@ TOOL_REGISTRY["git_search_commits"] = {
                     },
                 },
             },
-            "total_matches": {"type": "integer", "description": "Number of matching commits"},
-            "truncated": {"type": "boolean", "description": "Whether results were truncated"},
-            "search_time_ms": {"type": "number", "description": "Search execution time in ms"},
+            "total_matches": {
+                "type": "integer",
+                "description": "Number of matching commits",
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "Whether results were truncated",
+            },
+            "search_time_ms": {
+                "type": "number",
+                "description": "Search execution time in ms",
+            },
             "error": {"type": "string", "description": "Error message if failed"},
         },
         "required": ["success"],
@@ -2302,20 +2397,38 @@ TOOL_REGISTRY["git_search_diffs"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
             "search_term": {"type": "string", "description": "Search term used"},
-            "is_regex": {"type": "boolean", "description": "Whether regex mode was used"},
+            "is_regex": {
+                "type": "boolean",
+                "description": "Whether regex mode was used",
+            },
             "matches": {
                 "type": "array",
                 "description": "List of commits that added/removed matching content",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "hash": {"type": "string", "description": "Full 40-char commit SHA"},
-                        "short_hash": {"type": "string", "description": "Abbreviated SHA"},
+                        "hash": {
+                            "type": "string",
+                            "description": "Full 40-char commit SHA",
+                        },
+                        "short_hash": {
+                            "type": "string",
+                            "description": "Abbreviated SHA",
+                        },
                         "author_name": {"type": "string", "description": "Author name"},
-                        "author_date": {"type": "string", "description": "Author date (ISO 8601)"},
-                        "subject": {"type": "string", "description": "Commit subject line"},
+                        "author_date": {
+                            "type": "string",
+                            "description": "Author date (ISO 8601)",
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Commit subject line",
+                        },
                         "files_changed": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -2328,9 +2441,18 @@ TOOL_REGISTRY["git_search_diffs"] = {
                     },
                 },
             },
-            "total_matches": {"type": "integer", "description": "Number of matching commits"},
-            "truncated": {"type": "boolean", "description": "Whether results were truncated"},
-            "search_time_ms": {"type": "number", "description": "Search execution time in ms"},
+            "total_matches": {
+                "type": "integer",
+                "description": "Number of matching commits",
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "Whether results were truncated",
+            },
+            "search_time_ms": {
+                "type": "number",
+                "description": "Search execution time in ms",
+            },
             "error": {"type": "string", "description": "Error message if failed"},
         },
         "required": ["success"],
@@ -2430,7 +2552,10 @@ TOOL_REGISTRY["directory_tree"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
             "tree_string": {
                 "type": "string",
                 "description": "Pre-formatted tree output with ASCII characters",
@@ -2440,8 +2565,14 @@ TOOL_REGISTRY["directory_tree"] = {
                 "description": "Root TreeNode with hierarchical structure",
                 "properties": {
                     "name": {"type": "string", "description": "Directory/file name"},
-                    "path": {"type": "string", "description": "Relative path from repo root"},
-                    "is_directory": {"type": "boolean", "description": "True if directory"},
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path from repo root",
+                    },
+                    "is_directory": {
+                        "type": "boolean",
+                        "description": "True if directory",
+                    },
                     "children": {
                         "type": ["array", "null"],
                         "description": "Child nodes (null for files)",
@@ -2465,7 +2596,10 @@ TOOL_REGISTRY["directory_tree"] = {
                 "type": "boolean",
                 "description": "Whether max_depth limit was reached",
             },
-            "root_path": {"type": "string", "description": "Filesystem path to tree root"},
+            "root_path": {
+                "type": "string",
+                "description": "Filesystem path to tree root",
+            },
             "error": {"type": "string", "description": "Error message if failed"},
         },
         "required": ["success"],
