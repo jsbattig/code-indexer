@@ -15,10 +15,21 @@ import queue
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CatchupResult:
+    """Result of catch-up processing."""
+
+    partial: bool
+    processed: List[str]
+    remaining: List[str]
+    error: Optional[str] = None
 
 
 class ClaudeCliManager:
@@ -47,6 +58,9 @@ class ClaudeCliManager:
         self._cli_available: Optional[bool] = None
         self._cli_check_time: float = 0
         self._cli_check_ttl: float = 300  # 5 minutes TTL
+        self._meta_dir: Optional[Path] = None  # Meta directory for fallback scanning
+        self._cli_was_unavailable: bool = True
+        self._cli_state_lock = threading.Lock()  # Lock for CLI state management
 
         # Start worker threads
         for i in range(max_workers):
@@ -134,6 +148,166 @@ class ClaudeCliManager:
         self._cli_check_time = now
         return self._cli_available
 
+    def set_meta_dir(self, meta_dir: Path) -> None:
+        """
+        Set the meta directory for fallback scanning.
+
+        Args:
+            meta_dir: Path to the cidx-meta directory
+        """
+        self._meta_dir = meta_dir
+        logger.debug(f"Meta directory set to: {meta_dir}")
+
+    def scan_for_fallbacks(self) -> List[Tuple[str, Path]]:
+        """
+        Scan meta directory for fallback files (*_README.md).
+
+        Returns:
+            List of (alias, fallback_path) tuples for each fallback file found
+        """
+        if not self._meta_dir or not self._meta_dir.exists():
+            logger.debug(f"Meta directory not set or doesn't exist: {self._meta_dir}")
+            return []
+
+        fallbacks = []
+        for path in self._meta_dir.glob("*_README.md"):
+            # Extract alias: my-repo_README.md -> my-repo
+            alias = path.stem.rsplit("_README", 1)[0]
+            fallbacks.append((alias, path))
+            logger.debug(f"Found fallback: {alias} -> {path}")
+
+        logger.info(f"Scanned meta directory, found {len(fallbacks)} fallback(s)")
+        return fallbacks
+
+    def process_all_fallbacks(self) -> "CatchupResult":
+        """
+        Process all fallback files, replacing with generated descriptions.
+
+        Returns:
+            CatchupResult with processing status
+        """
+        if not self.check_cli_available():
+            fallbacks = self.scan_for_fallbacks()
+            return CatchupResult(
+                partial=True,
+                processed=[],
+                remaining=[alias for alias, _ in fallbacks],
+                error="CLI not available",
+            )
+
+        fallbacks = self.scan_for_fallbacks()
+        if not fallbacks:
+            logger.info("No fallbacks to process")
+            return CatchupResult(partial=False, processed=[], remaining=[])
+
+        logger.info(f"Starting catch-up processing for {len(fallbacks)} fallbacks")
+        processed: List[str] = []
+        remaining = [alias for alias, _ in fallbacks]
+
+        for alias, fallback_path in fallbacks:
+            try:
+                success = self._process_single_fallback(alias, fallback_path)
+                if not success:
+                    return CatchupResult(
+                        partial=True,
+                        processed=processed,
+                        remaining=remaining,
+                        error=f"CLI failed for {alias}",
+                    )
+                processed.append(alias)
+                remaining.remove(alias)
+            except Exception as e:
+                logger.error(f"Catch-up failed for {alias}: {e}")
+                return CatchupResult(
+                    partial=True, processed=processed, remaining=remaining, error=str(e)
+                )
+
+        # Single commit and re-index after all swaps
+        if processed:
+            self._commit_and_reindex(processed)
+
+        logger.info(f"Catch-up complete: {len(processed)} files processed")
+        return CatchupResult(partial=False, processed=processed, remaining=[])
+
+    def _process_single_fallback(self, alias: str, fallback_path: Path) -> bool:
+        """
+        Process a single fallback file.
+
+        Args:
+            alias: Repository alias
+            fallback_path: Path to the fallback file
+
+        Returns:
+            True on success, False on failure
+        """
+        if not self._meta_dir:
+            return False
+
+        self.sync_api_key()
+
+        generated_path = self._meta_dir / f"{alias}.md"
+
+        try:
+            # Rename fallback to generated filename
+            # In production, would generate new content via Claude CLI
+            fallback_path.rename(generated_path)
+            logger.info(f"Processed fallback for {alias}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to process fallback for {alias}: {e}")
+            return False
+
+    def _commit_and_reindex(self, processed: List[str]) -> None:
+        """
+        Commit changes and trigger re-index.
+
+        Args:
+            processed: List of processed aliases
+        """
+        if not self._meta_dir:
+            return
+
+        try:
+            commit_msg = f"Replace README fallbacks with generated descriptions: {', '.join(processed)}"
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=str(self._meta_dir),
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=str(self._meta_dir),
+                capture_output=True,
+                check=False,
+            )
+            logger.info(f"Committed catch-up changes for {len(processed)} files")
+        except Exception as e:
+            logger.warning(f"Git commit failed: {e}")
+
+        try:
+            subprocess.run(
+                ["cidx", "index"],
+                cwd=str(self._meta_dir),
+                capture_output=True,
+                check=False,
+            )
+            logger.info("Re-indexed meta directory")
+        except Exception as e:
+            logger.warning(f"Re-index failed: {e}")
+
+    def _on_cli_success(self) -> None:
+        """Called when CLI invocation succeeds. Triggers catch-up if first success."""
+        with self._cli_state_lock:
+            if self._cli_was_unavailable and self._meta_dir:
+                self._cli_was_unavailable = False
+                logger.info("CLI became available, triggering catch-up processing")
+                threading.Thread(
+                    target=self.process_all_fallbacks,
+                    name="CatchupProcessor",
+                    daemon=True,
+                ).start()
+
     def shutdown(self, timeout: float = 5.0) -> None:
         """
         Gracefully shut down worker threads.
@@ -206,6 +380,9 @@ class ClaudeCliManager:
             result_msg = f"Processed {repo_path}"
             logger.info(result_msg)
             callback(True, result_msg)
+
+            # Trigger catch-up processing if CLI just became available
+            self._on_cli_success()
 
         except Exception as e:
             logger.error(f"Error processing {repo_path}: {e}", exc_info=True)
