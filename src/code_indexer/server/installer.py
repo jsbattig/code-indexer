@@ -6,8 +6,10 @@ and startup script generation.
 """
 
 import getpass
+import logging
 import socket
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from typing import Tuple, Optional
@@ -15,6 +17,8 @@ from typing import Tuple, Optional
 from .auth.user_manager import UserManager
 from .utils.config_manager import ServerConfigManager
 from .utils.jwt_secret_manager import JWTSecretManager
+
+logger = logging.getLogger(__name__)
 
 
 class ServerInstaller:
@@ -258,6 +262,9 @@ WantedBy=multi-user.target
             # Create startup script
             script_path = self.create_startup_script(port)
 
+            # Try to install Claude CLI (non-fatal if fails)
+            self.install_claude_cli()
+
             # Seed initial admin user
             self.seed_initial_admin_user()
 
@@ -307,3 +314,88 @@ WantedBy=multi-user.target
 
         shutil.rmtree(self.server_dir)
         return True
+
+    def _is_claude_cli_installed(self) -> bool:
+        """
+        Check if claude command exists.
+
+        Returns:
+            True if Claude CLI is installed and responds to --version
+        """
+        try:
+            result = subprocess.run(
+                ["claude", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def _is_npm_available(self) -> bool:
+        """
+        Check if npm command exists.
+
+        Returns:
+            True if npm is available
+        """
+        try:
+            result = subprocess.run(
+                ["npm", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def install_claude_cli(self) -> bool:
+        """
+        Install Claude CLI if not present.
+
+        Returns:
+            True if Claude CLI is available after this method
+            (either already installed or successfully installed),
+            False if installation failed or npm not available.
+        """
+        # Check if already installed (idempotent)
+        if self._is_claude_cli_installed():
+            logger.info("Claude CLI already installed")
+            return True
+
+        # Check if npm available
+        if not self._is_npm_available():
+            logger.warning("npm not found - Claude CLI installation skipped")
+            logger.info("Install manually: npm install -g @anthropic-ai/claude-code")
+            return False
+
+        # Install via npm
+        try:
+            logger.info("Installing Claude CLI via npm...")
+            result = subprocess.run(
+                ["npm", "install", "-g", "@anthropic-ai/claude-code"],
+                capture_output=True,
+                text=True,
+                timeout=120,  # 2 minute timeout for npm install
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Claude CLI installation failed: {result.stderr}")
+                return False
+
+            # Verify installation succeeded
+            if self._is_claude_cli_installed():
+                logger.info("Claude CLI installed successfully")
+                return True
+            else:
+                logger.error("Claude CLI installation failed: verification failed")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.error("Claude CLI installation failed: timeout")
+            return False
+        except Exception as e:
+            logger.error(f"Claude CLI installation failed: {e}")
+            return False
