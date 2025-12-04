@@ -359,8 +359,58 @@ async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get detailed status of a repository."""
+    from pathlib import Path
+
     try:
         user_alias = params["user_alias"]
+
+        # Check if this is a global repository (ends with -global suffix)
+        if user_alias and user_alias.endswith("-global"):
+            golden_repos_dir = _get_golden_repos_dir()
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos = registry.list_global_repos()
+
+            repo_entry = next(
+                (r for r in global_repos if r["alias_name"] == user_alias), None
+            )
+
+            if not repo_entry:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Global repository '{user_alias}' not found",
+                        "status": {},
+                    }
+                )
+
+            from code_indexer.global_repos.alias_manager import AliasManager
+
+            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+            target_path = alias_manager.read_alias(user_alias)
+
+            if not target_path:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Alias for '{user_alias}' not found",
+                        "status": {},
+                    }
+                )
+
+            # Build status from global repo entry
+            status = {
+                "user_alias": user_alias,
+                "golden_repo_alias": repo_entry.get("repo_name"),
+                "repo_url": repo_entry.get("repo_url"),
+                "is_global": True,
+                "path": target_path,
+                "last_refresh": repo_entry.get("last_refresh"),
+                "created_at": repo_entry.get("created_at"),
+                "index_path": repo_entry.get("index_path"),
+            }
+            return _mcp_response({"success": True, "status": status})
+
+        # Activated repository (original code)
         status = app_module.repository_listing_manager.get_repository_details(
             user_alias, user.username
         )
@@ -452,24 +502,74 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List files in a repository."""
     from code_indexer.server.models.api_models import FileListQueryParams
+    from pathlib import Path
 
     try:
         repository_alias = params["repository_alias"]
         path_filter = params.get("path", "")
 
-        # Create FileListQueryParams object as required by service method signature
-        query_params = FileListQueryParams(
-            page=1,
-            limit=500,  # Max limit for MCP tool usage
-            path_pattern=path_filter if path_filter else None,
-        )
+        # Check if this is a global repository (ends with -global suffix)
+        if repository_alias and repository_alias.endswith("-global"):
+            # Look up global repo in GlobalRegistry to get actual path
+            golden_repos_dir = _get_golden_repos_dir()
 
-        # Call with correct signature: list_files(repo_id, username, query_params)
-        result = app_module.file_service.list_files(
-            repo_id=repository_alias,
-            username=user.username,
-            query_params=query_params,
-        )
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos = registry.list_global_repos()
+
+            # Find the matching global repo
+            repo_entry = next(
+                (r for r in global_repos if r["alias_name"] == repository_alias), None
+            )
+
+            if not repo_entry:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Global repository '{repository_alias}' not found",
+                        "files": [],
+                    }
+                )
+
+            # Use AliasManager to get current target path (registry path becomes stale after refresh)
+            from code_indexer.global_repos.alias_manager import AliasManager
+
+            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+            target_path = alias_manager.read_alias(repository_alias)
+
+            if not target_path:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Alias for '{repository_alias}' not found",
+                        "files": [],
+                    }
+                )
+
+            # Use resolved path instead of alias for file_service
+            query_params = FileListQueryParams(
+                page=1,
+                limit=500,  # Max limit for MCP tool usage
+                path_pattern=path_filter if path_filter else None,
+            )
+
+            result = app_module.file_service.list_files_by_path(
+                repo_path=target_path,
+                query_params=query_params,
+            )
+        else:
+            # Create FileListQueryParams object as required by service method signature
+            query_params = FileListQueryParams(
+                page=1,
+                limit=500,  # Max limit for MCP tool usage
+                path_pattern=path_filter if path_filter else None,
+            )
+
+            # Call with correct signature: list_files(repo_id, username, query_params)
+            result = app_module.file_service.list_files(
+                repo_id=repository_alias,
+                username=user.username,
+                query_params=query_params,
+            )
 
         # Extract files from FileListResponse and serialize FileInfo objects
         # Handle both FileListResponse objects and plain dicts
@@ -500,15 +600,62 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
     Returns MCP-compliant response with content as array of text blocks.
     Per MCP spec, content must be an array of content blocks, each with 'type' and 'text' fields.
     """
+    from pathlib import Path
+
     try:
         repository_alias = params["repository_alias"]
         file_path = params["file_path"]
 
-        result = app_module.file_service.get_file_content(
-            repository_alias=repository_alias,
-            file_path=file_path,
-            username=user.username,
-        )
+        # Check if this is a global repository (ends with -global suffix)
+        if repository_alias and repository_alias.endswith("-global"):
+            # Look up global repo in GlobalRegistry to get actual path
+            golden_repos_dir = _get_golden_repos_dir()
+
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos = registry.list_global_repos()
+
+            # Find the matching global repo
+            repo_entry = next(
+                (r for r in global_repos if r["alias_name"] == repository_alias), None
+            )
+
+            if not repo_entry:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Global repository '{repository_alias}' not found",
+                        "content": [],
+                        "metadata": {},
+                    }
+                )
+
+            # Use AliasManager to get current target path (registry path becomes stale after refresh)
+            from code_indexer.global_repos.alias_manager import AliasManager
+
+            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+            target_path = alias_manager.read_alias(repository_alias)
+
+            if not target_path:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Alias for '{repository_alias}' not found",
+                        "content": [],
+                        "metadata": {},
+                    }
+                )
+
+            # Use resolved path for file_service
+            result = app_module.file_service.get_file_content_by_path(
+                repo_path=target_path,
+                file_path=file_path,
+            )
+        else:
+            result = app_module.file_service.get_file_content(
+                repository_alias=repository_alias,
+                file_path=file_path,
+                username=user.username,
+            )
 
         # MCP spec: content must be array of content blocks
         file_content = result.get("content", "")
@@ -674,11 +821,51 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         repository_alias = params["repository_alias"]
         include_remote = params.get("include_remote", False)
 
-        # Get repository path (matches app.py endpoint pattern at line 4383-4395)
-        repo_path = app_module.activated_repo_manager.get_activated_repo_path(
-            username=user.username,
-            user_alias=repository_alias,
-        )
+        # Check if this is a global repository (ends with -global suffix)
+        if repository_alias and repository_alias.endswith("-global"):
+            # Look up global repo in GlobalRegistry to get actual path
+            golden_repos_dir = _get_golden_repos_dir()
+
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos = registry.list_global_repos()
+
+            # Find the matching global repo
+            repo_entry = next(
+                (r for r in global_repos if r["alias_name"] == repository_alias), None
+            )
+
+            if not repo_entry:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Global repository '{repository_alias}' not found",
+                        "branches": [],
+                    }
+                )
+
+            # Use AliasManager to get current target path (registry path becomes stale after refresh)
+            from code_indexer.global_repos.alias_manager import AliasManager
+
+            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+            target_path = alias_manager.read_alias(repository_alias)
+
+            if not target_path:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Alias for '{repository_alias}' not found",
+                        "branches": [],
+                    }
+                )
+
+            # Use resolved path for git operations
+            repo_path = target_path
+        else:
+            # Get repository path (matches app.py endpoint pattern at line 4383-4395)
+            repo_path = app_module.activated_repo_manager.get_activated_repo_path(
+                username=user.username,
+                user_alias=repository_alias,
+            )
 
         # Initialize git topology service
         git_topology_service = GitTopologyService(Path(repo_path))
@@ -869,15 +1056,59 @@ async def get_repository_statistics(
     params: Dict[str, Any], user: User
 ) -> Dict[str, Any]:
     """Get repository statistics."""
+    from pathlib import Path
+
     try:
+        repository_alias = params["repository_alias"]
+
+        # Check if this is a global repository (ends with -global suffix)
+        if repository_alias and repository_alias.endswith("-global"):
+            golden_repos_dir = _get_golden_repos_dir()
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos = registry.list_global_repos()
+
+            repo_entry = next(
+                (r for r in global_repos if r["alias_name"] == repository_alias), None
+            )
+
+            if not repo_entry:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Global repository '{repository_alias}' not found",
+                        "statistics": {},
+                    }
+                )
+
+            from code_indexer.global_repos.alias_manager import AliasManager
+
+            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
+            target_path = alias_manager.read_alias(repository_alias)
+
+            if not target_path:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": f"Alias for '{repository_alias}' not found",
+                        "statistics": {},
+                    }
+                )
+
+            # Build basic statistics for global repo
+            statistics = {
+                "repository_alias": repository_alias,
+                "is_global": True,
+                "path": target_path,
+                "index_path": repo_entry.get("index_path"),
+            }
+            return _mcp_response({"success": True, "statistics": statistics})
+
+        # Activated repository (original code)
         from code_indexer.server.services.stats_service import stats_service
 
-        repository_alias = params["repository_alias"]
-        # Call with username to lookup activated repository
         stats_response = stats_service.get_repository_stats(
             repository_alias, username=user.username
         )
-        # Use mode='json' to serialize datetime objects to ISO format strings
         return _mcp_response(
             {"success": True, "statistics": stats_response.model_dump(mode="json")}
         )
@@ -913,6 +1144,7 @@ async def get_all_repositories_status(
 ) -> Dict[str, Any]:
     """Get status summary of all repositories."""
     try:
+        # Get activated repos status
         repos = app_module.activated_repo_manager.list_activated_repositories(
             user.username
         )
@@ -924,8 +1156,32 @@ async def get_all_repositories_status(
                 )
                 status_summary.append(details)
             except Exception:
-                # Skip repos that fail to get details
                 continue
+
+        # Get global repos status (same pattern as list_repositories handler)
+        try:
+            golden_repos_dir = _get_golden_repos_dir()
+            registry = GlobalRegistry(golden_repos_dir)
+            global_repos_data = registry.list_global_repos()
+
+            for repo in global_repos_data:
+                if "alias_name" not in repo or "repo_name" not in repo:
+                    logger.warning(f"Skipping malformed global repo entry: {repo}")
+                    continue
+
+                global_status = {
+                    "user_alias": repo["alias_name"],
+                    "golden_repo_alias": repo["repo_name"],
+                    "current_branch": None,
+                    "is_global": True,
+                    "repo_url": repo.get("repo_url"),
+                    "last_refresh": repo.get("last_refresh"),
+                    "index_path": repo.get("index_path"),
+                    "created_at": repo.get("created_at"),
+                }
+                status_summary.append(global_status)
+        except Exception as e:
+            logger.warning(f"Failed to load global repos status: {e}", exc_info=True)
 
         return _mcp_response(
             {

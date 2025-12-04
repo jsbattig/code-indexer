@@ -475,6 +475,47 @@ class FileListingService:
         }
         return {"content": content, "metadata": metadata}
 
+    def get_file_content_by_path(
+        self, repo_path: str, file_path: str
+    ) -> Dict[str, Any]:
+        """Get content of a specific file from a direct filesystem path (for global repos).
+
+        Unlike get_file_content() which looks up activated repos by alias,
+        this method accepts a direct path for global repository file access.
+
+        Args:
+            repo_path: Direct filesystem path to repository root
+            file_path: Relative path to file within repository
+
+        Returns:
+            Dict with 'content' and 'metadata' keys
+
+        Raises:
+            PermissionError: If path traversal attempted
+            FileNotFoundError: If file doesn't exist
+        """
+        full_file_path = Path(repo_path) / file_path
+        full_file_path = full_file_path.resolve()
+        repo_root = Path(repo_path).resolve()
+        if not str(full_file_path).startswith(str(repo_root)):
+            raise PermissionError("Access denied")
+        if not full_file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        if not full_file_path.is_file():
+            raise FileNotFoundError(f"Not a file: {file_path}")
+        with open(full_file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        stat_info = full_file_path.stat()
+        metadata = {
+            "size": stat_info.st_size,
+            "modified_at": datetime.fromtimestamp(
+                stat_info.st_mtime, tz=timezone.utc
+            ).isoformat(),
+            "language": self._detect_language(full_file_path),
+            "path": file_path,
+        }
+        return {"content": content, "metadata": metadata}
+
 
 # Global service instance
 file_service = FileListingService()
