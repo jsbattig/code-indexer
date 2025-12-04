@@ -14,6 +14,7 @@ All handlers return MCP-compliant responses with content arrays:
 import json
 import logging
 from typing import Dict, Any, Optional
+from pathlib import Path
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
 from code_indexer.server import app as app_module
@@ -1655,49 +1656,98 @@ async def handle_git_file_at_revision(args: Dict[str, Any], user: User) -> Dict[
         return _mcp_response({"success": False, "error": str(e)})
 
 
+
+
+def _is_git_repo(path: Path) -> bool:
+    """Check if path is a valid git repository."""
+    return path.exists() and (path / ".git").exists()
+
+
+def _find_latest_versioned_repo(base_path: Path, repo_name: str) -> Optional[str]:
+    """Find most recent versioned git repo in .versioned/{name}/v_*/ structure."""
+    versioned_base = base_path / ".versioned" / repo_name
+    if not versioned_base.exists():
+        return None
+
+    version_dirs = sorted(
+        [d for d in versioned_base.iterdir() if d.is_dir() and d.name.startswith("v_")],
+        key=lambda d: d.name,
+        reverse=True
+    )
+
+    for version_dir in version_dirs:
+        if _is_git_repo(version_dir):
+            return str(version_dir)
+
+    return None
+
+
 def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[str]:
-    """Resolve repository identifier to filesystem path.
+    """Resolve repository identifier to filesystem path with actual git repo.
+
+    Searches multiple locations to find a directory with .git:
+    1. The index_path from registry (if it has .git)
+    2. The golden-repos/{name} directory
+    3. The golden-repos/repos/{name} directory
+    4. Versioned repos in .versioned/{name}/v_*/
 
     Args:
         repo_identifier: Repository alias or path
         golden_repos_dir: Path to golden repos directory
 
     Returns:
-        Filesystem path to repository, or None if not found
+        Filesystem path to git repository, or None if not found
     """
-    from pathlib import Path
+    # Try as full path first
+    if not repo_identifier.endswith("-global"):
+        repo_path = Path(repo_identifier)
+        if _is_git_repo(repo_path):
+            return str(repo_path)
+        # Try adding -global suffix
+        repo_identifier = f"{repo_identifier}-global"
 
-    # Check if it's a global repo alias
-    if repo_identifier.endswith("-global"):
-        from code_indexer.global_repos.global_registry import GlobalRegistry
+    # Look up in global registry
+    registry = GlobalRegistry(golden_repos_dir)
+    repo_entry = registry.get_global_repo(repo_identifier)
 
-        registry = GlobalRegistry(golden_repos_dir)
-        repo_entry = registry.get_global_repo(repo_identifier)
-
-        if repo_entry:
-            index_path = repo_entry.get("index_path")
-            if index_path and Path(index_path).exists():
-                return index_path
-
+    if not repo_entry:
         return None
 
-    # Try as full path
-    repo_path = Path(repo_identifier)
-    if repo_path.exists() and (repo_path / ".git").exists():
-        return str(repo_path)
+    # Get repo name without -global suffix
+    repo_name = repo_identifier.replace("-global", "")
 
-    # Try adding -global suffix
-    from code_indexer.global_repos.global_registry import GlobalRegistry
-
-    registry = GlobalRegistry(golden_repos_dir)
-    repo_entry = registry.get_global_repo(f"{repo_identifier}-global")
-
-    if repo_entry:
-        index_path = repo_entry.get("index_path")
-        if index_path and Path(index_path).exists():
+    # Try 1: index_path directly (might be a git repo in test environments)
+    index_path = repo_entry.get("index_path")
+    if index_path:
+        index_path_obj = Path(index_path)
+        if _is_git_repo(index_path_obj):
             return index_path
 
+    # Get base directory (.cidx-server/)
+    base_dir = Path(golden_repos_dir).parent.parent
+
+    # Try 2: Check golden-repos/{name}
+    alt_path = base_dir / "golden-repos" / repo_name
+    if _is_git_repo(alt_path):
+        return str(alt_path)
+
+    # Try 3: Check golden-repos/repos/{name}
+    alt_path = base_dir / "golden-repos" / "repos" / repo_name
+    if _is_git_repo(alt_path):
+        return str(alt_path)
+
+    # Try 4: Check versioned repos in data/golden-repos/.versioned
+    versioned_path = _find_latest_versioned_repo(Path(golden_repos_dir), repo_name)
+    if versioned_path:
+        return versioned_path
+
+    # Try 5: Check versioned repos in alternative location
+    versioned_path = _find_latest_versioned_repo(base_dir / "data" / "golden-repos", repo_name)
+    if versioned_path:
+        return versioned_path
+
     return None
+
 
 
 # Update handler registry with git exploration tools

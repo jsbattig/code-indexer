@@ -1299,3 +1299,105 @@ async def test_git_search_diffs_returns_match_structure(test_user, git_repo_with
         assert "files_changed" in match
         # diff_snippet is optional (may be None)
         assert "diff_snippet" in match
+
+# Test for _resolve_repo_path bug fix (Story #554 follow-up)
+@pytest.fixture
+def production_style_repo_layout(tmp_path, monkeypatch):
+    """Setup production-style directory layout where index_path != git_repo_path.
+
+    In production:
+    - index_path: .cidx-server/data/golden-repos/{name} (vector index, NO .git)
+    - git_repo: .cidx-server/golden-repos/{name} (actual git repo WITH .git)
+    """
+    import subprocess
+    from code_indexer.global_repos.global_registry import GlobalRegistry
+    from code_indexer.server import app as app_module
+
+    # Create directory structure mimicking production
+    cidx_server_dir = tmp_path / ".cidx-server"
+    data_dir = cidx_server_dir / "data"
+    golden_repos_data = data_dir / "golden-repos"
+    golden_repos_data.mkdir(parents=True)
+
+    golden_repos_actual = cidx_server_dir / "golden-repos"
+    golden_repos_actual.mkdir(parents=True)
+
+    # Set app state to use data/golden-repos (vector index location)
+    monkeypatch.setenv("GOLDEN_REPOS_DIR", str(golden_repos_data))
+    app_module.app.state.golden_repos_dir = str(golden_repos_data)
+
+    # Create actual git repo in golden-repos/{name}
+    git_repo_path = golden_repos_actual / "test-prod-repo"
+    git_repo_path.mkdir()
+
+    subprocess.run(["git", "init"], cwd=git_repo_path, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=git_repo_path,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=git_repo_path,
+        capture_output=True,
+        check=True,
+    )
+
+    # Create a commit
+    (git_repo_path / "main.py").write_text("def production():\n    pass\n")
+    subprocess.run(["git", "add", "."], cwd=git_repo_path, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Production commit"],
+        cwd=git_repo_path,
+        capture_output=True,
+    )
+
+    # Create vector index directory (NO .git here - this is the bug scenario)
+    index_path = golden_repos_data / "test-prod-repo"
+    index_path.mkdir()
+    # Add some dummy index files to make it look like a vector index
+    (index_path / "metadata.json").write_text('{"indexed": true}')
+
+    # Register in global registry with index_path pointing to data/golden-repos
+    # (which does NOT have .git)
+    registry = GlobalRegistry(str(golden_repos_data))
+    registry.register_global_repo(
+        "test-prod-repo",
+        "test-prod-repo-global",
+        "http://example.com/test-prod.git",
+        str(index_path),  # This points to vector index, NOT git repo
+    )
+
+    return {
+        "golden_repos_dir": golden_repos_data,
+        "git_repo_path": git_repo_path,
+        "index_path": index_path,
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_repo_path_finds_git_repo_in_alternate_location(
+    test_user, production_style_repo_layout
+):
+    """Test _resolve_repo_path finds actual git repo when index_path has no .git.
+
+    This validates the bug fix where index_path points to vector index storage
+    (without .git) and the actual git repo is in a different location.
+    """
+    from code_indexer.server.mcp.handlers import handle_git_log
+
+    # Try to use git_log - this should find the actual git repo despite
+    # index_path not being a git repo
+    result = await handle_git_log(
+        {"repo_identifier": "test-prod-repo-global"},
+        test_user,
+    )
+
+    data = json.loads(result["content"][0]["text"])
+
+    # Should succeed and find commits
+    assert data["success"] is True
+    assert "commits" in data
+    assert len(data["commits"]) == 1
+    assert data["commits"][0]["subject"] == "Production commit"
