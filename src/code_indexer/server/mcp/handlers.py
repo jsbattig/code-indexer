@@ -383,27 +383,13 @@ async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str,
                     }
                 )
 
-            from code_indexer.global_repos.alias_manager import AliasManager
-
-            alias_manager = AliasManager(str(Path(golden_repos_dir) / "aliases"))
-            target_path = alias_manager.read_alias(user_alias)
-
-            if not target_path:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Alias for '{user_alias}' not found",
-                        "status": {},
-                    }
-                )
-
-            # Build status from global repo entry
+            # Build status directly from registry entry (no alias file needed)
             status = {
-                "user_alias": user_alias,
+                "user_alias": repo_entry["alias_name"],
                 "golden_repo_alias": repo_entry.get("repo_name"),
                 "repo_url": repo_entry.get("repo_url"),
                 "is_global": True,
-                "path": target_path,
+                "path": repo_entry.get("index_path"),
                 "last_refresh": repo_entry.get("last_refresh"),
                 "created_at": repo_entry.get("created_at"),
                 "index_path": repo_entry.get("index_path"),
