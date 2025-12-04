@@ -1336,54 +1336,14 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        # Check if it's a global repo alias
-        if repo_identifier.endswith("-global"):
-            from code_indexer.global_repos.global_registry import GlobalRegistry
-
-            registry = GlobalRegistry(golden_repos_dir)
-            repo_entry = registry.get_global_repo(repo_identifier)
-
-            if not repo_entry:
-                return _mcp_response(
-                    {"success": False, "error": f"Repository '{repo_identifier}' not found"}
-                )
-
-            # Use index_path from registry entry directly
-            index_path = repo_entry.get("index_path")
-            if not index_path:
-                return _mcp_response(
-                    {"success": False, "error": f"Index path for '{repo_identifier}' not found"}
-                )
-
-            repo_path = Path(index_path)
-        else:
-            # Try as full path or check registry without -global suffix
-            repo_path = Path(repo_identifier)
-            if not repo_path.exists():
-                # Try adding -global suffix
-                from code_indexer.global_repos.global_registry import GlobalRegistry
-
-                registry = GlobalRegistry(golden_repos_dir)
-                repo_entry = registry.get_global_repo(f"{repo_identifier}-global")
-
-                if repo_entry:
-                    index_path = repo_entry.get("index_path")
-                    if index_path:
-                        repo_path = Path(index_path)
-                    else:
-                        return _mcp_response(
-                            {"success": False, "error": f"Repository '{repo_identifier}' not found"}
-                        )
-                else:
-                    return _mcp_response(
-                        {"success": False, "error": f"Repository '{repo_identifier}' not found"}
-                    )
-
-        if not repo_path.exists():
+        # Resolve repo_identifier to actual repo path (not index path)
+        # Uses _resolve_repo_path which handles all location variants
+        resolved = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if not resolved:
             return _mcp_response(
-                {"success": False, "error": f"Repository path does not exist: {repo_path}"}
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
             )
+        repo_path = Path(resolved)
 
         # Create service and execute search
         service = RegexSearchService(repo_path)
@@ -1745,6 +1705,12 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
     versioned_path = _find_latest_versioned_repo(base_dir / "data" / "golden-repos", repo_name)
     if versioned_path:
         return versioned_path
+
+    # Fallback: Return index_path if it exists as a directory (for non-git operations like regex_search)
+    if index_path:
+        index_path_obj = Path(index_path)
+        if index_path_obj.is_dir():
+            return index_path
 
     return None
 
