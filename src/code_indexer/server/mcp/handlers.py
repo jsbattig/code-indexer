@@ -13,7 +13,7 @@ All handlers return MCP-compliant responses with content arrays:
 
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
 from code_indexer.server import app as app_module
@@ -1312,6 +1312,118 @@ async def handle_set_global_config(args: Dict[str, Any], user: User) -> Dict[str
         return _mcp_response({"success": False, "error": str(e)})
 
 
+
+
+async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for regex_search tool - pattern matching in repository files."""
+    from pathlib import Path
+    from code_indexer.global_repos.regex_search import RegexSearchService
+
+    repo_identifier = args.get("repo_identifier")
+    pattern = args.get("pattern")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+    if not pattern:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: pattern"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        # Check if it's a global repo alias
+        if repo_identifier.endswith("-global"):
+            from code_indexer.global_repos.global_registry import GlobalRegistry
+
+            registry = GlobalRegistry(golden_repos_dir)
+            repo_entry = registry.get_global_repo(repo_identifier)
+
+            if not repo_entry:
+                return _mcp_response(
+                    {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                )
+
+            # Use index_path from registry entry directly
+            index_path = repo_entry.get("index_path")
+            if not index_path:
+                return _mcp_response(
+                    {"success": False, "error": f"Index path for '{repo_identifier}' not found"}
+                )
+
+            repo_path = Path(index_path)
+        else:
+            # Try as full path or check registry without -global suffix
+            repo_path = Path(repo_identifier)
+            if not repo_path.exists():
+                # Try adding -global suffix
+                from code_indexer.global_repos.global_registry import GlobalRegistry
+
+                registry = GlobalRegistry(golden_repos_dir)
+                repo_entry = registry.get_global_repo(f"{repo_identifier}-global")
+
+                if repo_entry:
+                    index_path = repo_entry.get("index_path")
+                    if index_path:
+                        repo_path = Path(index_path)
+                    else:
+                        return _mcp_response(
+                            {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                        )
+                else:
+                    return _mcp_response(
+                        {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                    )
+
+        if not repo_path.exists():
+            return _mcp_response(
+                {"success": False, "error": f"Repository path does not exist: {repo_path}"}
+            )
+
+        # Create service and execute search
+        service = RegexSearchService(repo_path)
+        result = service.search(
+            pattern=pattern,
+            path=args.get("path"),
+            include_patterns=args.get("include_patterns"),
+            exclude_patterns=args.get("exclude_patterns"),
+            case_sensitive=args.get("case_sensitive", True),
+            context_lines=args.get("context_lines", 0),
+            max_results=args.get("max_results", 100),
+        )
+
+        # Convert dataclass to dict for JSON serialization
+        matches = [
+            {
+                "file_path": m.file_path,
+                "line_number": m.line_number,
+                "column": m.column,
+                "line_content": m.line_content,
+                "context_before": m.context_before,
+                "context_after": m.context_after,
+            }
+            for m in result.matches
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "matches": matches,
+                "total_matches": result.total_matches,
+                "truncated": result.truncated,
+                "search_engine": result.search_engine,
+                "search_time_ms": result.search_time_ms,
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Error in regex_search: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
 # Handler registry mapping tool names to handler functions
 HANDLER_REGISTRY = {
     "search_code": search_code,
@@ -1340,4 +1452,719 @@ HANDLER_REGISTRY = {
     "global_repo_status": handle_global_repo_status,
     "get_global_config": handle_get_global_config,
     "set_global_config": handle_set_global_config,
+    "regex_search": handle_regex_search,
 }
+
+
+async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_log tool - retrieve commit history from a repository."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute query
+        service = GitOperationsService(Path(repo_path))
+        result = service.get_log(
+            limit=args.get("limit", 50),
+            path=args.get("path"),
+            author=args.get("author"),
+            since=args.get("since"),
+            until=args.get("until"),
+            branch=args.get("branch"),
+        )
+
+        # Convert dataclasses to dicts for JSON serialization
+        commits = [
+            {
+                "hash": c.hash,
+                "short_hash": c.short_hash,
+                "author_name": c.author_name,
+                "author_email": c.author_email,
+                "author_date": c.author_date,
+                "committer_name": c.committer_name,
+                "committer_email": c.committer_email,
+                "committer_date": c.committer_date,
+                "subject": c.subject,
+                "body": c.body,
+            }
+            for c in result.commits
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "commits": commits,
+                "total_count": result.total_count,
+                "truncated": result.truncated,
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Error in git_log: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_git_show_commit(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_show_commit tool - get detailed commit information."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+    commit_hash = args.get("commit_hash")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+    if not commit_hash:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: commit_hash"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute query
+        service = GitOperationsService(Path(repo_path))
+        result = service.show_commit(
+            commit_hash=commit_hash,
+            include_diff=args.get("include_diff", False),
+            include_stats=args.get("include_stats", True),
+        )
+
+        # Convert dataclasses to dicts for JSON serialization
+        commit_dict = {
+            "hash": result.commit.hash,
+            "short_hash": result.commit.short_hash,
+            "author_name": result.commit.author_name,
+            "author_email": result.commit.author_email,
+            "author_date": result.commit.author_date,
+            "committer_name": result.commit.committer_name,
+            "committer_email": result.commit.committer_email,
+            "committer_date": result.commit.committer_date,
+            "subject": result.commit.subject,
+            "body": result.commit.body,
+        }
+
+        stats_list = None
+        if result.stats is not None:
+            stats_list = [
+                {
+                    "path": s.path,
+                    "insertions": s.insertions,
+                    "deletions": s.deletions,
+                    "status": s.status,
+                }
+                for s in result.stats
+            ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "commit": commit_dict,
+                "stats": stats_list,
+                "diff": result.diff,
+                "parents": result.parents,
+            }
+        )
+
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Error in git_show_commit: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_git_file_at_revision(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_file_at_revision tool - get file contents at specific revision."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+    path = args.get("path")
+    revision = args.get("revision")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+    if not path:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: path"}
+        )
+    if not revision:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: revision"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute query
+        service = GitOperationsService(Path(repo_path))
+        result = service.get_file_at_revision(path=path, revision=revision)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "path": result.path,
+                "revision": result.revision,
+                "resolved_revision": result.resolved_revision,
+                "content": result.content,
+                "size_bytes": result.size_bytes,
+            }
+        )
+
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Error in git_file_at_revision: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[str]:
+    """Resolve repository identifier to filesystem path.
+
+    Args:
+        repo_identifier: Repository alias or path
+        golden_repos_dir: Path to golden repos directory
+
+    Returns:
+        Filesystem path to repository, or None if not found
+    """
+    from pathlib import Path
+
+    # Check if it's a global repo alias
+    if repo_identifier.endswith("-global"):
+        from code_indexer.global_repos.global_registry import GlobalRegistry
+
+        registry = GlobalRegistry(golden_repos_dir)
+        repo_entry = registry.get_global_repo(repo_identifier)
+
+        if repo_entry:
+            index_path = repo_entry.get("index_path")
+            if index_path and Path(index_path).exists():
+                return index_path
+
+        return None
+
+    # Try as full path
+    repo_path = Path(repo_identifier)
+    if repo_path.exists() and (repo_path / ".git").exists():
+        return str(repo_path)
+
+    # Try adding -global suffix
+    from code_indexer.global_repos.global_registry import GlobalRegistry
+
+    registry = GlobalRegistry(golden_repos_dir)
+    repo_entry = registry.get_global_repo(f"{repo_identifier}-global")
+
+    if repo_entry:
+        index_path = repo_entry.get("index_path")
+        if index_path and Path(index_path).exists():
+            return index_path
+
+    return None
+
+
+# Update handler registry with git exploration tools
+HANDLER_REGISTRY["git_log"] = handle_git_log
+HANDLER_REGISTRY["git_show_commit"] = handle_git_show_commit
+HANDLER_REGISTRY["git_file_at_revision"] = handle_git_file_at_revision
+
+
+# Story #555: Git Diff and Blame handlers
+async def handle_git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_diff tool - get diff between revisions."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+    from_revision = args.get("from_revision")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+    if not from_revision:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: from_revision"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute query
+        service = GitOperationsService(Path(repo_path))
+        result = service.get_diff(
+            from_revision=from_revision,
+            to_revision=args.get("to_revision"),
+            path=args.get("path"),
+            context_lines=args.get("context_lines", 3),
+            stat_only=args.get("stat_only", False),
+        )
+
+        # Convert dataclasses to dicts for JSON serialization
+        files = [
+            {
+                "path": f.path,
+                "old_path": f.old_path,
+                "status": f.status,
+                "insertions": f.insertions,
+                "deletions": f.deletions,
+                "hunks": [
+                    {
+                        "old_start": h.old_start,
+                        "old_count": h.old_count,
+                        "new_start": h.new_start,
+                        "new_count": h.new_count,
+                        "content": h.content,
+                    }
+                    for h in f.hunks
+                ],
+            }
+            for f in result.files
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "from_revision": result.from_revision,
+                "to_revision": result.to_revision,
+                "files": files,
+                "total_insertions": result.total_insertions,
+                "total_deletions": result.total_deletions,
+                "stat_summary": result.stat_summary,
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Error in git_diff: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_git_blame(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_blame tool - get line-by-line blame annotations."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+    path = args.get("path")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+    if not path:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: path"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute query
+        service = GitOperationsService(Path(repo_path))
+        result = service.get_blame(
+            path=path,
+            revision=args.get("revision"),
+            start_line=args.get("start_line"),
+            end_line=args.get("end_line"),
+        )
+
+        # Convert dataclasses to dicts for JSON serialization
+        lines = [
+            {
+                "line_number": line.line_number,
+                "commit_hash": line.commit_hash,
+                "short_hash": line.short_hash,
+                "author_name": line.author_name,
+                "author_email": line.author_email,
+                "author_date": line.author_date,
+                "original_line_number": line.original_line_number,
+                "content": line.content,
+            }
+            for line in result.lines
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "path": result.path,
+                "revision": result.revision,
+                "lines": lines,
+                "unique_commits": result.unique_commits,
+            }
+        )
+
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Error in git_blame: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_git_file_history(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_file_history tool - get commit history for a file."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+    path = args.get("path")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+    if not path:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: path"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute query
+        service = GitOperationsService(Path(repo_path))
+        result = service.get_file_history(
+            path=path,
+            limit=args.get("limit", 50),
+            follow_renames=args.get("follow_renames", True),
+        )
+
+        # Convert dataclasses to dicts for JSON serialization
+        commits = [
+            {
+                "hash": c.hash,
+                "short_hash": c.short_hash,
+                "author_name": c.author_name,
+                "author_date": c.author_date,
+                "subject": c.subject,
+                "insertions": c.insertions,
+                "deletions": c.deletions,
+                "old_path": c.old_path,
+            }
+            for c in result.commits
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "path": result.path,
+                "commits": commits,
+                "total_count": result.total_count,
+                "truncated": result.truncated,
+                "renamed_from": result.renamed_from,
+            }
+        )
+
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Error in git_file_history: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Update handler registry with git diff/blame tools (Story #555)
+HANDLER_REGISTRY["git_diff"] = handle_git_diff
+HANDLER_REGISTRY["git_blame"] = handle_git_blame
+HANDLER_REGISTRY["git_file_history"] = handle_git_file_history
+
+
+# Story #556: Git Content Search handlers
+async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_search_commits tool - search commit messages."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+    query = args.get("query")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+    if not query:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: query"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute search
+        service = GitOperationsService(Path(repo_path))
+        result = service.search_commits(
+            query=query,
+            is_regex=args.get("is_regex", False),
+            author=args.get("author"),
+            since=args.get("since"),
+            until=args.get("until"),
+            limit=args.get("limit", 50),
+        )
+
+        # Convert dataclasses to dicts for JSON serialization
+        matches = [
+            {
+                "hash": m.hash,
+                "short_hash": m.short_hash,
+                "author_name": m.author_name,
+                "author_email": m.author_email,
+                "author_date": m.author_date,
+                "subject": m.subject,
+                "body": m.body,
+                "match_highlights": m.match_highlights,
+            }
+            for m in result.matches
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "query": result.query,
+                "is_regex": result.is_regex,
+                "matches": matches,
+                "total_matches": result.total_matches,
+                "truncated": result.truncated,
+                "search_time_ms": result.search_time_ms,
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Error in git_search_commits: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_git_search_diffs(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_search_diffs tool - search for code changes (pickaxe search)."""
+    from pathlib import Path
+    from code_indexer.global_repos.git_operations import GitOperationsService
+
+    repo_identifier = args.get("repo_identifier")
+    search_string = args.get("search_string")
+    search_pattern = args.get("search_pattern")
+    is_regex = args.get("is_regex", False)
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+
+    # Determine which search parameter to use based on is_regex
+    search_term = search_pattern if is_regex else search_string
+
+    # Validate that at least one search parameter is provided
+    if not search_term:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: search_string or search_pattern"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and execute search
+        # search_diffs uses search_string for literal, search_pattern for regex
+        service = GitOperationsService(Path(repo_path))
+        is_regex = args.get("is_regex", False)
+        if is_regex:
+            result = service.search_diffs(
+                search_pattern=search_term,
+                is_regex=True,
+                path=args.get("path"),
+                since=args.get("since"),
+                until=args.get("until"),
+                limit=args.get("limit", 50),
+            )
+        else:
+            result = service.search_diffs(
+                search_string=search_term,
+                is_regex=False,
+                path=args.get("path"),
+                since=args.get("since"),
+                until=args.get("until"),
+                limit=args.get("limit", 50),
+            )
+
+        # Convert dataclasses to dicts for JSON serialization
+        matches = [
+            {
+                "hash": m.hash,
+                "short_hash": m.short_hash,
+                "author_name": m.author_name,
+                "author_date": m.author_date,
+                "subject": m.subject,
+                "files_changed": m.files_changed,
+                "diff_snippet": m.diff_snippet,
+            }
+            for m in result.matches
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "search_term": result.search_term,
+                "is_regex": result.is_regex,
+                "matches": matches,
+                "total_matches": result.total_matches,
+                "truncated": result.truncated,
+                "search_time_ms": result.search_time_ms,
+            }
+        )
+
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Error in git_search_diffs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Update handler registry with git content search tools (Story #556)
+HANDLER_REGISTRY["git_search_commits"] = handle_git_search_commits
+HANDLER_REGISTRY["git_search_diffs"] = handle_git_search_diffs
+
+
+# Story #557: Directory Tree handler
+async def handle_directory_tree(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for directory_tree tool - generate hierarchical tree view."""
+    from pathlib import Path
+    from code_indexer.global_repos.directory_explorer import DirectoryExplorerService
+
+    repo_identifier = args.get("repo_identifier")
+
+    # Validate required parameters
+    if not repo_identifier:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repo_identifier"}
+        )
+
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+
+        # Resolve repo_identifier to actual path
+        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+            )
+
+        # Create service and generate tree
+        service = DirectoryExplorerService(Path(repo_path))
+        result = service.generate_tree(
+            path=args.get("path"),
+            max_depth=args.get("max_depth", 3),
+            max_files_per_dir=args.get("max_files_per_dir", 50),
+            include_patterns=args.get("include_patterns"),
+            exclude_patterns=args.get("exclude_patterns"),
+            show_stats=args.get("show_stats", False),
+            include_hidden=args.get("include_hidden", False),
+        )
+
+        # Convert TreeNode to dict recursively
+        def tree_node_to_dict(node):
+            result_dict = {
+                "name": node.name,
+                "path": node.path,
+                "is_directory": node.is_directory,
+                "truncated": node.truncated,
+                "hidden_count": node.hidden_count,
+            }
+            if node.children is not None:
+                result_dict["children"] = [tree_node_to_dict(c) for c in node.children]
+            else:
+                result_dict["children"] = None
+            return result_dict
+
+        return _mcp_response(
+            {
+                "success": True,
+                "tree_string": result.tree_string,
+                "root": tree_node_to_dict(result.root),
+                "total_directories": result.total_directories,
+                "total_files": result.total_files,
+                "max_depth_reached": result.max_depth_reached,
+                "root_path": result.root_path,
+            }
+        )
+
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Error in directory_tree: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Update handler registry with directory tree tool (Story #557)
+HANDLER_REGISTRY["directory_tree"] = handle_directory_tree

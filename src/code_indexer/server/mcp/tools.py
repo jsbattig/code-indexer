@@ -1509,6 +1509,120 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["success"],
         },
     },
+    # Tool 23: Regex Search (Story #553 - Remote Repository Exploration)
+    "regex_search": {
+        "name": "regex_search",
+        "description": (
+            "Search for regex patterns in repository files using ripgrep (with grep "
+            "fallback). Performs ad-hoc searches directly on the filesystem without "
+            "requiring pre-indexing. Use this for pattern matching when you need to "
+            "find code by syntax patterns, identifiers, or text content. Supports glob "
+            "patterns for file filtering. WHEN TO USE: (1) Find exact identifiers like "
+            "'def authenticate_user', (2) Pattern match syntax like 'class.*Controller', "
+            "(3) Find TODO/FIXME comments, (4) Search for specific imports or requires. "
+            "COMPARED TO search_code: regex_search is literal text/pattern matching; "
+            "search_code is semantic (understands meaning). Use regex_search when you "
+            "know exact text; use search_code when searching by concept."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repo_identifier": {
+                    "type": "string",
+                    "description": (
+                        "Repository identifier: either an alias (e.g., 'my-project' or "
+                        "'my-project-global') or full path. Use list_global_repos to see "
+                        "available repositories and their aliases."
+                    ),
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": (
+                        "Regular expression pattern to search for. Uses ripgrep regex "
+                        "syntax. Examples: 'def\\s+test_' matches Python test functions, "
+                        "'TODO|FIXME' matches either word."
+                    ),
+                },
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Subdirectory to search within (relative to repo root). "
+                        "Default: search entire repository."
+                    ),
+                },
+                "include_patterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Glob patterns for files to include. Examples: ['*.py'] for "
+                        "Python files, ['*.ts', '*.tsx'] for TypeScript."
+                    ),
+                },
+                "exclude_patterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Glob patterns for files to exclude. Examples: ['*_test.py'] "
+                        "to exclude tests, ['node_modules/**'] to exclude deps."
+                    ),
+                },
+                "case_sensitive": {
+                    "type": "boolean",
+                    "description": "Whether search is case-sensitive. Default: true.",
+                    "default": True,
+                },
+                "context_lines": {
+                    "type": "integer",
+                    "description": "Lines of context before/after match. Default: 0.",
+                    "default": 0,
+                    "minimum": 0,
+                    "maximum": 10,
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum matches to return. Default: 100.",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 1000,
+                },
+            },
+            "required": ["repo_identifier", "pattern"],
+        },
+        "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Whether succeeded"},
+                "matches": {
+                    "type": "array",
+                    "description": "Array of regex match results",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {"type": "string"},
+                            "line_number": {"type": "integer"},
+                            "column": {"type": "integer"},
+                            "line_content": {"type": "string"},
+                            "context_before": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "context_after": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                    },
+                },
+                "total_matches": {"type": "integer"},
+                "truncated": {"type": "boolean"},
+                "search_engine": {"type": "string"},
+                "search_time_ms": {"type": "number"},
+                "error": {"type": "string", "description": "Error message if failed"},
+            },
+            "required": ["success"],
+        },
+    },
 }
 
 
@@ -1530,3 +1644,765 @@ def filter_tools_by_role(user: User) -> List[Dict[str, Any]]:
             filtered_tools.append(tool_def)
 
     return filtered_tools
+
+# Append regex_search tool definition - temporary workaround
+
+# Tools 24-26: Git Exploration (Story #554 - Remote Repository Exploration)
+TOOL_REGISTRY["git_log"] = {
+    "name": "git_log",
+    "description": (
+        "Retrieve commit history from a git repository. Returns commit metadata "
+        "including hash, author, date, and message. Supports filtering by path, "
+        "author, date range, and branch. Does not require temporal indexing - "
+        "operates directly on git. Use this to understand project history, find "
+        "when changes were made, or identify who made specific changes."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": (
+                    "Repository identifier: either an alias (e.g., 'my-project' or "
+                    "'my-project-global') or full path. Use list_global_repos to see "
+                    "available repositories and their aliases."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "description": (
+                    "Maximum number of commits to return. Default: 50. Range: 1-500. "
+                    "Lower values for quick overview, higher for comprehensive history."
+                ),
+                "default": 50,
+                "minimum": 1,
+                "maximum": 500,
+            },
+            "path": {
+                "type": "string",
+                "description": (
+                    "Filter commits to only those affecting this path (file or directory). "
+                    "Path is relative to repo root. Examples: 'src/main.py' for single file, "
+                    "'src/' for all files under src directory."
+                ),
+            },
+            "author": {
+                "type": "string",
+                "description": (
+                    "Filter commits by author. Matches against author name or email. "
+                    "Partial matches supported. Examples: 'john@example.com', 'John Smith', 'john'."
+                ),
+            },
+            "since": {
+                "type": "string",
+                "description": (
+                    "Include only commits after this date. Format: YYYY-MM-DD or relative "
+                    "like '2 weeks ago', '2024-01-01'. Inclusive of the date."
+                ),
+            },
+            "until": {
+                "type": "string",
+                "description": (
+                    "Include only commits before this date. Format: YYYY-MM-DD or relative "
+                    "like 'yesterday', '2024-06-30'. Inclusive of the date."
+                ),
+            },
+            "branch": {
+                "type": "string",
+                "description": (
+                    "Branch to get log from. Default: current HEAD. Examples: 'main', "
+                    "'feature/auth', 'origin/develop'. Can also be a tag like 'v1.0.0'."
+                ),
+            },
+        },
+        "required": ["repo_identifier"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "commits": {
+                "type": "array",
+                "description": "List of commits matching filters",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "hash": {"type": "string", "description": "Full 40-char commit SHA"},
+                        "short_hash": {"type": "string", "description": "Abbreviated SHA"},
+                        "author_name": {"type": "string", "description": "Author name"},
+                        "author_email": {"type": "string", "description": "Author email"},
+                        "author_date": {"type": "string", "description": "Author date (ISO 8601)"},
+                        "committer_name": {"type": "string", "description": "Committer name"},
+                        "committer_email": {"type": "string", "description": "Committer email"},
+                        "committer_date": {"type": "string", "description": "Committer date (ISO 8601)"},
+                        "subject": {"type": "string", "description": "Commit subject line"},
+                        "body": {"type": "string", "description": "Full commit message body"},
+                    },
+                },
+            },
+            "total_count": {"type": "integer", "description": "Number of commits returned"},
+            "truncated": {"type": "boolean", "description": "Whether results were truncated"},
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+TOOL_REGISTRY["git_show_commit"] = {
+    "name": "git_show_commit",
+    "description": (
+        "Get detailed information about a specific commit including full message, "
+        "author/committer info, file change statistics, and optionally the full diff. "
+        "Use this to examine what changed in a particular commit."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": (
+                    "Repository identifier: either an alias (e.g., 'my-project' or "
+                    "'my-project-global') or full path. Use list_global_repos to see "
+                    "available repositories and their aliases."
+                ),
+            },
+            "commit_hash": {
+                "type": "string",
+                "description": (
+                    "The commit to show. Can be full SHA (40 chars), abbreviated SHA "
+                    "(7+ chars), or symbolic reference like 'HEAD', 'HEAD~3', 'main^'. "
+                    "Examples: 'abc1234', 'abc1234def5678...', 'HEAD~1'."
+                ),
+            },
+            "include_diff": {
+                "type": "boolean",
+                "description": (
+                    "Whether to include the full diff in the response. Default: false. "
+                    "Set to true to see exactly what lines changed. Warning: large commits "
+                    "may produce very long diffs."
+                ),
+                "default": False,
+            },
+            "include_stats": {
+                "type": "boolean",
+                "description": (
+                    "Whether to include file change statistics (files changed, insertions, "
+                    "deletions). Default: true. Provides quick summary of commit scope."
+                ),
+                "default": True,
+            },
+        },
+        "required": ["repo_identifier", "commit_hash"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "commit": {
+                "type": "object",
+                "description": "Commit metadata",
+                "properties": {
+                    "hash": {"type": "string"},
+                    "short_hash": {"type": "string"},
+                    "author_name": {"type": "string"},
+                    "author_email": {"type": "string"},
+                    "author_date": {"type": "string"},
+                    "committer_name": {"type": "string"},
+                    "committer_email": {"type": "string"},
+                    "committer_date": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                },
+            },
+            "stats": {
+                "type": ["array", "null"],
+                "description": "File change statistics (when include_stats=true)",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "insertions": {"type": "integer"},
+                        "deletions": {"type": "integer"},
+                        "status": {"type": "string", "enum": ["added", "modified", "deleted", "renamed"]},
+                    },
+                },
+            },
+            "diff": {"type": ["string", "null"], "description": "Full diff (when include_diff=true)"},
+            "parents": {"type": "array", "items": {"type": "string"}, "description": "Parent commit SHAs"},
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+TOOL_REGISTRY["git_file_at_revision"] = {
+    "name": "git_file_at_revision",
+    "description": (
+        "Retrieve the contents of a file as it existed at a specific commit, branch, or tag. "
+        "Use this to view historical versions of files without checking out the revision. "
+        "Useful for comparing how code looked before/after changes."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": (
+                    "Repository identifier: either an alias (e.g., 'my-project' or "
+                    "'my-project-global') or full path. Use list_global_repos to see "
+                    "available repositories and their aliases."
+                ),
+            },
+            "path": {
+                "type": "string",
+                "description": (
+                    "Path to the file, relative to repository root. Must be exact path "
+                    "to a file (not directory). Example: 'src/utils/helper.py'."
+                ),
+            },
+            "revision": {
+                "type": "string",
+                "description": (
+                    "The revision to get the file from. Can be commit SHA (full or abbreviated), "
+                    "branch name, tag, or symbolic reference. Examples: 'abc1234' (commit), "
+                    "'main' (branch), 'v1.0.0' (tag), 'HEAD~5' (5 commits ago), "
+                    "'feature/auth' (branch)."
+                ),
+            },
+        },
+        "required": ["repo_identifier", "path", "revision"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "path": {"type": "string", "description": "File path requested"},
+            "revision": {"type": "string", "description": "Revision requested"},
+            "resolved_revision": {"type": "string", "description": "Resolved full commit SHA"},
+            "content": {"type": "string", "description": "File content at the revision"},
+            "size_bytes": {"type": "integer", "description": "Size of the file in bytes"},
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+# Tools 27-29: Git Diff/Blame/History (Story #555 - Git Diff and Blame)
+TOOL_REGISTRY["git_diff"] = {
+    "name": "git_diff",
+    "description": (
+        "Get diff between two revisions or between a revision and working directory. "
+        "Returns file changes with hunks showing exactly what lines changed."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": "Repository alias or full path.",
+            },
+            "from_revision": {
+                "type": "string",
+                "description": "Starting revision (commit SHA, branch, tag, or ref).",
+            },
+            "to_revision": {
+                "type": "string",
+                "description": "Ending revision. Omit to compare to working directory.",
+            },
+            "path": {
+                "type": "string",
+                "description": "Limit diff to specific file or directory path.",
+            },
+            "context_lines": {
+                "type": "integer",
+                "description": "Context lines around changes. Default: 3.",
+                "default": 3,
+                "minimum": 0,
+                "maximum": 20,
+            },
+            "stat_only": {
+                "type": "boolean",
+                "description": "Return only statistics without hunks. Default: false.",
+                "default": False,
+            },
+        },
+        "required": ["repo_identifier", "from_revision"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "from_revision": {"type": "string"},
+            "to_revision": {"type": ["string", "null"]},
+            "files": {"type": "array"},
+            "total_insertions": {"type": "integer"},
+            "total_deletions": {"type": "integer"},
+            "stat_summary": {"type": "string"},
+            "error": {"type": "string"},
+        },
+        "required": ["success"],
+    },
+}
+
+TOOL_REGISTRY["git_blame"] = {
+    "name": "git_blame",
+    "description": (
+        "Get line-by-line blame annotations showing who last modified each line."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": "Repository alias or full path.",
+            },
+            "path": {
+                "type": "string",
+                "description": "Path to the file to blame.",
+            },
+            "revision": {
+                "type": "string",
+                "description": "Revision to blame at. Default: HEAD.",
+            },
+            "start_line": {
+                "type": "integer",
+                "description": "First line to include (1-indexed).",
+                "minimum": 1,
+            },
+            "end_line": {
+                "type": "integer",
+                "description": "Last line to include (1-indexed).",
+                "minimum": 1,
+            },
+        },
+        "required": ["repo_identifier", "path"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "path": {"type": "string"},
+            "revision": {"type": "string"},
+            "lines": {"type": "array"},
+            "unique_commits": {"type": "integer"},
+            "error": {"type": "string"},
+        },
+        "required": ["success"],
+    },
+}
+
+TOOL_REGISTRY["git_file_history"] = {
+    "name": "git_file_history",
+    "description": (
+        "Get commit history for a specific file, optionally following renames."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": "Repository alias or full path.",
+            },
+            "path": {
+                "type": "string",
+                "description": "Path to the file.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum commits to return. Default: 50.",
+                "default": 50,
+                "minimum": 1,
+                "maximum": 500,
+            },
+            "follow_renames": {
+                "type": "boolean",
+                "description": "Follow file history across renames. Default: true.",
+                "default": True,
+            },
+        },
+        "required": ["repo_identifier", "path"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "path": {"type": "string"},
+            "commits": {"type": "array"},
+            "total_count": {"type": "integer"},
+            "truncated": {"type": "boolean"},
+            "renamed_from": {"type": ["string", "null"]},
+            "error": {"type": "string"},
+        },
+        "required": ["success"],
+    },
+}
+
+# Tools 30-31: Git Content Search (Story #556)
+TOOL_REGISTRY["git_search_commits"] = {
+    "name": "git_search_commits",
+    "description": (
+        "Search through commit messages to find commits mentioning specific text or patterns. "
+        "Useful for finding commits related to features, bug fixes, or ticket numbers. "
+        "Searches the full commit message (subject and body). Does not require temporal indexing."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": (
+                    "Repository identifier: either an alias (e.g., 'my-project') or "
+                    "full path (e.g., '/home/user/repos/my-project'). Use list_repos "
+                    "to see available repositories and their aliases."
+                ),
+            },
+            "query": {
+                "type": "string",
+                "description": (
+                    "Text or pattern to search for in commit messages. Case-insensitive by "
+                    "default. Examples: 'fix authentication', 'JIRA-123', 'refactor.*database'. "
+                    "Use is_regex=true for regex patterns."
+                ),
+            },
+            "is_regex": {
+                "type": "boolean",
+                "description": (
+                    "Treat query as a regular expression. Default: false (literal text search). "
+                    "When true, uses POSIX extended regex syntax. Example patterns: "
+                    "'JIRA-\\d+' for ticket numbers, 'fix(ed)?\\s+bug' for variations."
+                ),
+                "default": False,
+            },
+            "author": {
+                "type": "string",
+                "description": (
+                    "Filter to commits by this author. Matches name or email, partial match "
+                    "supported. Default: all authors. Examples: 'john@example.com', 'John'."
+                ),
+            },
+            "since": {
+                "type": "string",
+                "description": (
+                    "Search only commits after this date. Format: YYYY-MM-DD or relative "
+                    "like '6 months ago'. Default: no date limit. Useful to focus on recent history."
+                ),
+            },
+            "until": {
+                "type": "string",
+                "description": (
+                    "Search only commits before this date. Format: YYYY-MM-DD or relative. "
+                    "Default: no date limit. Combine with since for date ranges."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "description": (
+                    "Maximum number of matching commits to return. Default: 50. Range: 1-500. "
+                    "Popular search terms may match many commits."
+                ),
+                "default": 50,
+                "minimum": 1,
+                "maximum": 500,
+            },
+        },
+        "required": ["repo_identifier", "query"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "query": {"type": "string", "description": "Search query used"},
+            "is_regex": {"type": "boolean", "description": "Whether regex mode was used"},
+            "matches": {
+                "type": "array",
+                "description": "List of matching commits",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "hash": {"type": "string", "description": "Full 40-char commit SHA"},
+                        "short_hash": {"type": "string", "description": "Abbreviated SHA"},
+                        "author_name": {"type": "string", "description": "Author name"},
+                        "author_email": {"type": "string", "description": "Author email"},
+                        "author_date": {"type": "string", "description": "Author date (ISO 8601)"},
+                        "subject": {"type": "string", "description": "Commit subject line"},
+                        "body": {"type": "string", "description": "Full commit message body"},
+                        "match_highlights": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Lines containing matches",
+                        },
+                    },
+                },
+            },
+            "total_matches": {"type": "integer", "description": "Number of matching commits"},
+            "truncated": {"type": "boolean", "description": "Whether results were truncated"},
+            "search_time_ms": {"type": "number", "description": "Search execution time in ms"},
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+TOOL_REGISTRY["git_search_diffs"] = {
+    "name": "git_search_diffs",
+    "description": (
+        "Find commits that introduced or removed specific code (pickaxe search). Searches "
+        "through the actual diff content of commits, not just messages. Use this for 'git "
+        "archaeology' - finding when a function was added, when a bug was introduced, or "
+        "tracking changes to specific code patterns."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": (
+                    "Repository identifier: either an alias (e.g., 'my-project') or "
+                    "full path (e.g., '/home/user/repos/my-project'). Use list_repos "
+                    "to see available repositories and their aliases."
+                ),
+            },
+            "search_string": {
+                "type": "string",
+                "description": (
+                    "Exact string to search for in diff content. Finds commits where this "
+                    "string was added or removed. Use for function names, variable names, "
+                    "or specific code. Example: 'calculateTotalPrice'. Mutually exclusive "
+                    "with search_pattern."
+                ),
+            },
+            "search_pattern": {
+                "type": "string",
+                "description": (
+                    "Regex pattern to search for in diff content. Finds commits where lines "
+                    "matching the pattern were added or removed. Use for flexible matching. "
+                    "Example: 'def\\s+calculate.*' to find function definitions. Mutually "
+                    "exclusive with search_string. Requires is_regex=true."
+                ),
+            },
+            "is_regex": {
+                "type": "boolean",
+                "description": (
+                    "When true, use search_pattern as regex (-G flag). When false, use "
+                    "search_string as literal (-S flag). Default: false. Regex is slower "
+                    "but more flexible."
+                ),
+                "default": False,
+            },
+            "path": {
+                "type": "string",
+                "description": (
+                    "Limit search to diffs in this path (file or directory). Relative to "
+                    "repo root. Default: entire repository. Examples: 'src/auth/', "
+                    "'lib/utils.py'."
+                ),
+            },
+            "since": {
+                "type": "string",
+                "description": (
+                    "Search only commits after this date. Format: YYYY-MM-DD or relative. "
+                    "Default: no limit. Useful to narrow down large search results."
+                ),
+            },
+            "until": {
+                "type": "string",
+                "description": (
+                    "Search only commits before this date. Format: YYYY-MM-DD or relative. "
+                    "Default: no limit."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "description": (
+                    "Maximum number of matching commits to return. Default: 50. Range: 1-200. "
+                    "Diff search is computationally expensive; lower limits recommended. "
+                    "Response indicates if results were truncated."
+                ),
+                "default": 50,
+                "minimum": 1,
+                "maximum": 200,
+            },
+        },
+        "required": ["repo_identifier"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "search_term": {"type": "string", "description": "Search term used"},
+            "is_regex": {"type": "boolean", "description": "Whether regex mode was used"},
+            "matches": {
+                "type": "array",
+                "description": "List of commits that added/removed matching content",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "hash": {"type": "string", "description": "Full 40-char commit SHA"},
+                        "short_hash": {"type": "string", "description": "Abbreviated SHA"},
+                        "author_name": {"type": "string", "description": "Author name"},
+                        "author_date": {"type": "string", "description": "Author date (ISO 8601)"},
+                        "subject": {"type": "string", "description": "Commit subject line"},
+                        "files_changed": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files modified in this commit",
+                        },
+                        "diff_snippet": {
+                            "type": ["string", "null"],
+                            "description": "Relevant portion of diff (if available)",
+                        },
+                    },
+                },
+            },
+            "total_matches": {"type": "integer", "description": "Number of matching commits"},
+            "truncated": {"type": "boolean", "description": "Whether results were truncated"},
+            "search_time_ms": {"type": "number", "description": "Search execution time in ms"},
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+# Tool 32: Directory Tree (Story #557 - Remote Repository Exploration)
+TOOL_REGISTRY["directory_tree"] = {
+    "name": "directory_tree",
+    "description": (
+        "Generate a hierarchical tree view of repository directory structure, similar to "
+        "the 'tree' command. Provides a visual overview of how code is organized. Use this "
+        "to understand project structure, find where files are located, or explore an "
+        "unfamiliar codebase. Unlike browse_directory which lists files, this shows the "
+        "hierarchical relationship between directories."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repo_identifier": {
+                "type": "string",
+                "description": (
+                    "Repository identifier: either an alias (e.g., 'my-project') or "
+                    "full path (e.g., '/home/user/repos/my-project'). Use list_repos "
+                    "to see available repositories and their aliases."
+                ),
+            },
+            "path": {
+                "type": "string",
+                "description": (
+                    "Subdirectory to use as tree root (relative to repo root). Default: "
+                    "repository root. Examples: 'src' shows tree starting from src/, "
+                    "'lib/utils' shows tree starting from lib/utils/."
+                ),
+            },
+            "max_depth": {
+                "type": "integer",
+                "description": (
+                    "Maximum depth of tree to display. Default: 3. Range: 1-10. Deeper "
+                    "directories show '[...]' indicator. Use 1 for top-level overview, "
+                    "higher values for detailed exploration."
+                ),
+                "default": 3,
+                "minimum": 1,
+                "maximum": 10,
+            },
+            "max_files_per_dir": {
+                "type": "integer",
+                "description": (
+                    "Maximum files to show per directory before truncating. Default: 50. "
+                    "Range: 1-200. Directories with more files show '[+N more files]'. "
+                    "Use lower values for cleaner output on large directories."
+                ),
+                "default": 50,
+                "minimum": 1,
+                "maximum": 200,
+            },
+            "include_patterns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Glob patterns for files to include. Only matching files shown; "
+                    "directories shown if they contain matches. Default: all files. "
+                    "Examples: ['*.py'] for Python, ['*.ts', '*.tsx'] for TypeScript, "
+                    "['Makefile', '*.mk'] for makefiles."
+                ),
+            },
+            "exclude_patterns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Glob patterns for files/directories to exclude. Default excludes: "
+                    ".git, node_modules, __pycache__, .venv, .idea, .vscode. Additional "
+                    "patterns are merged with defaults. Examples: ['*.log', 'dist/', 'build/']."
+                ),
+            },
+            "show_stats": {
+                "type": "boolean",
+                "description": (
+                    "Show statistics: file counts per directory, total files/dirs. "
+                    "Default: false. When true, adds summary like '15 directories, 127 files'."
+                ),
+                "default": False,
+            },
+            "include_hidden": {
+                "type": "boolean",
+                "description": (
+                    "Include hidden files/directories (starting with dot). Default: false. "
+                    "Note: .git is always excluded regardless of this setting. Set to true "
+                    "to see .env, .gitignore, .eslintrc, etc."
+                ),
+                "default": False,
+            },
+        },
+        "required": ["repo_identifier"],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether operation succeeded"},
+            "tree_string": {
+                "type": "string",
+                "description": "Pre-formatted tree output with ASCII characters",
+            },
+            "root": {
+                "type": "object",
+                "description": "Root TreeNode with hierarchical structure",
+                "properties": {
+                    "name": {"type": "string", "description": "Directory/file name"},
+                    "path": {"type": "string", "description": "Relative path from repo root"},
+                    "is_directory": {"type": "boolean", "description": "True if directory"},
+                    "children": {
+                        "type": ["array", "null"],
+                        "description": "Child nodes (null for files)",
+                    },
+                    "truncated": {
+                        "type": "boolean",
+                        "description": "True if max_files exceeded",
+                    },
+                    "hidden_count": {
+                        "type": "integer",
+                        "description": "Number of hidden children",
+                    },
+                },
+            },
+            "total_directories": {
+                "type": "integer",
+                "description": "Total number of directories",
+            },
+            "total_files": {"type": "integer", "description": "Total number of files"},
+            "max_depth_reached": {
+                "type": "boolean",
+                "description": "Whether max_depth limit was reached",
+            },
+            "root_path": {"type": "string", "description": "Filesystem path to tree root"},
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
