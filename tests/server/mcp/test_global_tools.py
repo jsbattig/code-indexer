@@ -1401,3 +1401,33 @@ async def test_resolve_repo_path_finds_git_repo_in_alternate_location(
     assert "commits" in data
     assert len(data["commits"]) == 1
     assert data["commits"][0]["subject"] == "Production commit"
+
+
+# Test for cidx_quick_reference tool (documentation-only tool)
+def test_cidx_quick_reference_in_registry():
+    """Test cidx_quick_reference tool is registered in TOOL_REGISTRY with correct schema."""
+    from code_indexer.server.mcp.tools import TOOL_REGISTRY
+
+    assert "cidx_quick_reference" in TOOL_REGISTRY
+
+    tool = TOOL_REGISTRY["cidx_quick_reference"]
+
+    # Verify required fields
+    assert tool["name"] == "cidx_quick_reference"
+    assert "description" in tool
+    assert "CIDX Quick Reference" in tool["description"]
+    assert "inputSchema" in tool
+    assert "outputSchema" in tool
+    assert "required_permission" in tool
+    assert tool["required_permission"] == "query_repos"
+
+    # Verify inputSchema (no inputs required)
+    assert tool["inputSchema"]["type"] == "object"
+    assert tool["inputSchema"]["properties"] == {}
+    assert tool["inputSchema"]["required"] == []
+
+    # Verify outputSchema structure
+    assert tool["outputSchema"]["type"] == "object"
+    assert "success" in tool["outputSchema"]["properties"]
+    assert "reference" in tool["outputSchema"]["properties"]
+    assert tool["outputSchema"]["required"] == ["success", "reference"]

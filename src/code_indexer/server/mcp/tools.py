@@ -264,6 +264,28 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["success"],
         },
     },
+    "cidx_quick_reference": {
+        "name": "cidx_quick_reference",
+        "description": (
+            "CIDX Quick Reference - What tool should I use? "
+            "SEARCH CODE: search_code (semantic=meaning, fts=exact text, hybrid=both) | regex_search (comprehensive pattern match, slower). "
+            "GIT HISTORY: git_log (recent commits) | git_file_history (one file's commits) | git_blame (who wrote each line) | git_diff (compare versions) | git_search_commits (find by message) | git_search_diffs (find when code added/removed - SLOW on large repos). "
+            "EXPLORE FILES: directory_tree (visual hierarchy) | browse_directory (file list with metadata) | get_file_content (read file). "
+            "REPOSITORIES: list_global_repos (see available repos) | global_repo_status (one repo's details) | cidx-meta-global (catalog of all repo descriptions). "
+            "DECISION GUIDE: Concept search -> search_code(semantic) | Exact text -> search_code(fts) or regex_search | Pattern/regex -> regex_search | Who wrote code -> git_blame | File history -> git_file_history | When code added -> git_search_diffs. "
+            "START HERE: (1) list_global_repos to see repos, (2) browse cidx-meta-global for descriptions, (3) search_code for code."
+        ),
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+        "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "description": "Always true"},
+                "reference": {"type": "string", "description": "Quick reference guide"},
+            },
+            "required": ["success", "reference"],
+        },
+    },
     "discover_repositories": {
         "name": "discover_repositories",
         "description": "List repositories available from external source configurations (Git forges, local paths). DIFFERENT FROM list_global_repos: This shows POTENTIAL repos from sources like GitHub organizations; those repos may not yet be indexed. To make a discovered repo queryable, use add_golden_repo. For already-indexed repos ready to query, use list_global_repos.",
