@@ -7,7 +7,7 @@ in cidx-meta when golden repos are added/removed.
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, patch
 import tempfile
 import shutil
 
@@ -34,6 +34,7 @@ class TestOnRepoAdded:
     def test_creates_md_file_for_new_repo(self, cidx_meta_path, temp_golden_repos_dir):
         """Test that .md file is created when a golden repo is added."""
         from code_indexer.global_repos.meta_description_hook import on_repo_added
+        from unittest.mock import MagicMock
 
         # Setup: Create a mock repository
         repo_name = "test-repo"
@@ -44,15 +45,23 @@ class TestOnRepoAdded:
         # Create a README.md to analyze
         (clone_path / "README.md").write_text("# Test Repo\nA test repository")
 
+        # Mock ClaudeCliManager to be available
+        mock_cli_manager = MagicMock()
+        mock_cli_manager.check_cli_available.return_value = True
+
         # Execute: Call hook
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = Mock(returncode=0)
-            on_repo_added(
-                repo_name=repo_name,
-                repo_url=repo_url,
-                clone_path=str(clone_path),
-                golden_repos_dir=temp_golden_repos_dir,
-            )
+            with patch(
+                "code_indexer.global_repos.meta_description_hook.ClaudeCliManager",
+                return_value=mock_cli_manager,
+            ):
+                on_repo_added(
+                    repo_name=repo_name,
+                    repo_url=repo_url,
+                    clone_path=str(clone_path),
+                    golden_repos_dir=temp_golden_repos_dir,
+                )
 
         # Verify: .md file was created
         md_file = cidx_meta_path / f"{repo_name}.md"
@@ -64,9 +73,12 @@ class TestOnRepoAdded:
         assert repo_url in content
 
         # Verify: cidx index was called in cidx-meta directory
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        assert call_args[0][0] == ["cidx", "index"]
+        # Find the cidx index call among all subprocess calls
+        cidx_index_calls = [
+            call for call in mock_run.call_args_list if call[0][0] == ["cidx", "index"]
+        ]
+        assert len(cidx_index_calls) == 1, "Expected exactly one 'cidx index' call"
+        call_args = cidx_index_calls[0]
         assert call_args[1]["cwd"] == str(cidx_meta_path)
 
     def test_skips_cidx_meta_itself(self, cidx_meta_path, temp_golden_repos_dir):
@@ -100,7 +112,7 @@ class TestOnRepoAdded:
         clone_path = Path(temp_golden_repos_dir) / "nonexistent"
 
         # Execute and verify: Should not crash
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run"):
             on_repo_added(
                 repo_name=repo_name,
                 repo_url=repo_url,
@@ -166,9 +178,6 @@ class TestGoldenRepoManagerIntegration:
 
     def test_add_golden_repo_calls_hook(self, temp_golden_repos_dir):
         """Test that adding a golden repo calls the on_repo_added hook."""
-        from code_indexer.server.repositories.golden_repo_manager import (
-            GoldenRepoManager,
-        )
 
         # This test will verify that the hook is called during add_golden_repo
         # The actual implementation will be in golden_repo_manager.py
@@ -178,9 +187,6 @@ class TestGoldenRepoManagerIntegration:
 
     def test_remove_golden_repo_calls_hook(self, temp_golden_repos_dir):
         """Test that removing a golden repo calls the on_repo_removed hook."""
-        from code_indexer.server.repositories.golden_repo_manager import (
-            GoldenRepoManager,
-        )
 
         # This test will verify that the hook is called during remove_golden_repo
         # The actual implementation will be in golden_repo_manager.py

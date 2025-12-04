@@ -9,8 +9,21 @@ meta directory management code.
 import logging
 import subprocess
 from pathlib import Path
+from typing import Optional
+
+from code_indexer.server.services.claude_cli_manager import ClaudeCliManager
 
 logger = logging.getLogger(__name__)
+
+# README file detection order
+README_NAMES = [
+    "README.md",
+    "README.rst",
+    "README.txt",
+    "README",
+    "readme.md",
+    "Readme.md",
+]
 
 
 def on_repo_added(
@@ -34,6 +47,7 @@ def on_repo_added(
         - Skips cidx-meta itself (no self-referential .md file)
         - Handles missing clone paths gracefully (logs warning, no crash)
         - Re-indexes cidx-meta after creating .md file
+        - Falls back to README copy when Claude CLI unavailable or fails
     """
     # Skip cidx-meta itself
     if repo_name == "cidx-meta":
@@ -47,6 +61,13 @@ def on_repo_added(
         logger.warning(
             f"cidx-meta directory does not exist at {cidx_meta_path}, cannot create .md file"
         )
+        return
+
+    # Check CLI availability
+    cli_manager = ClaudeCliManager()
+    if not cli_manager.check_cli_available():
+        logger.info(f"Claude CLI unavailable, using README fallback for {repo_name}")
+        _create_readme_fallback(Path(clone_path), repo_name, cidx_meta_path)
         return
 
     # Generate .md file
@@ -63,7 +84,9 @@ def on_repo_added(
         logger.error(
             f"Failed to create meta description for {repo_name}: {e}", exc_info=True
         )
-        # Don't crash the golden repo add operation - log and continue
+        # Fall back to README copy
+        logger.info(f"Falling back to README copy for {repo_name}")
+        _create_readme_fallback(Path(clone_path), repo_name, cidx_meta_path)
 
 
 def on_repo_removed(repo_name: str, golden_repos_dir: str) -> None:
@@ -99,6 +122,71 @@ def on_repo_removed(repo_name: str, golden_repos_dir: str) -> None:
             # Don't crash the golden repo remove operation - log and continue
     else:
         logger.debug(f"No meta description file to delete for {repo_name}")
+
+
+def _find_readme(repo_path: Path) -> Optional[Path]:
+    """
+    Find README file in repository.
+
+    Args:
+        repo_path: Path to repository
+
+    Returns:
+        Path to README file if found, None otherwise
+
+    Note:
+        Checks README files in priority order defined by README_NAMES.
+    """
+    for readme_name in README_NAMES:
+        readme_path = repo_path / readme_name
+        if readme_path.exists():
+            return readme_path
+    return None
+
+
+def _create_readme_fallback(
+    repo_path: Path, alias: str, meta_dir: Path
+) -> Optional[Path]:
+    """
+    Create README fallback file in meta directory.
+
+    Args:
+        repo_path: Path to repository
+        alias: Repository alias/name
+        meta_dir: Path to cidx-meta directory
+
+    Returns:
+        Path to created fallback file if README found, None otherwise
+
+    Note:
+        - Creates file named <alias>_README.md
+        - Preserves original README content exactly
+        - Triggers re-index of cidx-meta after creation
+    """
+    readme_path = _find_readme(repo_path)
+    if readme_path is None:
+        logger.warning(f"No README found in {repo_path} for fallback")
+        return None
+
+    # Create fallback file with <alias>_README.md naming
+    fallback_path = meta_dir / f"{alias}_README.md"
+
+    try:
+        # Copy README content exactly
+        content = readme_path.read_text(encoding="utf-8")
+        fallback_path.write_text(content, encoding="utf-8")
+        logger.info(f"Created README fallback: {fallback_path}")
+
+        # Trigger re-index
+        _reindex_cidx_meta(meta_dir)
+
+        return fallback_path
+
+    except Exception as e:
+        logger.error(
+            f"Failed to create README fallback for {alias}: {e}", exc_info=True
+        )
+        return None
 
 
 def _generate_repo_description(repo_name: str, repo_url: str, clone_path: str) -> str:
