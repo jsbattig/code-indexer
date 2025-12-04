@@ -670,3 +670,103 @@ class BackgroundJobManager:
 
         except Exception as e:
             logging.error(f"Failed to load jobs from storage: {e}")
+
+    def _calculate_cutoff(self, time_filter: str) -> datetime:
+        """
+        Calculate cutoff datetime based on time filter.
+
+        Args:
+            time_filter: Time filter string ("24h", "7d", "30d")
+
+        Returns:
+            Cutoff datetime (timezone-aware UTC)
+        """
+        now = datetime.now(timezone.utc)
+
+        if time_filter == "24h":
+            return now - timedelta(hours=24)
+        elif time_filter == "7d":
+            return now - timedelta(days=7)
+        elif time_filter == "30d":
+            return now - timedelta(days=30)
+        else:
+            # Default to 24h for invalid filters
+            return now - timedelta(hours=24)
+
+    def get_job_stats_with_filter(self, time_filter: str = "24h") -> Dict[str, int]:
+        """
+        Get job statistics filtered by time period.
+
+        Args:
+            time_filter: Time filter string ("24h", "7d", "30d")
+
+        Returns:
+            Dictionary with "completed" and "failed" counts
+        """
+        cutoff_time = self._calculate_cutoff(time_filter)
+
+        with self._lock:
+            completed = 0
+            failed = 0
+
+            for job in self.jobs.values():
+                # Only count jobs with completion time after cutoff
+                if job.completed_at and job.completed_at >= cutoff_time:
+                    if job.status == JobStatus.COMPLETED:
+                        completed += 1
+                    elif job.status == JobStatus.FAILED:
+                        failed += 1
+
+            return {"completed": completed, "failed": failed}
+
+    def get_recent_jobs_with_filter(
+        self, time_filter: str = "30d", limit: int = 20
+    ) -> list[Dict[str, Any]]:
+        """
+        Get recent jobs filtered by time period.
+
+        Args:
+            time_filter: Time filter string ("24h", "7d", "30d"), default "30d"
+            limit: Maximum number of jobs to return, default 20
+
+        Returns:
+            List of job dictionaries sorted by completion time (newest first)
+        """
+        cutoff_time = self._calculate_cutoff(time_filter)
+
+        with self._lock:
+            recent_jobs = []
+
+            for job in self.jobs.values():
+                # Only include completed or failed jobs within time range
+                if (
+                    job.status in [JobStatus.COMPLETED, JobStatus.FAILED]
+                    and job.completed_at
+                    and job.completed_at >= cutoff_time
+                ):
+                    job_dict = {
+                        "job_id": job.job_id,
+                        "operation_type": job.operation_type,
+                        "status": job.status.value,
+                        "created_at": job.created_at.isoformat(),
+                        "started_at": (
+                            job.started_at.isoformat() if job.started_at else None
+                        ),
+                        "completed_at": (
+                            job.completed_at.isoformat() if job.completed_at else None
+                        ),
+                        "progress": job.progress,
+                        "result": job.result,
+                        "error": job.error,
+                        "username": job.username,
+                    }
+                    recent_jobs.append(job_dict)
+
+            # Sort by completion time (newest first)
+            recent_jobs.sort(
+                key=lambda x: x["completed_at"] if x["completed_at"] else "",
+                reverse=True,
+            )
+
+            # Return up to limit jobs
+            return recent_jobs[:limit]

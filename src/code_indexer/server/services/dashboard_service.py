@@ -7,7 +7,7 @@ Following CLAUDE.md Foundation #1: No mocks - uses real service integrations.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from .health_service import health_service
@@ -92,20 +92,24 @@ class DashboardService:
         """Get health data for partial refresh."""
         return self._get_health_data()
 
-    def get_stats_partial(self, username: str) -> Dict[str, Any]:
+    def get_stats_partial(
+        self, username: str, time_filter: str = "24h", recent_filter: str = "30d"
+    ) -> Dict[str, Any]:
         """
         Get statistics data for partial refresh.
 
         Args:
             username: Current user's username
+            time_filter: Time filter for job stats ("24h", "7d", "30d")
+            recent_filter: Time filter for recent activity ("24h", "7d", "30d")
 
         Returns:
             Dictionary containing job and repo counts
         """
         return {
-            "job_counts": self._get_job_counts(username),
+            "job_counts": self._get_job_counts(username, time_filter),
             "repo_counts": self._get_repo_counts(username),
-            "recent_jobs": self._get_recent_jobs(username),
+            "recent_jobs": self._get_recent_jobs(username, recent_filter),
         }
 
     def _get_health_data(self) -> HealthCheckResponse:
@@ -148,12 +152,13 @@ class DashboardService:
                 ),
             )
 
-    def _get_job_counts(self, username: str) -> JobCounts:
+    def _get_job_counts(self, username: str, time_filter: str = "24h") -> JobCounts:
         """
         Get job count statistics.
 
         Args:
             username: Current user's username
+            time_filter: Time filter ("24h", "7d", "30d")
 
         Returns:
             JobCounts dataclass
@@ -164,51 +169,18 @@ class DashboardService:
             if not job_manager:
                 return JobCounts()
 
-            # Get all jobs for the user
-            # Note: In real implementation, we would filter by user
-            # For admin dashboard, we show all jobs
-            all_jobs = job_manager.list_jobs(status=None, limit=1000, offset=0)
+            # Story #541 AC3: Use time-filtered job stats
+            stats = job_manager.get_job_stats_with_filter(time_filter)
 
-            running = 0
-            queued = 0
-            completed_24h = 0
-            failed_24h = 0
-
-            # Calculate time threshold for 24h metrics
-            now = datetime.now(timezone.utc)
-            threshold_24h = now - timedelta(hours=24)
-
-            for job in all_jobs.get("jobs", []):
-                job_status = job.get("status", "").lower()
-                completed_at_str = job.get("completed_at")
-
-                if job_status == "running":
-                    running += 1
-                elif job_status in ["pending", "queued"]:
-                    queued += 1
-                elif job_status == "completed":
-                    if completed_at_str:
-                        try:
-                            # Parse completion time
-                            completed_at = self._parse_datetime(completed_at_str)
-                            if completed_at and completed_at > threshold_24h:
-                                completed_24h += 1
-                        except Exception:
-                            pass
-                elif job_status == "failed":
-                    if completed_at_str:
-                        try:
-                            completed_at = self._parse_datetime(completed_at_str)
-                            if completed_at and completed_at > threshold_24h:
-                                failed_24h += 1
-                        except Exception:
-                            pass
+            # Get current running and queued counts (not time-filtered)
+            running = job_manager.get_active_job_count()
+            queued = job_manager.get_pending_job_count()
 
             return JobCounts(
                 running=running,
                 queued=queued,
-                completed_24h=completed_24h,
-                failed_24h=failed_24h,
+                completed_24h=stats["completed"],
+                failed_24h=stats["failed"],
             )
 
         except Exception as e:
@@ -238,7 +210,7 @@ class DashboardService:
         except Exception as e:
             logger.error(f"Failed to get golden repos count: {e}")
 
-        # Get activated repos count
+        # Get activated repos count and aggregate vector store file counts
         try:
             activated_manager = self._get_activated_repo_manager()
             if activated_manager:
@@ -249,10 +221,35 @@ class DashboardService:
                 )
                 activated_count = len(activated_repos) if activated_repos else 0
 
-                # Sum total files from all activated repos
+                # Story #541 AC1/AC2: Sum FilesystemVectorStore counts from all activated repos
+                # Import here to avoid circular dependency
+                from pathlib import Path
+                from code_indexer.storage.filesystem_vector_store import (
+                    FilesystemVectorStore,
+                )
+
+                # Create shared vector store instance for all repos
+                # Use manager's data directory for index storage
+                index_dir = Path(activated_manager.data_dir) / "index"
+                store = FilesystemVectorStore(base_path=index_dir)
+
                 for repo in activated_repos or []:
-                    if hasattr(repo, "file_count"):
-                        total_files += repo.file_count
+                    try:
+                        # Get indexed file count from vector store for this repo
+                        collection_name = repo.get("collection_name")
+                        if not collection_name:
+                            logger.warning(f"Repo missing collection_name: {repo}")
+                            continue
+
+                        count = store.get_indexed_file_count_fast(collection_name)
+                        total_files += count
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to get vector store count for {repo.get('collection_name', 'unknown')}: {e}"
+                        )
+                        # Continue with other repos even if one fails
+                        continue
+
         except Exception as e:
             logger.error(f"Failed to get activated repos count: {e}")
 
@@ -262,53 +259,50 @@ class DashboardService:
             total_files=total_files,
         )
 
-    def _get_recent_jobs(self, username: str) -> List[RecentJob]:
+    def _get_recent_jobs(
+        self, username: str, time_filter: str = "30d"
+    ) -> List[RecentJob]:
         """
-        Get the last 5 completed jobs.
+        Get recent completed jobs.
 
         Args:
             username: Current user's username
+            time_filter: Time filter ("24h", "7d", "30d"), default 30d
 
         Returns:
-            List of RecentJob objects
+            List of RecentJob objects (up to 20)
         """
         try:
             job_manager = self._get_background_job_manager()
             if not job_manager:
                 return []
 
-            # Get recent completed/failed jobs
-            all_jobs = job_manager.list_jobs(status=None, limit=100, offset=0)
+            # Story #541 AC5/AC6: Use time-filtered recent jobs with limit of 20
+            recent_jobs_data = job_manager.get_recent_jobs_with_filter(
+                time_filter=time_filter, limit=20
+            )
 
             recent = []
-            for job in all_jobs.get("jobs", []):
-                job_status = job.get("status", "").lower()
-
-                # Only include completed or failed jobs
-                if job_status in ["completed", "failed"]:
-                    completed_at_str = job.get("completed_at") or job.get("created_at")
-
-                    # Extract repo name from result or operation type
-                    repo_name = "Unknown"
-                    result = job.get("result", {}) or {}
-                    if isinstance(result, dict):
-                        repo_name = result.get("alias") or result.get(
-                            "repository", "Unknown"
-                        )
-
-                    recent.append(
-                        RecentJob(
-                            job_id=job.get("job_id", ""),
-                            repo_name=repo_name,
-                            job_type=job.get("operation_type", "unknown"),
-                            completion_time=completed_at_str or "",
-                            status=job_status,
-                        )
+            for job in recent_jobs_data:
+                # Extract repo name from result or operation type
+                repo_name = "Unknown"
+                result = job.get("result", {}) or {}
+                if isinstance(result, dict):
+                    repo_name = result.get("alias") or result.get(
+                        "repository", "Unknown"
                     )
 
-            # Sort by completion time (most recent first) and take first 5
-            recent.sort(key=lambda x: x.completion_time, reverse=True)
-            return recent[:5]
+                recent.append(
+                    RecentJob(
+                        job_id=job.get("job_id", ""),
+                        repo_name=repo_name,
+                        job_type=job.get("operation_type", "unknown"),
+                        completion_time=job.get("completed_at", ""),
+                        status=job.get("status", "unknown"),
+                    )
+                )
+
+            return recent
 
         except Exception as e:
             logger.error(f"Failed to get recent jobs: {e}")

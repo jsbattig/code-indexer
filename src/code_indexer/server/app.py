@@ -1818,7 +1818,10 @@ def create_app() -> FastAPI:
     golden_repo_manager = GoldenRepoManager(
         data_dir=data_dir, resource_config=server_config.resource_config
     )
+    # Initialize BackgroundJobManager with persistence enabled (Story #541 - AC4)
+    jobs_storage_path = str(Path(server_data_dir) / "jobs.json")
     background_job_manager = BackgroundJobManager(
+        storage_path=jobs_storage_path,
         resource_config=server_config.resource_config
     )
     # Inject BackgroundJobManager into GoldenRepoManager for async operations

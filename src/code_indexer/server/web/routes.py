@@ -327,9 +327,20 @@ async def dashboard_health_partial(request: Request):
 
 
 @web_router.get("/partials/dashboard-stats", response_class=HTMLResponse)
-async def dashboard_stats_partial(request: Request):
+async def dashboard_stats_partial(
+    request: Request,
+    time_filter: str = "24h",
+    recent_filter: str = "30d",
+):
     """
     Partial refresh endpoint for dashboard statistics section.
+
+    Story #541 AC3/AC5: Support time filtering for job stats and recent activity.
+
+    Args:
+        request: HTTP request
+        time_filter: Time filter for job stats ("24h", "7d", "30d")
+        recent_filter: Time filter for recent activity ("24h", "7d", "30d")
 
     Returns HTML fragment for htmx partial updates.
     """
@@ -340,7 +351,9 @@ async def dashboard_stats_partial(request: Request):
         )
 
     dashboard_service = _get_dashboard_service()
-    stats_data = dashboard_service.get_stats_partial(session.username)
+    stats_data = dashboard_service.get_stats_partial(
+        session.username, time_filter=time_filter, recent_filter=recent_filter
+    )
 
     return templates.TemplateResponse(
         "partials/dashboard_stats.html",
@@ -349,6 +362,8 @@ async def dashboard_stats_partial(request: Request):
             "job_counts": stats_data["job_counts"],
             "repo_counts": stats_data["repo_counts"],
             "recent_jobs": stats_data["recent_jobs"],
+            "time_filter": time_filter,
+            "recent_filter": recent_filter,
         },
     )
 

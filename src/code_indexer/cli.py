@@ -14906,6 +14906,215 @@ def global_status(ctx, alias_name: str):
         sys.exit(1)
 
 
+@global_group.command("regex-search")
+@click.argument("repo_identifier")
+@click.argument("pattern")
+@click.option("--path", "-p", default=None, help="Subdirectory to search within")
+@click.option(
+    "--include",
+    "-i",
+    "include_patterns",
+    multiple=True,
+    help="Glob patterns to include",
+)
+@click.option(
+    "--exclude",
+    "-e",
+    "exclude_patterns",
+    multiple=True,
+    help="Glob patterns to exclude",
+)
+@click.option(
+    "--case-sensitive/--no-case-sensitive",
+    default=True,
+    help="Case-sensitive search (default: true)",
+)
+@click.option(
+    "--context",
+    "-C",
+    "context_lines",
+    default=0,
+    help="Context lines before/after match",
+)
+@click.option("--max-results", "-n", default=100, help="Maximum number of results")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def global_regex_search(
+    ctx,
+    repo_identifier: str,
+    pattern: str,
+    path: str,
+    include_patterns: tuple,
+    exclude_patterns: tuple,
+    case_sensitive: bool,
+    context_lines: int,
+    max_results: int,
+    output_json: bool,
+):
+    """Search files in a global repository using regex patterns.
+
+    Uses ripgrep (rg) for fast pattern matching with grep as fallback.
+
+    \b
+    USAGE:
+      cidx global regex-search <repo-identifier> <pattern> [options]
+
+    \b
+    EXAMPLES:
+      # Search for function definitions
+      cidx global regex-search cidx-meta-global "def.*authenticate"
+
+      # Search only Python files
+      cidx global regex-search my-repo-global "TODO" --include "*.py"
+
+      # Case-insensitive search with context
+      cidx global regex-search my-repo-global "error" --no-case-sensitive -C 2
+
+      # Search in specific subdirectory
+      cidx global regex-search my-repo-global "import" --path src/
+
+    \b
+    OUTPUT:
+      Shows matching files with line numbers and content.
+      Use --json for machine-readable output.
+    """
+    import json as json_module
+    import os
+    from pathlib import Path
+    from .global_repos.global_registry import GlobalRegistry
+    from .global_repos.regex_search import RegexSearchService
+
+    # rich imports removed - not needed for this output format
+
+    console = Console()
+
+    # Get golden repos directory
+    golden_repos_dir = os.environ.get("CIDX_GOLDEN_REPOS_DIR")
+    if not golden_repos_dir:
+        golden_repos_dir = str(Path.home() / ".code-indexer" / "golden-repos")
+
+    try:
+        # Resolve repository path
+        registry = GlobalRegistry(golden_repos_dir)
+
+        # Try with -global suffix if not present
+        alias_to_try = repo_identifier
+        if not alias_to_try.endswith("-global"):
+            alias_to_try = f"{repo_identifier}-global"
+
+        repo = registry.get_global_repo(alias_to_try)
+        if not repo:
+            # Try original identifier
+            repo = registry.get_global_repo(repo_identifier)
+
+        if not repo:
+            console.print(
+                f"[red]Error: Repository '{repo_identifier}' not found in global registry[/red]"
+            )
+            console.print()
+            console.print(
+                "Use [cyan]cidx global list[/cyan] to see all registered repos"
+            )
+            sys.exit(1)
+
+        # Get index path from registry
+        index_path = repo.get("index_path")
+        if not index_path:
+            console.print(
+                f"[red]Error: Index path for '{repo_identifier}' not found[/red]"
+            )
+            sys.exit(1)
+
+        repo_path = Path(index_path)
+        if not repo_path.exists():
+            console.print(
+                f"[red]Error: Repository path does not exist: {repo_path}[/red]"
+            )
+            sys.exit(1)
+
+        # Create service and execute search
+        service = RegexSearchService(repo_path)
+        result = service.search(
+            pattern=pattern,
+            path=path,
+            include_patterns=list(include_patterns) if include_patterns else None,
+            exclude_patterns=list(exclude_patterns) if exclude_patterns else None,
+            case_sensitive=case_sensitive,
+            context_lines=context_lines,
+            max_results=max_results,
+        )
+
+        if output_json:
+            # JSON output
+            output = {
+                "success": True,
+                "matches": [
+                    {
+                        "file_path": m.file_path,
+                        "line_number": m.line_number,
+                        "column": m.column,
+                        "line_content": m.line_content,
+                        "context_before": m.context_before,
+                        "context_after": m.context_after,
+                    }
+                    for m in result.matches
+                ],
+                "total_matches": result.total_matches,
+                "truncated": result.truncated,
+                "search_engine": result.search_engine,
+                "search_time_ms": result.search_time_ms,
+            }
+            console.print(json_module.dumps(output, indent=2))
+        else:
+            # Rich formatted output
+            if not result.matches:
+                console.print(
+                    f"[yellow]No matches found for pattern: {pattern}[/yellow]"
+                )
+                return
+
+            console.print(
+                f"[green]Found {result.total_matches} matches[/green] "
+                f"[dim](showing {len(result.matches)}, {result.search_time_ms:.1f}ms, {result.search_engine})[/dim]"
+            )
+            console.print()
+
+            for match in result.matches:
+                # Show file path and line number
+                console.print(
+                    f"[cyan]{match.file_path}[/cyan]:[yellow]{match.line_number}[/yellow]"
+                )
+
+                # Show context before
+                for ctx_line in match.context_before:
+                    console.print(f"  [dim]{ctx_line}[/dim]")
+
+                # Show matching line
+                console.print(f"  [bold]{match.line_content}[/bold]")
+
+                # Show context after
+                for ctx_line in match.context_after:
+                    console.print(f"  [dim]{ctx_line}[/dim]")
+
+                console.print()
+
+            if result.truncated:
+                console.print(
+                    "[yellow]Results truncated. Use --max-results to see more.[/yellow]"
+                )
+
+    except Exception as e:
+        if output_json:
+            console.print(json_module.dumps({"success": False, "error": str(e)}))
+        else:
+            console.print("[red]Error: Failed to perform regex search[/red]")
+            console.print(f"[red]{e}[/red]")
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
 def main():
     """Main entry point."""
     try:
