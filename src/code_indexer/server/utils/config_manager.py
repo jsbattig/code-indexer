@@ -113,6 +113,11 @@ class ServerConfig:
     cache_config: Optional[CacheConfig] = None
     reindexing_config: Optional[ReindexingConfig] = None
 
+    # Claude CLI integration settings
+    anthropic_api_key: Optional[str] = None
+    max_concurrent_claude_cli: int = 4
+    description_refresh_interval_hours: int = 24
+
     def __post_init__(self):
         """Initialize nested config objects if not provided."""
         if self.password_security is None:
@@ -300,6 +305,18 @@ class ServerConfigManager:
         if config.log_level.upper() not in valid_log_levels:
             raise ValueError(
                 f"Log level must be one of {valid_log_levels}, got {config.log_level}"
+            )
+
+        # Validate max_concurrent_claude_cli
+        if config.max_concurrent_claude_cli < 1:
+            raise ValueError(
+                f"max_concurrent_claude_cli must be greater than 0, got {config.max_concurrent_claude_cli}"
+            )
+
+        # Validate description_refresh_interval_hours
+        if config.description_refresh_interval_hours < 1:
+            raise ValueError(
+                f"description_refresh_interval_hours must be greater than 0, got {config.description_refresh_interval_hours}"
             )
 
     def create_server_directories(self) -> None:

@@ -6,16 +6,11 @@ All settings persist to ~/.cidx-server/config.json via ServerConfigManager.
 """
 
 import logging
-from dataclasses import asdict
 from typing import Any, Dict, Optional
 
 from ..utils.config_manager import (
     ServerConfigManager,
     ServerConfig,
-    CacheConfig,
-    ReindexingConfig,
-    ServerResourceConfig,
-    PasswordSecurityConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,6 +118,12 @@ class ConfigService:
                 "required_char_classes": config.password_security.required_char_classes,
                 "min_entropy_bits": config.password_security.min_entropy_bits,
             },
+            # Claude CLI integration
+            "claude_cli": {
+                "anthropic_api_key": "sk-ant-***" if config.anthropic_api_key else None,
+                "max_concurrent_claude_cli": config.max_concurrent_claude_cli,
+                "description_refresh_interval_hours": config.description_refresh_interval_hours,
+            },
         }
 
         return settings
@@ -151,6 +152,8 @@ class ConfigService:
             self._update_timeout_setting(config, key, value)
         elif category == "password_security":
             self._update_password_security_setting(config, key, value)
+        elif category == "claude_cli":
+            self._update_claude_cli_setting(config, key, value)
         else:
             raise ValueError(f"Unknown category: {category}")
 
@@ -260,6 +263,19 @@ class ConfigService:
         else:
             raise ValueError(f"Unknown password security setting: {key}")
 
+    def _update_claude_cli_setting(
+        self, config: ServerConfig, key: str, value: Any
+    ) -> None:
+        """Update a Claude CLI setting."""
+        if key == "anthropic_api_key":
+            config.anthropic_api_key = str(value) if value else None
+        elif key == "max_concurrent_claude_cli":
+            config.max_concurrent_claude_cli = int(value)
+        elif key == "description_refresh_interval_hours":
+            config.description_refresh_interval_hours = int(value)
+        else:
+            raise ValueError(f"Unknown claude_cli setting: {key}")
+
     def save_all_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
         """
         Save all settings at once.
@@ -284,6 +300,8 @@ class ConfigService:
                     self._update_timeout_setting(config, key, value)
                 elif category == "password_security":
                     self._update_password_security_setting(config, key, value)
+                elif category == "claude_cli":
+                    self._update_claude_cli_setting(config, key, value)
 
         # Validate and save
         self.config_manager.validate_config(config)
