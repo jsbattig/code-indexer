@@ -1655,7 +1655,7 @@ TOOL_REGISTRY["git_log"] = {
         "including hash, author, date, and message. Supports filtering by path, "
         "author, date range, and branch. Does not require temporal indexing - "
         "operates directly on git. Use this to understand project history, find "
-        "when changes were made, or identify who made specific changes."
+        "when changes were made, or identify who made specific changes. Related tools: git_show_commit (view commit details), git_file_at_revision (view file at commit), git_diff (compare revisions)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1754,7 +1754,7 @@ TOOL_REGISTRY["git_show_commit"] = {
     "description": (
         "Get detailed information about a specific commit including full message, "
         "author/committer info, file change statistics, and optionally the full diff. "
-        "Use this to examine what changed in a particular commit."
+        "Use this to examine what changed in a particular commit. Related tools: git_log (find commits), git_diff (compare changes), git_file_at_revision (view files at this commit)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1842,7 +1842,7 @@ TOOL_REGISTRY["git_file_at_revision"] = {
     "description": (
         "Retrieve the contents of a file as it existed at a specific commit, branch, or tag. "
         "Use this to view historical versions of files without checking out the revision. "
-        "Useful for comparing how code looked before/after changes."
+        "Useful for comparing how code looked before/after changes. Related tools: git_file_history (find commits that modified file), git_blame (see who wrote each line), git_show_commit (view commit details)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1899,7 +1899,7 @@ TOOL_REGISTRY["git_diff"] = {
         "WHAT changed between commits, branches, or any two points in history. "
         "Unlike git_search_diffs (which finds commits containing specific code changes), "
         "this shows the complete diff between two known revisions. Unlike git_show_commit "
-        "(which shows a single commit's changes), this compares ANY two points."
+        "(which shows a single commit's changes), this compares ANY two points. Related tools: git_show_commit (single commit changes), git_log (find commits to diff)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1972,7 +1972,7 @@ TOOL_REGISTRY["git_blame"] = {
         "a bug, or identifying the commit that added specific logic. Each line shows the "
         "commit hash, author, date, and line content. Use this when you need to trace "
         "responsibility for specific lines, not just file-level history (use git_file_history "
-        "for that) or commit-level changes (use git_show_commit for that)."
+        "for that) or commit-level changes (use git_show_commit for that). Related tools: git_file_history (commits that modified file), git_file_at_revision (view file at any point)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2039,7 +2039,9 @@ TOOL_REGISTRY["git_file_history"] = {
         "or see who has worked on a file. Unlike git_log (repository-wide history), this "
         "focuses on a single file's changes. Unlike git_blame (line-by-line attribution), "
         "this shows the sequence of commits. Combine with git_file_at_revision to see "
-        "the file contents at any point in its history."
+        "the file contents at any point in its history. "
+        "Related tools: git_file_at_revision (view file at any commit), git_blame "
+        "(line-by-line attribution)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2095,7 +2097,7 @@ TOOL_REGISTRY["git_search_commits"] = {
     "description": (
         "Search through commit messages to find commits mentioning specific text or patterns. "
         "Useful for finding commits related to features, bug fixes, or ticket numbers. "
-        "Searches the full commit message (subject and body). Does not require temporal indexing."
+        "Searches the full commit message (subject and body). Does not require temporal indexing. Related tools: git_show_commit (view matching commit details), git_log (browse recent history)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2104,7 +2106,7 @@ TOOL_REGISTRY["git_search_commits"] = {
                 "type": "string",
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project') or "
-                    "full path (e.g., '/home/user/repos/my-project'). Use list_repos "
+                    "full path (e.g., '/home/user/repos/my-project'). Use list_global_repos "
                     "to see available repositories and their aliases."
                 ),
             },
@@ -2202,7 +2204,7 @@ TOOL_REGISTRY["git_search_diffs"] = {
         "Find commits that introduced or removed specific code (pickaxe search). Searches "
         "through the actual diff content of commits, not just messages. Use this for 'git "
         "archaeology' - finding when a function was added, when a bug was introduced, or "
-        "tracking changes to specific code patterns."
+        "tracking changes to specific code patterns. Related tools: git_show_commit (view the commit that changed code), git_diff (see full diff), git_blame (who wrote the code)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2211,7 +2213,7 @@ TOOL_REGISTRY["git_search_diffs"] = {
                 "type": "string",
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project') or "
-                    "full path (e.g., '/home/user/repos/my-project'). Use list_repos "
+                    "full path (e.g., '/home/user/repos/my-project'). Use list_global_repos "
                     "to see available repositories and their aliases."
                 ),
             },
@@ -2325,7 +2327,7 @@ TOOL_REGISTRY["directory_tree"] = {
         "the 'tree' command. Provides a visual overview of how code is organized. Use this "
         "to understand project structure, find where files are located, or explore an "
         "unfamiliar codebase. Unlike browse_directory which lists files, this shows the "
-        "hierarchical relationship between directories."
+        "hierarchical relationship between directories. Related tools: browse_directory (list files with details), git_file_at_revision (view file contents)."
     ),
     "inputSchema": {
         "type": "object",
@@ -2334,7 +2336,7 @@ TOOL_REGISTRY["directory_tree"] = {
                 "type": "string",
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project') or "
-                    "full path (e.g., '/home/user/repos/my-project'). Use list_repos "
+                    "full path (e.g., '/home/user/repos/my-project'). Use list_global_repos "
                     "to see available repositories and their aliases."
                 ),
             },
