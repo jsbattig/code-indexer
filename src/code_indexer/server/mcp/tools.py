@@ -1894,8 +1894,12 @@ TOOL_REGISTRY["git_file_at_revision"] = {
 TOOL_REGISTRY["git_diff"] = {
     "name": "git_diff",
     "description": (
-        "Get diff between two revisions or between a revision and working directory. "
-        "Returns file changes with hunks showing exactly what lines changed."
+        "Get unified diff output showing line-by-line changes between two revisions. "
+        "Returns the actual code changes with context lines. Use this to understand "
+        "WHAT changed between commits, branches, or any two points in history. "
+        "Unlike git_search_diffs (which finds commits containing specific code changes), "
+        "this shows the complete diff between two known revisions. Unlike git_show_commit "
+        "(which shows a single commit's changes), this compares ANY two points."
     ),
     "inputSchema": {
         "type": "object",
@@ -1906,15 +1910,27 @@ TOOL_REGISTRY["git_diff"] = {
             },
             "from_revision": {
                 "type": "string",
-                "description": "Starting revision (commit SHA, branch, tag, or ref).",
+                "description": (
+                    "Starting revision (the 'before' state). Accepts: commit SHA "
+                    "(full or abbreviated), branch name ('main', 'develop'), tag ('v1.0.0'), "
+                    "relative refs ('HEAD~3', 'main~5'), or 'HEAD'. Example: 'abc123' or 'main~2'."
+                ),
             },
             "to_revision": {
                 "type": "string",
-                "description": "Ending revision. Omit to compare to working directory.",
+                "description": (
+                    "Ending revision (the 'after' state). Default: HEAD. Same formats as "
+                    "from_revision. Common patterns: 'HEAD' (latest), branch name, commit SHA. "
+                    "Example: Compare feature branch to main with from='main', to='feature-x'."
+                ),
             },
             "path": {
                 "type": "string",
-                "description": "Limit diff to specific file or directory path.",
+                "description": (
+                    "Limit diff to this path (file or directory). Relative to repo root. "
+                    "Use to focus on specific files/directories in large diffs. "
+                    "Examples: 'src/auth.py', 'lib/utils/', '*.md' (all markdown files)."
+                ),
             },
             "context_lines": {
                 "type": "integer",
@@ -1951,7 +1967,12 @@ TOOL_REGISTRY["git_diff"] = {
 TOOL_REGISTRY["git_blame"] = {
     "name": "git_blame",
     "description": (
-        "Get line-by-line blame annotations showing who last modified each line."
+        "Get line-by-line blame annotations showing who last modified each line and when. "
+        "Essential for code archaeology: understanding code ownership, finding who introduced "
+        "a bug, or identifying the commit that added specific logic. Each line shows the "
+        "commit hash, author, date, and line content. Use this when you need to trace "
+        "responsibility for specific lines, not just file-level history (use git_file_history "
+        "for that) or commit-level changes (use git_show_commit for that)."
     ),
     "inputSchema": {
         "type": "object",
@@ -1962,20 +1983,34 @@ TOOL_REGISTRY["git_blame"] = {
             },
             "path": {
                 "type": "string",
-                "description": "Path to the file to blame.",
+                "description": (
+                    "Path to file to blame (relative to repo root). Must be a file, not directory. "
+                    "Examples: 'src/auth/login.py', 'lib/utils.js', 'README.md'."
+                ),
             },
             "revision": {
                 "type": "string",
-                "description": "Revision to blame at. Default: HEAD.",
+                "description": (
+                    "Blame file as of this revision. Default: HEAD (current state). Use to see "
+                    "blame at a historical point, e.g., before a refactor. Accepts: commit SHA, "
+                    "branch name, tag, or relative ref like 'HEAD~5' or 'v1.0.0'."
+                ),
             },
             "start_line": {
                 "type": "integer",
-                "description": "First line to include (1-indexed).",
+                "description": (
+                    "First line to include (1-indexed). Use with end_line to focus on specific "
+                    "code sections in large files. Example: start_line=100, end_line=150 blames "
+                    "lines 100 through 150."
+                ),
                 "minimum": 1,
             },
             "end_line": {
                 "type": "integer",
-                "description": "Last line to include (1-indexed).",
+                "description": (
+                    "Last line to include (1-indexed, inclusive). Must be >= start_line. "
+                    "Omit both start_line and end_line to blame entire file."
+                ),
                 "minimum": 1,
             },
         },
@@ -1999,7 +2034,12 @@ TOOL_REGISTRY["git_blame"] = {
 TOOL_REGISTRY["git_file_history"] = {
     "name": "git_file_history",
     "description": (
-        "Get commit history for a specific file, optionally following renames."
+        "Get the commit history for a specific file, showing all commits that modified it. "
+        "Use this to understand how a file evolved over time, find when bugs were introduced, "
+        "or see who has worked on a file. Unlike git_log (repository-wide history), this "
+        "focuses on a single file's changes. Unlike git_blame (line-by-line attribution), "
+        "this shows the sequence of commits. Combine with git_file_at_revision to see "
+        "the file contents at any point in its history."
     ),
     "inputSchema": {
         "type": "object",
@@ -2010,11 +2050,17 @@ TOOL_REGISTRY["git_file_history"] = {
             },
             "path": {
                 "type": "string",
-                "description": "Path to the file.",
+                "description": (
+                    "Path to file (relative to repo root). Must be a file path, not directory. "
+                    "Examples: 'src/auth/login.py', 'package.json', 'docs/API.md'."
+                ),
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum commits to return. Default: 50.",
+                "description": (
+                    "Maximum commits to return. Default: 50. Range: 1-500. For files with long "
+                    "history, start with lower limits and use date filters to narrow results."
+                ),
                 "default": 50,
                 "minimum": 1,
                 "maximum": 500,
