@@ -830,7 +830,7 @@ class TestRepositoryStatus:
         """
         from code_indexer.server.mcp.handlers import get_repository_status
 
-        params = {"user_alias": "my-activated-repo"}
+        params = {"repository_alias": "my-activated-repo"}
 
         with patch(
             "code_indexer.server.app.repository_listing_manager"

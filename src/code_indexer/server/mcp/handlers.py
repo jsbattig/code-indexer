@@ -362,7 +362,7 @@ async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str,
     from pathlib import Path
 
     try:
-        user_alias = params["user_alias"]
+        user_alias = params["repository_alias"]
 
         # Check if this is a global repository (ends with -global suffix)
         if user_alias and user_alias.endswith("-global"):
