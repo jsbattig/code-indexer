@@ -68,9 +68,190 @@ jobs:
           path: dist/mcpb-${{ matrix.platform }}.mcpb
           retention-days: 1
 
+  validate-installer-script:
+    name: Validate NSIS Installer Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Run installer script validation tests
+        run: |
+          pytest tests/installer/test_nsis_installer.py -v
+
+  build-windows-installer:
+    name: Build Windows Installer
+    needs: [build-binaries, validate-installer-script]
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Windows binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mcpb-windows-x64
+          path: artifacts
+
+      - name: Extract Windows binary from bundle
+        shell: pwsh
+        run: |
+          # Extract mcpb-windows-x64.exe from the .mcpb bundle (ZIP)
+          Expand-Archive -Path artifacts/mcpb-windows-x64.mcpb -DestinationPath temp-extract -Force
+          Copy-Item temp-extract/mcpb-windows-x64.exe scripts/installer/ -Force
+          Write-Host "Binary extracted to scripts/installer/mcpb-windows-x64.exe"
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          Write-Host "Installing NSIS via chocolatey..."
+          choco install nsis -y
+          Write-Host "NSIS installation complete"
+
+      - name: Download and Install NScurl Plugin
+        shell: pwsh
+        run: |
+          Write-Host "Downloading NScurl plugin..."
+          $nscurlUrl = "https://github.com/negrutiu/nsis-nscurl/releases/download/v25.11.11.274/NScurl.zip"
+          Invoke-WebRequest -Uri $nscurlUrl -OutFile NScurl.zip
+
+          Write-Host "Extracting NScurl plugin..."
+          Expand-Archive -Path NScurl.zip -DestinationPath NScurl -Force
+
+          Write-Host "Installing NScurl plugin files..."
+          $nsisDir = "C:\Program Files (x86)\NSIS"
+          Copy-Item "NScurl\Plugins\x86-unicode\NScurl.dll" "$nsisDir\Plugins\x86-unicode\" -Force
+          Copy-Item "NScurl\Plugins\x86-ansi\NScurl.dll" "$nsisDir\Plugins\x86-ansi\" -Force
+          Copy-Item "NScurl\Include\NScurl.nsh" "$nsisDir\Include\" -Force
+          Write-Host "NScurl plugin installed"
+
+      - name: Download and Install nsJSON Plugin
+        shell: pwsh
+        run: |
+          Write-Host "Downloading nsJSON plugin..."
+          $nsjsonUrl = "https://nsis.sourceforge.io/mediawiki/images/f/f0/NsJSON.zip"
+          Invoke-WebRequest -Uri $nsjsonUrl -OutFile nsJSON.zip
+
+          Write-Host "Extracting nsJSON plugin..."
+          Expand-Archive -Path nsJSON.zip -DestinationPath nsJSON -Force
+
+          Write-Host "Installing nsJSON plugin files..."
+          $nsisDir = "C:\Program Files (x86)\NSIS"
+          Copy-Item "nsJSON\Plugins\x86-unicode\nsJSON.dll" "$nsisDir\Plugins\x86-unicode\" -Force
+          Copy-Item "nsJSON\Plugins\x86-ansi\nsJSON.dll" "$nsisDir\Plugins\x86-ansi\" -Force
+          Write-Host "nsJSON plugin installed"
+
+      - name: Verify makensis availability
+        shell: pwsh
+        run: |
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (Test-Path $makensis) {
+            Write-Host "makensis found at: $makensis"
+            & $makensis /VERSION
+          } else {
+            Write-Error "makensis not found at expected location"
+            exit 1
+          }
+
+      - name: Compile NSIS Installer
+        shell: pwsh
+        run: |
+          Write-Host "Compiling NSIS installer..."
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          $nsiScript = "scripts\installer\mcpb-installer.nsi"
+
+          & $makensis /V4 $nsiScript
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "NSIS compilation failed with exit code: $LASTEXITCODE"
+            exit 1
+          }
+
+          Write-Host "Installer compilation successful"
+
+      - name: Rename installer output
+        shell: pwsh
+        run: |
+          # NSIS outputs mcpb-installer.exe, rename to mcpb-windows-x64-setup.exe
+          Move-Item scripts\installer\mcpb-installer.exe scripts\installer\mcpb-windows-x64-setup.exe -Force
+          Write-Host "Installer renamed to mcpb-windows-x64-setup.exe"
+
+      - name: Verify installer exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "scripts\installer\mcpb-windows-x64-setup.exe")) {
+            Write-Error "Installer not found: mcpb-windows-x64-setup.exe"
+            exit 1
+          }
+          $size = (Get-Item "scripts\installer\mcpb-windows-x64-setup.exe").Length
+          Write-Host "Installer verified: mcpb-windows-x64-setup.exe ($size bytes)"
+
+      - name: Test installer extraction
+        shell: pwsh
+        run: |
+          Write-Host "Testing installer silent mode (extraction only)..."
+
+          # Note: We cannot fully test authentication in CI without real server credentials
+          # This test verifies the installer compiles correctly and can extract files
+          # Authentication testing requires either:
+          #   A) A test server with known credentials
+          #   B) Mocking the API endpoint (complex, not implemented)
+          # For now, we verify compilation success and document the limitation
+
+          # Run installer in silent mode with test parameters
+          # Expected: Exit code 1 (auth failure) but binary should be extracted
+          $installer = "scripts\installer\mcpb-windows-x64-setup.exe"
+
+          Write-Host "Running installer with test parameters (auth will fail, checking extraction only)..."
+          $process = Start-Process -FilePath $installer -ArgumentList "/S", "/USERNAME=ci-test", "/PASSWORD=ci-test" -Wait -NoNewWindow -PassThru
+          $exitCode = $process.ExitCode
+
+          Write-Host "Installer exit code: $exitCode"
+
+          # Expected: Exit code 1 (auth failure) since no real server
+          if ($exitCode -eq 1) {
+            Write-Host "Expected auth failure (exit code 1) - this is correct for CI testing"
+          } elseif ($exitCode -eq 0) {
+            Write-Warning "Unexpected success - auth should fail without real server"
+          } else {
+            Write-Error "Unexpected exit code: $exitCode"
+            exit 1
+          }
+
+          # Check if binary was extracted (this happens before auth)
+          if (Test-Path "C:\mcpb\server\mcpb-windows-x64.exe") {
+            Write-Host "SUCCESS: Binary extraction verified - mcpb-windows-x64.exe found"
+          } else {
+            Write-Error "FAILED: Binary not extracted to C:\mcpb\server\mcpb-windows-x64.exe"
+            exit 1
+          }
+
+          Write-Host "NOTE: Authentication test skipped (requires real server credentials)"
+          Write-Host "NOTE: Claude Desktop merge test skipped (requires authenticated config)"
+          Write-Host "Installer compilation and extraction verified successfully"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcpb-windows-installer
+          path: scripts/installer/mcpb-windows-x64-setup.exe
+          retention-days: 1
+
   create-release:
     name: Create GitHub Release
-    needs: build-binaries
+    needs: [build-binaries, build-windows-installer]
     runs-on: ubuntu-latest
 
     steps:
@@ -100,6 +281,17 @@ jobs:
 
           ## Installation
 
+          ### Windows (Installer)
+
+          1. Download **mcpb-windows-x64-setup.exe** (recommended for Windows users)
+          2. Run the installer and follow the authentication wizard
+          3. The installer will automatically:
+             - Extract MCPB binary to C:\mcpb\server\
+             - Authenticate with CIDX server and configure tokens
+             - Integrate with Claude Desktop (if installed)
+
+          ### Manual Installation (All Platforms)
+
           1. Download the appropriate binary for your platform
           2. Extract the ZIP file
           3. Make the binary executable (Unix/macOS): \`chmod +x mcpb-*\`
@@ -108,10 +300,11 @@ jobs:
 
           ## Platforms
 
+          - **Windows Installer**: mcpb-windows-x64-setup.exe (automated setup with GUI)
           - **macOS (Intel)**: mcpb-darwin-x64.zip
           - **macOS (Apple Silicon)**: mcpb-darwin-arm64.zip
           - **Linux (x86_64)**: mcpb-linux-x64.zip
-          - **Windows (x86_64)**: mcpb-windows-x64.zip
+          - **Windows (Manual)**: mcpb-windows-x64.zip
 
           ## Configuration
 
@@ -131,5 +324,6 @@ jobs:
             artifacts/mcpb-darwin-arm64/mcpb-darwin-arm64.mcpb
             artifacts/mcpb-linux-x64/mcpb-linux-x64.mcpb
             artifacts/mcpb-windows-x64/mcpb-windows-x64.mcpb
+            artifacts/mcpb-windows-installer/mcpb-windows-x64-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
