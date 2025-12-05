@@ -111,7 +111,7 @@ jobs:
         run: |
           # Extract mcpb-windows-x64.exe from the .mcpb bundle (ZIP)
           Expand-Archive -Path artifacts/mcpb-windows-x64.mcpb -DestinationPath temp-extract -Force
-          Copy-Item temp-extract/mcpb-windows-x64.exe scripts/installer/ -Force
+          Copy-Item temp-extract/server/mcpb-windows-x64.exe scripts/installer/ -Force
           Write-Host "Binary extracted to scripts/installer/mcpb-windows-x64.exe"
 
       - name: Install NSIS
