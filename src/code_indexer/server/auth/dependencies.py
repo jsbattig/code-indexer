@@ -4,10 +4,11 @@ FastAPI authentication dependencies.
 Provides dependency injection for JWT authentication and role-based access control.
 """
 
-from typing import Optional, TYPE_CHECKING
-from fastapi import Depends, HTTPException, status
+from typing import Optional, TYPE_CHECKING, Dict, Any
+from fastapi import Depends, HTTPException, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from functools import wraps
+from datetime import datetime, timezone
 
 from .jwt_manager import JWTManager, TokenExpiredError, InvalidTokenError
 from .user_manager import UserManager, User
@@ -50,7 +51,116 @@ def _build_www_authenticate_header() -> str:
         return 'Bearer realm="mcp"'
 
 
+def _validate_jwt_and_get_user(token: str) -> User:
+    """Validate JWT token and return User object or raise HTTPException 401."""
+    if not jwt_manager or not user_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication not properly initialized",
+        )
+
+    try:
+        payload = jwt_manager.validate_token(token)
+        username = payload.get("username")
+
+        if not username:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing username",
+                headers={"WWW-Authenticate": _build_www_authenticate_header()},
+            )
+
+        # Check if token is blacklisted
+        from code_indexer.server.app import is_token_blacklisted
+
+        jti = payload.get("jti")
+        if jti and is_token_blacklisted(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": _build_www_authenticate_header()},
+            )
+
+        user = user_manager.get_user(username)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": _build_www_authenticate_header()},
+            )
+
+        return user
+
+    except TokenExpiredError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
+        )
+    except InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
+        )
+
+
+def _should_refresh_token(payload: Dict[str, Any]) -> bool:
+    """Check if token has passed 50% of its lifetime."""
+    try:
+        iat = float(payload.get("iat", 0))
+        exp = float(payload.get("exp", 0))
+    except Exception:
+        return False
+
+    if exp <= iat:
+        return False
+
+    now = datetime.now(timezone.utc).timestamp()
+    lifetime = exp - iat
+    elapsed = now - iat
+    return elapsed > (lifetime * 0.5)
+
+
+def _refresh_jwt_cookie(response: Response, payload: Dict[str, Any]) -> None:
+    """Create new JWT with preserved claims and set as secure cookie.
+
+    The old token's JTI is blacklisted to prevent token reuse and ensure
+    that only the most recent token remains valid.
+    """
+    import logging
+
+    if not jwt_manager:
+        logging.getLogger(__name__).error("JWT manager not initialized - cannot refresh cookie")
+        return
+
+    # Blacklist old token BEFORE creating new one to prevent reuse
+    old_jti = payload.get("jti")
+    if old_jti:
+        from code_indexer.server.app import blacklist_token
+        blacklist_token(old_jti)
+
+    new_token = jwt_manager.create_token(
+        {
+            "username": payload.get("username"),
+            "role": payload.get("role"),
+            "created_at": payload.get("created_at"),
+        }
+    )
+
+    response.set_cookie(
+        key="cidx_session",
+        value=new_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+        max_age=jwt_manager.token_expiration_minutes * 60,
+    )
+
+
 def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> User:
     """
@@ -76,6 +186,12 @@ def get_current_user(
 
     # Handle missing credentials (per MCP spec RFC 9728, return 401 not 403)
     if credentials is None:
+        # No Authorization header - check for JWT cookie
+        token = request.cookies.get("cidx_session")
+        if token:
+            # Validate cookie JWT using same logic as Bearer
+            return _validate_jwt_and_get_user(token)
+        # No auth method available
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication credentials",
@@ -101,52 +217,7 @@ def get_current_user(
                 return user
 
     # Fallback to JWT validation
-    try:
-        # Validate JWT token
-        payload = jwt_manager.validate_token(token)
-        username = payload.get("username")
-
-        if not username:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing username",
-                headers={"WWW-Authenticate": _build_www_authenticate_header()},
-            )
-
-        # Check if token is blacklisted
-        from code_indexer.server.app import is_token_blacklisted
-
-        jti = payload.get("jti")
-        if jti and is_token_blacklisted(jti):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
-                headers={"WWW-Authenticate": _build_www_authenticate_header()},
-            )
-
-        # Get user from storage
-        user = user_manager.get_user(username)
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": _build_www_authenticate_header()},
-            )
-
-        return user
-
-    except TokenExpiredError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": _build_www_authenticate_header()},
-        )
-    except InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": _build_www_authenticate_header()},
-        )
+    return _validate_jwt_and_get_user(token)
 
 
 def require_permission(permission: str):

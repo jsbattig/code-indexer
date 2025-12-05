@@ -2604,4 +2604,23 @@ TOOL_REGISTRY["directory_tree"] = {
         },
         "required": ["success"],
     },
+    "authenticate": {
+        "name": "authenticate",
+        "description": "Authenticate with username and API key to establish session. Required before using other tools on /mcp-public endpoint.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "username": {
+                    "type": "string",
+                    "description": "Username"
+                },
+                "api_key": {
+                    "type": "string",
+                    "description": "API key (format: cidx_sk_...)"
+                }
+            },
+            "required": ["username", "api_key"]
+        },
+        "required_permission": "public"
+    },
 }

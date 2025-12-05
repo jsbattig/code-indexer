@@ -272,7 +272,9 @@ class UserManager:
                     username=username,
                     password_hash=user_data["password_hash"],
                     role=UserRole(user_data["role"]),
-                    created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                    created_at=DateTimeParser.parse_user_datetime(
+                        user_data["created_at"]
+                    ),
                 )
                 users.append(user)
             except (KeyError, ValueError) as e:
@@ -440,3 +442,134 @@ class UserManager:
 
         self._save_users(users_data)
         return True
+
+    def add_api_key(
+        self,
+        username: str,
+        key_id: str,
+        key_hash: str,
+        key_prefix: str,
+        name: Optional[str],
+        created_at: str,
+    ) -> bool:
+        """
+        Add an API key to user's api_keys array.
+
+        Args:
+            username: Username
+            key_id: Unique key ID
+            key_hash: Hashed API key
+            key_prefix: Key prefix for display (e.g., "cidx_sk_a1b2")
+            name: Optional name for the key
+            created_at: ISO format timestamp
+
+        Returns:
+            True if added, False if user not found
+        """
+        users_data = self._load_users()
+        if username not in users_data:
+            return False
+
+        if "api_keys" not in users_data[username]:
+            users_data[username]["api_keys"] = []
+
+        users_data[username]["api_keys"].append(
+            {
+                "key_id": key_id,
+                "name": name,
+                "hash": key_hash,
+                "key_prefix": key_prefix,
+                "created_at": created_at,
+            }
+        )
+
+        self._save_users(users_data)
+        return True
+
+    def get_api_keys(self, username: str) -> List[Dict[str, Any]]:
+        """
+        Get list of API keys for user (without hashes).
+
+        Args:
+            username: Username
+
+        Returns:
+            List of API key metadata (without hashes)
+        """
+        users_data = self._load_users()
+        if username not in users_data:
+            return []
+
+        api_keys = users_data[username].get("api_keys", [])
+        # Return metadata only, not hashes
+        return [
+            {
+                "key_id": key["key_id"],
+                "name": key.get("name"),
+                "created_at": key["created_at"],
+                "key_prefix": key.get("key_prefix", "cidx_sk_****..."),
+            }
+            for key in api_keys
+        ]
+
+    def delete_api_key(self, username: str, key_id: str) -> bool:
+        """
+        Delete an API key from user's api_keys array.
+
+        Args:
+            username: Username
+            key_id: Key ID to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        users_data = self._load_users()
+        if username not in users_data:
+            return False
+
+        api_keys = users_data[username].get("api_keys", [])
+        original_count = len(api_keys)
+        users_data[username]["api_keys"] = [
+            k for k in api_keys if k["key_id"] != key_id
+        ]
+
+        if len(users_data[username]["api_keys"]) == original_count:
+            return False  # Key not found
+
+        self._save_users(users_data)
+        return True
+
+    def validate_user_api_key(self, username: str, raw_key: str) -> Optional[User]:
+        """
+        Validate API key for a user.
+
+        Args:
+            username: Username
+            raw_key: Raw API key (cidx_sk_...)
+
+        Returns:
+            User object if valid, None otherwise
+        """
+        from .api_key_manager import ApiKeyManager
+
+        users_data = self._load_users()
+        if username not in users_data:
+            return None
+
+        user_data = users_data[username]
+        api_keys = user_data.get("api_keys", [])
+
+        api_key_manager = ApiKeyManager()
+
+        for key_entry in api_keys:
+            stored_hash = key_entry.get("hash")
+            if stored_hash and api_key_manager.validate_key(raw_key, stored_hash):
+                # Valid key found - return user
+                return User(
+                    username=username,
+                    password_hash=user_data["password_hash"],
+                    role=UserRole(user_data["role"]),
+                    created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                )
+
+        return None

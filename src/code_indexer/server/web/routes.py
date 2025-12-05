@@ -7,7 +7,7 @@ Provides admin web interface routes for CIDX server administration.
 import logging
 import secrets
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from fastapi import APIRouter, Request, Response, Form, HTTPException, status
@@ -2782,4 +2782,64 @@ async def config_section_partial(
     )
 
     set_csrf_cookie(response, csrf_token)
+    return response
+
+
+# =============================================================================
+# API Keys Management
+# =============================================================================
+
+@web_router.get("/api-keys", response_class=HTMLResponse)
+async def api_keys_page(request: Request):
+    """API Keys management page - manage personal API keys."""
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    return _create_api_keys_page_response(request, session)
+
+
+def _create_api_keys_page_response(
+    request: Request,
+    session: SessionData,
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> HTMLResponse:
+    """Create API keys page response."""
+    username = session.username
+    keys = dependencies.user_manager.get_api_keys(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "api_keys.html",
+        {
+            "show_nav": True,
+            "current_page": "api-keys",
+            "username": username,
+            "api_keys": keys,
+            "success_message": success_message,
+            "error_message": error_message,
+            "csrf_token": session.csrf_token,
+        },
+    )
+    return response
+
+
+@web_router.get("/partials/api-keys-list", response_class=HTMLResponse)
+async def api_keys_list_partial(request: Request):
+    """Partial for API keys list (HTMX refresh)."""
+    session = _require_admin_session(request)
+    if not session:
+        return HTMLResponse(content="<p>Session expired. Please refresh the page.</p>", status_code=401)
+
+    username = session.username
+    keys = dependencies.user_manager.get_api_keys(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "partials/api_keys_list.html",
+        {"api_keys": keys},
+    )
     return response

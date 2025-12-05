@@ -340,6 +340,35 @@ class PasswordResetRequest(BaseModel):
         return v.strip().lower()
 
 
+class CreateApiKeyRequest(BaseModel):
+    """Request model for API key creation."""
+
+    name: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Optional name for the API key",
+    )
+
+
+class CreateApiKeyResponse(BaseModel):
+    """Response model for API key creation."""
+
+    api_key: str = Field(..., description="The generated API key (shown only once)")
+    key_id: str = Field(..., description="Unique identifier for the key")
+    name: Optional[str] = Field(default=None, description="Name of the key")
+    created_at: str = Field(..., description="ISO format timestamp of creation")
+    message: str = Field(
+        default="Save this key - it will not be shown again",
+        description="Warning message to save the key",
+    )
+
+
+class ApiKeyListResponse(BaseModel):
+    """Response model for listing API keys."""
+
+    keys: List[Dict[str, Any]] = Field(..., description="List of API key metadata")
+
+
 class AddGoldenRepoRequest(BaseModel):
     """Request model for adding golden repositories."""
 
@@ -1608,7 +1637,9 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
             )
             logger.info("Successfully re-indexed cidx-meta content")
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to index cidx-meta: {e.stderr if e.stderr else str(e)}")
+            logger.error(
+                f"Failed to index cidx-meta: {e.stderr if e.stderr else str(e)}"
+            )
             # Don't break server startup if indexing fails - cidx-meta can be indexed later
         except Exception as e:
             logger.error(f"Unexpected error during cidx-meta indexing: {e}")
@@ -1821,8 +1852,7 @@ def create_app() -> FastAPI:
     # Initialize BackgroundJobManager with persistence enabled (Story #541 - AC4)
     jobs_storage_path = str(Path(server_data_dir) / "jobs.json")
     background_job_manager = BackgroundJobManager(
-        storage_path=jobs_storage_path,
-        resource_config=server_config.resource_config
+        storage_path=jobs_storage_path, resource_config=server_config.resource_config
     )
     # Inject BackgroundJobManager into GoldenRepoManager for async operations
     golden_repo_manager.background_job_manager = background_job_manager
@@ -2436,6 +2466,93 @@ def create_app() -> FastAPI:
                 detail=f"Token refresh failed: {str(e)}",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+    @app.post("/api/keys", response_model=CreateApiKeyResponse, status_code=201)
+    async def create_api_key(
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+        request: CreateApiKeyRequest = None,
+    ):
+        """
+        Generate a new API key for the authenticated user.
+
+        Args:
+            request: API key creation request
+            current_user: Current authenticated user
+
+        Returns:
+            Generated API key with metadata (shown only once)
+
+        Raises:
+            HTTPException: If key generation fails
+        """
+        from code_indexer.server.auth.api_key_manager import ApiKeyManager
+
+        try:
+            api_key_manager = ApiKeyManager(user_manager=user_manager)
+            name = request.name if request else None
+
+            raw_key, key_id = api_key_manager.generate_key(
+                username=current_user.username,
+                name=name,
+            )
+
+            # Get the created_at timestamp from the stored key
+            users_data = user_manager._load_users()
+            user_data = users_data[current_user.username]
+            api_keys = user_data.get("api_keys", [])
+            created_at = None
+            for key in api_keys:
+                if key["key_id"] == key_id:
+                    created_at = key["created_at"]
+                    break
+
+            return CreateApiKeyResponse(
+                api_key=raw_key,
+                key_id=key_id,
+                name=name,
+                created_at=created_at or datetime.now(timezone.utc).isoformat(),
+            )
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"API key generation failed: {str(e)}",
+            )
+
+    @app.get("/api/keys", response_model=ApiKeyListResponse)
+    async def list_api_keys(
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        List all API keys for the authenticated user.
+
+        Returns metadata only (key_id, name, created_at, key_prefix).
+        Never returns hashes or full keys.
+        """
+        keys = user_manager.get_api_keys(current_user.username)
+        return ApiKeyListResponse(keys=keys)
+
+    @app.delete("/api/keys/{key_id}", status_code=200)
+    async def delete_api_key(
+        key_id: str,
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        Delete an API key.
+
+        Args:
+            key_id: The unique identifier of the key to delete
+
+        Returns:
+            Success message
+
+        Raises:
+            HTTPException 404: If key not found
+        """
+        deleted = user_manager.delete_api_key(current_user.username, key_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="API key not found")
+        return {"message": "API key deleted successfully"}
 
     # Protected endpoints (require authentication)
     @app.get("/api/repos", response_model=RepositoryListResponse)

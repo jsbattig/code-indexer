@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}API Keys - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="users-header">
+    <h1>API Key Management</h1>
+    <div class="users-actions">
+        <button id="generate-key-btn" class="primary" onclick="showGenerateModal()">
+            Generate New Key
+        </button>
+        <button class="outline" hx-get="/admin/partials/api-keys-list" hx-target="#api-keys-list-section" hx-swap="innerHTML" hx-indicator="#refresh-indicator">
+            Refresh
+        </button>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+<div id="message-area">
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+</div>
+
+<!-- Generate Key Modal -->
+<dialog id="generate-key-modal">
+    <article>
+        <header>
+            <h2>Generate New API Key</h2>
+            <button type="button" class="close-btn" onclick="closeGenerateModal()" aria-label="Close">&times;</button>
+        </header>
+        <form id="generate-key-form" onsubmit="generateKey(event)">
+            <label for="key-name">Key Name (optional)</label>
+            <input type="text" id="key-name" name="key_name" placeholder="e.g., cli-tool, ci-server" autocomplete="off">
+            <div class="form-actions">
+                <button type="submit" class="primary">Generate Key</button>
+                <button type="button" class="secondary" onclick="closeGenerateModal()">Cancel</button>
+            </div>
+        </form>
+    </article>
+</dialog>
+
+<!-- Generated Key Display Modal -->
+<dialog id="key-display-modal">
+    <article>
+        <header>
+            <h2>New API Key Generated</h2>
+        </header>
+        <p class="warning-message"><strong>Warning:</strong> Save this key now. It will not be shown again.</p>
+        <div class="key-display-area">
+            <input type="text" id="generated-key" readonly autocomplete="off" data-sensitive="true" style="font-family: monospace;">
+            <button type="button" class="outline" onclick="copyKey()">Copy</button>
+        </div>
+        <p id="copy-status"></p>
+        <footer>
+            <button type="button" onclick="closeKeyDisplay()">Done</button>
+        </footer>
+    </article>
+</dialog>
+
+<!-- Keys List Section -->
+<section id="api-keys-list-section">
+    {% include "partials/api_keys_list.html" %}
+</section>
+
+<script>
+function showGenerateModal() {
+    document.getElementById('generate-key-modal').showModal();
+}
+
+function closeGenerateModal() {
+    document.getElementById('generate-key-modal').close();
+    document.getElementById('key-name').value = '';
+}
+
+async function generateKey(event) {
+    event.preventDefault();
+    const keyName = document.getElementById('key-name').value;
+
+    try {
+        const response = await fetch('/api/keys', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({ name: keyName || null })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to generate key');
+        }
+
+        const data = await response.json();
+        closeGenerateModal();
+
+        // Show the generated key
+        document.getElementById('generated-key').value = data.api_key;
+        document.getElementById('key-display-modal').showModal();
+
+        // Refresh the keys list
+        htmx.trigger('#api-keys-list-section', 'htmx:trigger');
+        htmx.ajax('GET', '/admin/partials/api-keys-list', {target: '#api-keys-list-section', swap: 'innerHTML'});
+
+    } catch (error) {
+        showMessage('Failed to generate API key. Please try again.', 'error');
+    }
+}
+
+function copyKey() {
+    const keyInput = document.getElementById('generated-key');
+    keyInput.select();
+    navigator.clipboard.writeText(keyInput.value).then(() => {
+        document.getElementById('copy-status').textContent = 'Copied to clipboard!';
+        setTimeout(() => {
+            document.getElementById('copy-status').textContent = '';
+        }, 2000);
+    }).catch(() => {
+        document.getElementById('copy-status').textContent = 'Failed to copy. Please copy manually.';
+    });
+}
+
+function closeKeyDisplay() {
+    document.getElementById('generated-key').value = '';
+    document.getElementById('copy-status').textContent = '';
+    document.getElementById('key-display-modal').close();
+}
+
+async function deleteKey(keyId, keyName) {
+    const displayName = keyName || keyId.substring(0, 8) + '...';
+    if (!confirm(`Are you sure you want to delete API key "${displayName}"? This action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/keys/' + keyId, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to delete key');
+        }
+
+        showMessage('API key deleted successfully.', 'success');
+        htmx.ajax('GET', '/admin/partials/api-keys-list', {target: '#api-keys-list-section', swap: 'innerHTML'});
+
+    } catch (error) {
+        showMessage('Failed to delete API key. Please try again.', 'error');
+    }
+}
+
+function showMessage(text, type) {
+    const messageArea = document.getElementById('message-area');
+    const className = type === 'success' ? 'message-success' : 'message-error';
+    const article = document.createElement('article');
+    article.className = className;
+    const p = document.createElement('p');
+    p.textContent = text;
+    article.appendChild(p);
+    messageArea.innerHTML = '';
+    messageArea.appendChild(article);
+    setTimeout(() => {
+        messageArea.innerHTML = '';
+    }, 5000);
+}
+
+// Clear sensitive data on page unload
+window.addEventListener('beforeunload', function() {
+    const keyInput = document.getElementById('generated-key');
+    if (keyInput) keyInput.value = '';
+});
+</script>
+{% endblock %}

@@ -11,6 +11,7 @@ import pytest
 import hashlib
 import base64
 from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import Request
 
 from code_indexer.server.auth.dependencies import get_current_user
 from code_indexer.server.auth.jwt_manager import JWTManager
@@ -102,7 +103,9 @@ class TestOAuthTokenValidationInDependencies:
         )
 
         # This should validate the OAuth token and return the user
-        user = get_current_user(credentials=credentials)
+        scope = {"type": "http", "method": "GET", "path": "/", "headers": []}
+        request = Request(scope)
+        user = get_current_user(request=request, credentials=credentials)
 
         assert user is not None
         assert user.username == self.test_username
@@ -125,7 +128,9 @@ class TestOAuthTokenValidationInDependencies:
         )
 
         # This should validate the JWT token and return the user
-        user = get_current_user(credentials=credentials)
+        scope = {"type": "http", "method": "GET", "path": "/", "headers": []}
+        request = Request(scope)
+        user = get_current_user(request=request, credentials=credentials)
 
         assert user is not None
         assert user.username == self.test_username

@@ -2184,3 +2184,78 @@ async def handle_directory_tree(args: Dict[str, Any], user: User) -> Dict[str, A
 
 # Update handler registry with directory tree tool (Story #557)
 HANDLER_REGISTRY["directory_tree"] = handle_directory_tree
+
+
+async def handle_authenticate(
+    args: Dict[str, Any],
+    http_request,
+    http_response
+) -> Dict[str, Any]:
+    """
+    Handler for authenticate tool - validates API key and sets JWT cookie.
+    
+    This handler has a special signature (Request, Response) because it needs
+    to set cookies in the HTTP response.
+    """
+    from code_indexer.server.auth.dependencies import jwt_manager, user_manager
+    # Lazy import to avoid module import side effects during startup
+    from code_indexer.server.auth.token_bucket import rate_limiter
+    import math
+    
+    username = args.get("username")
+    api_key = args.get("api_key")
+    
+    if not username or not api_key:
+        return _mcp_response({
+            "success": False,
+            "error": "Missing username or api_key"
+        })
+    # Rate limit check BEFORE validating credentials
+    allowed, retry_after = rate_limiter.consume(username)
+    if not allowed:
+        retry_after_int = int(math.ceil(retry_after))
+        return _mcp_response({
+            "success": False,
+            "error": f"Rate limit exceeded. Try again in {retry_after_int} seconds",
+            "retry_after": retry_after_int,
+        })
+
+    # Validate API key
+    user = user_manager.validate_user_api_key(username, api_key)
+    if not user:
+        return _mcp_response({
+            "success": False,
+            "error": "Invalid credentials"
+        })
+
+    # Successful authentication should refund the consumed token
+    rate_limiter.refund(username)
+
+    # Create JWT token
+    token = jwt_manager.create_token({
+        "username": user.username,
+        "role": user.role.value,
+        "created_at": user.created_at.isoformat(),
+    })
+    
+    # Set JWT as HttpOnly cookie
+    http_response.set_cookie(
+        key="cidx_session",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+        max_age=jwt_manager.token_expiration_minutes * 60
+    )
+    
+    return _mcp_response({
+        "success": True,
+        "message": "Authentication successful",
+        "username": user.username,
+        "role": user.role.value
+    })
+
+
+# Register the handler
+HANDLER_REGISTRY["authenticate"] = handle_authenticate

@@ -61,19 +61,7 @@ Replace `/absolute/path/to/mcpb-darwin-arm64` with the actual path to your downl
 
 ### Token Management
 
-Tokens expire every 10 minutes. Refresh manually or automate:
-
-**Manual refresh:**
-```bash
-python3 -m pip install --break-system-packages code-indexer
-cidx-token-refresh
-```
-
-**Automatic refresh (cron):**
-```bash
-crontab -e
-# Add: */8 * * * * /usr/local/bin/cidx-token-refresh >> ~/.mcpb/refresh.log 2>&1
-```
+Token refresh is fully automatic. MCPB transparently refreshes expired tokens using stored credentials - no cron jobs or manual intervention required.
 
 ### Features
 - **Full Query Parity**: All 25 search_code parameters available

@@ -10,7 +10,10 @@ from typing import Dict, Any, List, Optional, Tuple, Union
 from code_indexer.server.auth.dependencies import (
     get_current_user,
     _build_www_authenticate_header,
+    _should_refresh_token,
+    _refresh_jwt_cookie,
 )
+from code_indexer.server.auth import dependencies as auth_deps
 from code_indexer.server.auth.user_manager import User
 from sse_starlette.sse import EventSourceResponse
 import asyncio
@@ -286,6 +289,18 @@ async def mcp_endpoint(
     response.headers["Mcp-Session-Id"] = session_id
 
     try:
+        # Sliding expiration for cookie-authenticated sessions only (no Bearer header)
+        if "authorization" not in request.headers:
+            token = request.cookies.get("cidx_session")
+            if token and auth_deps.jwt_manager is not None:
+                try:
+                    payload = auth_deps.jwt_manager.validate_token(token)
+                    if _should_refresh_token(payload):
+                        _refresh_jwt_cookie(response, payload)
+                except Exception:
+                    # Ignore refresh errors; normal auth flow already enforced
+                    pass
+
         body = await request.json()
     except Exception:
         # Parse error - return JSON-RPC error
@@ -308,6 +323,7 @@ async def sse_event_generator():
 
 
 async def get_optional_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Optional[User]:
     """
@@ -320,6 +336,7 @@ async def get_optional_user(
     and unauthenticated requests (e.g., MCP SSE endpoint per RFC 9728).
 
     Args:
+        request: HTTP request object for cookie extraction
         credentials: Bearer token from Authorization header
 
     Returns:
@@ -328,7 +345,7 @@ async def get_optional_user(
     from fastapi import HTTPException
 
     try:
-        return get_current_user(credentials)
+        return get_current_user(request, credentials)
     except HTTPException:
         # Authentication failed - return None to indicate unauthenticated
         return None
@@ -394,3 +411,191 @@ async def mcp_delete_session(
 ) -> Dict[str, str]:
     """MCP DELETE endpoint for session termination."""
     return {"status": "terminated"}
+
+
+# === PUBLIC MCP ENDPOINT (No OAuth Challenge) ===
+
+
+def get_optional_user_from_cookie(request: Request) -> Optional[User]:
+    """Get user from JWT cookie if valid, None otherwise."""
+    import logging
+    from code_indexer.server.auth.dependencies import _validate_jwt_and_get_user
+
+    token = request.cookies.get("cidx_session")
+    if not token:
+        return None
+
+    try:
+        return _validate_jwt_and_get_user(token)
+    except Exception as e:
+        logging.getLogger(__name__).debug(f"Cookie auth failed: {e}")
+        return None
+
+
+async def handle_public_tools_list(user: Optional[User]) -> Dict[str, Any]:
+    """Handle tools/list for /mcp-public endpoint."""
+    if user is None:
+        return {
+            "tools": [
+                {
+                    "name": "authenticate",
+                    "description": "Authenticate with API key to access CIDX tools",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "username": {"type": "string", "description": "Username"},
+                            "api_key": {
+                                "type": "string",
+                                "description": "API key (cidx_sk_...)",
+                            },
+                        },
+                        "required": ["username", "api_key"],
+                    },
+                }
+            ]
+        }
+    from .tools import filter_tools_by_role
+
+    return {"tools": filter_tools_by_role(user)}
+
+
+async def process_public_jsonrpc_request(
+    request_data: Dict[str, Any],
+    user: Optional[User],
+    http_request: Request,
+    http_response: Response,
+) -> Dict[str, Any]:
+    """Process JSON-RPC request for /mcp-public endpoint."""
+    request_id = request_data.get("id")
+
+    is_valid, error = validate_jsonrpc_request(request_data)
+    if not is_valid:
+        assert error is not None
+        return create_jsonrpc_error(error["code"], error["message"], request_id)
+
+    method = request_data["method"]
+    params = request_data.get("params") or {}
+
+    if not isinstance(params, dict):
+        return create_jsonrpc_error(
+            -32602, "Invalid params: must be an object", request_id
+        )
+
+    try:
+        if method == "initialize":
+            return create_jsonrpc_response(
+                {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "CIDX", "version": "7.3.0"},
+                },
+                request_id,
+            )
+
+        elif method == "tools/list":
+            result = await handle_public_tools_list(user)
+            return create_jsonrpc_response(result, request_id)
+
+        elif method == "tools/call":
+            tool_name = params.get("name")
+
+            if tool_name == "authenticate":
+                from .handlers import HANDLER_REGISTRY
+
+                if "authenticate" not in HANDLER_REGISTRY:
+                    return create_jsonrpc_error(
+                        -32601, "authenticate tool not yet implemented", request_id
+                    )
+                handler = HANDLER_REGISTRY["authenticate"]
+                result = await handler(
+                    params.get("arguments", {}), http_request, http_response
+                )
+                return create_jsonrpc_response(result, request_id)
+
+            if user is None:
+                return create_jsonrpc_error(
+                    -32602,
+                    "Authentication required. Call authenticate tool first.",
+                    request_id,
+                )
+
+            result = await handle_tools_call(params, user)
+            return create_jsonrpc_response(result, request_id)
+
+        else:
+            return create_jsonrpc_error(
+                -32601, f"Method not found: {method}", request_id
+            )
+
+    except ValueError as e:
+        return create_jsonrpc_error(-32602, f"Invalid params: {str(e)}", request_id)
+    except Exception as e:
+        return create_jsonrpc_error(
+            -32603,
+            f"Internal error: {str(e)}",
+            request_id,
+            data={"exception_type": type(e).__name__},
+        )
+
+
+async def unauthenticated_sse_generator():
+    """Minimal SSE stream for unauthenticated /mcp-public clients."""
+    yield {
+        "event": "endpoint",
+        "data": json.dumps(
+            {
+                "protocol": "mcp",
+                "version": "2025-06-18",
+                "capabilities": {"tools": {}},
+                "authenticated": False,
+            }
+        ),
+    }
+    while True:
+        await asyncio.sleep(30)
+        yield {"event": "ping", "data": "unauthenticated"}
+
+
+@mcp_router.post("/mcp-public")
+async def mcp_public_endpoint(
+    request: Request, response: Response
+) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    """Public MCP endpoint (no OAuth challenge)."""
+    response.headers["Mcp-Session-Id"] = str(uuid.uuid4())
+    # Sliding expiration for cookie-authenticated sessions
+    token = request.cookies.get("cidx_session")
+    if token and auth_deps.jwt_manager is not None:
+        try:
+            payload = auth_deps.jwt_manager.validate_token(token)
+            if _should_refresh_token(payload):
+                _refresh_jwt_cookie(response, payload)
+        except Exception:
+            pass
+
+    user = get_optional_user_from_cookie(request)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return create_jsonrpc_error(-32700, "Parse error: Invalid JSON", None)
+
+    if isinstance(body, list):
+        return [
+            await process_public_jsonrpc_request(req, user, request, response)
+            for req in body
+        ]
+    elif isinstance(body, dict):
+        return await process_public_jsonrpc_request(body, user, request, response)
+    else:
+        return create_jsonrpc_error(
+            -32600, "Invalid Request: body must be object or array", None
+        )
+
+
+@mcp_router.get("/mcp-public", response_model=None)
+async def mcp_public_sse_endpoint(request: Request) -> EventSourceResponse:
+    """Public MCP SSE endpoint (no OAuth challenge)."""
+    user = get_optional_user_from_cookie(request)
+    if user is None:
+        return EventSourceResponse(unauthenticated_sse_generator())
+    return EventSourceResponse(authenticated_sse_generator(user))

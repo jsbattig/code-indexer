@@ -1,0 +1,28 @@
+{% if api_keys %}
+<table role="grid">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Key Prefix</th>
+            <th>Created</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for key in api_keys %}
+        <tr>
+            <td>{{ key.name or '(unnamed)' }}</td>
+            <td><code>{{ key.key_prefix }}...</code></td>
+            <td>{{ key.created_at[:10] }}</td>
+            <td>
+                <button class="outline secondary" onclick="deleteKey('{{ key.key_id }}', '{{ key.name or '' }}')">
+                    Delete
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No API keys found. Click "Generate New Key" to create one.</p>
+{% endif %}
