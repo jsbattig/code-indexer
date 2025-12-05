@@ -217,7 +217,7 @@ class TestBundleCreation:
         )
 
         assert bundle_path.exists()
-        assert bundle_path.suffix == ".zip"
+        assert bundle_path.suffix == ".mcpb"
         assert "darwin-x64" in bundle_path.name
 
         # Verify ZIP contents
@@ -225,7 +225,7 @@ class TestBundleCreation:
 
         with zipfile.ZipFile(bundle_path, "r") as zf:
             names = zf.namelist()
-            assert "mcpb-darwin-x64" in names
+            assert "server/mcpb-darwin-x64" in names
             assert "manifest.json" in names
 
     def test_create_bundle_preserves_executable_bit(self, tmp_path: Path):
@@ -250,7 +250,7 @@ class TestBundleCreation:
         import zipfile
 
         with zipfile.ZipFile(bundle_path, "r") as zf:
-            info = zf.getinfo("mcpb-linux-x64")
+            info = zf.getinfo("server/mcpb-linux-x64")
             # Extract Unix permissions from external_attr
             # Format: (mode << 16) | file_type
             unix_mode = info.external_attr >> 16

@@ -161,17 +161,20 @@ class TestLoadConfig:
             os.unlink(config_path)
 
     def test_load_config_missing_bearer_token_raises_error(self):
-        """Test that missing bearer_token in config raises error."""
+        """Test that missing bearer_token raises error when no encrypted credentials exist."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             config_data = {"server_url": "https://example.com", "timeout": 30}
             json.dump(config_data, f)
             config_path = f.name
 
         try:
-            with pytest.raises(
-                ValueError, match="Missing required field: bearer_token"
-            ):
-                load_config(config_path)
+            # Mock credentials_exist to return False (no encrypted credentials)
+            from unittest.mock import patch
+            with patch("code_indexer.mcpb.credential_storage.credentials_exist", return_value=False):
+                with pytest.raises(
+                    ValueError, match="Missing required field: bearer_token"
+                ):
+                    load_config(config_path)
         finally:
             os.unlink(config_path)
 
@@ -577,21 +580,24 @@ class TestEnhancedErrorMessages:
         finally:
             os.unlink(config_path)
 
-    def test_missing_bearer_token_has_helpful_error(self):
-        """Test missing bearer_token provides suggestion."""
+    def test_missing_bearer_token_has_helpful_error_when_no_credentials(self):
+        """Test missing bearer_token provides suggestion when no encrypted credentials exist."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             config_data = {"server_url": "https://example.com"}
             json.dump(config_data, f)
             config_path = f.name
 
         try:
-            with pytest.raises(ValueError) as excinfo:
-                load_config(config_path)
+            # Mock credentials_exist to return False (no encrypted credentials)
+            from unittest.mock import patch
+            with patch("code_indexer.mcpb.credential_storage.credentials_exist", return_value=False):
+                with pytest.raises(ValueError) as excinfo:
+                    load_config(config_path)
 
-            error_msg = str(excinfo.value)
-            assert "Missing required field: bearer_token" in error_msg
-            assert "CIDX_TOKEN" in error_msg
-            assert "config.json" in error_msg
+                error_msg = str(excinfo.value)
+                assert "Missing required field: bearer_token" in error_msg
+                assert "CIDX_TOKEN" in error_msg
+                assert "config.json" in error_msg
         finally:
             os.unlink(config_path)
 
