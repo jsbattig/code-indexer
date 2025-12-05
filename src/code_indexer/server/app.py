@@ -61,7 +61,7 @@ from .auth.refresh_token_manager import RefreshTokenManager
 from .auth.oauth.routes import router as oauth_router
 from .mcp.protocol import mcp_router
 from .global_routes.routes import router as global_routes_router
-from .web import web_router, init_session_manager
+from .web import web_router, user_router, init_session_manager
 from .models.branch_models import BranchListResponse
 from .models.activated_repository import ActivatedRepository
 from .services.branch_service import BranchService
@@ -6105,6 +6105,9 @@ def create_app() -> FastAPI:
 
     # Include web router with /admin prefix
     app.include_router(web_router, prefix="/admin", tags=["admin"])
+
+    # Include user router with /user prefix for non-admin self-service
+    app.include_router(user_router, prefix="/user", tags=["user"])
 
     # RFC 8414 compliance: OAuth discovery at root level for Claude.ai compatibility
     @app.get("/.well-known/oauth-authorization-server")

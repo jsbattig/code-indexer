@@ -145,23 +145,77 @@ class WebTestInfrastructure:
             "role": user.role.value,
         }
 
-    def get_authenticated_client(
+    def create_power_user(
         self,
-        username: str,
-        password: str
-    ) -> TestClient:
-        """
-        Get a TestClient with an authenticated session.
+        username: str = "testpoweruser",
+        password: str = "TestPower@789!"
+    ) -> Dict[str, Any]:
+        """Create a power user for testing.
 
-        This performs a real login and captures the session cookie.
+        Uses a password that meets security requirements:
+        - 12+ characters
+        - Uppercase letters
+        - Lowercase letters
+        - Numbers
+        - Special characters
         """
-        if not self.app:
+        if not self.user_manager:
             raise RuntimeError("Test infrastructure not initialized")
 
-        # Create a new client that follows redirects for login
-        client = TestClient(self.app, follow_redirects=True)
+        user = self.user_manager.create_user(username, password, UserRole.POWER_USER)
+        return {
+            "username": user.username,
+            "password": password,
+            "role": user.role.value,
+        }
 
-        # First get the login page to get CSRF token
+    def _create_session_directly(
+        self,
+        client: TestClient,
+        username: str,
+        role: str
+    ) -> None:
+        """
+        Directly create a session and inject it into the test client.
+
+        Bypasses the login endpoint by using the session manager directly.
+        Used for non-admin users since /admin/login rejects them.
+        """
+        from code_indexer.server.web.auth import get_session_manager
+        from fastapi import Response
+
+        # Create a dummy response to capture the session cookie
+        dummy_response = Response()
+
+        session_manager = get_session_manager()
+        session_manager.create_session(
+            dummy_response,
+            username=username,
+            role=role,
+        )
+
+        # Extract the session cookie and inject into client
+        set_cookie_header = dummy_response.headers.get("set-cookie", "")
+        if set_cookie_header:
+            # Parse cookie: session_id=value; Path=/; HttpOnly; SameSite=lax
+            cookie_parts = set_cookie_header.split(";")
+            if cookie_parts:
+                cookie_pair = cookie_parts[0].strip()
+                if "=" in cookie_pair:
+                    cookie_name, cookie_value = cookie_pair.split("=", 1)
+                    client.cookies.set(cookie_name, cookie_value)
+
+    def _authenticate_via_login(
+        self,
+        client: TestClient,
+        username: str,
+        password: str
+    ) -> None:
+        """
+        Authenticate via normal /admin/login flow.
+
+        Used for admin users. Performs CSRF token extraction and login POST.
+        """
         login_response = client.get("/admin/login")
         csrf_token = self.extract_csrf_token(login_response.text)
 
@@ -175,6 +229,37 @@ class WebTestInfrastructure:
             "csrf_token": csrf_token,
         }
         client.post("/admin/login", data=login_data)
+
+    def get_authenticated_client(
+        self,
+        username: str,
+        password: str
+    ) -> TestClient:
+        """
+        Get a TestClient with an authenticated session.
+
+        For non-admin users, creates session directly (bypass admin-only login).
+        For admin users, uses normal /admin/login flow.
+        """
+        if not self.app or not self.user_manager:
+            raise RuntimeError("Test infrastructure not initialized")
+
+        # Authenticate to verify credentials and get user object
+        user = self.user_manager.authenticate_user(username, password)
+        if not user:
+            raise ValueError(f"Authentication failed for user {username}")
+
+        # Create client (follow redirects only for admin login flow)
+        follow_redirects = user.role == UserRole.ADMIN
+        client = TestClient(self.app, follow_redirects=follow_redirects)
+
+        # Route based on role
+        if user.role != UserRole.ADMIN:
+            # Non-admin: directly create session (bypass admin-only endpoint)
+            self._create_session_directly(client, user.username, user.role.value)
+        else:
+            # Admin: use normal login flow
+            self._authenticate_via_login(client, username, password)
 
         return client
 
@@ -265,6 +350,12 @@ def admin_user(web_infrastructure: WebTestInfrastructure) -> Dict[str, Any]:
 def normal_user(web_infrastructure: WebTestInfrastructure) -> Dict[str, Any]:
     """Test non-admin user credentials."""
     return web_infrastructure.create_normal_user()
+
+
+@pytest.fixture
+def power_user(web_infrastructure: WebTestInfrastructure) -> Dict[str, Any]:
+    """Test power user credentials."""
+    return web_infrastructure.create_power_user()
 
 
 @pytest.fixture

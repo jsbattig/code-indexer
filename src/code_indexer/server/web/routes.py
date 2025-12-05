@@ -30,6 +30,8 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # Create router
 web_router = APIRouter()
+# Create user router for non-admin user routes
+user_router = APIRouter()
 
 # CSRF cookie name and settings
 CSRF_COOKIE_NAME = "_csrf"
@@ -48,7 +50,7 @@ def generate_csrf_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def set_csrf_cookie(response: Response, token: str) -> None:
+def set_csrf_cookie(response: Response, token: str, path: str = "/admin") -> None:
     """
     Set a signed CSRF token cookie.
 
@@ -66,7 +68,7 @@ def set_csrf_cookie(response: Response, token: str) -> None:
         secure=False,  # Set to True in production with HTTPS
         samesite="lax",  # Changed from strict to allow HTMX partial requests
         max_age=CSRF_MAX_AGE_SECONDS,
-        path="/admin",  # Explicit path to ensure cookie is sent for all /admin/* routes
+        path=path,  # Explicit path to ensure cookie is sent for all /admin/* routes
     )
 
 
@@ -311,7 +313,7 @@ async def dashboard_health_partial(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     dashboard_service = _get_dashboard_service()
@@ -347,7 +349,7 @@ async def dashboard_stats_partial(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     dashboard_service = _get_dashboard_service()
@@ -436,7 +438,7 @@ async def users_page(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     return _create_users_page_response(request, session)
@@ -455,7 +457,7 @@ async def create_user(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -507,7 +509,7 @@ async def update_user_role(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -560,7 +562,7 @@ async def change_user_password(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -603,7 +605,7 @@ async def delete_user(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -644,7 +646,7 @@ async def users_list_partial(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     csrf_token = generate_csrf_token()
@@ -833,7 +835,7 @@ async def golden_repos_page(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     return _create_golden_repos_page_response(request, session)
@@ -851,7 +853,7 @@ async def add_golden_repo(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -907,7 +909,7 @@ async def delete_golden_repo(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -947,7 +949,7 @@ async def refresh_golden_repo(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -989,7 +991,7 @@ async def activate_golden_repo(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -1045,7 +1047,7 @@ async def golden_repo_details(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     try:
@@ -1082,7 +1084,7 @@ async def golden_repos_list_partial(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     csrf_token = generate_csrf_token()
@@ -1291,7 +1293,7 @@ async def repos_page(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     return _create_repos_page_response(
@@ -1321,7 +1323,7 @@ async def repos_list_partial(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     csrf_token = generate_csrf_token()
@@ -1367,7 +1369,7 @@ async def repo_details(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     try:
@@ -1418,7 +1420,7 @@ async def deactivate_repo(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -1600,7 +1602,7 @@ async def jobs_page(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     return _create_jobs_page_response(
@@ -1625,7 +1627,7 @@ async def jobs_list_partial(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Generate CSRF token for cancel forms
@@ -1668,7 +1670,7 @@ async def cancel_job(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -1852,7 +1854,7 @@ async def query_page(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     return _create_query_page_response(request, session)
@@ -1881,7 +1883,7 @@ async def query_submit(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -2110,7 +2112,7 @@ async def query_results_partial(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     csrf_token = generate_csrf_token()
@@ -2172,7 +2174,7 @@ async def query_results_partial_post(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Note: csrf_token parameter is accepted but not validated for HTMX partials
@@ -2635,7 +2637,7 @@ async def config_page(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     return _create_config_page_response(request, session)
@@ -2653,7 +2655,7 @@ async def update_config_section(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -2721,7 +2723,7 @@ async def reset_config(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Validate CSRF token
@@ -2765,7 +2767,7 @@ async def config_section_partial(
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     csrf_token = generate_csrf_token()
@@ -2795,7 +2797,7 @@ async def api_keys_page(request: Request):
     session = _require_admin_session(request)
     if not session:
         return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
     return _create_api_keys_page_response(request, session)
@@ -2842,4 +2844,196 @@ async def api_keys_list_partial(request: Request):
         "partials/api_keys_list.html",
         {"api_keys": keys},
     )
+    return response
+
+
+# =============================================================================
+# User Self-Service Routes (Any Authenticated User)
+# =============================================================================
+
+def _require_authenticated_session(request: Request) -> Optional[SessionData]:
+    """Check for valid authenticated session (any role), return None if not authenticated."""
+    session_manager = get_session_manager()
+    session = session_manager.get_session(request)
+
+    if not session:
+        return None
+
+    return session
+
+
+
+@user_router.get("/login", response_class=HTMLResponse)
+async def user_login_page(
+    request: Request,
+    error: Optional[str] = None,
+    info: Optional[str] = None,
+):
+    """
+    Render user login page for non-admin users.
+
+    Shows login form with CSRF protection using signed cookies.
+    Accepts any role (normal_user, power_user, admin).
+    """
+    # Generate CSRF token for the form
+    csrf_token = generate_csrf_token()
+
+    # Check if there's an expired session
+    session_manager = get_session_manager()
+    if session_manager.is_session_expired(request):
+        info = "Session expired, please login again"
+
+    # Create response with CSRF token in signed cookie
+    response = templates.TemplateResponse(
+        "user_login.html",
+        {
+            "request": request,
+            "csrf_token": csrf_token,
+            "error": error,
+            "info": info,
+            "show_nav": False,
+        },
+    )
+
+    # Set CSRF token in signed cookie for validation on POST
+    set_csrf_cookie(response, csrf_token, path="/user")
+
+    return response
+
+
+@user_router.post("/login", response_class=HTMLResponse)
+async def user_login_submit(
+    request: Request,
+    response: Response,
+    username: str = Form(...),
+    password: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """
+    Process user login form submission.
+
+    Validates credentials and creates session on success.
+    Accepts ANY role (normal_user, power_user, admin).
+    CSRF protection uses signed cookies for pre-session validation.
+    """
+    # CSRF validation - validate token against signed cookie
+    if not validate_login_csrf_token(request, csrf_token):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF token missing or invalid",
+        )
+
+    # Get user manager from dependencies
+    user_manager = dependencies.user_manager
+    if not user_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User manager not available",
+        )
+
+    # Authenticate user (any role accepted)
+    user = user_manager.authenticate_user(username, password)
+
+    if user is None:
+        # Invalid credentials - show error with new CSRF token
+        new_csrf_token = generate_csrf_token()
+        error_response = templates.TemplateResponse(
+            "user_login.html",
+            {
+                "request": request,
+                "csrf_token": new_csrf_token,
+                "error": "Invalid username or password",
+                "show_nav": False,
+            },
+            status_code=200,
+        )
+        set_csrf_cookie(error_response, new_csrf_token, path="/user")
+        return error_response
+
+    # Create session for any authenticated user
+    session_manager = get_session_manager()
+    redirect_response = RedirectResponse(
+        url="/user/api-keys",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    session_manager.create_session(
+        redirect_response,
+        username=user.username,
+        role=user.role.value,
+    )
+
+    return redirect_response
+
+@user_router.get("/api-keys", response_class=HTMLResponse)
+async def user_api_keys_page(request: Request):
+    """User API Keys management page - any authenticated user can manage their own API keys."""
+    session = _require_authenticated_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    return _create_user_api_keys_page_response(request, session)
+
+
+def _create_user_api_keys_page_response(
+    request: Request,
+    session: SessionData,
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> HTMLResponse:
+    """Create user API keys page response."""
+    username = session.username
+    keys = dependencies.user_manager.get_api_keys(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "user_api_keys.html",
+        {
+            "show_nav": True,
+            "current_page": "api-keys",
+            "username": username,
+            "api_keys": keys,
+            "success_message": success_message,
+            "error_message": error_message,
+            "csrf_token": session.csrf_token,
+        },
+    )
+    return response
+
+
+@user_router.get("/partials/api-keys-list", response_class=HTMLResponse)
+async def user_api_keys_list_partial(request: Request):
+    """Partial for user API keys list (HTMX refresh)."""
+    session = _require_authenticated_session(request)
+    if not session:
+        return HTMLResponse(content="<p>Session expired. Please refresh the page.</p>", status_code=401)
+
+    username = session.username
+    keys = dependencies.user_manager.get_api_keys(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "partials/api_keys_list.html",
+        {"api_keys": keys},
+    )
+    return response
+
+
+@user_router.get("/logout")
+async def user_logout(request: Request):
+    """
+    Logout and clear session for user portal.
+
+    Redirects to login page after clearing session.
+    """
+    session_manager = get_session_manager()
+    response = RedirectResponse(
+        url="/admin/login",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+    # Clear the session cookie
+    session_manager.clear_session(response)
+
     return response
