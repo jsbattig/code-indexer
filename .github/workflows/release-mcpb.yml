@@ -129,13 +129,34 @@ jobs:
           Invoke-WebRequest -Uri $nscurlUrl -OutFile NScurl.zip
 
           Write-Host "Extracting NScurl plugin..."
-          Expand-Archive -Path NScurl.zip -DestinationPath NScurl -Force
+          Expand-Archive -Path NScurl.zip -DestinationPath NScurl-extract -Force
+
+          Write-Host "Listing extracted contents..."
+          Get-ChildItem -Path NScurl-extract -Recurse | Select-Object FullName
 
           Write-Host "Installing NScurl plugin files..."
           $nsisDir = "C:\Program Files (x86)\NSIS"
-          Copy-Item "NScurl\Plugins\x86-unicode\NScurl.dll" "$nsisDir\Plugins\x86-unicode\" -Force
-          Copy-Item "NScurl\Plugins\x86-ansi\NScurl.dll" "$nsisDir\Plugins\x86-ansi\" -Force
-          Copy-Item "NScurl\Include\NScurl.nsh" "$nsisDir\Include\" -Force
+
+          # Find the Plugins directory (may be at root or in subdirectory)
+          $pluginsDir = Get-ChildItem -Path NScurl-extract -Recurse -Directory -Filter "Plugins" | Select-Object -First 1
+          if ($pluginsDir) {
+              Copy-Item "$($pluginsDir.FullName)\x86-unicode\NScurl.dll" "$nsisDir\Plugins\x86-unicode\" -Force
+              Copy-Item "$($pluginsDir.FullName)\x86-ansi\NScurl.dll" "$nsisDir\Plugins\x86-ansi\" -Force
+              Write-Host "NScurl DLLs installed"
+          } else {
+              Write-Error "Could not find Plugins directory in NScurl archive"
+              exit 1
+          }
+
+          # Find the Include directory
+          $includeDir = Get-ChildItem -Path NScurl-extract -Recurse -Directory -Filter "Include" | Select-Object -First 1
+          if ($includeDir) {
+              Copy-Item "$($includeDir.FullName)\NScurl.nsh" "$nsisDir\Include\" -Force
+              Write-Host "NScurl.nsh installed"
+          } else {
+              Write-Host "Warning: Include directory not found, NScurl.nsh may already exist or not be required"
+          }
+
           Write-Host "NScurl plugin installed"
 
       - name: Download and Install nsJSON Plugin
@@ -146,12 +167,25 @@ jobs:
           Invoke-WebRequest -Uri $nsjsonUrl -OutFile nsJSON.zip
 
           Write-Host "Extracting nsJSON plugin..."
-          Expand-Archive -Path nsJSON.zip -DestinationPath nsJSON -Force
+          Expand-Archive -Path nsJSON.zip -DestinationPath nsJSON-extract -Force
+
+          Write-Host "Listing extracted contents..."
+          Get-ChildItem -Path nsJSON-extract -Recurse | Select-Object FullName
 
           Write-Host "Installing nsJSON plugin files..."
           $nsisDir = "C:\Program Files (x86)\NSIS"
-          Copy-Item "nsJSON\Plugins\x86-unicode\nsJSON.dll" "$nsisDir\Plugins\x86-unicode\" -Force
-          Copy-Item "nsJSON\Plugins\x86-ansi\nsJSON.dll" "$nsisDir\Plugins\x86-ansi\" -Force
+
+          # Find the Plugins directory (may be at root or in subdirectory)
+          $pluginsDir = Get-ChildItem -Path nsJSON-extract -Recurse -Directory -Filter "Plugins" | Select-Object -First 1
+          if ($pluginsDir) {
+              Copy-Item "$($pluginsDir.FullName)\x86-unicode\nsJSON.dll" "$nsisDir\Plugins\x86-unicode\" -Force
+              Copy-Item "$($pluginsDir.FullName)\x86-ansi\nsJSON.dll" "$nsisDir\Plugins\x86-ansi\" -Force
+              Write-Host "nsJSON DLLs installed"
+          } else {
+              Write-Error "Could not find Plugins directory in nsJSON archive"
+              exit 1
+          }
+
           Write-Host "nsJSON plugin installed"
 
       - name: Verify makensis availability
