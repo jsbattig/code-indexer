@@ -6121,6 +6121,20 @@ def create_app() -> FastAPI:
         manager = OAuthManager(db_path=str(oauth_db), issuer=None)
         return manager.get_discovery_metadata()
 
+    # RFC 9728 compliance: OAuth Protected Resource Metadata
+    @app.get("/.well-known/oauth-protected-resource")
+    async def oauth_protected_resource_metadata():
+        """OAuth 2.0 Protected Resource Metadata endpoint (RFC 9728 compliance)."""
+        issuer_url = os.getenv("CIDX_ISSUER_URL", "http://localhost:8000")
+
+        return {
+            "resource": issuer_url,
+            "authorization_servers": [issuer_url],
+            "bearer_methods_supported": ["header"],
+            "scopes_supported": ["mcp:read", "mcp:write"],
+            "resource_documentation": "https://github.com/jsbattig/code-indexer"
+        }
+
     # Favicon redirect
     @app.get("/favicon.ico")
     async def favicon():
