@@ -34,9 +34,6 @@ InstallDir "C:\\mcpb"
 RequestExecutionLevel admin
 SilentInstall silent
 
-; Enable installer logging
-LogSet on
-
 ;--------------------------------
 ; Build-Time Configuration
 
