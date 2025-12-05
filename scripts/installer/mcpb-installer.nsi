@@ -94,7 +94,7 @@ Function .onInit
         ${GetOptions} $0 "/S" $1
         ${IfNot} ${Errors}
             StrCpy $SilentMode "1"
-            LogText "Silent mode enabled"
+            DetailPrint "Silent mode enabled"
 
             ; Parse command-line parameters for silent mode
             ClearErrors
@@ -119,7 +119,7 @@ Function .onInit
                 Quit
             ${EndIf}
 
-            LogText "Silent mode parameters: ServerUrl=$ServerUrl, Username=$Username"
+            DetailPrint "Silent mode parameters: ServerUrl=$ServerUrl, Username=$Username"
         ${EndIf}
     ${Else}
         ; GUI mode - set default server URL
@@ -224,29 +224,29 @@ Function AuthPageLeave
         ${EndIf}
     ${EndIf}
 
-    LogText "Form validation passed: ServerUrl=$ServerUrl, Username=$Username"
+    DetailPrint "Form validation passed: ServerUrl=$ServerUrl, Username=$Username"
 FunctionEnd
 
 ;--------------------------------
 ; Main Installation Section (AC1, AC3, AC4, AC5)
 
 Section "Install MCPB" SecInstall
-    LogText "Starting MCPB installation"
+    DetailPrint "Starting MCPB installation"
 
     ; AC1: Extract MCPB binary
     SetOutPath "C:\\mcpb\\server"
-    LogText "SetOutPath: C:\\mcpb\\server"
+    DetailPrint "SetOutPath: C:\\mcpb\\server"
 
     ; Extract mcpb-windows-x64.exe from installer
     ; Note: Binary must exist at build time in scripts/installer/ directory
     ; Build with: python scripts/build_binary.py --platform windows
     File "mcpb-windows-x64.exe"
-    LogText "MCPB binary extracted to C:\\mcpb\\server\\mcpb-windows-x64.exe"
+    DetailPrint "MCPB binary extracted to C:\\mcpb\\server\\mcpb-windows-x64.exe"
 
     ; Verify file exists after extraction (paranoid check for filesystem errors)
     IfFileExists "C:\\mcpb\\server\\mcpb-windows-x64.exe" extraction_success 0
         StrCpy $ErrorMessage "MCPB binary not found after extraction - possible filesystem error"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         ${If} $SilentMode == "1"
             SetErrorLevel 2
             Quit
@@ -256,7 +256,7 @@ Section "Install MCPB" SecInstall
         ${EndIf}
 
     extraction_success:
-        LogText "Binary extraction verified successfully"
+        DetailPrint "Binary extraction verified successfully"
 
     ; AC3: Authenticate with API
     Call AuthenticateWithAPI
@@ -264,16 +264,16 @@ Section "Install MCPB" SecInstall
     ${If} $AuthSuccess == "0"
         ; Authentication failed
         ${If} $SilentMode == "1"
-            LogText "Authentication failed in silent mode, exiting"
+            DetailPrint "Authentication failed in silent mode, exiting"
             SetErrorLevel 1
             Quit
         ${Else}
             MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Authentication failed: $ErrorMessage$\r$\n$\r$\nClick Retry to try again with different credentials, or Cancel to abort installation." IDRETRY retry
-            LogText "User cancelled after authentication failure"
+            DetailPrint "User cancelled after authentication failure"
             Abort
 
             retry:
-            LogText "User chose to retry authentication"
+            DetailPrint "User chose to retry authentication"
             Abort  ; Return to auth page
         ${EndIf}
     ${EndIf}
@@ -283,7 +283,7 @@ Section "Install MCPB" SecInstall
 
     ${If} ${Errors}
         ${If} $SilentMode == "1"
-            LogText "Config creation failed in silent mode, exiting"
+            DetailPrint "Config creation failed in silent mode, exiting"
             SetErrorLevel 2
             Quit
         ${Else}
@@ -300,7 +300,7 @@ Section "Install MCPB" SecInstall
 
     ; AC4 (Story #578): Write uninstaller
     WriteUninstaller "$INSTDIR\uninstall.exe"
-    LogText "Uninstaller created at $INSTDIR\uninstall.exe"
+    DetailPrint "Uninstaller created at $INSTDIR\uninstall.exe"
 
     ; AC4 (Story #578): Write Add/Remove Programs registry entries
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MCPB" "DisplayName" "MCPB - MCP Bridge"
@@ -310,13 +310,13 @@ Section "Install MCPB" SecInstall
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MCPB" "InstallLocation" "$INSTDIR"
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MCPB" "NoModify" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MCPB" "NoRepair" 1
-    LogText "Add/Remove Programs registry entries created"
+    DetailPrint "Add/Remove Programs registry entries created"
 
-    LogText "MCPB installation completed successfully"
+    DetailPrint "MCPB installation completed successfully"
 
     ${If} $SilentMode == "1"
         ${If} $ClaudeIntegrationFailed == "1"
-            LogText "Setting exit code 4 (partial success - Claude Desktop integration failed)"
+            DetailPrint "Setting exit code 4 (partial success - Claude Desktop integration failed)"
             SetErrorLevel 4
         ${Else}
             SetErrorLevel 0
@@ -332,9 +332,9 @@ SectionEnd
 ; AC3: API Authentication Function
 
 Function AuthenticateWithAPI
-    LogText "AuthenticateWithAPI: Starting authentication"
-    LogText "Server URL: $ServerUrl"
-    LogText "Username: $Username"
+    DetailPrint "AuthenticateWithAPI: Starting authentication"
+    DetailPrint "Server URL: $ServerUrl"
+    DetailPrint "Username: $Username"
 
     ; Construct JSON request body using nsJSON
     nsJSON::Set /TREE `{"username":"$Username","password":"$Password"}`
@@ -342,7 +342,7 @@ Function AuthenticateWithAPI
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to construct JSON request"
         StrCpy $AuthSuccess "0"
-        LogText "nsJSON::Set failed: $0"
+        DetailPrint "nsJSON::Set failed: $0"
         Return
     ${EndIf}
 
@@ -350,7 +350,7 @@ Function AuthenticateWithAPI
     nsJSON::Serialize /PRETTY /UNICODE
     Pop $0  ; JSON string
 
-    LogText "Request JSON constructed: $0"
+    DetailPrint "Request JSON constructed: $0"
 
     ; Create temporary file for request body
     GetTempFileName $1
@@ -358,13 +358,13 @@ Function AuthenticateWithAPI
     FileWrite $2 "$0"
     FileClose $2
 
-    LogText "Request body written to temp file: $1"
+    DetailPrint "Request body written to temp file: $1"
 
     ; Perform HTTPS POST request using NScurl
     ; Syntax: NScurl::http POST url headers data-file output-file status-variable
     GetTempFileName $3  ; Output file
 
-    LogText "Executing NScurl POST to $ServerUrl/auth/login"
+    DetailPrint "Executing NScurl POST to $ServerUrl/auth/login"
 
     ; NScurl::http [verb] [url] [headers] [@data-file|data] [output-file] [status-var]
     NScurl::http POST "$ServerUrl/auth/login" \
@@ -375,8 +375,8 @@ Function AuthenticateWithAPI
 
     Pop $0  ; Result
 
-    LogText "NScurl result: $0"
-    LogText "HTTP status code: $HttpStatusCode"
+    DetailPrint "NScurl result: $0"
+    DetailPrint "HTTP status code: $HttpStatusCode"
 
     Delete "$1"  ; Clean up request temp file
 
@@ -384,7 +384,7 @@ Function AuthenticateWithAPI
     ${If} $0 != "OK"
         StrCpy $ErrorMessage "Connection failed: $0. Server URL: $ServerUrl. Please verify the URL is correct and accessible."
         StrCpy $AuthSuccess "0"
-        LogText "NScurl connection error: $0 for server URL: $ServerUrl"
+        DetailPrint "NScurl connection error: $0 for server URL: $ServerUrl"
         Delete "$3"
         Return
     ${EndIf}
@@ -392,29 +392,29 @@ Function AuthenticateWithAPI
     ; Parse HTTP status code (AC7: Error handling)
     ${If} $HttpStatusCode == 200
         ; Success - parse response JSON
-        LogText "Authentication successful (HTTP 200)"
+        DetailPrint "Authentication successful (HTTP 200)"
     ${ElseIf} $HttpStatusCode == 401
         StrCpy $ErrorMessage "Invalid username or password (HTTP 401). Server: $ServerUrl. Username: $Username. Please check your credentials and try again."
         StrCpy $AuthSuccess "0"
-        LogText "Authentication failed: HTTP 401 for server $ServerUrl, username $Username"
+        DetailPrint "Authentication failed: HTTP 401 for server $ServerUrl, username $Username"
         Delete "$3"
         Return
     ${ElseIf} $HttpStatusCode == 403
         StrCpy $ErrorMessage "Access forbidden (HTTP 403). Server: $ServerUrl. Username: $Username. Your account may not have permission to use this service."
         StrCpy $AuthSuccess "0"
-        LogText "Authentication failed: HTTP 403 for server $ServerUrl, username $Username"
+        DetailPrint "Authentication failed: HTTP 403 for server $ServerUrl, username $Username"
         Delete "$3"
         Return
     ${ElseIf} $HttpStatusCode == 500
         StrCpy $ErrorMessage "Server error (HTTP 500). Server: $ServerUrl. The authentication service is experiencing problems. Please try again later or contact support."
         StrCpy $AuthSuccess "0"
-        LogText "Authentication failed: HTTP 500 for server $ServerUrl"
+        DetailPrint "Authentication failed: HTTP 500 for server $ServerUrl"
         Delete "$3"
         Return
     ${Else}
         StrCpy $ErrorMessage "Unexpected HTTP status $HttpStatusCode. Server: $ServerUrl. Please verify the server URL and try again."
         StrCpy $AuthSuccess "0"
-        LogText "Authentication failed: HTTP $HttpStatusCode for server $ServerUrl"
+        DetailPrint "Authentication failed: HTTP $HttpStatusCode for server $ServerUrl"
         Delete "$3"
         Return
     ${EndIf}
@@ -425,7 +425,7 @@ Function AuthenticateWithAPI
     FileClose $0
     Delete "$3"
 
-    LogText "Response body: $1"
+    DetailPrint "Response body: $1"
 
     ; Parse JSON response to extract tokens
     nsJSON::Set /TREE `$1`
@@ -433,7 +433,7 @@ Function AuthenticateWithAPI
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to parse authentication response from server $ServerUrl: $0"
         StrCpy $AuthSuccess "0"
-        LogText "nsJSON::Set failed on response from $ServerUrl: $0"
+        DetailPrint "nsJSON::Set failed on response from $ServerUrl: $0"
         Return
     ${EndIf}
 
@@ -445,7 +445,7 @@ Function AuthenticateWithAPI
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Response from server $ServerUrl missing access_token field"
         StrCpy $AuthSuccess "0"
-        LogText "Failed to extract access_token from $ServerUrl: $0"
+        DetailPrint "Failed to extract access_token from $ServerUrl: $0"
         Return
     ${EndIf}
 
@@ -457,11 +457,11 @@ Function AuthenticateWithAPI
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Response from server $ServerUrl missing refresh_token field"
         StrCpy $AuthSuccess "0"
-        LogText "Failed to extract refresh_token from $ServerUrl: $0"
+        DetailPrint "Failed to extract refresh_token from $ServerUrl: $0"
         Return
     ${EndIf}
 
-    LogText "Tokens extracted successfully (access_token and refresh_token received)"
+    DetailPrint "Tokens extracted successfully (access_token and refresh_token received)"
 
     StrCpy $AuthSuccess "1"
 FunctionEnd
@@ -470,7 +470,7 @@ FunctionEnd
 ; AC4: Create MCPB Configuration
 
 Function CreateMCPBConfig
-    LogText "CreateMCPBConfig: Starting"
+    DetailPrint "CreateMCPBConfig: Starting"
 
     ClearErrors
 
@@ -478,18 +478,18 @@ Function CreateMCPBConfig
     CreateDirectory "$PROFILE\.mcpb"
     ${If} ${Errors}
         StrCpy $ErrorMessage "Failed to create directory: $PROFILE\.mcpb"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         Return
     ${EndIf}
 
-    LogText "Created directory: $PROFILE\.mcpb"
+    DetailPrint "Created directory: $PROFILE\.mcpb"
 
     ; Construct config.json using nsJSON
     nsJSON::Set /TREE `{}`
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to initialize config JSON: $0"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         SetErrors
         Return
     ${EndIf}
@@ -499,7 +499,7 @@ Function CreateMCPBConfig
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to set server_url in config: $0"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         SetErrors
         Return
     ${EndIf}
@@ -509,7 +509,7 @@ Function CreateMCPBConfig
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to set access_token in config: $0"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         SetErrors
         Return
     ${EndIf}
@@ -519,7 +519,7 @@ Function CreateMCPBConfig
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to set refresh_token in config: $0"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         SetErrors
         Return
     ${EndIf}
@@ -528,14 +528,14 @@ Function CreateMCPBConfig
     nsJSON::Serialize /PRETTY /UNICODE
     Pop $0  ; JSON string
 
-    LogText "Config JSON: $0"
+    DetailPrint "Config JSON: $0"
 
     ; Write config.json file
     ClearErrors
     FileOpen $1 "$PROFILE\.mcpb\config.json" w
     ${If} ${Errors}
         StrCpy $ErrorMessage "Failed to open config file for writing: $PROFILE\.mcpb\config.json"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         Return
     ${EndIf}
 
@@ -544,11 +544,11 @@ Function CreateMCPBConfig
 
     ${If} ${Errors}
         StrCpy $ErrorMessage "Failed to write config file: $PROFILE\.mcpb\config.json"
-        LogText "$ErrorMessage"
+        DetailPrint "$ErrorMessage"
         Return
     ${EndIf}
 
-    LogText "Config file created successfully: $PROFILE\.mcpb\config.json"
+    DetailPrint "Config file created successfully: $PROFILE\.mcpb\config.json"
     DetailPrint "MCPB configuration created at $PROFILE\.mcpb\config.json"
 FunctionEnd
 
@@ -556,7 +556,7 @@ FunctionEnd
 ; AC5: Claude Desktop Integration
 
 Function IntegrateWithClaudeDesktop
-    LogText "IntegrateWithClaudeDesktop: Starting"
+    DetailPrint "IntegrateWithClaudeDesktop: Starting"
 
     ClearErrors
 
@@ -566,10 +566,10 @@ Function IntegrateWithClaudeDesktop
     IfFileExists "$0\*.*" claude_exists claude_missing
 
     claude_missing:
-        LogText "Claude Desktop not found at $0"
+        DetailPrint "Claude Desktop not found at $0"
         StrCpy $ClaudeIntegrationFailed "1"
         ${If} $SilentMode == "1"
-            LogText "Skipping Claude Desktop integration (not installed)"
+            DetailPrint "Skipping Claude Desktop integration (not installed)"
         ${Else}
             DetailPrint "Warning: Claude Desktop not found - skipping integration"
             MessageBox MB_OK|MB_ICONINFORMATION "Claude Desktop is not installed on this system.$\r$\n$\r$\nMCPB has been installed successfully, but automatic integration with Claude Desktop was skipped.$\r$\n$\r$\nTo manually configure Claude Desktop, add this to claude_desktop_config.json:$\r$\n$\r$\n{$\r$\n  $\"mcpServers$\": {$\r$\n    $\"mcpb$\": {$\r$\n      $\"command$\": $\"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe$\",$\r$\n      $\"args$\": []$\r$\n    }$\r$\n  }$\r$\n}"
@@ -577,19 +577,19 @@ Function IntegrateWithClaudeDesktop
         Return
 
     claude_exists:
-        LogText "Claude Desktop found at $0"
+        DetailPrint "Claude Desktop found at $0"
 
         ; Check if config file exists
         IfFileExists "$0\claude_desktop_config.json" config_exists config_missing
 
         config_missing:
-            LogText "claude_desktop_config.json does not exist, creating new"
+            DetailPrint "claude_desktop_config.json does not exist, creating new"
 
             ; Create new config with mcpb entry
             nsJSON::Set /TREE `{"mcpServers":{"mcpb":{"command":"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe","args":[]}}}`
             Pop $1
             ${If} $1 != "ok"
-                LogText "Failed to create Claude Desktop config JSON: $1"
+                DetailPrint "Failed to create Claude Desktop config JSON: $1"
                 DetailPrint "Warning: Failed to create Claude Desktop config"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -598,13 +598,13 @@ Function IntegrateWithClaudeDesktop
             Goto write_config
 
         config_exists:
-            LogText "claude_desktop_config.json exists, merging"
+            DetailPrint "claude_desktop_config.json exists, merging"
 
             ; Read existing config
             ClearErrors
             FileOpen $1 "$0\claude_desktop_config.json" r
             ${If} ${Errors}
-                LogText "Failed to open existing claude_desktop_config.json at $0"
+                DetailPrint "Failed to open existing claude_desktop_config.json at $0"
                 DetailPrint "Warning: Could not read existing Claude Desktop config at $0"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -614,13 +614,13 @@ Function IntegrateWithClaudeDesktop
             FileRead $1 $2 65536
             FileClose $1
 
-            LogText "Existing config: $2"
+            DetailPrint "Existing config: $2"
 
             ; Parse existing JSON
             nsJSON::Set /TREE `$2`
             Pop $3
             ${If} $3 != "ok"
-                LogText "Failed to parse existing config at $0: $3"
+                DetailPrint "Failed to parse existing config at $0: $3"
                 DetailPrint "Warning: Existing Claude Desktop config at $0 is invalid JSON"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -633,7 +633,7 @@ Function IntegrateWithClaudeDesktop
 
             ${If} $3 != "ok"
                 ; mcpServers doesn't exist, create it
-                LogText "mcpServers object not found, creating"
+                DetailPrint "mcpServers object not found, creating"
                 nsJSON::Set "mcpServers" /VALUE `{}` /END
                 Pop $3
             ${EndIf}
@@ -645,15 +645,15 @@ Function IntegrateWithClaudeDesktop
 
             ${If} $3 == "ok"
                 ; mcpb entry already exists
-                LogText "Existing mcpb entry found in Claude Desktop config"
+                DetailPrint "Existing mcpb entry found in Claude Desktop config"
                 ${If} $SilentMode == "1"
-                    LogText "Silent mode: Overwriting existing mcpb entry"
+                    DetailPrint "Silent mode: Overwriting existing mcpb entry"
                 ${Else}
                     MessageBox MB_YESNO|MB_ICONQUESTION "An existing MCPB configuration was found in Claude Desktop.$\r$\n$\r$\nDo you want to overwrite it with the new configuration?" IDYES overwrite
-                    LogText "User chose not to overwrite existing mcpb entry"
+                    DetailPrint "User chose not to overwrite existing mcpb entry"
                     Return
                     overwrite:
-                    LogText "User confirmed overwrite of existing mcpb entry"
+                    DetailPrint "User confirmed overwrite of existing mcpb entry"
                 ${EndIf}
             ${EndIf}
 
@@ -661,7 +661,7 @@ Function IntegrateWithClaudeDesktop
             nsJSON::Set "mcpServers" "mcpb" /VALUE `{"command":"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe","args":[]}` /END
             Pop $3
             ${If} $3 != "ok"
-                LogText "Failed to merge mcpb entry: $3"
+                DetailPrint "Failed to merge mcpb entry: $3"
                 DetailPrint "Warning: Failed to merge MCPB into Claude Desktop config"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -672,13 +672,13 @@ Function IntegrateWithClaudeDesktop
             nsJSON::Serialize /PRETTY /UNICODE
             Pop $1  ; JSON string
 
-            LogText "Writing merged config: $1"
+            DetailPrint "Writing merged config: $1"
 
             ; Write config file
             ClearErrors
             FileOpen $2 "$0\claude_desktop_config.json" w
             ${If} ${Errors}
-                LogText "Failed to open claude_desktop_config.json for writing at $0"
+                DetailPrint "Failed to open claude_desktop_config.json for writing at $0"
                 DetailPrint "Warning: Could not write Claude Desktop config at $0"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -688,13 +688,13 @@ Function IntegrateWithClaudeDesktop
             FileClose $2
 
             ${If} ${Errors}
-                LogText "Failed to write claude_desktop_config.json at $0"
+                DetailPrint "Failed to write claude_desktop_config.json at $0"
                 DetailPrint "Warning: Error writing Claude Desktop config at $0"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
             ${EndIf}
 
-            LogText "Claude Desktop integration completed successfully"
+            DetailPrint "Claude Desktop integration completed successfully"
             DetailPrint "Claude Desktop configured with MCPB integration"
 FunctionEnd
 
@@ -702,16 +702,16 @@ FunctionEnd
 ; Uninstall Section (Story #578)
 
 Section "Uninstall"
-    LogText "Starting MCPB uninstallation"
+    DetailPrint "Starting MCPB uninstallation"
 
     ; AC1: Remove installation directory
-    LogText "Removing installation directory: $INSTDIR"
+    DetailPrint "Removing installation directory: $INSTDIR"
 
     ; Check if directory exists
     IfFileExists "$INSTDIR\*.*" dir_exists dir_missing
 
     dir_missing:
-        LogText "Installation directory not found (already removed or moved)"
+        DetailPrint "Installation directory not found (already removed or moved)"
         Goto remove_config
 
     dir_exists:
@@ -723,7 +723,7 @@ Section "Uninstall"
 
         dir_locked:
             ; Directory still exists - files may be locked
-            LogText "Warning: Some files in $INSTDIR could not be removed (may be in use)"
+            DetailPrint "Warning: Some files in $INSTDIR could not be removed (may be in use)"
             IfSilent silent_dir_error
             MessageBox MB_OK|MB_ICONEXCLAMATION "Some files in $INSTDIR could not be removed.$\r$\n$\r$\nPlease close any applications using MCPB and run uninstaller again."
             silent_dir_error:
@@ -732,16 +732,16 @@ Section "Uninstall"
             Goto remove_config
 
         dir_removed:
-            LogText "Installation directory removed successfully"
+            DetailPrint "Installation directory removed successfully"
 
     remove_config:
         ; AC2: Remove configuration directory
-        LogText "Removing configuration directory: $PROFILE\.mcpb"
+        DetailPrint "Removing configuration directory: $PROFILE\.mcpb"
 
         IfFileExists "$PROFILE\.mcpb\*.*" config_exists config_missing
 
         config_missing:
-            LogText "Configuration directory not found (already removed or never created)"
+            DetailPrint "Configuration directory not found (already removed or never created)"
             Goto remove_claude_config
 
         config_exists:
@@ -750,7 +750,7 @@ Section "Uninstall"
             IfFileExists "$PROFILE\.mcpb\*.*" config_locked config_removed
 
             config_locked:
-                LogText "Warning: Configuration directory could not be removed"
+                DetailPrint "Warning: Configuration directory could not be removed"
                 IfSilent silent_config_error
                 MessageBox MB_OK|MB_ICONEXCLAMATION "Configuration directory $PROFILE\.mcpb could not be removed."
                 silent_config_error:
@@ -758,30 +758,30 @@ Section "Uninstall"
                 Goto remove_claude_config
 
             config_removed:
-                LogText "Configuration directory removed successfully"
+                DetailPrint "Configuration directory removed successfully"
 
     remove_claude_config:
         ; AC3: Remove MCPB from Claude Desktop configuration
         Call un.RemoveMcpbFromClaudeConfig
 
     ; AC4: Remove Add/Remove Programs registry entries
-    LogText "Removing registry entries"
+    DetailPrint "Removing registry entries"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MCPB"
-    LogText "Registry entries removed"
+    DetailPrint "Registry entries removed"
 
-    LogText "MCPB uninstallation completed"
+    DetailPrint "MCPB uninstallation completed"
 
     ; Set exit code based on success
     IfErrors uninstall_error uninstall_success
 
     uninstall_error:
-        LogText "Uninstallation completed with errors"
+        DetailPrint "Uninstallation completed with errors"
         IfSilent 0 +2
         SetErrorLevel 1
         Goto end_uninstall
 
     uninstall_success:
-        LogText "Uninstallation completed successfully"
+        DetailPrint "Uninstallation completed successfully"
         IfSilent 0 +2
         SetErrorLevel 0
 
@@ -792,7 +792,7 @@ SectionEnd
 ; AC3 (Story #578): Remove MCPB from Claude Desktop Config
 
 Function un.RemoveMcpbFromClaudeConfig
-    LogText "un.RemoveMcpbFromClaudeConfig: Starting"
+    DetailPrint "un.RemoveMcpbFromClaudeConfig: Starting"
 
     ClearErrors
 
@@ -802,17 +802,17 @@ Function un.RemoveMcpbFromClaudeConfig
     IfFileExists "$0\claude_desktop_config.json" config_exists config_missing
 
     config_missing:
-        LogText "Claude Desktop config not found at $0\claude_desktop_config.json"
+        DetailPrint "Claude Desktop config not found at $0\claude_desktop_config.json"
         Return
 
     config_exists:
-        LogText "Claude Desktop config found at $0\claude_desktop_config.json"
+        DetailPrint "Claude Desktop config found at $0\claude_desktop_config.json"
 
         ; Read existing config
         ClearErrors
         FileOpen $1 "$0\claude_desktop_config.json" r
         ${If} ${Errors}
-            LogText "Failed to open claude_desktop_config.json for reading"
+            DetailPrint "Failed to open claude_desktop_config.json for reading"
             Return
         ${EndIf}
 
@@ -820,13 +820,13 @@ Function un.RemoveMcpbFromClaudeConfig
         FileRead $1 $2 65536
         FileClose $1
 
-        LogText "Existing Claude Desktop config: $2"
+        DetailPrint "Existing Claude Desktop config: $2"
 
         ; Parse existing JSON
         nsJSON::Set /TREE `$2`
         Pop $3
         ${If} $3 != "ok"
-            LogText "Failed to parse Claude Desktop config: $3"
+            DetailPrint "Failed to parse Claude Desktop config: $3"
             Return
         ${EndIf}
 
@@ -837,7 +837,7 @@ Function un.RemoveMcpbFromClaudeConfig
 
         ${If} $3 != "ok"
             ; mcpServers doesn't exist - nothing to remove
-            LogText "mcpServers object not found in config - nothing to remove"
+            DetailPrint "mcpServers object not found in config - nothing to remove"
             Return
         ${EndIf}
 
@@ -848,17 +848,17 @@ Function un.RemoveMcpbFromClaudeConfig
 
         ${If} $3 != "ok"
             ; mcpb entry doesn't exist - nothing to remove
-            LogText "mcpb entry not found in mcpServers - nothing to remove"
+            DetailPrint "mcpb entry not found in mcpServers - nothing to remove"
             Return
         ${EndIf}
 
         ; Remove mcpb entry from mcpServers
-        LogText "Removing mcpb entry from mcpServers"
+        DetailPrint "Removing mcpb entry from mcpServers"
         nsJSON::Delete "mcpServers" "mcpb" /END
         Pop $3
 
         ${If} $3 != "ok"
-            LogText "Failed to remove mcpb entry: $3"
+            DetailPrint "Failed to remove mcpb entry: $3"
             Return
         ${EndIf}
 
@@ -866,13 +866,13 @@ Function un.RemoveMcpbFromClaudeConfig
         nsJSON::Serialize /PRETTY /UNICODE
         Pop $1  ; JSON string
 
-        LogText "Writing updated Claude Desktop config: $1"
+        DetailPrint "Writing updated Claude Desktop config: $1"
 
         ; Write updated config file
         ClearErrors
         FileOpen $2 "$0\claude_desktop_config.json" w
         ${If} ${Errors}
-            LogText "Failed to open claude_desktop_config.json for writing"
+            DetailPrint "Failed to open claude_desktop_config.json for writing"
             Return
         ${EndIf}
 
@@ -880,9 +880,9 @@ Function un.RemoveMcpbFromClaudeConfig
         FileClose $2
 
         ${If} ${Errors}
-            LogText "Failed to write updated Claude Desktop config"
+            DetailPrint "Failed to write updated Claude Desktop config"
             Return
         ${EndIf}
 
-        LogText "MCPB entry removed from Claude Desktop config successfully"
+        DetailPrint "MCPB entry removed from Claude Desktop config successfully"
 FunctionEnd
