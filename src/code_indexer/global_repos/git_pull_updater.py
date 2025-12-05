@@ -36,32 +36,64 @@ class GitPullUpdater(UpdateStrategy):
 
     def has_changes(self) -> bool:
         """
-        Check if repository has changes using git diff-index.
+        Check if repository has remote changes using git fetch and log.
+
+        Fetches latest refs from remote and checks if there are commits
+        on the remote branch that are not in the local branch.
 
         Returns:
-            True if changes detected, False if up-to-date
+            True if remote changes detected, False if up-to-date
 
         Raises:
             RuntimeError: If git command fails
         """
         try:
-            # Use git diff-index to detect changes
-            # Returns non-zero if there are differences, zero if identical
-            result = subprocess.run(
-                ["git", "diff-index", "--quiet", "HEAD"],
+            # First, fetch latest refs from remote
+            fetch_result = subprocess.run(
+                ["git", "fetch", "origin"],
                 cwd=str(self.repo_path),
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
 
-            # Non-zero return code means changes detected
-            return result.returncode != 0
+            if fetch_result.returncode != 0:
+                # If fetch fails, log warning and return False (can't determine changes)
+                logger.warning(
+                    f"Git fetch failed for {self.repo_path}: {fetch_result.stderr}. "
+                    "Cannot detect remote changes, skipping this refresh cycle."
+                )
+                return False
+
+            # Check for commits on remote not in local using HEAD..@{upstream}
+            log_result = subprocess.run(
+                ["git", "log", "HEAD..@{upstream}", "--oneline"],
+                cwd=str(self.repo_path),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if log_result.returncode != 0:
+                raise RuntimeError(
+                    f"Git log command failed for {self.repo_path}: {log_result.stderr}"
+                )
+
+            # If there's any output, there are remote commits to pull
+            has_remote_changes = bool(log_result.stdout.strip())
+
+            if has_remote_changes:
+                logger.info(
+                    f"Remote changes detected for {self.repo_path}: "
+                    f"{len(log_result.stdout.strip().splitlines())} commit(s) to pull"
+                )
+
+            return has_remote_changes
 
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"Git diff-index timed out for {self.repo_path}")
+            raise RuntimeError(f"Git command timed out for {self.repo_path}")
         except Exception as e:
-            raise RuntimeError(f"Failed to check for changes: {e}")
+            raise RuntimeError(f"Failed to check for remote changes: {e}")
 
     def update(self) -> None:
         """
