@@ -337,12 +337,33 @@ Function AuthenticateWithAPI
     DetailPrint "Username: $Username"
 
     ; Construct JSON request body using nsJSON
-    nsJSON::Set /TREE `{"username":"$Username","password":"$Password"}`
+    ; Note: Must build incrementally - backticks don't expand NSIS variables
+    nsJSON::Set /TREE "{}"
     Pop $0
     ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to construct JSON request"
+        StrCpy $ErrorMessage "Failed to initialize JSON object"
         StrCpy $AuthSuccess "0"
-        DetailPrint "nsJSON::Set failed: $0"
+        DetailPrint "nsJSON::Set /TREE failed: $0"
+        Return
+    ${EndIf}
+
+    ; Set username field
+    nsJSON::Set "username" /VALUE "$\"$Username$\"" /END
+    Pop $0
+    ${If} $0 != "ok"
+        StrCpy $ErrorMessage "Failed to set username in JSON"
+        StrCpy $AuthSuccess "0"
+        DetailPrint "nsJSON::Set username failed: $0"
+        Return
+    ${EndIf}
+
+    ; Set password field
+    nsJSON::Set "password" /VALUE "$\"$Password$\"" /END
+    Pop $0
+    ${If} $0 != "ok"
+        StrCpy $ErrorMessage "Failed to set password in JSON"
+        StrCpy $AuthSuccess "0"
+        DetailPrint "nsJSON::Set password failed: $0"
         Return
     ${EndIf}
 
