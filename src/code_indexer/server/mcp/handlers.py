@@ -80,10 +80,16 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
     """Handle omni-search across multiple repositories.
 
     Called when repository_alias is an array of repository names.
+    Aggregates results from all specified repos, sorted by score.
     """
-    # Placeholder - full implementation will use OmniSearchService
-    return _mcp_response(
-        {
+    import json as json_module
+    
+    repo_aliases = params.get("repository_alias", [])
+    limit = params.get("limit", 10)
+    aggregation_mode = params.get("aggregation_mode", "global")
+    
+    if not repo_aliases:
+        return _mcp_response({
             "success": True,
             "results": {
                 "cursor": "",
@@ -92,8 +98,54 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
                 "results": [],
                 "errors": {},
             },
-        }
-    )
+        })
+    
+    all_results = []
+    errors = {}
+    repos_searched = 0
+    
+    for repo_alias in repo_aliases:
+        try:
+            # Build single-repo params and call existing search_code
+            single_params = dict(params)
+            single_params["repository_alias"] = repo_alias
+            
+            single_result = await search_code(single_params, user)
+            
+            # Parse the MCP response to extract results
+            content = single_result.get("content", [])
+            if content and content[0].get("type") == "text":
+                result_data = json_module.loads(content[0]["text"])
+                if result_data.get("success"):
+                    repos_searched += 1
+                    results_list = result_data.get("results", {}).get("results", [])
+                    # Tag each result with source repo
+                    for r in results_list:
+                        r["source_repo"] = repo_alias
+                    all_results.extend(results_list)
+                else:
+                    errors[repo_alias] = result_data.get("error", "Unknown error")
+        except Exception as e:
+            errors[repo_alias] = str(e)
+            logger.warning(f"Omni-search failed for {repo_alias}: {e}")
+    
+    # Sort by similarity_score descending (global aggregation)
+    if aggregation_mode == "global":
+        all_results.sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
+    
+    # Apply limit
+    final_results = all_results[:limit]
+    
+    return _mcp_response({
+        "success": True,
+        "results": {
+            "cursor": "",
+            "total_results": len(final_results),
+            "total_repos_searched": repos_searched,
+            "results": final_results,
+            "errors": errors,
+        },
+    })
 
 
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
