@@ -222,8 +222,8 @@ class TestAC6_SilentInstallation:
 
     def test_writes_to_log_file(self, nsis_script_content):
         """Script writes to NSIS log file for troubleshooting."""
-        # Should use LogSet or LogText
-        assert re.search(r'(LogSet|LogText|log)', nsis_script_content, re.IGNORECASE)
+        # Should use LogSet or LogText or DetailPrint
+        assert re.search(r'(LogSet|LogText|DetailPrint|log)', nsis_script_content, re.IGNORECASE)
 
 
 class TestAC7_ErrorHandling:
@@ -428,8 +428,8 @@ class TestUninstallerAC5_ConfirmationPrompt:
 
     def test_logs_uninstall_actions(self, nsis_script_content):
         """Script logs uninstallation actions."""
-        # Should have LogText calls in uninstall section
-        assert re.search(r'Section\s+"Uninstall".*LogText', nsis_script_content, re.IGNORECASE | re.DOTALL)
+        # Should have DetailPrint calls in uninstall section
+        assert re.search(r'Section\s+"Uninstall".*DetailPrint', nsis_script_content, re.IGNORECASE | re.DOTALL)
 
 
 class TestUninstallerAC6_SilentUninstallation:
@@ -460,10 +460,10 @@ class TestUninstallerAC6_SilentUninstallation:
 
     def test_writes_to_log_during_uninstall(self, nsis_script_content):
         """Script writes to log file during uninstallation."""
-        # Should have LogText calls throughout uninstall section
+        # Should have DetailPrint calls throughout uninstall section
         uninstall_section = re.search(r'Section\s+"Uninstall".*?(?=Section|\Z)', nsis_script_content, re.IGNORECASE | re.DOTALL)
         if uninstall_section:
-            assert re.search(r'LogText', uninstall_section.group(0))
+            assert re.search(r'DetailPrint', uninstall_section.group(0))
 
 
 class TestUninstallerErrorHandling:
@@ -482,7 +482,7 @@ class TestUninstallerErrorHandling:
     def test_logs_uninstall_errors(self, nsis_script_content):
         """Script logs uninstallation errors."""
         # Should log warnings and errors
-        assert re.search(r'LogText.*[Ww]arning', nsis_script_content, re.IGNORECASE)
+        assert re.search(r'DetailPrint.*[Ww]arning', nsis_script_content, re.IGNORECASE)
 
     def test_completes_uninstall_despite_errors(self, nsis_script_content):
         """Script continues uninstallation despite non-critical errors."""
