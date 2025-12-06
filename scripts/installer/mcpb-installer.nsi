@@ -338,12 +338,12 @@ Function AuthenticateWithAPI
 
     ; Construct JSON request body using nsJSON
     ; Note: Must build incrementally - backticks don't expand NSIS variables
-    nsJSON::Set /TREE `{}`
+    nsJSON::Set /value "{}"
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to initialize JSON object"
         StrCpy $AuthSuccess "0"
-        DetailPrint "nsJSON::Set /TREE failed: $0"
+        DetailPrint "nsJSON::Set /value failed: $0"
         Return
     ${EndIf}
 
@@ -449,7 +449,7 @@ Function AuthenticateWithAPI
     DetailPrint "Response body: $1"
 
     ; Parse JSON response to extract tokens
-    nsJSON::Set /TREE `$1`
+    nsJSON::Set /value "$1"
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to parse authentication response from server $ServerUrl: $0"
@@ -506,7 +506,7 @@ Function CreateMCPBConfig
     DetailPrint "Created directory: $PROFILE\.mcpb"
 
     ; Construct config.json using nsJSON
-    nsJSON::Set /TREE `{}`
+    nsJSON::Set /value "{}"
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to initialize config JSON: $0"
@@ -607,7 +607,7 @@ Function IntegrateWithClaudeDesktop
             DetailPrint "claude_desktop_config.json does not exist, creating new"
 
             ; Create new config with mcpb entry
-            nsJSON::Set /TREE `{"mcpServers":{"mcpb":{"command":"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe","args":[]}}}`
+            nsJSON::Set /value "{$\"mcpServers$\":{$\"mcpb$\":{$\"command$\":$\"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe$\",$\"args$\":[]}}}"
             Pop $1
             ${If} $1 != "ok"
                 DetailPrint "Failed to create Claude Desktop config JSON: $1"
@@ -638,7 +638,7 @@ Function IntegrateWithClaudeDesktop
             DetailPrint "Existing config: $2"
 
             ; Parse existing JSON
-            nsJSON::Set /TREE `$2`
+            nsJSON::Set /value "$2"
             Pop $3
             ${If} $3 != "ok"
                 DetailPrint "Failed to parse existing config at $0: $3"
@@ -844,7 +844,7 @@ Function un.RemoveMcpbFromClaudeConfig
         DetailPrint "Existing Claude Desktop config: $2"
 
         ; Parse existing JSON
-        nsJSON::Set /TREE `$2`
+        nsJSON::Set /value "$2"
         Pop $3
         ${If} $3 != "ok"
             DetailPrint "Failed to parse Claude Desktop config: $3"
