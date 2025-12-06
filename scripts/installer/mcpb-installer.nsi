@@ -365,6 +365,8 @@ Function AuthenticateWithAPI
             StrCpy $ErrorMessage "Invalid username or password"
         ${ElseIf} $HttpStatusCode == "403"
             StrCpy $ErrorMessage "Access forbidden"
+        ${ElseIf} $HttpStatusCode == "500"
+            StrCpy $ErrorMessage "Server error (500) - please try again later"
         ${Else}
             StrCpy $ErrorMessage "HTTP error: $HttpStatusCode"
         ${EndIf}
