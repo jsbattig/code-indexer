@@ -94,6 +94,22 @@ class ServerResourceConfig:
 
 
 @dataclass
+class OmniSearchConfig:
+    """Omni-Search configuration for cross-repository search."""
+
+    max_workers: int = 10
+    per_repo_timeout_seconds: int = 300
+    cache_max_entries: int = 100
+    cache_ttl_seconds: int = 300
+    default_limit: int = 10
+    max_limit: int = 1000
+    default_aggregation_mode: str = "global"
+    max_results_per_repo: int = 100
+    max_total_results_before_aggregation: int = 10000
+    pattern_metacharacters: str = "*?[]^$+|"
+
+
+@dataclass
 class ServerConfig:
     """
     Server configuration data structure.
@@ -112,6 +128,7 @@ class ServerConfig:
     resource_config: Optional[ServerResourceConfig] = None
     cache_config: Optional[CacheConfig] = None
     reindexing_config: Optional[ReindexingConfig] = None
+    omni_search_config: Optional[OmniSearchConfig] = None
 
     # Claude CLI integration settings
     anthropic_api_key: Optional[str] = None
@@ -128,6 +145,8 @@ class ServerConfig:
             self.cache_config = CacheConfig()
         if self.reindexing_config is None:
             self.reindexing_config = ReindexingConfig()
+        if self.omni_search_config is None:
+            self.omni_search_config = OmniSearchConfig()
 
 
 class ServerConfigManager:
@@ -218,9 +237,7 @@ class ServerConfigManager:
             if "cache_config" in config_dict and isinstance(
                 config_dict["cache_config"], dict
             ):
-                config_dict["cache_config"] = CacheConfig(
-                    **config_dict["cache_config"]
-                )
+                config_dict["cache_config"] = CacheConfig(**config_dict["cache_config"])
 
             # Convert nested reindexing_config dict to ReindexingConfig
             if "reindexing_config" in config_dict and isinstance(
@@ -228,6 +245,14 @@ class ServerConfigManager:
             ):
                 config_dict["reindexing_config"] = ReindexingConfig(
                     **config_dict["reindexing_config"]
+                )
+
+            # Convert nested omni_search_config dict to OmniSearchConfig
+            if "omni_search_config" in config_dict and isinstance(
+                config_dict["omni_search_config"], dict
+            ):
+                config_dict["omni_search_config"] = OmniSearchConfig(
+                    **config_dict["omni_search_config"]
                 )
 
             return ServerConfig(**config_dict)
