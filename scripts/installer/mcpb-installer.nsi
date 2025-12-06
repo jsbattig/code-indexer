@@ -338,7 +338,7 @@ Function AuthenticateWithAPI
 
     ; Construct JSON request body using nsJSON
     ; Note: Must build incrementally - backticks don't expand NSIS variables
-    nsJSON::Set /TREE "{}"
+    nsJSON::Set /TREE `{}`
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to initialize JSON object"
