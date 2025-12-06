@@ -150,38 +150,38 @@ Function AuthPage
     ${EndIf}
 
     ; Title
-    ${NSD_CreateLabel} 0 0 100% 12u "MCPB Authentication"
+    ${NSD_CreateLabel} 0 0 100% 10u "MCPB Authentication"
     Pop $0
-    CreateFont $1 "Arial" 12 700
+    CreateFont $1 "Arial" 10 700
     SendMessage $0 ${WM_SETFONT} $1 0
 
-    ; Instructions
-    ${NSD_CreateLabel} 0 20u 100% 24u "Enter your MCPB server credentials to configure the MCP bridge.$\r$\nThis will authenticate with the server and configure Claude Desktop integration."
+    ; Instructions (single line to save space)
+    ${NSD_CreateLabel} 0 12u 100% 10u "Enter your CIDX server credentials:"
     Pop $0
 
     ; Server URL
-    ${NSD_CreateLabel} 0 55u 100% 12u "Server URL:"
+    ${NSD_CreateLabel} 0 28u 100% 10u "Server URL:"
     Pop $ServerUrlLabel
 
-    ${NSD_CreateText} 0 70u 100% 12u "$ServerUrl"
+    ${NSD_CreateText} 0 38u 100% 12u "$ServerUrl"
     Pop $ServerUrlText
 
     ; Username
-    ${NSD_CreateLabel} 0 95u 100% 12u "Username:"
+    ${NSD_CreateLabel} 0 56u 100% 10u "Username:"
     Pop $UsernameLabel
 
-    ${NSD_CreateText} 0 110u 100% 12u ""
+    ${NSD_CreateText} 0 66u 100% 12u ""
     Pop $UsernameText
 
     ; Password
-    ${NSD_CreateLabel} 0 135u 100% 12u "Password:"
+    ${NSD_CreateLabel} 0 84u 100% 10u "Password:"
     Pop $PasswordLabel
 
-    ${NSD_CreatePassword} 0 150u 100% 12u ""
+    ${NSD_CreatePassword} 0 94u 100% 12u ""
     Pop $PasswordText
 
-    ; Help text
-    ${NSD_CreateLabel} 0 175u 100% 24u "Note: Your credentials will be used to obtain authentication tokens.$\r$\nPasswords are not stored - only access/refresh tokens are saved."
+    ; Help text (fits at bottom)
+    ${NSD_CreateLabel} 0 112u 100% 16u "Credentials are used to obtain tokens. Passwords are not stored."
     Pop $0
 
     nsDialogs::Show
