@@ -201,9 +201,14 @@ class TestAC5_ClaudeDesktopIntegration:
 class TestAC6_SilentInstallation:
     """Test AC6: Silent installation mode."""
 
+    def test_defaults_to_gui_mode(self, nsis_script_content):
+        """Script defaults to GUI mode (not silent)."""
+        assert re.search(r'SilentInstall\s+normal', nsis_script_content, re.IGNORECASE)
+
     def test_supports_silent_flag(self, nsis_script_content):
-        """Script supports /S flag for silent installation."""
-        assert re.search(r'SilentInstall\s+silent', nsis_script_content, re.IGNORECASE)
+        """Script supports /S flag for silent installation via command-line."""
+        # The installer handles /S flag in .onInit to enable silent mode
+        assert re.search(r'GetOptions.*"/S"', nsis_script_content)
 
     def test_supports_command_line_params(self, nsis_script_content):
         """Script supports /SERVER_URL=, /USERNAME=, /PASSWORD= parameters."""
