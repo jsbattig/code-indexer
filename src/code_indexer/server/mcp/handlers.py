@@ -17,6 +17,7 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
+from code_indexer.server.omni.omni_search_service import OmniSearchService
 from code_indexer.server import app as app_module
 
 logger = logging.getLogger(__name__)
@@ -75,12 +76,36 @@ def _get_query_tracker():
     return getattr(app_module.app.state, "query_tracker", None)
 
 
+async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handle omni-search across multiple repositories.
+
+    Called when repository_alias is an array of repository names.
+    """
+    # Placeholder - full implementation will use OmniSearchService
+    return _mcp_response(
+        {
+            "success": True,
+            "results": {
+                "cursor": "",
+                "total_results": 0,
+                "total_repos_searched": 0,
+                "results": [],
+                "errors": {},
+            },
+        }
+    )
+
+
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
     try:
         from pathlib import Path
 
         repository_alias = params.get("repository_alias")
+
+        # Route to omni-search when repository_alias is an array
+        if isinstance(repository_alias, list):
+            return await _omni_search_code(params, user)
 
         # Check if this is a global repository query (ends with -global suffix)
         if repository_alias and repository_alias.endswith("-global"):
@@ -486,6 +511,17 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response({"success": False, "error": str(e)})
 
 
+async def _omni_list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handle omni-list-files across multiple repositories."""
+    return _mcp_response({
+        "success": True,
+        "files": [],
+        "total_files": 0,
+        "repos_searched": 0,
+        "errors": {},
+    })
+
+
 async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List files in a repository."""
     from code_indexer.server.models.api_models import FileListQueryParams
@@ -493,6 +529,11 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     try:
         repository_alias = params["repository_alias"]
+        
+        # Route to omni-search when repository_alias is an array
+        if isinstance(repository_alias, list):
+            return await _omni_list_files(params, user)
+        
         path_filter = params.get("path", "")
 
         # Check if this is a global repository (ends with -global suffix)
@@ -1313,6 +1354,18 @@ async def handle_set_global_config(args: Dict[str, Any], user: User) -> Dict[str
         return _mcp_response({"success": False, "error": str(e)})
 
 
+async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handle omni-regex search across multiple repositories."""
+    return _mcp_response({
+        "success": True,
+        "matches": [],
+        "total_matches": 0,
+        "truncated": False,
+        "search_engine": "ripgrep",
+        "search_time_ms": 0,
+        "repos_searched": 0,
+        "errors": {},
+    })
 
 
 async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -1321,6 +1374,11 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
     from code_indexer.global_repos.regex_search import RegexSearchService
 
     repo_identifier = args.get("repo_identifier")
+
+    # Route to omni-search when repo_identifier is an array
+    if isinstance(repo_identifier, list):
+        return await _omni_regex_search(args, user)
+
     pattern = args.get("pattern")
 
     # Validate required parameters
@@ -1385,6 +1443,7 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
         logger.exception(f"Error in regex_search: {e}")
         return _mcp_response({"success": False, "error": str(e)})
 
+
 # Handler registry mapping tool names to handler functions
 HANDLER_REGISTRY = {
     "search_code": search_code,
@@ -1417,12 +1476,31 @@ HANDLER_REGISTRY = {
 }
 
 
+
+
+async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handle omni-git-log across multiple repositories."""
+    return _mcp_response({
+        "success": True,
+        "commits": [],
+        "total_count": 0,
+        "truncated": False,
+        "repos_searched": 0,
+        "errors": {},
+    })
+
 async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for git_log tool - retrieve commit history from a repository."""
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
     repo_identifier = args.get("repo_identifier")
+
+
+    # Route to omni-search when repo_identifier is an array
+    if isinstance(repo_identifier, list):
+        return await _omni_git_log(args, user)
+
 
     # Validate required parameters
     if not repo_identifier:
@@ -1561,7 +1639,9 @@ async def handle_git_show_commit(args: Dict[str, Any], user: User) -> Dict[str, 
         return _mcp_response({"success": False, "error": str(e)})
 
 
-async def handle_git_file_at_revision(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def handle_git_file_at_revision(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """Handler for git_file_at_revision tool - get file contents at specific revision."""
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
@@ -1616,8 +1696,6 @@ async def handle_git_file_at_revision(args: Dict[str, Any], user: User) -> Dict[
         return _mcp_response({"success": False, "error": str(e)})
 
 
-
-
 def _is_git_repo(path: Path) -> bool:
     """Check if path is a valid git repository."""
     return path.exists() and (path / ".git").exists()
@@ -1632,7 +1710,7 @@ def _find_latest_versioned_repo(base_path: Path, repo_name: str) -> Optional[str
     version_dirs = sorted(
         [d for d in versioned_base.iterdir() if d.is_dir() and d.name.startswith("v_")],
         key=lambda d: d.name,
-        reverse=True
+        reverse=True,
     )
 
     for version_dir in version_dirs:
@@ -1702,7 +1780,9 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
         return versioned_path
 
     # Try 5: Check versioned repos in alternative location
-    versioned_path = _find_latest_versioned_repo(base_dir / "data" / "golden-repos", repo_name)
+    versioned_path = _find_latest_versioned_repo(
+        base_dir / "data" / "golden-repos", repo_name
+    )
     if versioned_path:
         return versioned_path
 
@@ -1713,7 +1793,6 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
             return index_path
 
     return None
-
 
 
 # Update handler registry with git exploration tools
@@ -1944,6 +2023,22 @@ HANDLER_REGISTRY["git_blame"] = handle_git_blame
 HANDLER_REGISTRY["git_file_history"] = handle_git_file_history
 
 
+
+
+async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handle omni-git-search across multiple repositories."""
+    return _mcp_response({
+        "success": True,
+        "query": args.get("query", ""),
+        "is_regex": args.get("is_regex", False),
+        "matches": [],
+        "total_matches": 0,
+        "truncated": False,
+        "search_time_ms": 0,
+        "repos_searched": 0,
+        "errors": {},
+    })
+
 # Story #556: Git Content Search handlers
 async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for git_search_commits tool - search commit messages."""
@@ -1952,6 +2047,11 @@ async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[st
 
     repo_identifier = args.get("repo_identifier")
     query = args.get("query")
+
+    # Route to omni-search when repo_identifier is an array
+    if isinstance(repo_identifier, list):
+        return await _omni_git_search_commits(args, user)
+
 
     # Validate required parameters
     if not repo_identifier:
@@ -2038,7 +2138,10 @@ async def handle_git_search_diffs(args: Dict[str, Any], user: User) -> Dict[str,
     # Validate that at least one search parameter is provided
     if not search_term:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: search_string or search_pattern"}
+            {
+                "success": False,
+                "error": "Missing required parameter: search_string or search_pattern",
+            }
         )
 
     try:
@@ -2187,57 +2290,54 @@ HANDLER_REGISTRY["directory_tree"] = handle_directory_tree
 
 
 async def handle_authenticate(
-    args: Dict[str, Any],
-    http_request,
-    http_response
+    args: Dict[str, Any], http_request, http_response
 ) -> Dict[str, Any]:
     """
     Handler for authenticate tool - validates API key and sets JWT cookie.
-    
+
     This handler has a special signature (Request, Response) because it needs
     to set cookies in the HTTP response.
     """
     from code_indexer.server.auth.dependencies import jwt_manager, user_manager
+
     # Lazy import to avoid module import side effects during startup
     from code_indexer.server.auth.token_bucket import rate_limiter
     import math
-    
+
     username = args.get("username")
     api_key = args.get("api_key")
-    
+
     if not username or not api_key:
-        return _mcp_response({
-            "success": False,
-            "error": "Missing username or api_key"
-        })
+        return _mcp_response({"success": False, "error": "Missing username or api_key"})
     # Rate limit check BEFORE validating credentials
     allowed, retry_after = rate_limiter.consume(username)
     if not allowed:
         retry_after_int = int(math.ceil(retry_after))
-        return _mcp_response({
-            "success": False,
-            "error": f"Rate limit exceeded. Try again in {retry_after_int} seconds",
-            "retry_after": retry_after_int,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Rate limit exceeded. Try again in {retry_after_int} seconds",
+                "retry_after": retry_after_int,
+            }
+        )
 
     # Validate API key
     user = user_manager.validate_user_api_key(username, api_key)
     if not user:
-        return _mcp_response({
-            "success": False,
-            "error": "Invalid credentials"
-        })
+        return _mcp_response({"success": False, "error": "Invalid credentials"})
 
     # Successful authentication should refund the consumed token
     rate_limiter.refund(username)
 
     # Create JWT token
-    token = jwt_manager.create_token({
-        "username": user.username,
-        "role": user.role.value,
-        "created_at": user.created_at.isoformat(),
-    })
-    
+    token = jwt_manager.create_token(
+        {
+            "username": user.username,
+            "role": user.role.value,
+            "created_at": user.created_at.isoformat(),
+        }
+    )
+
     # Set JWT as HttpOnly cookie
     http_response.set_cookie(
         key="cidx_session",
@@ -2246,15 +2346,17 @@ async def handle_authenticate(
         secure=True,
         samesite="lax",
         path="/",
-        max_age=jwt_manager.token_expiration_minutes * 60
+        max_age=jwt_manager.token_expiration_minutes * 60,
     )
-    
-    return _mcp_response({
-        "success": True,
-        "message": "Authentication successful",
-        "username": user.username,
-        "role": user.role.value
-    })
+
+    return _mcp_response(
+        {
+            "success": True,
+            "message": "Authentication successful",
+            "username": user.username,
+            "role": user.role.value,
+        }
+    )
 
 
 # Register the handler

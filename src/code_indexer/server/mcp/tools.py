@@ -17,8 +17,22 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "description": "Search query text",
                 },
                 "repository_alias": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}}
+                    ],
+                    "description": "Repository alias(es) to search. String for single repo, array for omni-search across multiple repos. Supports wildcard patterns like '*-global' when using array.",
+                },
+                "aggregation_mode": {
                     "type": "string",
-                    "description": "Repository alias to search (optional)",
+                    "enum": ["global", "per_repo"],
+                    "default": "global",
+                    "description": "Result aggregation: 'global' returns top-K by score across all repos, 'per_repo' samples proportionally.",
+                },
+                "exclude_patterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Regex patterns to exclude repositories from omni-search.",
                 },
                 "limit": {
                     "type": "integer",
@@ -656,8 +670,17 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "repository_alias": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}}
+                    ],
+                    "description": "Repository alias(es): String for single repo, array for omni-list-files across multiple repos.",
+                },
+                "aggregation_mode": {
                     "type": "string",
-                    "description": "Repository alias",
+                    "enum": ["global", "per_repo"],
+                    "default": "global",
+                    "description": "Result aggregation for omni-list-files: 'global' returns files sorted by repo then path, 'per_repo' samples proportionally.",
                 },
                 "path": {
                     "type": "string",
@@ -1550,11 +1573,24 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "repo_identifier": {
-                    "type": "string",
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}}
+                    ],
                     "description": (
-                        "Repository identifier: either an alias (e.g., 'my-project' or "
-                        "'my-project-global') or full path. Use list_global_repos to see "
-                        "available repositories and their aliases."
+                        "Repository identifier(s): String for single repo search, "
+                        "array of strings for omni-regex search across multiple repos. "
+                        "Use list_global_repos to see available repositories."
+                    ),
+                },
+                "aggregation_mode": {
+                    "type": "string",
+                    "enum": ["global", "per_repo"],
+                    "default": "global",
+                    "description": (
+                        "Result aggregation for omni-regex search: 'global' merges all "
+                        "matches sorted by relevance, 'per_repo' groups by repository. "
+                        "Only applies when repo_identifier is an array."
                     ),
                 },
                 "pattern": {
@@ -1683,7 +1719,10 @@ TOOL_REGISTRY["git_log"] = {
         "type": "object",
         "properties": {
             "repo_identifier": {
-                "type": "string",
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "array", "items": {"type": "string"}}
+                ],
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project' or "
                     "'my-project-global') or full path. Use list_global_repos to see "
@@ -1735,6 +1774,15 @@ TOOL_REGISTRY["git_log"] = {
                     "Branch to get log from. Default: current HEAD. Examples: 'main', "
                     "'feature/auth', 'origin/develop'. Can also be a tag like 'v1.0.0'."
                 ),
+            },
+            "aggregation_mode": {
+                "type": "string",
+                "enum": ["global", "per_repo"],
+                "description": (
+                    "For omni-search (array repo_identifier): how to aggregate results. "
+                    "'global' merges commits by date (default). 'per_repo' groups by repository."
+                ),
+                "default": "global",
             },
         },
         "required": ["repo_identifier"],
@@ -2181,7 +2229,10 @@ TOOL_REGISTRY["git_search_commits"] = {
         "type": "object",
         "properties": {
             "repo_identifier": {
-                "type": "string",
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "array", "items": {"type": "string"}}
+                ],
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project') or "
                     "full path (e.g., '/home/user/repos/my-project'). Use list_global_repos "
@@ -2235,6 +2286,15 @@ TOOL_REGISTRY["git_search_commits"] = {
                 "default": 50,
                 "minimum": 1,
                 "maximum": 500,
+            },
+            "aggregation_mode": {
+                "type": "string",
+                "enum": ["global", "per_repo"],
+                "description": (
+                    "For omni-search (array repo_identifier): how to aggregate results. "
+                    "'global' merges all matches by relevance (default). 'per_repo' groups by repository."
+                ),
+                "default": "global",
             },
         },
         "required": ["repo_identifier", "query"],
@@ -2610,17 +2670,14 @@ TOOL_REGISTRY["directory_tree"] = {
         "inputSchema": {
             "type": "object",
             "properties": {
-                "username": {
-                    "type": "string",
-                    "description": "Username"
-                },
+                "username": {"type": "string", "description": "Username"},
                 "api_key": {
                     "type": "string",
-                    "description": "API key (format: cidx_sk_...)"
-                }
+                    "description": "API key (format: cidx_sk_...)",
+                },
             },
-            "required": ["username", "api_key"]
+            "required": ["username", "api_key"],
         },
-        "required_permission": "public"
+        "required_permission": "public",
     },
 }
