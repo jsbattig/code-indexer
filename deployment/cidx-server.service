@@ -5,25 +5,40 @@ After=network.target
 
 [Service]
 Type=simple
-User=sebabattig
-WorkingDirectory=/home/sebabattig/Dev/code-indexer
+User=__USER__
+WorkingDirectory=__WORKING_DIR__
+
+# PATH configuration - includes user's .local/bin for installed packages
+Environment="PATH=__USER_HOME__/.local/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin"
 
 # VoyageAI API key for embeddings (REQUIRED)
 # Replace with actual API key during deployment
-Environment="VOYAGE_API_KEY=your_voyage_api_key_here"
+Environment="VOYAGE_API_KEY=__VOYAGE_API_KEY__"
+
+# CIDX Server Mode (CRITICAL for performance)
+# Mode 1 = Server mode with multi-user support
+Environment="CIDX_SERVER_MODE=1"
+
+# OAuth Issuer URL for authentication (REQUIRED for production)
+# Public URL where the server is accessible
+Environment="CIDX_ISSUER_URL=__ISSUER_URL__"
+
+# Anthropic API key for AI features (OPTIONAL)
+# Leave empty if not using AI features
+Environment="ANTHROPIC_API_KEY=__ANTHROPIC_API_KEY__"
 
 # Optional: Server data directory (default: ~/.cidx-server)
-# Environment="CIDX_SERVER_DATA_DIR=/home/sebabattig/.cidx-server"
+# Environment="CIDX_SERVER_DATA_DIR=__USER_HOME__/.cidx-server"
 
 # Optional: HNSW index cache configuration
 # Environment="CIDX_INDEX_CACHE_TTL_MINUTES=10"
 # Environment="CIDX_INDEX_CACHE_CLEANUP_INTERVAL=60"
 
 # Optional: Golden repos directory (default: ~/.cidx-server/golden-repos)
-# Environment="GOLDEN_REPOS_DIR=/home/sebabattig/.cidx-server/golden-repos"
+# Environment="GOLDEN_REPOS_DIR=__USER_HOME__/.cidx-server/golden-repos"
 
-# Start server module
-ExecStart=/usr/bin/python3 -m code_indexer.server.app
+# Start server with uvicorn
+ExecStart=/usr/bin/python3 -m uvicorn code_indexer.server.app:app --host __HOST__ --port __PORT__
 
 # Restart policy
 Restart=always
