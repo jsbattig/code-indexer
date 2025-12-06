@@ -337,11 +337,11 @@ Function AuthenticateWithAPI
     DetailPrint "Username: $Username"
 
     ; Build JSON string manually (simple string concatenation)
-    StrCpy $0 '{"username":"$Username","password":"$Password"}'
+    StrCpy $0 `{"username":"$Username","password":"$Password"}`
     DetailPrint "Request JSON: $0"
 
     ; Use NScurl with /DATA to POST JSON directly (no nsJSON needed for request)
-    NScurl::http POST "$ServerUrl/auth/login" Memory /HEADER "Content-Type: application/json" /DATA '$0' /END
+    NScurl::http POST "$ServerUrl/auth/login" Memory /HEADER "Content-Type: application/json" /DATA "$0" /END
     Pop $1  ; Transfer status
 
     DetailPrint "NScurl result: $1"
