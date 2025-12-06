@@ -348,7 +348,7 @@ Function AuthenticateWithAPI
     ${EndIf}
 
     ; Set username field
-    nsJSON::Set "username" /VALUE "$\"$Username$\"" /END
+    nsJSON::Set "username" /VALUE `"$Username"` /END
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to set username in JSON"
@@ -358,7 +358,7 @@ Function AuthenticateWithAPI
     ${EndIf}
 
     ; Set password field
-    nsJSON::Set "password" /VALUE "$\"$Password$\"" /END
+    nsJSON::Set "password" /VALUE `"$Password"` /END
     Pop $0
     ${If} $0 != "ok"
         StrCpy $ErrorMessage "Failed to set password in JSON"
