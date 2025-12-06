@@ -565,12 +565,51 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def _omni_list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-list-files across multiple repositories."""
+    import json as json_module
+    
+    repo_aliases = params.get("repository_alias", [])
+    
+    if not repo_aliases:
+        return _mcp_response({
+            "success": True,
+            "files": [],
+            "total_files": 0,
+            "repos_searched": 0,
+            "errors": {},
+        })
+    
+    all_files = []
+    errors = {}
+    repos_searched = 0
+    
+    for repo_alias in repo_aliases:
+        try:
+            single_params = dict(params)
+            single_params["repository_alias"] = repo_alias
+            
+            single_result = await list_files(single_params, user)
+            
+            content = single_result.get("content", [])
+            if content and content[0].get("type") == "text":
+                result_data = json_module.loads(content[0]["text"])
+                if result_data.get("success"):
+                    repos_searched += 1
+                    files_list = result_data.get("files", [])
+                    for f in files_list:
+                        f["source_repo"] = repo_alias
+                    all_files.extend(files_list)
+                else:
+                    errors[repo_alias] = result_data.get("error", "Unknown error")
+        except Exception as e:
+            errors[repo_alias] = str(e)
+            logger.warning(f"Omni-list-files failed for {repo_alias}: {e}")
+    
     return _mcp_response({
         "success": True,
-        "files": [],
-        "total_files": 0,
-        "repos_searched": 0,
-        "errors": {},
+        "files": all_files,
+        "total_files": len(all_files),
+        "repos_searched": repos_searched,
+        "errors": errors,
     })
 
 
@@ -1408,15 +1447,64 @@ async def handle_set_global_config(args: Dict[str, Any], user: User) -> Dict[str
 
 async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-regex search across multiple repositories."""
+    import json as json_module
+    import time
+    
+    repo_aliases = args.get("repo_identifier", [])
+    
+    if not repo_aliases:
+        return _mcp_response({
+            "success": True,
+            "matches": [],
+            "total_matches": 0,
+            "truncated": False,
+            "search_engine": "ripgrep",
+            "search_time_ms": 0,
+            "repos_searched": 0,
+            "errors": {},
+        })
+    
+    start_time = time.time()
+    all_matches = []
+    errors = {}
+    repos_searched = 0
+    truncated = False
+    
+    for repo_alias in repo_aliases:
+        try:
+            single_args = dict(args)
+            single_args["repo_identifier"] = repo_alias
+            
+            single_result = await handle_regex_search(single_args, user)
+            
+            content = single_result.get("content", [])
+            if content and content[0].get("type") == "text":
+                result_data = json_module.loads(content[0]["text"])
+                if result_data.get("success"):
+                    repos_searched += 1
+                    matches = result_data.get("matches", [])
+                    for m in matches:
+                        m["source_repo"] = repo_alias
+                    all_matches.extend(matches)
+                    if result_data.get("truncated"):
+                        truncated = True
+                else:
+                    errors[repo_alias] = result_data.get("error", "Unknown error")
+        except Exception as e:
+            errors[repo_alias] = str(e)
+            logger.warning(f"Omni-regex failed for {repo_alias}: {e}")
+    
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    
     return _mcp_response({
         "success": True,
-        "matches": [],
-        "total_matches": 0,
-        "truncated": False,
+        "matches": all_matches,
+        "total_matches": len(all_matches),
+        "truncated": truncated,
         "search_engine": "ripgrep",
-        "search_time_ms": 0,
-        "repos_searched": 0,
-        "errors": {},
+        "search_time_ms": elapsed_ms,
+        "repos_searched": repos_searched,
+        "errors": errors,
     })
 
 
@@ -1532,13 +1620,64 @@ HANDLER_REGISTRY = {
 
 async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-git-log across multiple repositories."""
+    import json as json_module
+    
+    repo_aliases = args.get("repo_identifier", [])
+    limit = args.get("limit", 20)
+    
+    if not repo_aliases:
+        return _mcp_response({
+            "success": True,
+            "commits": [],
+            "total_count": 0,
+            "truncated": False,
+            "repos_searched": 0,
+            "errors": {},
+        })
+    
+    all_commits = []
+    errors = {}
+    repos_searched = 0
+    truncated = False
+    
+    per_repo_limit = max(1, limit // len(repo_aliases)) if repo_aliases else limit
+    
+    for repo_alias in repo_aliases:
+        try:
+            single_args = dict(args)
+            single_args["repo_identifier"] = repo_alias
+            single_args["limit"] = per_repo_limit
+            
+            single_result = await handle_git_log(single_args, user)
+            
+            resp_content = single_result.get("content", [])
+            if resp_content and resp_content[0].get("type") == "text":
+                result_data = json_module.loads(resp_content[0]["text"])
+                if result_data.get("success"):
+                    repos_searched += 1
+                    commits = result_data.get("commits", [])
+                    for c in commits:
+                        c["source_repo"] = repo_alias
+                    all_commits.extend(commits)
+                    if result_data.get("truncated"):
+                        truncated = True
+                else:
+                    errors[repo_alias] = result_data.get("error", "Unknown error")
+        except Exception as e:
+            errors[repo_alias] = str(e)
+            logger.warning(f"Omni-git-log failed for {repo_alias}: {e}")
+    
+    # Sort by date descending and apply limit
+    all_commits.sort(key=lambda x: x.get("date", ""), reverse=True)
+    final_commits = all_commits[:limit]
+    
     return _mcp_response({
         "success": True,
-        "commits": [],
-        "total_count": 0,
-        "truncated": False,
-        "repos_searched": 0,
-        "errors": {},
+        "commits": final_commits,
+        "total_count": len(final_commits),
+        "truncated": truncated or len(all_commits) > limit,
+        "repos_searched": repos_searched,
+        "errors": errors,
     })
 
 async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -2079,16 +2218,68 @@ HANDLER_REGISTRY["git_file_history"] = handle_git_file_history
 
 async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-git-search across multiple repositories."""
+    import json as json_module
+    import time
+    
+    repo_aliases = args.get("repo_identifier", [])
+    query = args.get("query", "")
+    is_regex = args.get("is_regex", False)
+    
+    if not repo_aliases:
+        return _mcp_response({
+            "success": True,
+            "query": query,
+            "is_regex": is_regex,
+            "matches": [],
+            "total_matches": 0,
+            "truncated": False,
+            "search_time_ms": 0,
+            "repos_searched": 0,
+            "errors": {},
+        })
+    
+    start_time = time.time()
+    all_matches = []
+    errors = {}
+    repos_searched = 0
+    truncated = False
+    
+    for repo_alias in repo_aliases:
+        try:
+            single_args = dict(args)
+            single_args["repo_identifier"] = repo_alias
+            
+            single_result = await handle_git_search_commits(single_args, user)
+            
+            resp_content = single_result.get("content", [])
+            if resp_content and resp_content[0].get("type") == "text":
+                result_data = json_module.loads(resp_content[0]["text"])
+                if result_data.get("success"):
+                    repos_searched += 1
+                    matches = result_data.get("matches", [])
+                    for m in matches:
+                        m["source_repo"] = repo_alias
+                    all_matches.extend(matches)
+                    if result_data.get("truncated"):
+                        truncated = True
+                else:
+                    errors[repo_alias] = result_data.get("error", "Unknown error")
+        except Exception as e:
+            errors[repo_alias] = str(e)
+            logger.warning(f"Omni-git-search failed for {repo_alias}: {e}")
+    
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    
     return _mcp_response({
         "success": True,
-        "query": args.get("query", ""),
-        "is_regex": args.get("is_regex", False),
-        "matches": [],
-        "total_matches": 0,
-        "truncated": False,
-        "search_time_ms": 0,
-        "repos_searched": 0,
-        "errors": {},
+        "query": query,
+        "is_regex": is_regex,
+        "matches": all_matches,
+        "total_matches": len(all_matches),
+        "truncated": truncated,
+        "search_time_ms": elapsed_ms,
+        "repos_searched": repos_searched,
+        "errors": errors,
     })
 
 # Story #556: Git Content Search handlers
