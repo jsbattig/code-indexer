@@ -32,7 +32,7 @@ Name "MCPB Installer"
 OutFile "mcpb-installer.exe"
 InstallDir "C:\\mcpb"
 RequestExecutionLevel admin
-SilentInstall silent
+SilentInstall normal
 
 ;--------------------------------
 ; Build-Time Configuration
