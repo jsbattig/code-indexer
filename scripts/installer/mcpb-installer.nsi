@@ -336,154 +336,72 @@ Function AuthenticateWithAPI
     DetailPrint "Server URL: $ServerUrl"
     DetailPrint "Username: $Username"
 
-    ; Construct JSON request body using nsJSON
-    ; Note: Must build incrementally - backticks don't expand NSIS variables
-    nsJSON::Set /value "{}"
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to initialize JSON object"
-        StrCpy $AuthSuccess "0"
-        DetailPrint "nsJSON::Set /value failed: $0"
-        Return
-    ${EndIf}
+    ; Build JSON string manually (simple string concatenation)
+    StrCpy $0 '{"username":"$Username","password":"$Password"}'
+    DetailPrint "Request JSON: $0"
 
-    ; Set username field
-    nsJSON::Set "username" /VALUE `"$Username"` /END
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to set username in JSON"
-        StrCpy $AuthSuccess "0"
-        DetailPrint "nsJSON::Set username failed: $0"
-        Return
-    ${EndIf}
+    ; Use NScurl with /DATA to POST JSON directly (no nsJSON needed for request)
+    NScurl::http POST "$ServerUrl/auth/login" Memory /HEADER "Content-Type: application/json" /DATA '$0' /END
+    Pop $1  ; Transfer status
 
-    ; Set password field
-    nsJSON::Set "password" /VALUE `"$Password"` /END
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to set password in JSON"
-        StrCpy $AuthSuccess "0"
-        DetailPrint "nsJSON::Set password failed: $0"
-        Return
-    ${EndIf}
-
-    ; Serialize JSON to string
-    nsJSON::Serialize /PRETTY /UNICODE
-    Pop $0  ; JSON string
-
-    DetailPrint "Request JSON constructed: $0"
-
-    ; Create temporary file for request body
-    GetTempFileName $1
-    FileOpen $2 "$1" w
-    FileWrite $2 "$0"
-    FileClose $2
-
-    DetailPrint "Request body written to temp file: $1"
-
-    ; Perform HTTPS POST request using NScurl
-    ; Syntax: NScurl::http POST url headers data-file output-file status-variable
-    GetTempFileName $3  ; Output file
-
-    DetailPrint "Executing NScurl POST to $ServerUrl/auth/login"
-
-    ; NScurl::http [verb] [url] [headers] [@data-file|data] [output-file] [status-var]
-    NScurl::http POST "$ServerUrl/auth/login" \
-        "Content-Type: application/json" \
-        "@$1" \
-        "$3" \
-        $HttpStatusCode
-
-    Pop $0  ; Result
-
-    DetailPrint "NScurl result: $0"
-    DetailPrint "HTTP status code: $HttpStatusCode"
-
-    Delete "$1"  ; Clean up request temp file
+    DetailPrint "NScurl result: $1"
 
     ; Check for connection errors
-    ${If} $0 != "OK"
-        StrCpy $ErrorMessage "Connection failed: $0. Server URL: $ServerUrl. Please verify the URL is correct and accessible."
+    ${If} $1 != "OK"
+        StrCpy $ErrorMessage "Connection failed: $1"
         StrCpy $AuthSuccess "0"
-        DetailPrint "NScurl connection error: $0 for server URL: $ServerUrl"
-        Delete "$3"
+        DetailPrint "Connection error: $1"
         Return
     ${EndIf}
 
-    ; Parse HTTP status code (AC7: Error handling)
-    ${If} $HttpStatusCode == 200
-        ; Success - parse response JSON
-        DetailPrint "Authentication successful (HTTP 200)"
-    ${ElseIf} $HttpStatusCode == 401
-        StrCpy $ErrorMessage "Invalid username or password (HTTP 401). Server: $ServerUrl. Username: $Username. Please check your credentials and try again."
+    ; Get HTTP status code
+    NScurl::query "@ERRORCODE@"
+    Pop $HttpStatusCode
+    DetailPrint "HTTP status: $HttpStatusCode"
+
+    ; Check HTTP status
+    ${If} $HttpStatusCode != "200"
+        ${If} $HttpStatusCode == "401"
+            StrCpy $ErrorMessage "Invalid username or password"
+        ${ElseIf} $HttpStatusCode == "403"
+            StrCpy $ErrorMessage "Access forbidden"
+        ${Else}
+            StrCpy $ErrorMessage "HTTP error: $HttpStatusCode"
+        ${EndIf}
         StrCpy $AuthSuccess "0"
-        DetailPrint "Authentication failed: HTTP 401 for server $ServerUrl, username $Username"
-        Delete "$3"
-        Return
-    ${ElseIf} $HttpStatusCode == 403
-        StrCpy $ErrorMessage "Access forbidden (HTTP 403). Server: $ServerUrl. Username: $Username. Your account may not have permission to use this service."
-        StrCpy $AuthSuccess "0"
-        DetailPrint "Authentication failed: HTTP 403 for server $ServerUrl, username $Username"
-        Delete "$3"
-        Return
-    ${ElseIf} $HttpStatusCode == 500
-        StrCpy $ErrorMessage "Server error (HTTP 500). Server: $ServerUrl. The authentication service is experiencing problems. Please try again later or contact support."
-        StrCpy $AuthSuccess "0"
-        DetailPrint "Authentication failed: HTTP 500 for server $ServerUrl"
-        Delete "$3"
-        Return
-    ${Else}
-        StrCpy $ErrorMessage "Unexpected HTTP status $HttpStatusCode. Server: $ServerUrl. Please verify the server URL and try again."
-        StrCpy $AuthSuccess "0"
-        DetailPrint "Authentication failed: HTTP $HttpStatusCode for server $ServerUrl"
-        Delete "$3"
         Return
     ${EndIf}
 
-    ; Read response file
-    FileOpen $0 "$3" r
-    FileRead $0 $1 4096  ; Read up to 4KB of response
-    FileClose $0
-    Delete "$3"
+    ; Get response body
+    NScurl::query "@RECVDATA@"
+    Pop $1
+    DetailPrint "Response: $1"
 
-    DetailPrint "Response body: $1"
-
-    ; Parse JSON response to extract tokens
+    ; Parse response JSON using nsJSON (only for parsing, not building)
     nsJSON::Set /value "$1"
     Pop $0
     ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to parse authentication response from server $ServerUrl: $0"
+        StrCpy $ErrorMessage "Failed to parse response"
         StrCpy $AuthSuccess "0"
-        DetailPrint "nsJSON::Set failed on response from $ServerUrl: $0"
         Return
     ${EndIf}
 
-    ; Extract access_token
+    ; Extract tokens
     nsJSON::Get "access_token" /END
     Pop $AccessToken
-    Pop $0  ; Result
+    Pop $0
 
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Response from server $ServerUrl missing access_token field"
-        StrCpy $AuthSuccess "0"
-        DetailPrint "Failed to extract access_token from $ServerUrl: $0"
-        Return
-    ${EndIf}
-
-    ; Extract refresh_token
     nsJSON::Get "refresh_token" /END
     Pop $RefreshToken
-    Pop $0  ; Result
+    Pop $0
 
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Response from server $ServerUrl missing refresh_token field"
+    ${If} $AccessToken == ""
+        StrCpy $ErrorMessage "No access token in response"
         StrCpy $AuthSuccess "0"
-        DetailPrint "Failed to extract refresh_token from $ServerUrl: $0"
         Return
     ${EndIf}
 
-    DetailPrint "Tokens extracted successfully (access_token and refresh_token received)"
-
+    DetailPrint "Authentication successful"
     StrCpy $AuthSuccess "1"
 FunctionEnd
 
