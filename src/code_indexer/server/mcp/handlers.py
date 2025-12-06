@@ -129,12 +129,34 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
             errors[repo_alias] = str(e)
             logger.warning(f"Omni-search failed for {repo_alias}: {e}")
     
-    # Sort by similarity_score descending (global aggregation)
-    if aggregation_mode == "global":
+    # Aggregate results based on mode
+    if aggregation_mode == "per_repo":
+        # Per-repo mode: take proportional results from each repo
+        from collections import defaultdict
+        results_by_repo = defaultdict(list)
+        for r in all_results:
+            results_by_repo[r.get("source_repo", "unknown")].append(r)
+        
+        # Sort each repo's results by score
+        for repo in results_by_repo:
+            results_by_repo[repo].sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
+        
+        # Take proportional results from each repo
+        num_repos = len(results_by_repo)
+        if num_repos > 0:
+            per_repo_limit = limit // num_repos
+            remainder = limit % num_repos
+            final_results = []
+            for i, (repo, results) in enumerate(results_by_repo.items()):
+                # Give first 'remainder' repos one extra result
+                repo_limit = per_repo_limit + (1 if i < remainder else 0)
+                final_results.extend(results[:repo_limit])
+        else:
+            final_results = []
+    else:
+        # Global mode: sort all by score, take top N
         all_results.sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
-    
-    # Apply limit
-    final_results = all_results[:limit]
+        final_results = all_results[:limit]
     
     return _mcp_response({
         "success": True,

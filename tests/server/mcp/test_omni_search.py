@@ -331,3 +331,73 @@ class TestOmniSearchErrorHandling:
             assert response_data["success"] is True
             assert response_data["results"]["total_results"] == 0
             assert len(response_data["results"]["errors"]) == 2
+
+
+class TestOmniSearchAggregation:
+    """Test aggregation mode behavior in omni-search."""
+
+    @pytest.mark.asyncio
+    async def test_per_repo_aggregation_distributes_proportionally(self, mock_user):
+        """Per-repo mode takes proportional results from each repo."""
+        params = {
+            "query_text": "authentication",
+            "repository_alias": ["repo1", "repo2"],
+            "aggregation_mode": "per_repo",
+            "limit": 10,
+        }
+
+        # Mock search_code to return results from two repos
+        async def mock_search(search_params, user):
+            repo = search_params["repository_alias"]
+            if repo == "repo1":
+                results = [
+                    {"similarity_score": 0.95, "file_path": "repo1/file1.py"},
+                    {"similarity_score": 0.90, "file_path": "repo1/file2.py"},
+                    {"similarity_score": 0.85, "file_path": "repo1/file3.py"},
+                    {"similarity_score": 0.80, "file_path": "repo1/file4.py"},
+                    {"similarity_score": 0.75, "file_path": "repo1/file5.py"},
+                    {"similarity_score": 0.70, "file_path": "repo1/file6.py"},
+                ]
+            else:  # repo2
+                results = [
+                    {"similarity_score": 0.92, "file_path": "repo2/file1.py"},
+                    {"similarity_score": 0.88, "file_path": "repo2/file2.py"},
+                    {"similarity_score": 0.82, "file_path": "repo2/file3.py"},
+                    {"similarity_score": 0.78, "file_path": "repo2/file4.py"},
+                    {"similarity_score": 0.72, "file_path": "repo2/file5.py"},
+                    {"similarity_score": 0.68, "file_path": "repo2/file6.py"},
+                ]
+            return _mcp_response({
+                "success": True,
+                "results": {
+                    "results": results,
+                    "total_results": len(results),
+                },
+            })
+
+        with patch("code_indexer.server.mcp.handlers.search_code", side_effect=mock_search):
+            from code_indexer.server.mcp.handlers import _omni_search_code
+            result = await _omni_search_code(params, mock_user)
+
+            import json
+            response_data = json.loads(result["content"][0]["text"])
+
+            assert response_data["success"] is True
+            final_results = response_data["results"]["results"]
+
+            # With limit=10 and 2 repos, should take 5 from each repo
+            assert len(final_results) == 10
+
+            # Count results from each repo
+            repo1_results = [r for r in final_results if r.get("source_repo") == "repo1"]
+            repo2_results = [r for r in final_results if r.get("source_repo") == "repo2"]
+
+            assert len(repo1_results) == 5
+            assert len(repo2_results) == 5
+
+            # Verify each repo's results are sorted by score (highest first)
+            repo1_scores = [r["similarity_score"] for r in repo1_results]
+            assert repo1_scores == sorted(repo1_scores, reverse=True)
+
+            repo2_scores = [r["similarity_score"] for r in repo2_results]
+            assert repo2_scores == sorted(repo2_scores, reverse=True)
