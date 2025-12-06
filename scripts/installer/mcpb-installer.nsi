@@ -354,54 +354,54 @@ Function AuthenticateWithAPI
         Return
     ${EndIf}
 
-    ; Get HTTP status code
-    NScurl::query "@ERRORCODE@"
-    Pop $HttpStatusCode
-    DetailPrint "HTTP status: $HttpStatusCode"
-
-    ; Check HTTP status
-    ${If} $HttpStatusCode != "200"
-        ${If} $HttpStatusCode == "401"
-            StrCpy $ErrorMessage "Invalid username or password"
-        ${ElseIf} $HttpStatusCode == "403"
-            StrCpy $ErrorMessage "Access forbidden"
-        ${ElseIf} $HttpStatusCode == "500"
-            StrCpy $ErrorMessage "Server error (500) - please try again later"
-        ${Else}
-            StrCpy $ErrorMessage "HTTP error: $HttpStatusCode"
-        ${EndIf}
-        StrCpy $AuthSuccess "0"
-        Return
-    ${EndIf}
-
     ; Get response body
     NScurl::query "@RECVDATA@"
     Pop $1
     DetailPrint "Response: $1"
 
-    ; Parse response JSON using nsJSON (only for parsing, not building)
+    ; Parse response JSON using nsJSON
     nsJSON::Set /value "$1"
     Pop $0
     ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to parse response"
+        StrCpy $ErrorMessage "Authentication failed - invalid server response"
         StrCpy $AuthSuccess "0"
+        DetailPrint "Failed to parse JSON response: $0"
         Return
     ${EndIf}
 
-    ; Extract tokens
+    ; Extract access_token - check if it exists
     nsJSON::Get "access_token" /END
     Pop $AccessToken
     Pop $0
 
+    ; If no access_token, check for error details in response
+    ${If} $AccessToken == ""
+        ; Try to get error message from response "detail" field
+        nsJSON::Get "detail" /END
+        Pop $0
+        Pop $2
+        ${If} $0 != ""
+            StrCpy $ErrorMessage "$0"
+        ${Else}
+            ; Try "error" field as alternative
+            nsJSON::Get "error" /END
+            Pop $0
+            Pop $2
+            ${If} $0 != ""
+                StrCpy $ErrorMessage "$0"
+            ${Else}
+                StrCpy $ErrorMessage "Invalid username or password"
+            ${EndIf}
+        ${EndIf}
+        StrCpy $AuthSuccess "0"
+        DetailPrint "Authentication failed: $ErrorMessage"
+        Return
+    ${EndIf}
+
+    ; Get refresh token
     nsJSON::Get "refresh_token" /END
     Pop $RefreshToken
     Pop $0
-
-    ${If} $AccessToken == ""
-        StrCpy $ErrorMessage "No access token in response"
-        StrCpy $AuthSuccess "0"
-        Return
-    ${EndIf}
 
     DetailPrint "Authentication successful"
     StrCpy $AuthSuccess "1"

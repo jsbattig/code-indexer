@@ -234,13 +234,20 @@ class TestAC6_SilentInstallation:
 class TestAC7_ErrorHandling:
     """Test AC7: Error handling and user feedback."""
 
-    def test_maps_http_status_codes(self, nsis_script_content):
-        """Script maps HTTP status codes to user-friendly messages."""
-        # Should have specific messages for different status codes
-        error_codes = ["401", "403", "500"]
-        for code in error_codes:
-            assert re.search(rf'(if.*{code}|{code}.*message)', nsis_script_content, re.IGNORECASE), \
-                f"Missing error handling for HTTP {code}"
+    def test_handles_json_error_responses(self, nsis_script_content):
+        """Script handles JSON error responses from API."""
+        # Should check for "detail" field in error responses (FastAPI style)
+        assert re.search(
+            r'nsJSON::Get\s+"detail"', nsis_script_content, re.IGNORECASE
+        ), "Missing handling for 'detail' error field"
+        # Should check for "error" field as alternative
+        assert re.search(
+            r'nsJSON::Get\s+"error"', nsis_script_content, re.IGNORECASE
+        ), "Missing handling for 'error' field"
+        # Should have fallback error message for authentication failure
+        assert re.search(
+            r"Invalid username or password", nsis_script_content, re.IGNORECASE
+        ), "Missing fallback error message for authentication failure"
 
     def test_includes_context_in_errors(self, nsis_script_content):
         """Script includes relevant context (URL, path) in error messages."""
