@@ -356,11 +356,10 @@ Function AuthenticateWithAPI
 
     ; Parse the response file directly with nsJSON
     DetailPrint "Parsing response..."
-    ClearErrors
     nsJSON::Set /file "$3"
-
-    ${If} ${Errors}
-        StrCpy $ErrorMessage "Invalid server response"
+    Pop $0
+    ${If} $0 != "ok"
+        StrCpy $ErrorMessage "Invalid server response: $0"
         StrCpy $AuthSuccess "0"
         Delete "$3"
         Return
