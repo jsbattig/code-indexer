@@ -22,6 +22,23 @@ from code_indexer.server import app as app_module
 
 logger = logging.getLogger(__name__)
 
+def _parse_json_string_array(value: Any) -> Any:
+    """Parse JSON string arrays from MCP clients that serialize arrays as strings.
+    
+    Some MCP clients send arrays as JSON strings like '["repo1", "repo2"]'
+    instead of actual arrays. This function handles that case.
+    """
+    if isinstance(value, str) and value.startswith('['):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return value
+
+
+
 
 def _mcp_response(data: Dict[str, Any]) -> Dict[str, Any]:
     """Wrap response data in MCP-compliant content array format.
@@ -176,6 +193,10 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         from pathlib import Path
 
         repository_alias = params.get("repository_alias")
+
+        # Handle JSON string arrays (from MCP clients that serialize arrays as strings)
+        repository_alias = _parse_json_string_array(repository_alias)
+        params["repository_alias"] = repository_alias  # Update params for downstream
 
         # Route to omni-search when repository_alias is an array
         if isinstance(repository_alias, list):
@@ -642,6 +663,8 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     try:
         repository_alias = params["repository_alias"]
+        repository_alias = _parse_json_string_array(repository_alias)
+        params["repository_alias"] = repository_alias  # Update params for downstream
         
         # Route to omni-search when repository_alias is an array
         if isinstance(repository_alias, list):
@@ -1536,6 +1559,8 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
     from code_indexer.global_repos.regex_search import RegexSearchService
 
     repo_identifier = args.get("repo_identifier")
+    repo_identifier = _parse_json_string_array(repo_identifier)
+    args["repo_identifier"] = repo_identifier  # Update args for downstream
 
     # Route to omni-search when repo_identifier is an array
     if isinstance(repo_identifier, list):
@@ -1708,7 +1733,8 @@ async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     from code_indexer.global_repos.git_operations import GitOperationsService
 
     repo_identifier = args.get("repo_identifier")
-
+    repo_identifier = _parse_json_string_array(repo_identifier)
+    args["repo_identifier"] = repo_identifier  # Update args for downstream
 
     # Route to omni-search when repo_identifier is an array
     if isinstance(repo_identifier, list):
@@ -2311,6 +2337,8 @@ async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[st
     from code_indexer.global_repos.git_operations import GitOperationsService
 
     repo_identifier = args.get("repo_identifier")
+    repo_identifier = _parse_json_string_array(repo_identifier)
+    args["repo_identifier"] = repo_identifier  # Update args for downstream
     query = args.get("query")
 
     # Route to omni-search when repo_identifier is an array
