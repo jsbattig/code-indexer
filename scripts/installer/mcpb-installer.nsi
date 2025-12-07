@@ -378,21 +378,18 @@ Function AuthenticateWithAPI
     ; Extract access_token - check if it exists
     nsJSON::Get "access_token" /END
     Pop $AccessToken
-    Pop $0
 
     ; If no access_token, check for error details in response
     ${If} $AccessToken == ""
         ; Try to get error message from response "detail" field
         nsJSON::Get "detail" /END
         Pop $0
-        Pop $2
         ${If} $0 != ""
             StrCpy $ErrorMessage "$0"
         ${Else}
             ; Try "error" field as alternative
             nsJSON::Get "error" /END
             Pop $0
-            Pop $2
             ${If} $0 != ""
                 StrCpy $ErrorMessage "$0"
             ${Else}
@@ -407,7 +404,6 @@ Function AuthenticateWithAPI
     ; Get refresh token
     nsJSON::Get "refresh_token" /END
     Pop $RefreshToken
-    Pop $0
 
     DetailPrint "Authentication successful"
     StrCpy $AuthSuccess "1"
