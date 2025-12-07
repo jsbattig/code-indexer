@@ -233,39 +233,43 @@ jobs:
           $size = (Get-Item "scripts\installer\mcpb-windows-x64-setup.exe").Length
           Write-Host "Installer verified: mcpb-windows-x64-setup.exe ($size bytes)"
 
-      - name: Test installer extraction
+      - name: Test installer with real authentication
         shell: pwsh
+        env:
+          CIDX_SERVER_URL: ${{ secrets.CIDX_TEST_SERVER_URL }}
+          CIDX_USERNAME: ${{ secrets.CIDX_TEST_USERNAME }}
+          CIDX_PASSWORD: ${{ secrets.CIDX_TEST_PASSWORD }}
         run: |
-          Write-Host "Testing installer silent mode (extraction only)..."
+          Write-Host "Testing installer with real CIDX server authentication..."
 
-          # Note: We cannot fully test authentication in CI without real server credentials
-          # This test verifies the installer compiles correctly and can extract files
-          # Authentication testing requires either:
-          #   A) A test server with known credentials
-          #   B) Mocking the API endpoint (complex, not implemented)
-          # For now, we verify compilation success and document the limitation
-
-          # Run installer in silent mode with test parameters
-          # Expected: Exit code 1 (auth failure) but binary should be extracted
           $installer = "scripts\installer\mcpb-windows-x64-setup.exe"
 
-          Write-Host "Running installer with test parameters (auth will fail, checking extraction only)..."
-          $process = Start-Process -FilePath $installer -ArgumentList "/S", "/USERNAME=ci-test", "/PASSWORD=ci-test" -Wait -NoNewWindow -PassThru
+          # Run installer in silent mode with real credentials
+          Write-Host "Running installer with real CIDX credentials..."
+          Write-Host "Server URL: $env:CIDX_SERVER_URL"
+          Write-Host "Username: $env:CIDX_USERNAME"
+
+          $process = Start-Process -FilePath $installer -ArgumentList `
+            "/S", `
+            "/SERVER_URL=$env:CIDX_SERVER_URL", `
+            "/USERNAME=$env:CIDX_USERNAME", `
+            "/PASSWORD=$env:CIDX_PASSWORD" `
+            -Wait -NoNewWindow -PassThru
           $exitCode = $process.ExitCode
 
           Write-Host "Installer exit code: $exitCode"
 
-          # Expected: Exit code 1 (auth failure) since no real server
-          if ($exitCode -eq 1) {
-            Write-Host "Expected auth failure (exit code 1) - this is correct for CI testing"
-          } elseif ($exitCode -eq 0) {
-            Write-Warning "Unexpected success - auth should fail without real server"
-          } else {
-            Write-Error "Unexpected exit code: $exitCode"
+          # Expect success (exit code 0)
+          if ($exitCode -ne 0) {
+            Write-Error "FAILED: Installer authentication failed with exit code: $exitCode"
+            Write-Host "This indicates the installer cannot authenticate with the CIDX server."
+            Write-Host "Check the authentication logic in mcpb-installer.nsi"
             exit 1
           }
 
-          # Check if binary was extracted (this happens before auth)
+          Write-Host "SUCCESS: Installer authentication passed!"
+
+          # Verify binary was extracted
           if (Test-Path "C:\mcpb\server\mcpb-windows-x64.exe") {
             Write-Host "SUCCESS: Binary extraction verified - mcpb-windows-x64.exe found"
           } else {
@@ -273,9 +277,23 @@ jobs:
             exit 1
           }
 
-          Write-Host "NOTE: Authentication test skipped (requires real server credentials)"
-          Write-Host "NOTE: Claude Desktop merge test skipped (requires authenticated config)"
-          Write-Host "Installer compilation and extraction verified successfully"
+          # Verify config was created
+          $configPath = "$env:USERPROFILE\.mcpb\config.json"
+          if (Test-Path $configPath) {
+            Write-Host "SUCCESS: Config file created at $configPath"
+            $config = Get-Content $configPath | ConvertFrom-Json
+            if ($config.access_token) {
+              Write-Host "SUCCESS: Access token present in config"
+            } else {
+              Write-Error "FAILED: No access_token in config"
+              exit 1
+            }
+          } else {
+            Write-Error "FAILED: Config file not created at $configPath"
+            exit 1
+          }
+
+          Write-Host "All installer tests PASSED with real authentication!"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
