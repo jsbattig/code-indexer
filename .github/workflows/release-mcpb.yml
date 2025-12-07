@@ -402,7 +402,7 @@ jobs:
             default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
           }
 
-      - name: Test FULL auth flow (NScurl POST + nsJSON parse + token extraction)
+      - name: Test FULL auth flow (NScurl POST + nsJSON parse + token extraction + config creation)
         shell: pwsh
         env:
           CIDX_SERVER_URL: ${{ secrets.CIDX_TEST_SERVER_URL }}
@@ -500,8 +500,33 @@ jobs:
             StrCmp $3 "" fail_token
             StrCmp $3 "null" fail_token
 
+            ; =====================================================
+            ; STEP 6-8: TEST CONFIG CREATION (matches CreateMCPBConfig)
+            ; This tests the EXACT bug we fixed - nsJSON state after auth
+            ; =====================================================
+
+            ; Step 6: Initialize new JSON object and set values
+            ; NOTE: Don't check intermediate errors - nsJSON sets false positives
+            ; Only verify final serialized result (matches installer pattern)
+            FileWrite $8 "Step 6: Testing config creation after auth...$\r$\n"
+            nsJSON::Set /value `{}`
+            nsJSON::Set `server_url` /value `"__SERVER_URL__"`
+            nsJSON::Set `access_token` /value `"$2"`
+            nsJSON::Set `refresh_token` /value `"$3"`
+
+            ; Step 7: Serialize and verify final result only
+            FileWrite $8 "Step 7: Serializing config JSON...$\r$\n"
+            nsJSON::Serialize /PRETTY /UNICODE
+            Pop $4
+
+            FileWrite $8 "Serialized config: [$4]$\r$\n"
+
+            ; Step 8: Verify serialization produced output
+            StrCmp $4 "" fail_config
+            FileWrite $8 "Step 8: Config creation verified successfully!$\r$\n"
+
             ; SUCCESS!
-            FileWrite $8 "=== SUCCESS: Full auth flow completed! ===$\r$\n"
+            FileWrite $8 "=== SUCCESS: Full auth flow + config creation completed! ===$\r$\n"
             FileClose $8
             Delete "$1"
             SetErrorLevel 0
@@ -517,6 +542,12 @@ jobs:
             FileWrite $8 "FAIL: Token extraction failed (empty or null)$\r$\n"
             FileClose $8
             SetErrorLevel 4
+            Goto done
+
+          fail_config:
+            FileWrite $8 "FAIL: Config creation failed (serialization returned empty)$\r$\n"
+            FileClose $8
+            SetErrorLevel 5
 
           done:
           SectionEnd
@@ -551,10 +582,11 @@ jobs:
           }
 
           switch ($process.ExitCode) {
-            0 { Write-Host "SUCCESS: Full authentication flow verified against real CIDX server!" }
+            0 { Write-Host "SUCCESS: Full authentication flow + config creation verified against real CIDX server!" }
             2 { Write-Error "FAILED: NScurl POST request failed"; exit 1 }
             3 { Write-Error "FAILED: nsJSON parsing failed"; exit 1 }
             4 { Write-Error "FAILED: Token extraction failed"; exit 1 }
+            5 { Write-Error "FAILED: Config creation failed after auth (the bug this test catches)"; exit 1 }
             default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
           }
 
