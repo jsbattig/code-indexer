@@ -305,6 +305,7 @@ jobs:
           # Test the full flow with a real HTTP request
           $testScript = @'
           !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
+          Unicode true
 
           Name "Full Flow Test"
           OutFile "flow-test.exe"
@@ -331,7 +332,7 @@ jobs:
             StrCmp $0 "ok" 0 fail_json
 
             ; Just verify nsJSON loaded something - Get "origin" (IP address, simple value)
-            nsJSON::Get "origin" /END
+            nsJSON::Get `origin` /end
             Pop $2
             StrLen $3 $2
             IntCmp $3 5 fail_get fail_get  ; origin should be at least 5 chars (like "1.2.3.4")
