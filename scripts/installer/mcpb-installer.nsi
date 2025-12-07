@@ -737,7 +737,7 @@ Function VerifyInstallation
             StrCpy $0 "$0Installation completed with warnings.$\r$\n"
             StrCpy $0 "$0MCPB installed successfully, but Claude Desktop$\r$\n"
             StrCpy $0 "$0integration was not configured."
-            MessageBox MB_OK|MB_ICONWARNING "$0"
+            MessageBox MB_OK|MB_ICONEXCLAMATION "$0"
         ${EndIf}
     ${EndIf}
 FunctionEnd
