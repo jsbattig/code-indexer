@@ -166,6 +166,12 @@ code-indexer-temporal/
 # Temporary analysis and code review reports (session-specific)
 /reports/reviews
 /reports/manual-tests
+/reports/bugs/
+/reports/testing/
+/reports/*.md
+
+# Test mock artifacts (should not be committed)
+/MagicMock/
 
 # TDD Guard runtime data
 .claude/tdd-guard/data/instructions.md

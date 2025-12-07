@@ -415,8 +415,9 @@ Function CreateMCPBConfig
     DetailPrint "Created directory: $PROFILE\.mcpb"
 
     ; Construct config.json using nsJSON
+    ; CRITICAL: nsJSON requires backticks for literal JSON values, not double quotes
     ClearErrors
-    nsJSON::Set /value "{}"
+    nsJSON::Set /value `{}`
     ${If} ${Errors}
         StrCpy $ErrorMessage "Failed to initialize config JSON"
         DetailPrint "$ErrorMessage"
@@ -515,42 +516,36 @@ Function IntegrateWithClaudeDesktop
         config_missing:
             DetailPrint "claude_desktop_config.json does not exist, creating new"
 
-            ; Create new config with mcpb entry
+            ; Create new config with mcpb entry - build incrementally with backticks
+            ; CRITICAL: nsJSON requires backticks for literal JSON values
             ClearErrors
-            nsJSON::Set /value "{$\"mcpServers$\":{$\"mcpb$\":{$\"command$\":$\"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe$\",$\"args$\":[]}}}"
+            nsJSON::Set /value `{}`
             ${If} ${Errors}
-                DetailPrint "Failed to create Claude Desktop config JSON"
+                DetailPrint "Failed to initialize Claude Desktop config JSON"
                 DetailPrint "Warning: Failed to create Claude Desktop config"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
             ${EndIf}
+
+            ; Add mcpServers object
+            nsJSON::Set "mcpServers" /value `{}`
+            ; Add mcpb entry under mcpServers
+            nsJSON::Set "mcpServers" "mcpb" /value `{}`
+            ; Set command path (variable expansion works in backticks)
+            nsJSON::Set "mcpServers" "mcpb" "command" /value `"$INSTDIR\server\mcpb-windows-x64.exe"`
+            ; Set empty args array
+            nsJSON::Set "mcpServers" "mcpb" "args" /value `[]`
 
             Goto write_config
 
         config_exists:
             DetailPrint "claude_desktop_config.json exists, merging"
 
-            ; Read existing config
+            ; Parse existing JSON directly from file (more reliable than FileRead + /value)
             ClearErrors
-            FileOpen $1 "$0\claude_desktop_config.json" r
+            nsJSON::Set /file "$0\claude_desktop_config.json"
             ${If} ${Errors}
-                DetailPrint "Failed to open existing claude_desktop_config.json at $0"
-                DetailPrint "Warning: Could not read existing Claude Desktop config at $0"
-                StrCpy $ClaudeIntegrationFailed "1"
-                Return
-            ${EndIf}
-
-            ; Read entire file (up to 64KB)
-            FileRead $1 $2 65536
-            FileClose $1
-
-            DetailPrint "Existing config: $2"
-
-            ; Parse existing JSON
-            ClearErrors
-            nsJSON::Set /value "$2"
-            ${If} ${Errors}
-                DetailPrint "Failed to parse existing config at $0"
+                DetailPrint "Failed to parse existing config at $0\claude_desktop_config.json"
                 DetailPrint "Warning: Existing Claude Desktop config at $0 is invalid JSON"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -738,25 +733,11 @@ Function un.RemoveMcpbFromClaudeConfig
     config_exists:
         DetailPrint "Claude Desktop config found at $0\claude_desktop_config.json"
 
-        ; Read existing config
+        ; Parse existing JSON directly from file (more reliable than FileRead + /value)
         ClearErrors
-        FileOpen $1 "$0\claude_desktop_config.json" r
+        nsJSON::Set /file "$0\claude_desktop_config.json"
         ${If} ${Errors}
-            DetailPrint "Failed to open claude_desktop_config.json for reading"
-            Return
-        ${EndIf}
-
-        ; Read entire file (up to 64KB)
-        FileRead $1 $2 65536
-        FileClose $1
-
-        DetailPrint "Existing Claude Desktop config: $2"
-
-        ; Parse existing JSON
-        ClearErrors
-        nsJSON::Set /value "$2"
-        ${If} ${Errors}
-            DetailPrint "Failed to parse Claude Desktop config"
+            DetailPrint "Failed to parse Claude Desktop config at $0\claude_desktop_config.json"
             Return
         ${EndIf}
 
