@@ -66,12 +66,14 @@ def repo_with_tree_structure(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_directory_tree_returns_tree_structure(test_user, repo_with_tree_structure):
+async def test_directory_tree_returns_tree_structure(
+    test_user, repo_with_tree_structure
+):
     """Test directory_tree returns hierarchical tree structure."""
     from code_indexer.server.mcp.handlers import handle_directory_tree
 
     result = await handle_directory_tree(
-        {"repo_identifier": "test-tree-repo-global"},
+        {"repository_alias": "test-tree-repo-global"},
         test_user,
     )
 
@@ -92,7 +94,7 @@ async def test_directory_tree_tree_string_format(test_user, repo_with_tree_struc
     from code_indexer.server.mcp.handlers import handle_directory_tree
 
     result = await handle_directory_tree(
-        {"repo_identifier": "test-tree-repo-global"},
+        {"repository_alias": "test-tree-repo-global"},
         test_user,
     )
 
@@ -115,7 +117,7 @@ async def test_directory_tree_with_path_filter(test_user, repo_with_tree_structu
 
     result = await handle_directory_tree(
         {
-            "repo_identifier": "test-tree-repo-global",
+            "repository_alias": "test-tree-repo-global",
             "path": "src",
         },
         test_user,
@@ -136,7 +138,7 @@ async def test_directory_tree_respects_max_depth(test_user, repo_with_tree_struc
 
     result = await handle_directory_tree(
         {
-            "repo_identifier": "test-tree-repo-global",
+            "repository_alias": "test-tree-repo-global",
             "max_depth": 1,
         },
         test_user,
@@ -150,13 +152,15 @@ async def test_directory_tree_respects_max_depth(test_user, repo_with_tree_struc
 
 
 @pytest.mark.asyncio
-async def test_directory_tree_with_include_patterns(test_user, repo_with_tree_structure):
+async def test_directory_tree_with_include_patterns(
+    test_user, repo_with_tree_structure
+):
     """Test directory_tree with include_patterns filter."""
     from code_indexer.server.mcp.handlers import handle_directory_tree
 
     result = await handle_directory_tree(
         {
-            "repo_identifier": "test-tree-repo-global",
+            "repository_alias": "test-tree-repo-global",
             "include_patterns": ["*.py"],
         },
         test_user,
@@ -177,7 +181,7 @@ async def test_directory_tree_with_show_stats(test_user, repo_with_tree_structur
 
     result = await handle_directory_tree(
         {
-            "repo_identifier": "test-tree-repo-global",
+            "repository_alias": "test-tree-repo-global",
             "show_stats": True,
         },
         test_user,
@@ -196,13 +200,13 @@ async def test_directory_tree_validates_required_params(test_user):
     """Test directory_tree validates required parameters."""
     from code_indexer.server.mcp.handlers import handle_directory_tree
 
-    # Missing repo_identifier
+    # Missing repository_alias
     result = await handle_directory_tree({}, test_user)
 
     data = json.loads(result["content"][0]["text"])
 
     assert data["success"] is False
-    assert "repo_identifier" in data["error"].lower()
+    assert "repository_alias" in data["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -211,7 +215,7 @@ async def test_directory_tree_handles_invalid_repo(test_user, repo_with_tree_str
     from code_indexer.server.mcp.handlers import handle_directory_tree
 
     result = await handle_directory_tree(
-        {"repo_identifier": "nonexistent-repo"},
+        {"repository_alias": "nonexistent-repo"},
         test_user,
     )
 
@@ -228,7 +232,7 @@ async def test_directory_tree_handles_invalid_path(test_user, repo_with_tree_str
 
     result = await handle_directory_tree(
         {
-            "repo_identifier": "test-tree-repo-global",
+            "repository_alias": "test-tree-repo-global",
             "path": "nonexistent-dir",
         },
         test_user,

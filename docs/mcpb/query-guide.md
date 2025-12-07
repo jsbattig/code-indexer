@@ -19,6 +19,30 @@ Choose search mode based on your use case:
 | Find with typo tolerance | fts + fuzzy | fuzzy, edit_distance | "authentcation" (typo) |
 | Best of both worlds | hybrid | min_score, fuzzy | "login handling" |
 
+## Omni-Search Support Matrix
+
+The following tools support multi-repository search using array syntax:
+
+| Tool | Omni-Search | Wildcards | Aggregation Modes |
+|------|-------------|-----------|-------------------|
+| search_code | Yes | Yes | global, per_repo |
+| regex_search | Yes | Yes | global, per_repo |
+| git_log | Yes | Yes | global, per_repo |
+| git_search_commits | Yes | Yes | global, per_repo |
+| list_files | Yes | Yes | N/A |
+| browse_directory | No | No | N/A |
+| directory_tree | No | No | N/A |
+| get_file_content | No | No | N/A |
+| git_blame | No | No | N/A |
+| git_file_history | No | No | N/A |
+| git_show_commit | No | No | N/A |
+| git_search_diffs | No | No | N/A |
+
+**Legend:**
+- **Yes**: Pass `repository_alias` as an array like `["repo1-global", "repo2-global"]`
+- **Wildcards**: Supports patterns like `["*-global"]` or `["evo*"]`
+- **Aggregation**: `global` (top-K by score) or `per_repo` (proportional sampling)
+
 ## Semantic Search Basics
 
 Semantic search finds code by meaning, not exact text matching. Uses VoyageAI embeddings for vector similarity.
@@ -1110,6 +1134,32 @@ echo '{
 }' | cidx-bridge
 ```
 
+## Repository Terminology
+
+CIDX uses several repository concepts. Understanding these is essential for effective use:
+
+| Term | Definition | Example |
+|------|------------|---------|
+| **Golden Repository** | Admin-registered source repository. The canonical version. | Added via `add_golden_repo` |
+| **Global Repository** | Queryable index with `-global` suffix. Ready for search. | `evolution-global`, `evo-mobile-global` |
+| **Activated Repository** | User-specific branch or composite. Personal workspace. | Branch checkouts, custom combinations |
+| **Composite Repository** | Virtual union of multiple repos for unified search. | Combine frontend + backend for full-stack search |
+
+**Typical Workflow:**
+1. **Discover**: `discover_external_repositories` - find repos in GitHub/GitLab orgs
+2. **Register**: `add_golden_repo` - admin registers a repo for indexing
+3. **Query**: Use `{name}-global` alias to search the indexed repo
+4. **Personalize** (optional): `activate_repository` for specific branches
+
+**Example:**
+```
+# Admin adds Evolution repo
+add_golden_repo("evolution", "https://github.com/org/evolution")
+
+# After indexing completes, users search via:
+search_code("authentication", "evolution-global")
+```
+
 ## Multi-Repository Search (Omni-Search)
 
 Omni-search enables querying across multiple repositories simultaneously using a single MCP tool call. Available in search_code, list_files, regex_search, git_log, and git_search_commits tools.
@@ -1128,21 +1178,18 @@ The repository_alias parameter accepts either a single string or an array of rep
 
 When multiple repositories are specified, CIDX performs parallel searches across all specified repositories and aggregates results according to the aggregation_mode parameter.
 
-### Aggregation Modes
+### Aggregation Modes Explained
 
-CIDX provides two aggregation strategies for combining results from multiple repositories:
+When using omni-search across multiple repositories, the `aggregation_mode` parameter controls how results are combined:
 
-#### Global Aggregation (Default)
+#### Global Mode (default)
+Returns the top-K results by score across ALL repositories.
 
-Sorts ALL results by score across all repositories and returns the top N matches, regardless of source repository.
+**Use when:** You want the absolute best matches regardless of source.
 
-**Best for**: Finding the absolute best matches when you want the highest quality results across your entire codebase.
-
-**Characteristics**:
-- Results sorted by score globally (highest scores first)
-- May return all results from one repository if it has the best matches
-- Guarantees the top N results by quality
-- Default behavior when aggregation_mode not specified
+**Example:** With `limit=10` across 3 repos:
+- Could return 7 results from repo1, 2 from repo2, 1 from repo3
+- Results sorted purely by similarity score
 
 ```bash
 echo '{
@@ -1151,9 +1198,8 @@ echo '{
   "params": {
     "name": "search_code",
     "arguments": {
-      "query_text": "authentication flow",
-      "repository_alias": ["evolution-global", "evo-mobile-global", "backend-global"],
-      "search_mode": "semantic",
+      "query_text": "authentication",
+      "repository_alias": ["evolution-global", "evo-mobile-global"],
       "aggregation_mode": "global",
       "limit": 10
     }
@@ -1162,17 +1208,14 @@ echo '{
 }' | cidx-bridge
 ```
 
-#### Per-Repository Aggregation
+#### Per-Repo Mode
+Samples proportionally from each repository (limit / repo_count per repo).
 
-Takes proportional results from each repository (limit / number_of_repos from each), ensuring representation from every repository.
+**Use when:** You want balanced representation from each codebase.
 
-**Best for**: Getting a balanced view across multiple codebases when you need results from each repository.
-
-**Characteristics**:
-- Results distributed proportionally across repositories
-- Each repository contributes limit/N results (rounded)
-- Guarantees representation from every specified repository
-- Results still sorted by score within each repository's contribution
+**Example:** With `limit=10` across 2 repos:
+- Returns exactly 5 results from each repo
+- Each repo's results sorted by score within their allocation
 
 ```bash
 echo '{
@@ -1181,9 +1224,8 @@ echo '{
   "params": {
     "name": "search_code",
     "arguments": {
-      "query_text": "login validation",
-      "repository_alias": ["frontend-global", "backend-global"],
-      "search_mode": "semantic",
+      "query_text": "authentication",
+      "repository_alias": ["evolution-global", "evo-mobile-global"],
       "aggregation_mode": "per_repo",
       "limit": 10
     }
@@ -1192,10 +1234,14 @@ echo '{
 }' | cidx-bridge
 ```
 
-With `aggregation_mode: "per_repo"` and 2 repositories:
-- Each repository contributes 5 results (10/2)
-- Total results: 10 (balanced across both repositories)
-- Even if frontend has better scores, backend still contributes 5 results
+**Comparison:**
+
+| Scenario | Use Global | Use Per-Repo |
+|----------|-----------|--------------|
+| Find best match anywhere | Yes | |
+| Compare implementations across repos | | Yes |
+| One repo dominates results | Problem | Solution |
+| Want fair sampling | | Yes |
 
 ### Practical Examples
 

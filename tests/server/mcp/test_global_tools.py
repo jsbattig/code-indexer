@@ -324,7 +324,7 @@ async def test_regex_search_returns_matches(test_user, repo_with_files):
     from code_indexer.server.mcp.handlers import handle_regex_search
 
     result = await handle_regex_search(
-        {"repo_identifier": "test-repo-global", "pattern": "def.*user"},
+        {"repository_alias": "test-repo-global", "pattern": "def.*user"},
         test_user,
     )
 
@@ -342,7 +342,7 @@ async def test_regex_search_handles_invalid_repo(test_user, repo_with_files):
     from code_indexer.server.mcp.handlers import handle_regex_search
 
     result = await handle_regex_search(
-        {"repo_identifier": "nonexistent-repo", "pattern": "def"},
+        {"repository_alias": "nonexistent-repo", "pattern": "def"},
         test_user,
     )
 
@@ -359,21 +359,21 @@ async def test_regex_search_validates_required_params(test_user):
 
     # Missing pattern
     result = await handle_regex_search(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
     data = json.loads(result["content"][0]["text"])
     assert data["success"] is False
     assert "pattern" in data["error"].lower()
 
-    # Missing repo_identifier
+    # Missing repository_alias
     result = await handle_regex_search(
         {"pattern": "def"},
         test_user,
     )
     data = json.loads(result["content"][0]["text"])
     assert data["success"] is False
-    assert "repo_identifier" in data["error"].lower()
+    assert "repository_alias" in data["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -383,7 +383,7 @@ async def test_regex_search_with_path_filter(test_user, repo_with_files):
 
     result = await handle_regex_search(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "pattern": "def",
             "path": "src",
         },
@@ -401,7 +401,7 @@ async def test_regex_search_with_include_patterns(test_user, repo_with_files):
 
     result = await handle_regex_search(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "pattern": "def",
             "include_patterns": ["*.py"],
         },
@@ -505,7 +505,7 @@ async def test_git_log_returns_commits(test_user, git_repo_with_commits):
     from code_indexer.server.mcp.handlers import handle_git_log
 
     result = await handle_git_log(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
 
@@ -522,7 +522,7 @@ async def test_git_log_respects_limit(test_user, git_repo_with_commits):
     from code_indexer.server.mcp.handlers import handle_git_log
 
     result = await handle_git_log(
-        {"repo_identifier": "test-repo-global", "limit": 1},
+        {"repository_alias": "test-repo-global", "limit": 1},
         test_user,
     )
 
@@ -539,7 +539,7 @@ async def test_git_log_filter_by_path(test_user, git_repo_with_commits):
     from code_indexer.server.mcp.handlers import handle_git_log
 
     result = await handle_git_log(
-        {"repo_identifier": "test-repo-global", "path": "main.py"},
+        {"repository_alias": "test-repo-global", "path": "main.py"},
         test_user,
     )
 
@@ -556,7 +556,7 @@ async def test_git_log_handles_invalid_repo(test_user, git_repo_with_commits):
     from code_indexer.server.mcp.handlers import handle_git_log
 
     result = await handle_git_log(
-        {"repo_identifier": "nonexistent-repo"},
+        {"repository_alias": "nonexistent-repo"},
         test_user,
     )
 
@@ -576,7 +576,7 @@ async def test_git_log_validates_required_params(test_user):
     data = json.loads(result["content"][0]["text"])
 
     assert data["success"] is False
-    assert "repo_identifier" in data["error"].lower()
+    assert "repository_alias" in data["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -586,7 +586,7 @@ async def test_git_show_commit_returns_details(test_user, git_repo_with_commits)
 
     result = await handle_git_show_commit(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "commit_hash": git_repo_with_commits["head_hash"],
         },
         test_user,
@@ -606,7 +606,7 @@ async def test_git_show_commit_includes_stats(test_user, git_repo_with_commits):
 
     result = await handle_git_show_commit(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "commit_hash": git_repo_with_commits["head_hash"],
             "include_stats": True,
         },
@@ -628,7 +628,7 @@ async def test_git_show_commit_includes_diff(test_user, git_repo_with_commits):
 
     result = await handle_git_show_commit(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "commit_hash": git_repo_with_commits["head_hash"],
             "include_diff": True,
         },
@@ -650,7 +650,7 @@ async def test_git_show_commit_handles_invalid_hash(test_user, git_repo_with_com
 
     result = await handle_git_show_commit(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "commit_hash": "0000000000000000000000000000000000000000",
         },
         test_user,
@@ -669,7 +669,7 @@ async def test_git_show_commit_validates_required_params(test_user):
 
     # Missing commit_hash
     result = await handle_git_show_commit(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
 
@@ -686,7 +686,7 @@ async def test_git_file_at_revision_returns_content(test_user, git_repo_with_com
 
     result = await handle_git_file_at_revision(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "path": "main.py",
             "revision": git_repo_with_commits["head_hash"],
         },
@@ -701,7 +701,9 @@ async def test_git_file_at_revision_returns_content(test_user, git_repo_with_com
 
 
 @pytest.mark.asyncio
-async def test_git_file_at_revision_different_versions(test_user, git_repo_with_commits):
+async def test_git_file_at_revision_different_versions(
+    test_user, git_repo_with_commits
+):
     """Test git_file_at_revision returns correct content for different versions."""
     from code_indexer.server.mcp.handlers import handle_git_file_at_revision
     import subprocess
@@ -719,7 +721,7 @@ async def test_git_file_at_revision_different_versions(test_user, git_repo_with_
     # Get old version
     old_result = await handle_git_file_at_revision(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "path": "main.py",
             "revision": git_repo_with_commits["head_hash"],
         },
@@ -731,7 +733,7 @@ async def test_git_file_at_revision_different_versions(test_user, git_repo_with_
     # Get new version
     new_result = await handle_git_file_at_revision(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "path": "main.py",
             "revision": "HEAD",
         },
@@ -755,7 +757,7 @@ async def test_git_file_at_revision_handles_invalid_file(
 
     result = await handle_git_file_at_revision(
         {
-            "repo_identifier": "test-repo-global",
+            "repository_alias": "test-repo-global",
             "path": "nonexistent.py",
             "revision": "HEAD",
         },
@@ -775,7 +777,7 @@ async def test_git_file_at_revision_validates_required_params(test_user):
 
     # Missing path
     result = await handle_git_file_at_revision(
-        {"repo_identifier": "test-repo-global", "revision": "HEAD"},
+        {"repository_alias": "test-repo-global", "revision": "HEAD"},
         test_user,
     )
 
@@ -833,7 +835,9 @@ def git_repo_with_diff_history(tmp_path, monkeypatch):
     first_hash = first_result.stdout.strip()
 
     # Second commit - modify file
-    (repo_path / "file.py").write_text("def hello():\n    print('hello')\n\ndef world():\n    pass\n")
+    (repo_path / "file.py").write_text(
+        "def hello():\n    print('hello')\n\ndef world():\n    pass\n"
+    )
     subprocess.run(["git", "add", "."], cwd=repo_path, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "Add print and world function"],
@@ -873,7 +877,7 @@ async def test_git_diff_handler_returns_diff(test_user, git_repo_with_diff_histo
 
     result = await handle_git_diff(
         {
-            "repo_identifier": "test-diff-repo-global",
+            "repository_alias": "test-diff-repo-global",
             "from_revision": git_repo_with_diff_history["first_hash"],
             "to_revision": git_repo_with_diff_history["second_hash"],
         },
@@ -895,7 +899,7 @@ async def test_git_diff_handler_validates_required_params(test_user):
 
     # Missing from_revision
     result = await handle_git_diff(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
 
@@ -906,13 +910,15 @@ async def test_git_diff_handler_validates_required_params(test_user):
 
 
 @pytest.mark.asyncio
-async def test_git_blame_handler_returns_annotations(test_user, git_repo_with_diff_history):
+async def test_git_blame_handler_returns_annotations(
+    test_user, git_repo_with_diff_history
+):
     """Test git_blame handler returns blame annotations."""
     from code_indexer.server.mcp.handlers import handle_git_blame
 
     result = await handle_git_blame(
         {
-            "repo_identifier": "test-diff-repo-global",
+            "repository_alias": "test-diff-repo-global",
             "path": "file.py",
         },
         test_user,
@@ -933,7 +939,7 @@ async def test_git_blame_handler_validates_required_params(test_user):
 
     # Missing path
     result = await handle_git_blame(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
 
@@ -944,13 +950,15 @@ async def test_git_blame_handler_validates_required_params(test_user):
 
 
 @pytest.mark.asyncio
-async def test_git_file_history_handler_returns_commits(test_user, git_repo_with_diff_history):
+async def test_git_file_history_handler_returns_commits(
+    test_user, git_repo_with_diff_history
+):
     """Test git_file_history handler returns commit history."""
     from code_indexer.server.mcp.handlers import handle_git_file_history
 
     result = await handle_git_file_history(
         {
-            "repo_identifier": "test-diff-repo-global",
+            "repository_alias": "test-diff-repo-global",
             "path": "file.py",
         },
         test_user,
@@ -971,7 +979,7 @@ async def test_git_file_history_handler_validates_required_params(test_user):
 
     # Missing path
     result = await handle_git_file_history(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
 
@@ -1060,13 +1068,15 @@ def git_repo_with_searchable_commits(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_git_search_commits_returns_matches(test_user, git_repo_with_searchable_commits):
+async def test_git_search_commits_returns_matches(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_commits returns matching commits."""
     from code_indexer.server.mcp.handlers import handle_git_search_commits
 
     result = await handle_git_search_commits(
         {
-            "repo_identifier": "test-search-repo-global",
+            "repository_alias": "test-search-repo-global",
             "query": "authentication",
         },
         test_user,
@@ -1081,13 +1091,15 @@ async def test_git_search_commits_returns_matches(test_user, git_repo_with_searc
 
 
 @pytest.mark.asyncio
-async def test_git_search_commits_with_regex(test_user, git_repo_with_searchable_commits):
+async def test_git_search_commits_with_regex(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_commits with regex pattern."""
     from code_indexer.server.mcp.handlers import handle_git_search_commits
 
     result = await handle_git_search_commits(
         {
-            "repo_identifier": "test-search-repo-global",
+            "repository_alias": "test-search-repo-global",
             "query": "Fix.*bug",
             "is_regex": True,
         },
@@ -1108,7 +1120,7 @@ async def test_git_search_commits_validates_required_params(test_user):
 
     # Missing query
     result = await handle_git_search_commits(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
 
@@ -1117,7 +1129,7 @@ async def test_git_search_commits_validates_required_params(test_user):
     assert data["success"] is False
     assert "query" in data["error"].lower()
 
-    # Missing repo_identifier
+    # Missing repository_alias
     result = await handle_git_search_commits(
         {"query": "test"},
         test_user,
@@ -1126,16 +1138,18 @@ async def test_git_search_commits_validates_required_params(test_user):
     data = json.loads(result["content"][0]["text"])
 
     assert data["success"] is False
-    assert "repo_identifier" in data["error"].lower()
+    assert "repository_alias" in data["error"].lower()
 
 
 @pytest.mark.asyncio
-async def test_git_search_commits_handles_invalid_repo(test_user, git_repo_with_searchable_commits):
+async def test_git_search_commits_handles_invalid_repo(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_commits handles nonexistent repository."""
     from code_indexer.server.mcp.handlers import handle_git_search_commits
 
     result = await handle_git_search_commits(
-        {"repo_identifier": "nonexistent-repo", "query": "test"},
+        {"repository_alias": "nonexistent-repo", "query": "test"},
         test_user,
     )
 
@@ -1146,13 +1160,15 @@ async def test_git_search_commits_handles_invalid_repo(test_user, git_repo_with_
 
 
 @pytest.mark.asyncio
-async def test_git_search_commits_respects_limit(test_user, git_repo_with_searchable_commits):
+async def test_git_search_commits_respects_limit(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_commits respects limit parameter."""
     from code_indexer.server.mcp.handlers import handle_git_search_commits
 
     result = await handle_git_search_commits(
         {
-            "repo_identifier": "test-search-repo-global",
+            "repository_alias": "test-search-repo-global",
             "query": ".",  # Match all commits (regex)
             "is_regex": True,
             "limit": 1,
@@ -1167,13 +1183,15 @@ async def test_git_search_commits_respects_limit(test_user, git_repo_with_search
 
 
 @pytest.mark.asyncio
-async def test_git_search_diffs_returns_matches(test_user, git_repo_with_searchable_commits):
+async def test_git_search_diffs_returns_matches(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_diffs returns commits that introduced/removed the search term."""
     from code_indexer.server.mcp.handlers import handle_git_search_diffs
 
     result = await handle_git_search_diffs(
         {
-            "repo_identifier": "test-search-repo-global",
+            "repository_alias": "test-search-repo-global",
             "search_string": "validate_token",
         },
         test_user,
@@ -1193,7 +1211,7 @@ async def test_git_search_diffs_with_regex(test_user, git_repo_with_searchable_c
 
     result = await handle_git_search_diffs(
         {
-            "repo_identifier": "test-search-repo-global",
+            "repository_alias": "test-search-repo-global",
             "search_pattern": "def.*token",
             "is_regex": True,
         },
@@ -1213,16 +1231,19 @@ async def test_git_search_diffs_validates_required_params(test_user):
 
     # Missing search_string/search_pattern
     result = await handle_git_search_diffs(
-        {"repo_identifier": "test-repo-global"},
+        {"repository_alias": "test-repo-global"},
         test_user,
     )
 
     data = json.loads(result["content"][0]["text"])
 
     assert data["success"] is False
-    assert "search_string" in data["error"].lower() or "search_pattern" in data["error"].lower()
+    assert (
+        "search_string" in data["error"].lower()
+        or "search_pattern" in data["error"].lower()
+    )
 
-    # Missing repo_identifier
+    # Missing repository_alias
     result = await handle_git_search_diffs(
         {"search_string": "test"},
         test_user,
@@ -1231,16 +1252,18 @@ async def test_git_search_diffs_validates_required_params(test_user):
     data = json.loads(result["content"][0]["text"])
 
     assert data["success"] is False
-    assert "repo_identifier" in data["error"].lower()
+    assert "repository_alias" in data["error"].lower()
 
 
 @pytest.mark.asyncio
-async def test_git_search_diffs_handles_invalid_repo(test_user, git_repo_with_searchable_commits):
+async def test_git_search_diffs_handles_invalid_repo(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_diffs handles nonexistent repository."""
     from code_indexer.server.mcp.handlers import handle_git_search_diffs
 
     result = await handle_git_search_diffs(
-        {"repo_identifier": "nonexistent-repo", "search_string": "test"},
+        {"repository_alias": "nonexistent-repo", "search_string": "test"},
         test_user,
     )
 
@@ -1251,13 +1274,15 @@ async def test_git_search_diffs_handles_invalid_repo(test_user, git_repo_with_se
 
 
 @pytest.mark.asyncio
-async def test_git_search_diffs_with_path_filter(test_user, git_repo_with_searchable_commits):
+async def test_git_search_diffs_with_path_filter(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_diffs with path filter."""
     from code_indexer.server.mcp.handlers import handle_git_search_diffs
 
     result = await handle_git_search_diffs(
         {
-            "repo_identifier": "test-search-repo-global",
+            "repository_alias": "test-search-repo-global",
             "search_string": "def",
             "path": "auth.py",
         },
@@ -1270,13 +1295,15 @@ async def test_git_search_diffs_with_path_filter(test_user, git_repo_with_search
 
 
 @pytest.mark.asyncio
-async def test_git_search_diffs_returns_match_structure(test_user, git_repo_with_searchable_commits):
+async def test_git_search_diffs_returns_match_structure(
+    test_user, git_repo_with_searchable_commits
+):
     """Test git_search_diffs returns properly structured matches."""
     from code_indexer.server.mcp.handlers import handle_git_search_diffs
 
     result = await handle_git_search_diffs(
         {
-            "repo_identifier": "test-search-repo-global",
+            "repository_alias": "test-search-repo-global",
             "search_string": "validate_token",
         },
         test_user,
@@ -1299,6 +1326,7 @@ async def test_git_search_diffs_returns_match_structure(test_user, git_repo_with
         assert "files_changed" in match
         # diff_snippet is optional (may be None)
         assert "diff_snippet" in match
+
 
 # Test for _resolve_repo_path bug fix (Story #554 follow-up)
 @pytest.fixture
@@ -1390,7 +1418,7 @@ async def test_resolve_repo_path_finds_git_repo_in_alternate_location(
     # Try to use git_log - this should find the actual git repo despite
     # index_path not being a git repo
     result = await handle_git_log(
-        {"repo_identifier": "test-prod-repo-global"},
+        {"repository_alias": "test-prod-repo-global"},
         test_user,
     )
 

@@ -1,7 +1,7 @@
 """
 Tests for omni-regex search integration into MCP layer.
 
-Tests polymorphic repo_identifier parameter and routing to omni-regex search.
+Tests polymorphic repository_alias parameter and routing to omni-regex search.
 """
 
 import pytest
@@ -62,12 +62,12 @@ class TestOmniRegexSearchDetection:
     """Test detection of omni-regex vs single-repo regex search."""
 
     @pytest.mark.asyncio
-    async def test_string_repo_identifier_routes_to_single_repo(
+    async def test_string_repository_alias_routes_to_single_repo(
         self, mock_user, mock_regex_search_service, mock_resolve_repo_path, mock_golden_repos_dir
     ):
-        """Single-repo regex search when repo_identifier is a string."""
+        """Single-repo regex search when repository_alias is a string."""
         params = {
-            "repo_identifier": "backend",
+            "repository_alias": "backend",
             "pattern": "def test_.*",
         }
 
@@ -83,12 +83,12 @@ class TestOmniRegexSearchDetection:
         assert "matches" in response_data
 
     @pytest.mark.asyncio
-    async def test_array_repo_identifier_routes_to_omni_search(
+    async def test_array_repository_alias_routes_to_omni_search(
         self, mock_user, mock_golden_repos_dir
     ):
-        """Omni-regex search when repo_identifier is an array."""
+        """Omni-regex search when repository_alias is an array."""
         params = {
-            "repo_identifier": ["backend-global", "frontend-global"],
+            "repository_alias": ["backend-global", "frontend-global"],
             "pattern": "TODO|FIXME",
             "aggregation_mode": "global",
         }
@@ -121,7 +121,7 @@ class TestOmniRegexSearchDetection:
     ):
         """Verify aggregation_mode parameter is passed to omni-regex search."""
         params = {
-            "repo_identifier": ["repo1", "repo2"],
+            "repository_alias": ["repo1", "repo2"],
             "pattern": "class.*Controller",
             "aggregation_mode": "per_repo",
         }
@@ -148,8 +148,8 @@ class TestOmniRegexSearchDetection:
             assert passed_params["aggregation_mode"] == "per_repo"
 
     @pytest.mark.asyncio
-    async def test_missing_repo_identifier_error(self, mock_user):
-        """Error when repo_identifier is missing."""
+    async def test_missing_repository_alias_error(self, mock_user):
+        """Error when repository_alias is missing."""
         params = {
             "pattern": "def test_.*",
         }
@@ -161,13 +161,13 @@ class TestOmniRegexSearchDetection:
         assert "success" in response_data
         assert response_data["success"] is False
         assert "error" in response_data
-        assert "repo_identifier" in response_data["error"]
+        assert "repository_alias" in response_data["error"]
 
     @pytest.mark.asyncio
     async def test_missing_pattern_error(self, mock_user):
         """Error when pattern is missing."""
         params = {
-            "repo_identifier": "backend",
+            "repository_alias": "backend",
         }
 
         result = await handle_regex_search(params, mock_user)

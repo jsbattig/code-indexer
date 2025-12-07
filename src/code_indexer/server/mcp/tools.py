@@ -1572,7 +1572,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "inputSchema": {
             "type": "object",
             "properties": {
-                "repo_identifier": {
+                "repository_alias": {
                     "oneOf": [
                         {"type": "string"},
                         {"type": "array", "items": {"type": "string"}}
@@ -1590,7 +1590,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "description": (
                         "Result aggregation for omni-regex search: 'global' merges all "
                         "matches sorted by relevance, 'per_repo' groups by repository. "
-                        "Only applies when repo_identifier is an array."
+                        "Only applies when repository_alias is an array."
                     ),
                 },
                 "pattern": {
@@ -1644,7 +1644,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "maximum": 1000,
                 },
             },
-            "required": ["repo_identifier", "pattern"],
+            "required": ["repository_alias", "pattern"],
         },
         "required_permission": "query_repos",
         "outputSchema": {
@@ -1718,7 +1718,7 @@ TOOL_REGISTRY["git_log"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "oneOf": [
                     {"type": "string"},
                     {"type": "array", "items": {"type": "string"}}
@@ -1779,13 +1779,13 @@ TOOL_REGISTRY["git_log"] = {
                 "type": "string",
                 "enum": ["global", "per_repo"],
                 "description": (
-                    "For omni-search (array repo_identifier): how to aggregate results. "
+                    "For omni-search (array repository_alias): how to aggregate results. "
                     "'global' merges commits by date (default). 'per_repo' groups by repository."
                 ),
                 "default": "global",
             },
         },
-        "required": ["repo_identifier"],
+        "required": ["repository_alias"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -1866,7 +1866,7 @@ TOOL_REGISTRY["git_show_commit"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "type": "string",
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project' or "
@@ -1900,7 +1900,7 @@ TOOL_REGISTRY["git_show_commit"] = {
                 "default": True,
             },
         },
-        "required": ["repo_identifier", "commit_hash"],
+        "required": ["repository_alias", "commit_hash"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -1968,7 +1968,7 @@ TOOL_REGISTRY["git_file_at_revision"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "type": "string",
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project' or "
@@ -1993,7 +1993,7 @@ TOOL_REGISTRY["git_file_at_revision"] = {
                 ),
             },
         },
-        "required": ["repo_identifier", "path", "revision"],
+        "required": ["repository_alias", "path", "revision"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -2035,7 +2035,7 @@ TOOL_REGISTRY["git_diff"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "type": "string",
                 "description": "Repository alias or full path.",
             },
@@ -2076,7 +2076,7 @@ TOOL_REGISTRY["git_diff"] = {
                 "default": False,
             },
         },
-        "required": ["repo_identifier", "from_revision"],
+        "required": ["repository_alias", "from_revision"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -2106,7 +2106,7 @@ TOOL_REGISTRY["git_blame"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "type": "string",
                 "description": "Repository alias or full path.",
             },
@@ -2143,7 +2143,7 @@ TOOL_REGISTRY["git_blame"] = {
                 "minimum": 1,
             },
         },
-        "required": ["repo_identifier", "path"],
+        "required": ["repository_alias", "path"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -2171,7 +2171,7 @@ TOOL_REGISTRY["git_file_history"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "type": "string",
                 "description": "Repository alias or full path.",
             },
@@ -2198,7 +2198,7 @@ TOOL_REGISTRY["git_file_history"] = {
                 "default": True,
             },
         },
-        "required": ["repo_identifier", "path"],
+        "required": ["repository_alias", "path"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -2228,7 +2228,7 @@ TOOL_REGISTRY["git_search_commits"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "oneOf": [
                     {"type": "string"},
                     {"type": "array", "items": {"type": "string"}}
@@ -2291,13 +2291,13 @@ TOOL_REGISTRY["git_search_commits"] = {
                 "type": "string",
                 "enum": ["global", "per_repo"],
                 "description": (
-                    "For omni-search (array repo_identifier): how to aggregate results. "
+                    "For omni-search (array repository_alias): how to aggregate results. "
                     "'global' merges all matches by relevance (default). 'per_repo' groups by repository."
                 ),
                 "default": "global",
             },
         },
-        "required": ["repo_identifier", "query"],
+        "required": ["repository_alias", "query"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -2382,7 +2382,7 @@ TOOL_REGISTRY["git_search_diffs"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "type": "string",
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project') or "
@@ -2451,7 +2451,7 @@ TOOL_REGISTRY["git_search_diffs"] = {
                 "maximum": 200,
             },
         },
-        "required": ["repo_identifier"],
+        "required": ["repository_alias"],
     },
     "required_permission": "query_repos",
     "outputSchema": {
@@ -2531,7 +2531,7 @@ TOOL_REGISTRY["directory_tree"] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repo_identifier": {
+            "repository_alias": {
                 "type": "string",
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project') or "
@@ -2606,7 +2606,7 @@ TOOL_REGISTRY["directory_tree"] = {
                 "default": False,
             },
         },
-        "required": ["repo_identifier"],
+        "required": ["repository_alias"],
     },
     "required_permission": "query_repos",
     "outputSchema": {

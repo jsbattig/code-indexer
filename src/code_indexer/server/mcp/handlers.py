@@ -601,7 +601,7 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             return _mcp_response(
                 {
                     "success": False,
-                    "error": f"Repository '{user_alias}' not found",
+                    "error": f"Repository '.*' not found",
                     "job_id": None,
                 }
             )
@@ -1553,7 +1553,7 @@ async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]
     import json as json_module
     import time
 
-    repo_aliases = args.get("repo_identifier", [])
+    repo_aliases = args.get("repository_alias", [])
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
     
     if not repo_aliases:
@@ -1577,7 +1577,7 @@ async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]
     for repo_alias in repo_aliases:
         try:
             single_args = dict(args)
-            single_args["repo_identifier"] = repo_alias
+            single_args["repository_alias"] = repo_alias
             
             single_result = await handle_regex_search(single_args, user)
             
@@ -1617,20 +1617,20 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
     from pathlib import Path
     from code_indexer.global_repos.regex_search import RegexSearchService
 
-    repo_identifier = args.get("repo_identifier")
-    repo_identifier = _parse_json_string_array(repo_identifier)
-    args["repo_identifier"] = repo_identifier  # Update args for downstream
+    repository_alias = args.get("repository_alias")
+    repository_alias = _parse_json_string_array(repository_alias)
+    args["repository_alias"] = repository_alias  # Update args for downstream
 
-    # Route to omni-search when repo_identifier is an array
-    if isinstance(repo_identifier, list):
+    # Route to omni-search when repository_alias is an array
+    if isinstance(repository_alias, list):
         return await _omni_regex_search(args, user)
 
     pattern = args.get("pattern")
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
     if not pattern:
         return _mcp_response(
@@ -1640,12 +1640,12 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual repo path (not index path)
+        # Resolve repository_alias to actual repo path (not index path)
         # Uses _resolve_repo_path which handles all location variants
-        resolved = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        resolved = _resolve_repo_path(repository_alias, golden_repos_dir)
         if not resolved:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
         repo_path = Path(resolved)
 
@@ -1728,7 +1728,7 @@ async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-git-log across multiple repositories."""
     import json as json_module
 
-    repo_aliases = args.get("repo_identifier", [])
+    repo_aliases = args.get("repository_alias", [])
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
     limit = args.get("limit", 20)
     
@@ -1752,7 +1752,7 @@ async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     for repo_alias in repo_aliases:
         try:
             single_args = dict(args)
-            single_args["repo_identifier"] = repo_alias
+            single_args["repository_alias"] = repo_alias
             single_args["limit"] = per_repo_limit
             
             single_result = await handle_git_log(single_args, user)
@@ -1792,29 +1792,29 @@ async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
-    repo_identifier = _parse_json_string_array(repo_identifier)
-    args["repo_identifier"] = repo_identifier  # Update args for downstream
+    repository_alias = args.get("repository_alias")
+    repository_alias = _parse_json_string_array(repository_alias)
+    args["repository_alias"] = repository_alias  # Update args for downstream
 
-    # Route to omni-search when repo_identifier is an array
-    if isinstance(repo_identifier, list):
+    # Route to omni-search when repository_alias is an array
+    if isinstance(repository_alias, list):
         return await _omni_git_log(args, user)
 
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
 
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -1864,13 +1864,13 @@ async def handle_git_show_commit(args: Dict[str, Any], user: User) -> Dict[str, 
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
+    repository_alias = args.get("repository_alias")
     commit_hash = args.get("commit_hash")
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
     if not commit_hash:
         return _mcp_response(
@@ -1880,11 +1880,11 @@ async def handle_git_show_commit(args: Dict[str, Any], user: User) -> Dict[str, 
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -1945,14 +1945,14 @@ async def handle_git_file_at_revision(
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
+    repository_alias = args.get("repository_alias")
     path = args.get("path")
     revision = args.get("revision")
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
     if not path:
         return _mcp_response(
@@ -1966,11 +1966,11 @@ async def handle_git_file_at_revision(
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2041,7 +2041,7 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
         if _is_git_repo(repo_path):
             return str(repo_path)
         # Try adding -global suffix
-        repo_identifier = f"{repo_identifier}-global"
+        repository_alias = f"{repo_identifier}-global"
 
     # Look up in global registry
     registry = GlobalRegistry(golden_repos_dir)
@@ -2106,13 +2106,13 @@ async def handle_git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
+    repository_alias = args.get("repository_alias")
     from_revision = args.get("from_revision")
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
     if not from_revision:
         return _mcp_response(
@@ -2122,11 +2122,11 @@ async def handle_git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2183,13 +2183,13 @@ async def handle_git_blame(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
+    repository_alias = args.get("repository_alias")
     path = args.get("path")
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
     if not path:
         return _mcp_response(
@@ -2199,11 +2199,11 @@ async def handle_git_blame(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2252,13 +2252,13 @@ async def handle_git_file_history(args: Dict[str, Any], user: User) -> Dict[str,
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
+    repository_alias = args.get("repository_alias")
     path = args.get("path")
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
     if not path:
         return _mcp_response(
@@ -2268,11 +2268,11 @@ async def handle_git_file_history(args: Dict[str, Any], user: User) -> Dict[str,
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2329,7 +2329,7 @@ async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str
     import json as json_module
     import time
 
-    repo_aliases = args.get("repo_identifier", [])
+    repo_aliases = args.get("repository_alias", [])
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
     query = args.get("query", "")
     is_regex = args.get("is_regex", False)
@@ -2356,7 +2356,7 @@ async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str
     for repo_alias in repo_aliases:
         try:
             single_args = dict(args)
-            single_args["repo_identifier"] = repo_alias
+            single_args["repository_alias"] = repo_alias
             
             single_result = await handle_git_search_commits(single_args, user)
             
@@ -2397,20 +2397,20 @@ async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[st
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
-    repo_identifier = _parse_json_string_array(repo_identifier)
-    args["repo_identifier"] = repo_identifier  # Update args for downstream
+    repository_alias = args.get("repository_alias")
+    repository_alias = _parse_json_string_array(repository_alias)
+    args["repository_alias"] = repository_alias  # Update args for downstream
     query = args.get("query")
 
-    # Route to omni-search when repo_identifier is an array
-    if isinstance(repo_identifier, list):
+    # Route to omni-search when repository_alias is an array
+    if isinstance(repository_alias, list):
         return await _omni_git_search_commits(args, user)
 
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
     if not query:
         return _mcp_response(
@@ -2420,11 +2420,11 @@ async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[st
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute search
@@ -2475,15 +2475,15 @@ async def handle_git_search_diffs(args: Dict[str, Any], user: User) -> Dict[str,
     from pathlib import Path
     from code_indexer.global_repos.git_operations import GitOperationsService
 
-    repo_identifier = args.get("repo_identifier")
+    repository_alias = args.get("repository_alias")
     search_string = args.get("search_string")
     search_pattern = args.get("search_pattern")
     is_regex = args.get("is_regex", False)
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
 
     # Determine which search parameter to use based on is_regex
@@ -2501,11 +2501,11 @@ async def handle_git_search_diffs(args: Dict[str, Any], user: User) -> Dict[str,
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and execute search
@@ -2575,22 +2575,22 @@ async def handle_directory_tree(args: Dict[str, Any], user: User) -> Dict[str, A
     from pathlib import Path
     from code_indexer.global_repos.directory_explorer import DirectoryExplorerService
 
-    repo_identifier = args.get("repo_identifier")
+    repository_alias = args.get("repository_alias")
 
     # Validate required parameters
-    if not repo_identifier:
+    if not repository_alias:
         return _mcp_response(
-            {"success": False, "error": "Missing required parameter: repo_identifier"}
+            {"success": False, "error": "Missing required parameter: repository_alias"}
         )
 
     try:
         golden_repos_dir = _get_golden_repos_dir()
 
-        # Resolve repo_identifier to actual path
-        repo_path = _resolve_repo_path(repo_identifier, golden_repos_dir)
+        # Resolve repository_alias to actual path
+        repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '{repo_identifier}' not found"}
+                {"success": False, "error": f"Repository '.*' not found"}
             )
 
         # Create service and generate tree
