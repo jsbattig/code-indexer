@@ -1110,6 +1110,331 @@ echo '{
 }' | cidx-bridge
 ```
 
+## Multi-Repository Search (Omni-Search)
+
+Omni-search enables querying across multiple repositories simultaneously using a single MCP tool call. Available in search_code, list_files, regex_search, git_log, and git_search_commits tools.
+
+### Feature Overview
+
+The repository_alias parameter accepts either a single string or an array of repository aliases, enabling multi-repository queries:
+
+```bash
+# Single repository (standard)
+"repository_alias": "backend-global"
+
+# Multiple repositories (omni-search)
+"repository_alias": ["evolution-global", "evo-mobile-global", "backend-global"]
+```
+
+When multiple repositories are specified, CIDX performs parallel searches across all specified repositories and aggregates results according to the aggregation_mode parameter.
+
+### Aggregation Modes
+
+CIDX provides two aggregation strategies for combining results from multiple repositories:
+
+#### Global Aggregation (Default)
+
+Sorts ALL results by score across all repositories and returns the top N matches, regardless of source repository.
+
+**Best for**: Finding the absolute best matches when you want the highest quality results across your entire codebase.
+
+**Characteristics**:
+- Results sorted by score globally (highest scores first)
+- May return all results from one repository if it has the best matches
+- Guarantees the top N results by quality
+- Default behavior when aggregation_mode not specified
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "authentication flow",
+      "repository_alias": ["evolution-global", "evo-mobile-global", "backend-global"],
+      "search_mode": "semantic",
+      "aggregation_mode": "global",
+      "limit": 10
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+#### Per-Repository Aggregation
+
+Takes proportional results from each repository (limit / number_of_repos from each), ensuring representation from every repository.
+
+**Best for**: Getting a balanced view across multiple codebases when you need results from each repository.
+
+**Characteristics**:
+- Results distributed proportionally across repositories
+- Each repository contributes limit/N results (rounded)
+- Guarantees representation from every specified repository
+- Results still sorted by score within each repository's contribution
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "login validation",
+      "repository_alias": ["frontend-global", "backend-global"],
+      "search_mode": "semantic",
+      "aggregation_mode": "per_repo",
+      "limit": 10
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+With `aggregation_mode: "per_repo"` and 2 repositories:
+- Each repository contributes 5 results (10/2)
+- Total results: 10 (balanced across both repositories)
+- Even if frontend has better scores, backend still contributes 5 results
+
+### Practical Examples
+
+#### Cross-Repository Semantic Search
+
+Find authentication code across three microservices:
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "JWT token validation",
+      "repository_alias": ["evolution-global", "evo-mobile-global", "backend-global"],
+      "search_mode": "semantic",
+      "aggregation_mode": "global",
+      "accuracy": "high",
+      "min_score": 0.75,
+      "limit": 15
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+#### Balanced Search Across Frontend and Backend
+
+Get results from both repositories equally:
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "error handling",
+      "repository_alias": ["frontend-global", "backend-global"],
+      "aggregation_mode": "per_repo",
+      "language": "typescript",
+      "limit": 20
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+Result: 10 results from frontend-global, 10 from backend-global.
+
+#### Cross-Repository FTS Search
+
+Find specific function names across all services:
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "authenticateUser",
+      "repository_alias": ["auth-service-global", "api-gateway-global", "user-service-global"],
+      "search_mode": "fts",
+      "case_sensitive": true,
+      "limit": 30
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+#### Cross-Repository Regex Pattern Search
+
+Find test functions across multiple test suites:
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "test_.*integration",
+      "repository_alias": ["backend-global", "api-global", "worker-global"],
+      "search_mode": "fts",
+      "regex": true,
+      "aggregation_mode": "per_repo",
+      "limit": 30
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+Result: 10 results from each repository (balanced representation).
+
+#### Multi-Repository Temporal Search
+
+Find when authentication was added across all services:
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "OAuth2 integration",
+      "repository_alias": ["auth-service-global", "frontend-global", "backend-global"],
+      "time_range_all": true,
+      "chunk_type": "commit_message",
+      "aggregation_mode": "global",
+      "limit": 20
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+### Performance Expectations
+
+Based on benchmark testing with semantic search (high accuracy):
+
+| Repositories | Avg Latency | Performance Characteristics |
+|--------------|-------------|----------------------------|
+| 1 repo | ~900ms | Baseline single-repository search |
+| 3 repos | ~1300ms | 400ms overhead for 2 additional repos |
+| 5 repos | ~1900ms | Linear scaling (~400ms per repo) |
+
+**Key Performance Insights**:
+- Linear scaling: ~400ms per additional repository
+- Parallel execution: Repositories searched concurrently
+- Aggregation overhead: Minimal (<50ms for global, <100ms for per_repo)
+- Network latency: Dominant factor in multi-repository searches
+
+**Performance Tips**:
+- Use language/path filters to reduce search scope per repository
+- Start with limit=5-10 to conserve context tokens
+- Consider aggregation_mode based on result distribution needs
+- Use global mode when quality matters most
+- Use per_repo mode when repository representation matters
+
+### Response Format
+
+Multi-repository search results include a source_repo field identifying the origin repository:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "results": [
+      {
+        "file_path": "src/auth/jwt.py",
+        "source_repo": "backend-global",
+        "score": 0.89,
+        "content": "...",
+        "language": "python"
+      },
+      {
+        "file_path": "src/authentication.ts",
+        "source_repo": "frontend-global",
+        "score": 0.85,
+        "content": "...",
+        "language": "typescript"
+      }
+    ],
+    "total_results": 25,
+    "repositories_searched": ["backend-global", "frontend-global", "auth-service-global"]
+  },
+  "id": 1
+}
+```
+
+**Response Fields**:
+- `source_repo`: Repository alias where result originated
+- `repositories_searched`: List of all repositories included in search
+- `total_results`: Total matches found across all repositories
+- All other fields identical to single-repository searches
+
+### Supported Tools
+
+Omni-search is available in the following MCP tools:
+
+1. **search_code**: Semantic, FTS, regex, hybrid, and temporal searches
+2. **list_files**: Directory listings across multiple repositories
+3. **regex_search**: Pattern-based file searches across repositories
+4. **git_log**: Git history from multiple repositories
+5. **git_search_commits**: Commit message searches across repositories
+
+All tools support both aggregation_mode options and the source_repo response field.
+
+### Filtering Across Repositories
+
+All standard filters work with multi-repository searches:
+
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "database migration",
+      "repository_alias": ["backend-global", "api-global", "worker-global"],
+      "language": "python",
+      "path_filter": "*/migrations/*",
+      "exclude_path": "*/tests/*",
+      "aggregation_mode": "global",
+      "limit": 20
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+Filters apply to each repository independently before aggregation.
+
+### Best Practices
+
+**When to use global aggregation**:
+- Quality-focused searches (need best matches)
+- Cross-repository code analysis
+- Finding canonical implementations
+- Security-critical code discovery
+
+**When to use per_repo aggregation**:
+- Comparative analysis across services
+- Ensuring representation from all codebases
+- Code review across multiple repositories
+- Understanding implementation differences
+
+**Performance optimization**:
+- Use specific language/path filters to narrow scope
+- Start with small limits (5-10) for exploration
+- Consider repository count vs query complexity tradeoff
+- Use per_repo mode when repository balance matters more than absolute quality
+
 ## Error Handling
 
 ### Invalid Parameter Error
@@ -1189,5 +1514,6 @@ Response:
 - MCPB version: 8.1.0
 - search_code tool: src/code_indexer/server/mcp/tools.py:9-147
 - Total parameters: 25 (verified)
+- Omni-search support: 5 tools (search_code, list_files, regex_search, git_log, git_search_commits)
 
-Last Updated: 2025-11-26
+Last Updated: 2025-12-06

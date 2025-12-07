@@ -401,3 +401,98 @@ class TestOmniSearchAggregation:
 
             repo2_scores = [r["similarity_score"] for r in repo2_results]
             assert repo2_scores == sorted(repo2_scores, reverse=True)
+
+
+class TestOmniSearchJsonStringArrayParsing:
+    """Test JSON string array parameter parsing in omni-search handlers."""
+
+    @pytest.mark.asyncio
+    async def test_json_string_array_parsed_correctly(self, mock_user):
+        """Test that '["repo1", "repo2"]' string is parsed to actual array."""
+        params = {
+            "query_text": "authentication",
+            "repository_alias": '["backend-global", "frontend-global"]',
+            "limit": 10,
+        }
+
+        with patch("code_indexer.server.mcp.handlers._omni_search_code") as mock_omni:
+            mock_omni.return_value = _mcp_response(
+                {
+                    "success": True,
+                    "results": {
+                        "cursor": "abc123",
+                        "total_results": 5,
+                        "total_repos_searched": 2,
+                        "results": [],
+                        "errors": {},
+                    },
+                }
+            )
+
+            await search_code(params, mock_user)
+
+            # Verify _omni_search_code was called (indicates array was detected)
+            assert mock_omni.called
+            call_args = mock_omni.call_args[0][0]
+
+            # Verify repository_alias was parsed from JSON string to list
+            assert isinstance(call_args["repository_alias"], list)
+            assert call_args["repository_alias"] == ["backend-global", "frontend-global"]
+
+    @pytest.mark.asyncio
+    async def test_json_string_array_routes_to_omni_search(self, mock_user):
+        """Test that parsed array routes to omni handler."""
+        params = {
+            "query_text": "authentication",
+            "repository_alias": '["repo1", "repo2", "repo3"]',
+            "limit": 10,
+        }
+
+        with patch("code_indexer.server.mcp.handlers._omni_search_code") as mock_omni:
+            mock_omni.return_value = _mcp_response(
+                {
+                    "success": True,
+                    "results": {
+                        "cursor": "abc123",
+                        "total_results": 5,
+                        "total_repos_searched": 3,
+                        "results": [],
+                        "errors": {},
+                    },
+                }
+            )
+
+            result = await search_code(params, mock_user)
+
+            # Should route to omni-search handler
+            assert mock_omni.called
+
+            # Verify the parsed array was passed through
+            call_args = mock_omni.call_args[0][0]
+            assert call_args["repository_alias"] == ["repo1", "repo2", "repo3"]
+
+            # Verify response is in MCP format
+            import json
+            response_data = json.loads(result["content"][0]["text"])
+            assert response_data["success"] is True
+            assert "results" in response_data
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_string_treated_as_string(
+        self, mock_user, mock_semantic_query_manager
+    ):
+        """Test that '[invalid' is not parsed and treated as string."""
+        params = {
+            "query_text": "authentication",
+            "repository_alias": "[invalid",
+            "limit": 5,
+        }
+
+        result = await search_code(params, mock_user)
+
+        # Should route to single-repo search (treats malformed JSON as string)
+        assert mock_semantic_query_manager.query_user_repositories.called
+
+        # Verify it was called with the malformed string as-is
+        call_args = mock_semantic_query_manager.query_user_repositories.call_args
+        assert call_args[1]["repository_alias"] == "[invalid"
