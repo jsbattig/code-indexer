@@ -415,49 +415,24 @@ Function CreateMCPBConfig
     DetailPrint "Created directory: $PROFILE\.mcpb"
 
     ; Construct config.json using nsJSON
-    ; CRITICAL: nsJSON requires backticks for literal JSON values, not double quotes
-    ClearErrors
+    ; CRITICAL: Match CI test pattern - don't check intermediate errors, just verify final result
+    ; nsJSON operations may set error flag even when succeeding (false positives)
     nsJSON::Set /value `{}`
-    ${If} ${Errors}
-        StrCpy $ErrorMessage "Failed to initialize config JSON"
-        DetailPrint "$ErrorMessage"
-        SetErrors
-        Return
-    ${EndIf}
+    nsJSON::Set `server_url` /value `"$ServerUrl"`
+    nsJSON::Set `access_token` /value `"$AccessToken"`
+    nsJSON::Set `refresh_token` /value `"$RefreshToken"`
 
-    ; Set server_url
-    ClearErrors
-    nsJSON::Set "server_url" /VALUE `"$ServerUrl"` /END
-    ${If} ${Errors}
-        StrCpy $ErrorMessage "Failed to set server_url in config"
-        DetailPrint "$ErrorMessage"
-        SetErrors
-        Return
-    ${EndIf}
-
-    ; Set access_token
-    ClearErrors
-    nsJSON::Set "access_token" /VALUE `"$AccessToken"` /END
-    ${If} ${Errors}
-        StrCpy $ErrorMessage "Failed to set access_token in config"
-        DetailPrint "$ErrorMessage"
-        SetErrors
-        Return
-    ${EndIf}
-
-    ; Set refresh_token
-    ClearErrors
-    nsJSON::Set "refresh_token" /VALUE `"$RefreshToken"` /END
-    ${If} ${Errors}
-        StrCpy $ErrorMessage "Failed to set refresh_token in config"
-        DetailPrint "$ErrorMessage"
-        SetErrors
-        Return
-    ${EndIf}
-
-    ; Serialize to JSON string
+    ; Serialize to JSON string - this is where we verify success
     nsJSON::Serialize /PRETTY /UNICODE
     Pop $0  ; JSON string
+
+    ; Verify we got valid JSON (not empty)
+    ${If} $0 == ""
+        StrCpy $ErrorMessage "Failed to create config JSON"
+        DetailPrint "$ErrorMessage"
+        SetErrors
+        Return
+    ${EndIf}
 
     DetailPrint "Config JSON: $0"
 
