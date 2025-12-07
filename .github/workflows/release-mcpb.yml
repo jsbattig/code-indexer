@@ -233,47 +233,115 @@ jobs:
           $size = (Get-Item "scripts\installer\mcpb-windows-x64-setup.exe").Length
           Write-Host "Installer verified: mcpb-windows-x64-setup.exe ($size bytes)"
 
-      - name: Test NScurl and nsJSON flow with httpbin
+      - name: Test nsJSON directly (no NScurl)
         shell: pwsh
         run: |
-          Write-Host "Testing NScurl + nsJSON authentication flow pattern..."
+          Write-Host "Testing nsJSON::Set /value + Get pattern (same as installer config creation)..."
 
-          # Create test script using EXACT same pattern as installer (with Pop fix)
+          # Test nsJSON in isolation - exact same pattern as CreateMCPBConfig
           $testScript = @'
           !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
 
-          Name "Auth Flow Test"
-          OutFile "auth-test.exe"
-          InstallDir "$TEMP\authtest"
+          Name "nsJSON Direct Test"
+          OutFile "nsjson-test.exe"
+          InstallDir "$TEMP\nsjsontest"
+          SilentInstall silent
+
+          Section
+            ; Test 1: nsJSON::Set /value + Get (same as CreateMCPBConfig pattern)
+            nsJSON::Set /value `{"access_token":"test_token_123","refresh_token":"refresh_456"}`
+            Pop $0
+            StrCmp $0 "ok" 0 fail_set
+
+            ; Test 2: nsJSON::Get access_token (same as AuthenticateWithAPI pattern)
+            nsJSON::Get "access_token" /END
+            Pop $1
+            StrCmp $1 "test_token_123" 0 fail_get
+
+            ; Test 3: nsJSON::Get refresh_token
+            nsJSON::Get "refresh_token" /END
+            Pop $2
+            StrCmp $2 "refresh_456" 0 fail_get2
+
+            ; Success
+            SetErrorLevel 0
+            Goto done
+
+          fail_set:
+            SetErrorLevel 1
+            Goto done
+
+          fail_get:
+            SetErrorLevel 2
+            Goto done
+
+          fail_get2:
+            SetErrorLevel 3
+
+          done:
+          SectionEnd
+          '@
+
+          $testScript | Out-File -FilePath "nsjson-test.nsi" -Encoding ASCII
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $makensis /V2 nsjson-test.nsi
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to compile nsJSON test"
+            exit 1
+          }
+
+          $process = Start-Process -FilePath "nsjson-test.exe" -Wait -NoNewWindow -PassThru
+          Write-Host "nsJSON direct test exit code: $($process.ExitCode)"
+
+          switch ($process.ExitCode) {
+            0 { Write-Host "SUCCESS: nsJSON Set/Get pattern verified!" }
+            1 { Write-Error "FAILED: nsJSON::Set /value failed"; exit 1 }
+            2 { Write-Error "FAILED: nsJSON::Get access_token failed"; exit 1 }
+            3 { Write-Error "FAILED: nsJSON::Get refresh_token failed"; exit 1 }
+            default { Write-Error "FAILED: Unknown error"; exit 1 }
+          }
+
+      - name: Test NScurl + nsJSON file flow
+        shell: pwsh
+        run: |
+          Write-Host "Testing NScurl file write + nsJSON file parse..."
+
+          # Test the full flow with a real HTTP request
+          $testScript = @'
+          !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
+
+          Name "Full Flow Test"
+          OutFile "flow-test.exe"
+          InstallDir "$TEMP\flowtest"
           SilentInstall silent
 
           Section
             SetOutPath $INSTDIR
 
-            ; Same pattern as installer: POST JSON, write to file, parse with nsJSON
-            StrCpy $0 '{"username":"testuser","password":"testpass"}'
-            StrCpy $1 "$TEMP\auth_test_response.json"
+            StrCpy $1 "$TEMP\flow_test_response.json"
 
-            ; NScurl POST (same as installer)
-            NScurl::http POST "https://httpbin.org/post" "$1" /HEADER "Content-Type: application/json" /DATA "$0" /TIMEOUT 30000 /END
-            Pop $2
+            ; NScurl POST to httpbin
+            NScurl::http POST "https://httpbin.org/post" "$1" /HEADER "Content-Type: application/json" /DATA `{"test":"value"}` /TIMEOUT 30000 /END
+            Pop $0
+            StrCmp $0 "OK" 0 fail_http
 
-            StrCmp $2 "OK" 0 fail_http
+            ; Verify file was created
+            IfFileExists "$1" file_ok fail_file
+          file_ok:
 
-            ; nsJSON parse with Pop (THE FIX - was missing before)
+            ; nsJSON parse from file (with Pop fix)
             nsJSON::Set /file "$1"
+            Pop $0
+            StrCmp $0 "ok" 0 fail_json
+
+            ; Just verify nsJSON loaded something - Get "origin" (IP address, simple value)
+            nsJSON::Get "origin" /END
             Pop $2
-            StrCmp $2 "ok" 0 fail_json
+            StrLen $3 $2
+            IntCmp $3 5 fail_get fail_get  ; origin should be at least 5 chars (like "1.2.3.4")
 
-            ; Extract top-level value (same pattern as installer)
-            ; httpbin returns "url" at top level - verify we can extract it
-            nsJSON::Get "url" /END
-            Pop $3
-
-            ; Just verify we got a non-empty value (httpbin returns the URL)
-            StrCmp $3 "" fail_value
-
-            ; Success - NScurl POST + nsJSON parse + Get all work
+            ; Success
             Delete "$1"
             SetErrorLevel 0
             Goto done
@@ -282,41 +350,40 @@ jobs:
             SetErrorLevel 1
             Goto done
 
-          fail_json:
+          fail_file:
             SetErrorLevel 2
             Goto done
 
-          fail_value:
+          fail_json:
             SetErrorLevel 3
+            Goto done
+
+          fail_get:
+            SetErrorLevel 4
 
           done:
           SectionEnd
           '@
 
-          $testScript | Out-File -FilePath "auth-test.nsi" -Encoding ASCII
-
-          # Compile
+          $testScript | Out-File -FilePath "flow-test.nsi" -Encoding ASCII
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
-          & $makensis /V2 auth-test.nsi
+          & $makensis /V2 flow-test.nsi
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to compile test script"
+            Write-Error "Failed to compile flow test"
             exit 1
           }
 
-          # Run test
-          Write-Host "Running authentication flow test..."
-          $process = Start-Process -FilePath "auth-test.exe" -Wait -NoNewWindow -PassThru
-          $exitCode = $process.ExitCode
+          $process = Start-Process -FilePath "flow-test.exe" -Wait -NoNewWindow -PassThru
+          Write-Host "Full flow test exit code: $($process.ExitCode)"
 
-          Write-Host "Test exit code: $exitCode"
-
-          switch ($exitCode) {
-            0 { Write-Host "SUCCESS: NScurl POST + nsJSON parsing verified!" }
+          switch ($process.ExitCode) {
+            0 { Write-Host "SUCCESS: NScurl + nsJSON full flow verified!" }
             1 { Write-Error "FAILED: NScurl HTTP request failed"; exit 1 }
-            2 { Write-Error "FAILED: nsJSON parsing failed"; exit 1 }
-            3 { Write-Error "FAILED: JSON value extraction failed"; exit 1 }
-            default { Write-Error "FAILED: Unknown error $exitCode"; exit 1 }
+            2 { Write-Error "FAILED: Response file not created"; exit 1 }
+            3 { Write-Error "FAILED: nsJSON::Set /file failed"; exit 1 }
+            4 { Write-Error "FAILED: nsJSON::Get failed"; exit 1 }
+            default { Write-Error "FAILED: Unknown error"; exit 1 }
           }
 
       - name: Test installer binary extraction
