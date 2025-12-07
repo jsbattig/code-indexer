@@ -27,7 +27,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["global", "per_repo"],
                     "default": "global",
-                    "description": "Result aggregation: 'global' returns top-K by score across all repos, 'per_repo' samples proportionally.",
+                    "description": "How to aggregate results across multiple repositories. 'global' (default): Returns top N results by score across ALL repos - best for finding absolute best matches (e.g., limit=10 across 3 repos returns 10 best total, might be 8 from repo1, 2 from repo2, 0 from repo3). 'per_repo': Distributes N results evenly across repos - best for balanced representation (e.g., limit=10 across 3 repos returns ~3 from each repo).",
                 },
                 "exclude_patterns": {
                     "type": "array",
