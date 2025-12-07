@@ -158,20 +158,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["flat", "grouped"],
                     "default": "flat",
-                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.
-
-"
-                        "'flat' (default): Returns all results in a single array, each with source_repo field.
-"
-                        "Example response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}
-
-"
-                        "'grouped': Groups results by repository under results_by_repo object.
-"
-                        "Example response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}
-
-"
-                        "Use 'grouped' when you need to process results per-repository or display results organized by source.",
+                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
                 },
             },
             "required": ["query_text"],
@@ -709,20 +696,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["flat", "grouped"],
                     "default": "flat",
-                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.
-
-"
-                        "'flat' (default): Returns all results in a single array, each with source_repo field.
-"
-                        "Example response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}
-
-"
-                        "'grouped': Groups results by repository under results_by_repo object.
-"
-                        "Example response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}
-
-"
-                        "Use 'grouped' when you need to process results per-repository or display results organized by source.",
+                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
                 },
             },
             "required": ["repository_alias"],
@@ -1681,20 +1655,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["flat", "grouped"],
                     "default": "flat",
-                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.
-
-"
-                        "'flat' (default): Returns all results in a single array, each with source_repo field.
-"
-                        "Example response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}
-
-"
-                        "'grouped': Groups results by repository under results_by_repo object.
-"
-                        "Example response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}
-
-"
-                        "Use 'grouped' when you need to process results per-repository or display results organized by source.",
+                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
                 },
             },
             "required": ["repository_alias", "pattern"],
@@ -1838,20 +1799,7 @@ TOOL_REGISTRY["git_log"] = {
                 "type": "string",
                 "enum": ["flat", "grouped"],
                 "default": "flat",
-                "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.
-
-"
-                        "'flat' (default): Returns all results in a single array, each with source_repo field.
-"
-                        "Example response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}
-
-"
-                        "'grouped': Groups results by repository under results_by_repo object.
-"
-                        "Example response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}
-
-"
-                        "Use 'grouped' when you need to process results per-repository or display results organized by source.",
+                "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
             },
         },
         "required": ["repository_alias"],
@@ -2366,20 +2314,7 @@ TOOL_REGISTRY["git_search_commits"] = {
                 "type": "string",
                 "enum": ["flat", "grouped"],
                 "default": "flat",
-                "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.
-
-"
-                        "'flat' (default): Returns all results in a single array, each with source_repo field.
-"
-                        "Example response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}
-
-"
-                        "'grouped': Groups results by repository under results_by_repo object.
-"
-                        "Example response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}
-
-"
-                        "Use 'grouped' when you need to process results per-repository or display results organized by source.",
+                "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
             },
         },
         "required": ["repository_alias", "query"],
