@@ -233,37 +233,104 @@ jobs:
           $size = (Get-Item "scripts\installer\mcpb-windows-x64-setup.exe").Length
           Write-Host "Installer verified: mcpb-windows-x64-setup.exe ($size bytes)"
 
-      - name: Test installer binary extraction
+      - name: Test NScurl and nsJSON flow with httpbin
         shell: pwsh
         run: |
-          Write-Host "Verifying main installer binary extraction works..."
+          Write-Host "Testing NScurl + nsJSON authentication flow pattern..."
 
-          # Run the installer in silent mode with dummy credentials
-          # The authentication will fail (localhost:9999 doesn't exist) but binary extraction should succeed
-          $installer = "scripts\installer\mcpb-windows-x64-setup.exe"
-          Write-Host "Running installer: $installer"
+          # Create test script using EXACT same pattern as installer (with Pop fix)
+          $testScript = @'
+          !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
 
-          $process = Start-Process -FilePath $installer -ArgumentList "/S", "/SERVER_URL=https://localhost:9999", "/USERNAME=test", "/PASSWORD=test" -Wait -NoNewWindow -PassThru
-          Write-Host "Installer exit code: $($process.ExitCode)"
+          Name "Auth Flow Test"
+          OutFile "auth-test.exe"
+          InstallDir "$TEMP\authtest"
+          SilentInstall silent
 
-          # The installer will exit with error code 1 (auth failure) but binary should still be extracted
-          # Check if binary was extracted before auth step
-          if (Test-Path "C:\mcpb\server\mcpb-windows-x64.exe") {
-            Write-Host "SUCCESS: MCPB binary extraction verified at C:\mcpb\server\mcpb-windows-x64.exe"
-            $fileInfo = Get-Item "C:\mcpb\server\mcpb-windows-x64.exe"
-            Write-Host "Binary size: $($fileInfo.Length) bytes"
-          } else {
-            Write-Error "FAILED: Main installer did not extract binary to C:\mcpb\server\"
-            Write-Host "Checking C:\mcpb contents..."
-            if (Test-Path "C:\mcpb") {
-              Get-ChildItem -Path "C:\mcpb" -Recurse | ForEach-Object { Write-Host $_.FullName }
-            } else {
-              Write-Host "C:\mcpb directory does not exist"
-            }
+          Section
+            SetOutPath $INSTDIR
+
+            ; Same pattern as installer: POST JSON, write to file, parse with nsJSON
+            StrCpy $0 '{"username":"testuser","password":"testpass"}'
+            StrCpy $1 "$TEMP\auth_test_response.json"
+
+            ; NScurl POST (same as installer)
+            NScurl::http POST "https://httpbin.org/post" "$1" /HEADER "Content-Type: application/json" /DATA "$0" /TIMEOUT 30000 /END
+            Pop $2
+
+            StrCmp $2 "OK" 0 fail_http
+
+            ; nsJSON parse with Pop (THE FIX - was missing before)
+            nsJSON::Set /file "$1"
+            Pop $2
+            StrCmp $2 "ok" 0 fail_json
+
+            ; Extract nested value (httpbin echoes in "json" field)
+            nsJSON::Get "json" "username" /END
+            Pop $3
+
+            StrCmp $3 "testuser" 0 fail_value
+
+            ; Success
+            Delete "$1"
+            SetErrorLevel 0
+            Goto done
+
+          fail_http:
+            SetErrorLevel 1
+            Goto done
+
+          fail_json:
+            SetErrorLevel 2
+            Goto done
+
+          fail_value:
+            SetErrorLevel 3
+
+          done:
+          SectionEnd
+          '@
+
+          $testScript | Out-File -FilePath "auth-test.nsi" -Encoding ASCII
+
+          # Compile
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $makensis /V2 auth-test.nsi
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to compile test script"
             exit 1
           }
 
-          Write-Host "Binary extraction test passed!"
+          # Run test
+          Write-Host "Running authentication flow test..."
+          $process = Start-Process -FilePath "auth-test.exe" -Wait -NoNewWindow -PassThru
+          $exitCode = $process.ExitCode
+
+          Write-Host "Test exit code: $exitCode"
+
+          switch ($exitCode) {
+            0 { Write-Host "SUCCESS: NScurl POST + nsJSON parsing verified!" }
+            1 { Write-Error "FAILED: NScurl HTTP request failed"; exit 1 }
+            2 { Write-Error "FAILED: nsJSON parsing failed"; exit 1 }
+            3 { Write-Error "FAILED: JSON value extraction failed"; exit 1 }
+            default { Write-Error "FAILED: Unknown error $exitCode"; exit 1 }
+          }
+
+      - name: Test installer binary extraction
+        shell: pwsh
+        run: |
+          Write-Host "Verifying installer binary extraction..."
+
+          $installer = "scripts\installer\mcpb-windows-x64-setup.exe"
+          $process = Start-Process -FilePath $installer -ArgumentList "/S", "/SERVER_URL=https://localhost:9999", "/USERNAME=test", "/PASSWORD=test" -Wait -NoNewWindow -PassThru
+
+          if (Test-Path "C:\mcpb\server\mcpb-windows-x64.exe") {
+            Write-Host "SUCCESS: Binary extraction verified"
+          } else {
+            Write-Error "FAILED: Binary not extracted"
+            exit 1
+          }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
