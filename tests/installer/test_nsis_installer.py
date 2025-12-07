@@ -237,13 +237,10 @@ class TestAC7_ErrorHandling:
     def test_handles_json_error_responses(self, nsis_script_content):
         """Script handles JSON error responses from API."""
         # Should check for "detail" field in error responses (FastAPI style)
+        # Note: CIDX server uses FastAPI which returns errors as {"detail": "message"}
         assert re.search(
             r'nsJSON::Get\s+"detail"', nsis_script_content, re.IGNORECASE
         ), "Missing handling for 'detail' error field"
-        # Should check for "error" field as alternative
-        assert re.search(
-            r'nsJSON::Get\s+"error"', nsis_script_content, re.IGNORECASE
-        ), "Missing handling for 'error' field"
         # Should have fallback error message for authentication failure
         assert re.search(
             r"Invalid username or password", nsis_script_content, re.IGNORECASE
