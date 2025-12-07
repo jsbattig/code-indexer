@@ -29,13 +29,14 @@ class TestReposListDisplay:
         """
         response = web_client.get("/admin/repos")
 
-        assert response.status_code in [302, 303], (
-            f"Expected redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/admin/login" in location, (
-            f"Expected redirect to /admin/login, got {location}"
-        )
+        assert (
+            "/admin/login" in location
+        ), f"Expected redirect to /admin/login, got {location}"
 
     def test_repos_page_renders(self, authenticated_client: TestClient):
         """
@@ -48,9 +49,9 @@ class TestReposListDisplay:
         response = authenticated_client.get("/admin/repos")
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        assert "Activated Repositories - CIDX Admin" in response.text, (
-            "Page title should be 'Activated Repositories - CIDX Admin'"
-        )
+        assert (
+            "Activated Repositories - CIDX Admin" in response.text
+        ), "Page title should be 'Activated Repositories - CIDX Admin'"
 
     def test_repos_empty_state(self, authenticated_client: TestClient):
         """
@@ -65,9 +66,9 @@ class TestReposListDisplay:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "no activated repositories" in text_lower, (
-            "Should show 'No activated repositories' message when empty"
-        )
+        assert (
+            "no activated repositories" in text_lower
+        ), "Should show 'No activated repositories' message when empty"
 
     def test_repos_table_columns(self, authenticated_client: TestClient):
         """
@@ -88,9 +89,9 @@ class TestReposListDisplay:
         assert "user" in text_lower, "Table should have User column"
         assert "golden" in text_lower, "Table should have Golden Repo column"
         # Activated or date should be present
-        assert "activated" in text_lower or "date" in text_lower, (
-            "Table should have Activated Date column"
-        )
+        assert (
+            "activated" in text_lower or "date" in text_lower
+        ), "Table should have Activated Date column"
         assert "status" in text_lower, "Table should have Status column"
         assert "actions" in text_lower, "Table should have Actions column"
 
@@ -132,12 +133,12 @@ class TestReposFiltering:
         text_lower = response.text.lower()
 
         # Check for search input
-        assert 'type="search"' in text_lower or 'type="text"' in text_lower, (
-            "Page should have a search input"
-        )
-        assert 'search' in text_lower or 'filter' in text_lower, (
-            "Page should have search functionality"
-        )
+        assert (
+            'type="search"' in text_lower or 'type="text"' in text_lower
+        ), "Page should have a search input"
+        assert (
+            "search" in text_lower or "filter" in text_lower
+        ), "Page should have search functionality"
 
     def test_repos_has_golden_repo_filter(self, authenticated_client: TestClient):
         """
@@ -153,9 +154,9 @@ class TestReposFiltering:
         text_lower = response.text.lower()
 
         # Check for golden repo filter select
-        assert "golden" in text_lower and "select" in text_lower, (
-            "Page should have a Golden Repo filter dropdown"
-        )
+        assert (
+            "golden" in text_lower and "select" in text_lower
+        ), "Page should have a Golden Repo filter dropdown"
 
     def test_repos_has_user_filter(self, authenticated_client: TestClient):
         """
@@ -172,9 +173,7 @@ class TestReposFiltering:
 
         # Check for user filter - look for select with user-related options
         # or a filter labeled "user"
-        assert '<select' in text.lower(), (
-            "Page should have filter dropdowns"
-        )
+        assert "<select" in text.lower(), "Page should have filter dropdowns"
 
     def test_repos_has_clear_filters_button(self, authenticated_client: TestClient):
         """
@@ -190,14 +189,10 @@ class TestReposFiltering:
         text_lower = response.text.lower()
 
         # Check for clear filters button
-        assert "clear" in text_lower, (
-            "Page should have a Clear Filters button"
-        )
+        assert "clear" in text_lower, "Page should have a Clear Filters button"
 
     def test_repos_filtering_by_search(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC2: Search filter works on repository name, user, golden repo.
@@ -207,8 +202,7 @@ class TestReposFiltering:
         Then the list filters based on search term
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Request with search parameter
@@ -227,9 +221,7 @@ class TestRepoDetails:
     """Tests for viewing repository details (AC3)."""
 
     def test_repo_details_endpoint(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC3: Repository details endpoint works.
@@ -239,22 +231,19 @@ class TestRepoDetails:
         Then I get details or appropriate error
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Request details for a non-existent repository
         response = client.get("/admin/repos/test-user/test-repo/details")
 
         # Should return 200 with details or 404 if not found
-        assert response.status_code in [200, 404], (
-            f"Expected 200 or 404, got {response.status_code}"
-        )
+        assert response.status_code in [
+            200,
+            404,
+        ], f"Expected 200 or 404, got {response.status_code}"
 
-    def test_repo_details_shows_all_fields(
-        self,
-        authenticated_client: TestClient
-    ):
+    def test_repo_details_shows_all_fields(self, authenticated_client: TestClient):
         """
         AC3: Details view shows all required fields.
 
@@ -281,9 +270,7 @@ class TestDeactivateRepo:
     """Tests for repository deactivation (AC4)."""
 
     def test_deactivate_repo_endpoint(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC4: Deactivation endpoint exists and requires authentication.
@@ -293,8 +280,7 @@ class TestDeactivateRepo:
         Then the deactivation is processed or repo not found error returned
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get CSRF token
@@ -314,9 +300,7 @@ class TestDeactivateRepo:
         assert response.status_code == 200
 
     def test_deactivate_requires_csrf(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC4: CSRF token required for deactivation.
@@ -326,8 +310,7 @@ class TestDeactivateRepo:
         Then I get an error
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Submit without CSRF token
@@ -339,9 +322,9 @@ class TestDeactivateRepo:
 
         # Should show error about CSRF
         text_lower = response.text.lower()
-        assert "csrf" in text_lower or "error" in text_lower or response.status_code == 403, (
-            "Should show error when CSRF token is missing"
-        )
+        assert (
+            "csrf" in text_lower or "error" in text_lower or response.status_code == 403
+        ), "Should show error when CSRF token is missing"
 
 
 # =============================================================================
@@ -367,9 +350,7 @@ class TestReposPagination:
         # But the route should support pagination parameters
 
     def test_repos_pagination_parameters(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC5: Pagination parameters are supported.
@@ -379,8 +360,7 @@ class TestReposPagination:
         Then the route handles pagination parameters
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Request with pagination parameters
@@ -413,9 +393,9 @@ class TestRepoStatusDisplay:
         # Even with no repos, the template should be ready for status display
         text = response.text
         # Check that page has proper structure for showing status
-        assert "<table" in text.lower() or "status" in text.lower(), (
-            "Page should have structure for status display"
-        )
+        assert (
+            "<table" in text.lower() or "status" in text.lower()
+        ), "Page should have structure for status display"
 
 
 # =============================================================================
@@ -436,13 +416,11 @@ class TestReposPartial:
         """
         response = authenticated_client.get("/admin/partials/repos-list")
 
-        assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}"
-        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         # Should be an HTML fragment, not a full page
-        assert "<html>" not in response.text.lower(), (
-            "Partial should not contain full HTML structure"
-        )
+        assert (
+            "<html>" not in response.text.lower()
+        ), "Partial should not contain full HTML structure"
 
     def test_partials_require_auth(self, web_client: TestClient):
         """
@@ -453,14 +431,13 @@ class TestReposPartial:
         Then I am redirected to login
         """
         response = web_client.get("/admin/partials/repos-list")
-        assert response.status_code in [302, 303], (
-            f"Repos partial should redirect unauthenticated, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Repos partial should redirect unauthenticated, got {response.status_code}"
 
     def test_partial_supports_filters(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC2: Partial endpoint supports filter parameters.
@@ -470,12 +447,13 @@ class TestReposPartial:
         Then the partial returns filtered results
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Request partial with filter parameters
-        response = client.get("/admin/partials/repos-list?search=test&golden_repo=my-repo&user=testuser")
+        response = client.get(
+            "/admin/partials/repos-list?search=test&golden_repo=my-repo&user=testuser"
+        )
 
         assert response.status_code == 200
         # Partial should handle filter parameters

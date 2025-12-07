@@ -569,7 +569,9 @@ class UserManager:
                     username=username,
                     password_hash=user_data["password_hash"],
                     role=UserRole(user_data["role"]),
-                    created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                    created_at=DateTimeParser.parse_user_datetime(
+                        user_data["created_at"]
+                    ),
                 )
 
         return None

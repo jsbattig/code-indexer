@@ -193,13 +193,18 @@ class TestConcurrentUpserts:
             all_vectors = list(collection_path.rglob("vector_*.json"))
 
             # Should have exactly one vector (either v1 or v2, not both)
-            assert len(all_vectors) == 1, f"Should have exactly 1 vector, found {len(all_vectors)}"
+            assert (
+                len(all_vectors) == 1
+            ), f"Should have exactly 1 vector, found {len(all_vectors)}"
 
             # Verify path index is consistent
             path_index = store._path_indexes["test_collection"]
             point_ids = path_index.get_point_ids("src/auth.py")
             assert len(point_ids) == 1, "Path index should have exactly 1 point"
-            assert point_ids in [{"auth_v1"}, {"auth_v2"}], "Should be one of the versions"
+            assert point_ids in [
+                {"auth_v1"},
+                {"auth_v2"},
+            ], "Should be one of the versions"
 
     def test_lock_hold_time_reasonable(self):
         """Lock hold time should be minimal (gather data, release, do I/O).

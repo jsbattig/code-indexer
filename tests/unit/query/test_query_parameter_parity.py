@@ -66,6 +66,9 @@ ALL_PARAMETERS = {
     "diff_type",
     "author",
     "chunk_type",
+    # Omni-search parameters (Story #521)
+    "aggregation_mode",
+    "exclude_patterns",
 }
 
 # CLI-specific: subset of parameters (some temporal params are API-only)
@@ -75,6 +78,8 @@ CLI_EXPECTED_PARAMETERS = ALL_PARAMETERS - {
     "show_evolution",  # API-only: not exposed in CLI
     "evolution_limit",  # API-only: not exposed in CLI
     "file_extensions",  # API-only: REST/MCP use this, CLI doesn't have --file-extensions
+    "aggregation_mode",  # API-only: omni-search aggregation mode
+    "exclude_patterns",  # API-only: omni-search repository exclusion
 }
 
 # REST/MCP: full parameter set
@@ -170,23 +175,23 @@ class TestQueryParameterParity:
 
     def test_total_parameter_count(self):
         """Verify total number of expected query parameters."""
-        # Should have exactly 24 query parameters (excluding repository_alias, async_query)
-        # Updated from 23 to 24 after adding time_range_all parameter
+        # Should have exactly 26 query parameters (excluding repository_alias, async_query)
+        # Updated from 24 to 26 after adding omni-search parameters (aggregation_mode, exclude_patterns)
         assert (
-            len(ALL_PARAMETERS) == 24
-        ), f"Expected 24 parameters, got {len(ALL_PARAMETERS)}: {sorted(ALL_PARAMETERS)}"
+            len(ALL_PARAMETERS) == 26
+        ), f"Expected 26 parameters, got {len(ALL_PARAMETERS)}: {sorted(ALL_PARAMETERS)}"
 
         # CLI should have 19 parameters (subset of all parameters)
-        # Updated from 18 to 19 after adding time_range_all
+        # Unchanged - omni-search parameters are API-only
         assert (
             len(CLI_EXPECTED_PARAMETERS) == 19
         ), f"Expected 19 CLI parameters, got {len(CLI_EXPECTED_PARAMETERS)}: {sorted(CLI_EXPECTED_PARAMETERS)}"
 
-        # REST/MCP should have all 24 parameters
-        # Updated from 23 to 24 after adding time_range_all
+        # REST/MCP should have all 26 parameters
+        # Updated from 24 to 26 after adding omni-search parameters
         assert (
-            len(API_EXPECTED_PARAMETERS) == 24
-        ), f"Expected 24 API parameters, got {len(API_EXPECTED_PARAMETERS)}: {sorted(API_EXPECTED_PARAMETERS)}"
+            len(API_EXPECTED_PARAMETERS) == 26
+        ), f"Expected 26 API parameters, got {len(API_EXPECTED_PARAMETERS)}: {sorted(API_EXPECTED_PARAMETERS)}"
 
     def test_cli_has_all_parameters(self):
         """Verify CLI exposes all 19 expected query parameters (updated from 18 after adding time_range_all)."""

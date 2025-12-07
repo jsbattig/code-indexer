@@ -3,7 +3,7 @@ Tests for user self-service API keys page.
 
 Verifies that non-admin users can manage their own API keys through /user/api-keys.
 
-Note: The REST API endpoints (/api/keys) are tested in test_global_tools.py. 
+Note: The REST API endpoints (/api/keys) are tested in test_global_tools.py.
 These tests focus on the web UI routes which use session authentication.
 """
 
@@ -149,9 +149,7 @@ class TestUserApiKeysAccess:
         assert response.status_code == 303
         assert response.headers["location"] == "/user/login"
 
-    def test_api_keys_page_accessible_to_admin(
-        self, authenticated_client: TestClient
-    ):
+    def test_api_keys_page_accessible_to_admin(self, authenticated_client: TestClient):
         """Test that admin can access /user/api-keys page."""
         response = authenticated_client.get("/user/api-keys")
 
@@ -203,9 +201,7 @@ class TestUserApiKeysPartial:
 class TestUserLogout:
     """Test user logout endpoint."""
 
-    def test_user_logout_clears_session(
-        self, authenticated_client: TestClient
-    ):
+    def test_user_logout_clears_session(self, authenticated_client: TestClient):
         """Test that /user/logout clears session and redirects."""
         response = authenticated_client.get("/user/logout", follow_redirects=False)
 
@@ -215,4 +211,6 @@ class TestUserLogout:
 
         # Session cookie should be cleared
         set_cookie_header = response.headers.get("set-cookie", "")
-        assert "Max-Age=0" in set_cookie_header or "expires" in set_cookie_header.lower()
+        assert (
+            "Max-Age=0" in set_cookie_header or "expires" in set_cookie_header.lower()
+        )

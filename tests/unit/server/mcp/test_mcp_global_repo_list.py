@@ -187,7 +187,9 @@ class TestListRepositoriesWithGlobalRepos:
     ):
         """Test that global repos include repo name, last update time, and index path."""
         with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
-            mock_app.activated_repo_manager.list_activated_repositories.return_value = []
+            mock_app.activated_repo_manager.list_activated_repositories.return_value = (
+                []
+            )
 
             mock_registry = MagicMock()
             mock_registry.list_global_repos.return_value = list(
@@ -208,7 +210,9 @@ class TestListRepositoriesWithGlobalRepos:
                 # Verify: Each global repo has required metadata
                 for repo in repos:
                     if repo.get("is_global") is True:
-                        assert "golden_repo_alias" in repo, "Global repo missing golden_repo_alias"
+                        assert (
+                            "golden_repo_alias" in repo
+                        ), "Global repo missing golden_repo_alias"
                         assert "user_alias" in repo, "Global repo missing user_alias"
                         assert (
                             "last_refresh" in repo

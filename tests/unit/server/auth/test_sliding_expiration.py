@@ -84,7 +84,9 @@ class TestRefreshCookie:
 
     def test_refresh_preserves_claims_and_rotates_jti(self):
         """Refreshed token keeps claims and generates a new jti."""
-        jwt_mgr = JWTManager(secret_key="unit-test-secret-2", token_expiration_minutes=10)
+        jwt_mgr = JWTManager(
+            secret_key="unit-test-secret-2", token_expiration_minutes=10
+        )
         deps.jwt_manager = jwt_mgr
 
         response = Response()

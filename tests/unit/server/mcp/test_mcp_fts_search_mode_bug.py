@@ -66,12 +66,12 @@ class TestMCPFTSSearchModeBugFix:
             )
 
             # After fix, search_mode is passed
-            assert "search_mode" in call_kwargs, (
-                "search_mode parameter must be passed to query_user_repositories"
-            )
-            assert call_kwargs["search_mode"] == "fts", (
-                f"Expected search_mode='fts', got search_mode='{call_kwargs.get('search_mode')}'"
-            )
+            assert (
+                "search_mode" in call_kwargs
+            ), "search_mode parameter must be passed to query_user_repositories"
+            assert (
+                call_kwargs["search_mode"] == "fts"
+            ), f"Expected search_mode='fts', got search_mode='{call_kwargs.get('search_mode')}'"
 
     @pytest.mark.asyncio
     async def test_search_mode_semantic_is_default(self, mock_user):
@@ -146,12 +146,12 @@ class TestMCPFTSSearchModeBugFix:
 
         # Verify that search_mode is passed to _perform_search in the global repo code path
         # The code should have: search_mode=params.get("search_mode", "semantic")
-        assert "search_mode=params.get" in source, (
-            "search_code handler must pass search_mode parameter to _perform_search"
-        )
-        assert 'search_mode=params.get("search_mode"' in source, (
-            "search_mode must be extracted from params in the global repo path"
-        )
+        assert (
+            "search_mode=params.get" in source
+        ), "search_code handler must pass search_mode parameter to _perform_search"
+        assert (
+            'search_mode=params.get("search_mode"' in source
+        ), "search_mode must be extracted from params in the global repo path"
 
 
 class TestSemanticQueryManagerSearchMode:
@@ -168,9 +168,9 @@ class TestSemanticQueryManagerSearchMode:
         params = list(sig.parameters.keys())
 
         # After fix, search_mode should be in the parameter list
-        assert "search_mode" in params, (
-            "query_user_repositories must accept search_mode parameter"
-        )
+        assert (
+            "search_mode" in params
+        ), "query_user_repositories must accept search_mode parameter"
 
     def test_perform_search_accepts_search_mode_parameter(self):
         """Test that _perform_search signature includes search_mode."""
@@ -183,6 +183,6 @@ class TestSemanticQueryManagerSearchMode:
         params = list(sig.parameters.keys())
 
         # After fix, search_mode should be in the parameter list
-        assert "search_mode" in params, (
-            "_perform_search must accept search_mode parameter"
-        )
+        assert (
+            "search_mode" in params
+        ), "_perform_search must accept search_mode parameter"

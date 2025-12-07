@@ -205,7 +205,9 @@ class RefreshScheduler:
             # Skip refresh for local:// repos (no remote = no refresh = no versioning)
             repo_url = repo_info.get("repo_url")
             if repo_url and repo_url.startswith("local://"):
-                logger.info(f"Skipping refresh for local repo: {alias_name} ({repo_url})")
+                logger.info(
+                    f"Skipping refresh for local repo: {alias_name} ({repo_url})"
+                )
                 return
 
             # Create updater for this repo
@@ -391,7 +393,9 @@ class RefreshScheduler:
             # So we need two separate cidx index calls: one for semantic+FTS, one for temporal
             index_command = ["cidx", "index", "--fts"]
 
-            logger.info(f"Running cidx index for semantic+FTS: {' '.join(index_command)}")
+            logger.info(
+                f"Running cidx index for semantic+FTS: {' '.join(index_command)}"
+            )
             try:
                 result = subprocess.run(
                     index_command,
@@ -406,7 +410,9 @@ class RefreshScheduler:
                 logger.error(f"Indexing (semantic+FTS) failed: {e.stderr}")
                 raise RuntimeError(f"Indexing (semantic+FTS) failed: {e.stderr}")
             except subprocess.TimeoutExpired:
-                logger.error(f"Indexing (semantic+FTS) timed out after {cidx_index_timeout} seconds")
+                logger.error(
+                    f"Indexing (semantic+FTS) timed out after {cidx_index_timeout} seconds"
+                )
                 raise RuntimeError(
                     f"Indexing (semantic+FTS) timed out after {cidx_index_timeout} seconds"
                 )
@@ -414,7 +420,9 @@ class RefreshScheduler:
             # Step 5b: Run cidx index --index-commits for temporal indexing (if enabled)
             # Read temporal settings from registry
             repo_info = self.registry.get_global_repo(alias_name)
-            enable_temporal = repo_info.get("enable_temporal", False) if repo_info else False
+            enable_temporal = (
+                repo_info.get("enable_temporal", False) if repo_info else False
+            )
             temporal_options = repo_info.get("temporal_options") if repo_info else None
 
             if enable_temporal:
@@ -435,7 +443,9 @@ class RefreshScheduler:
                             ["--diff-context", str(temporal_options["diff_context"])]
                         )
 
-                logger.info(f"Running cidx index for temporal: {' '.join(temporal_command)}")
+                logger.info(
+                    f"Running cidx index for temporal: {' '.join(temporal_command)}"
+                )
                 try:
                     result = subprocess.run(
                         temporal_command,
@@ -450,7 +460,9 @@ class RefreshScheduler:
                     logger.error(f"Temporal indexing failed: {e.stderr}")
                     raise RuntimeError(f"Temporal indexing failed: {e.stderr}")
                 except subprocess.TimeoutExpired:
-                    logger.error(f"Temporal indexing timed out after {cidx_index_timeout} seconds")
+                    logger.error(
+                        f"Temporal indexing timed out after {cidx_index_timeout} seconds"
+                    )
                     raise RuntimeError(
                         f"Temporal indexing timed out after {cidx_index_timeout} seconds"
                     )

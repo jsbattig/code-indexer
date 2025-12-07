@@ -149,9 +149,7 @@ class TestGoldenRepoAsyncOperations:
             golden_repo_manager.background_job_manager.submit_job.assert_called_once()
 
             # Verify job parameters
-            call_args = (
-                golden_repo_manager.background_job_manager.submit_job.call_args
-            )
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
             assert call_args[1]["operation_type"] == "add_golden_repo"
             assert call_args[1]["submitter_username"] == "admin"
             assert call_args[1]["is_admin"] is True
@@ -268,9 +266,7 @@ class TestGoldenRepoAsyncOperations:
             )
 
             # Get the func argument passed to submit_job
-            call_args = (
-                golden_repo_manager.background_job_manager.submit_job.call_args
-            )
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
             func = call_args[1]["func"]
 
             # Verify it's callable

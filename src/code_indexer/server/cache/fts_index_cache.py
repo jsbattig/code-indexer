@@ -70,9 +70,7 @@ class FTSIndexCacheConfig:
             FTSIndexCacheConfig instance
         """
         ttl_minutes = float(os.environ.get("CIDX_FTS_CACHE_TTL_MINUTES", "10"))
-        cleanup_interval = int(
-            os.environ.get("CIDX_FTS_CACHE_CLEANUP_INTERVAL", "60")
-        )
+        cleanup_interval = int(os.environ.get("CIDX_FTS_CACHE_CLEANUP_INTERVAL", "60"))
         max_size_mb_str = os.environ.get("CIDX_FTS_CACHE_MAX_SIZE_MB")
         max_size_mb = int(max_size_mb_str) if max_size_mb_str else None
         reload_on_access = (

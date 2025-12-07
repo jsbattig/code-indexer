@@ -179,9 +179,7 @@ class ConfigService:
         else:
             raise ValueError(f"Unknown server setting: {key}")
 
-    def _update_cache_setting(
-        self, config: ServerConfig, key: str, value: Any
-    ) -> None:
+    def _update_cache_setting(self, config: ServerConfig, key: str, value: Any) -> None:
         """Update a cache setting."""
         cache = config.cache_config
         if key == "index_cache_ttl_minutes":

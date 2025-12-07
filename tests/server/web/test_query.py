@@ -29,13 +29,14 @@ class TestQueryFormDisplay:
         """
         response = web_client.get("/admin/query")
 
-        assert response.status_code in [302, 303], (
-            f"Expected redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/admin/login" in location, (
-            f"Expected redirect to /admin/login, got {location}"
-        )
+        assert (
+            "/admin/login" in location
+        ), f"Expected redirect to /admin/login, got {location}"
 
     def test_query_page_renders(self, authenticated_client: TestClient):
         """
@@ -48,9 +49,9 @@ class TestQueryFormDisplay:
         response = authenticated_client.get("/admin/query")
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        assert "Query - CIDX Admin" in response.text, (
-            "Page title should be 'Query - CIDX Admin'"
-        )
+        assert (
+            "Query - CIDX Admin" in response.text
+        ), "Page title should be 'Query - CIDX Admin'"
 
     def test_query_form_has_fields(self, authenticated_client: TestClient):
         """
@@ -71,14 +72,14 @@ class TestQueryFormDisplay:
 
         # Check for repository dropdown
         assert "<select" in text_lower, "Page should have a repository dropdown"
-        assert "repository" in text_lower or "repo" in text_lower, (
-            "Page should have a repository selection"
-        )
+        assert (
+            "repository" in text_lower or "repo" in text_lower
+        ), "Page should have a repository selection"
 
         # Check for limit input
-        assert 'type="number"' in text_lower, (
-            "Page should have a number input for limit"
-        )
+        assert (
+            'type="number"' in text_lower
+        ), "Page should have a number input for limit"
         assert "limit" in text_lower, "Page should have a limit field"
 
     def test_query_page_has_results_area(self, authenticated_client: TestClient):
@@ -93,9 +94,9 @@ class TestQueryFormDisplay:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "results" in text_lower or "result" in text_lower, (
-            "Page should have a results area"
-        )
+        assert (
+            "results" in text_lower or "result" in text_lower
+        ), "Page should have a results area"
 
     def test_query_nav_highlighted(self, authenticated_client: TestClient):
         """
@@ -109,9 +110,9 @@ class TestQueryFormDisplay:
 
         assert response.status_code == 200
         # The query nav item should have aria-current="page" attribute
-        assert 'aria-current="page"' in response.text, (
-            "Query should be highlighted with aria-current attribute"
-        )
+        assert (
+            'aria-current="page"' in response.text
+        ), "Query should be highlighted with aria-current attribute"
 
 
 # =============================================================================
@@ -148,9 +149,9 @@ class TestAdvancedFilterOptions:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "language" in text_lower, (
-            "Advanced options should have a language dropdown"
-        )
+        assert (
+            "language" in text_lower
+        ), "Advanced options should have a language dropdown"
 
     def test_advanced_has_path_pattern(self, authenticated_client: TestClient):
         """
@@ -178,9 +179,9 @@ class TestAdvancedFilterOptions:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "score" in text_lower or "min" in text_lower, (
-            "Advanced options should have a minimum score input"
-        )
+        assert (
+            "score" in text_lower or "min" in text_lower
+        ), "Advanced options should have a minimum score input"
 
 
 # =============================================================================
@@ -206,9 +207,9 @@ class TestQueryExecution:
         assert (
             "submit" in text_lower or "search" in text_lower or "query" in text_lower
         ), "Page should have a submit/search button"
-        assert "<button" in text_lower or 'type="submit"' in text_lower, (
-            "Page should have a button element"
-        )
+        assert (
+            "<button" in text_lower or 'type="submit"' in text_lower
+        ), "Page should have a button element"
 
     def test_query_has_loading_indicator(self, authenticated_client: TestClient):
         """
@@ -319,9 +320,9 @@ class TestCodeSnippetDisplay:
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         # Should be an HTML fragment, not a full page
-        assert "<html>" not in response.text.lower(), (
-            "Partial should not contain full HTML structure"
-        )
+        assert (
+            "<html>" not in response.text.lower()
+        ), "Partial should not contain full HTML structure"
 
 
 # =============================================================================
@@ -421,9 +422,9 @@ class TestErrorHandling:
         assert response.status_code == 200
         # Check for CSRF cookie or form field
         csrf_cookie = response.cookies.get("_csrf")
-        assert csrf_cookie is not None or "csrf_token" in response.text, (
-            "Query page should include CSRF protection"
-        )
+        assert (
+            csrf_cookie is not None or "csrf_token" in response.text
+        ), "Query page should include CSRF protection"
 
     def test_query_post_requires_csrf(
         self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
@@ -475,9 +476,9 @@ class TestQueryPartials:
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         # Should be an HTML fragment, not a full page
-        assert "<html>" not in response.text.lower(), (
-            "Partial should not contain full HTML structure"
-        )
+        assert (
+            "<html>" not in response.text.lower()
+        ), "Partial should not contain full HTML structure"
 
     def test_partials_require_auth(self, web_client: TestClient):
         """
@@ -488,9 +489,10 @@ class TestQueryPartials:
         Then I am redirected to login
         """
         response = web_client.get("/admin/partials/query-results")
-        assert response.status_code in [302, 303], (
-            f"Query partial should redirect unauthenticated, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Query partial should redirect unauthenticated, got {response.status_code}"
 
 
 # =============================================================================

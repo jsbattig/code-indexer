@@ -651,7 +651,11 @@ class HNSWIndexManager:
             return label, id_to_label, label_to_id, next_label + 1
 
     def remove_vector(
-        self, index: Any, point_id: str, id_to_label: Dict[str, int], label_to_id: Optional[Dict[int, str]] = None
+        self,
+        index: Any,
+        point_id: str,
+        id_to_label: Dict[str, int],
+        label_to_id: Optional[Dict[int, str]] = None,
     ) -> None:
         """Remove vector from HNSW index using soft delete and clean up mappings.
 

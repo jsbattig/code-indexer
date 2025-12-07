@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 # AC1: Dashboard Page Access Tests
 # =============================================================================
 
+
 class TestDashboardAccess:
     """Tests for dashboard page access (AC1)."""
 
@@ -25,13 +26,14 @@ class TestDashboardAccess:
         """
         response = web_client.get("/admin/")
 
-        assert response.status_code in [302, 303], (
-            f"Expected redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/admin/login" in location, (
-            f"Expected redirect to /admin/login, got {location}"
-        )
+        assert (
+            "/admin/login" in location
+        ), f"Expected redirect to /admin/login, got {location}"
 
     def test_dashboard_renders(self, authenticated_client: TestClient):
         """
@@ -44,9 +46,9 @@ class TestDashboardAccess:
         response = authenticated_client.get("/admin/")
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        assert "Dashboard - CIDX Admin" in response.text, (
-            "Page title should be 'Dashboard - CIDX Admin'"
-        )
+        assert (
+            "Dashboard - CIDX Admin" in response.text
+        ), "Page title should be 'Dashboard - CIDX Admin'"
 
     def test_dashboard_nav_highlighted(self, authenticated_client: TestClient):
         """
@@ -60,14 +62,15 @@ class TestDashboardAccess:
 
         assert response.status_code == 200
         # The dashboard should have aria-current="page" attribute
-        assert 'aria-current="page"' in response.text, (
-            "Dashboard should be highlighted with aria-current attribute"
-        )
+        assert (
+            'aria-current="page"' in response.text
+        ), "Dashboard should be highlighted with aria-current attribute"
 
 
 # =============================================================================
 # AC2: System Health Display Tests
 # =============================================================================
+
 
 class TestSystemHealthDisplay:
     """Tests for system health display (AC2)."""
@@ -83,9 +86,9 @@ class TestSystemHealthDisplay:
         response = authenticated_client.get("/admin/")
 
         assert response.status_code == 200
-        assert "System Health" in response.text, (
-            "Dashboard should contain 'System Health' section"
-        )
+        assert (
+            "System Health" in response.text
+        ), "Dashboard should contain 'System Health' section"
 
     def test_dashboard_shows_health_status(self, authenticated_client: TestClient):
         """
@@ -100,18 +103,19 @@ class TestSystemHealthDisplay:
         assert response.status_code == 200
         # Check for health status indicators
         text_lower = response.text.lower()
-        assert "server" in text_lower or "api" in text_lower, (
-            "Dashboard should show server status"
-        )
+        assert (
+            "server" in text_lower or "api" in text_lower
+        ), "Dashboard should show server status"
         # Check for status indicator classes
-        assert "status-indicator" in response.text or "status-" in response.text, (
-            "Dashboard should have status indicator elements"
-        )
+        assert (
+            "status-indicator" in response.text or "status-" in response.text
+        ), "Dashboard should have status indicator elements"
 
 
 # =============================================================================
 # AC3: Job Statistics Display Tests
 # =============================================================================
+
 
 class TestJobStatistics:
     """Tests for job statistics display (AC3)."""
@@ -130,9 +134,9 @@ class TestJobStatistics:
         text_lower = response.text.lower()
         assert "jobs" in text_lower, "Dashboard should contain 'Jobs' section"
         # Should have job-related count displays
-        assert "running" in text_lower or "queued" in text_lower, (
-            "Dashboard should show job status counts"
-        )
+        assert (
+            "running" in text_lower or "queued" in text_lower
+        ), "Dashboard should show job status counts"
 
     def test_job_counts_link_to_jobs_page(self, authenticated_client: TestClient):
         """
@@ -145,14 +149,15 @@ class TestJobStatistics:
         response = authenticated_client.get("/admin/")
 
         assert response.status_code == 200
-        assert "/admin/jobs" in response.text, (
-            "Dashboard should have links to jobs page"
-        )
+        assert (
+            "/admin/jobs" in response.text
+        ), "Dashboard should have links to jobs page"
 
 
 # =============================================================================
 # AC4: Repository Statistics Display Tests
 # =============================================================================
+
 
 class TestRepositoryStatistics:
     """Tests for repository statistics display (AC4)."""
@@ -169,9 +174,9 @@ class TestRepositoryStatistics:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "repositories" in text_lower or "repos" in text_lower, (
-            "Dashboard should contain 'Repositories' section"
-        )
+        assert (
+            "repositories" in text_lower or "repos" in text_lower
+        ), "Dashboard should contain 'Repositories' section"
 
     def test_repo_counts_link_to_management_pages(
         self, authenticated_client: TestClient
@@ -186,14 +191,15 @@ class TestRepositoryStatistics:
         response = authenticated_client.get("/admin/")
 
         assert response.status_code == 200
-        assert "/admin/golden-repos" in response.text or "/admin/repos" in response.text, (
-            "Dashboard should have links to repository management pages"
-        )
+        assert (
+            "/admin/golden-repos" in response.text or "/admin/repos" in response.text
+        ), "Dashboard should have links to repository management pages"
 
 
 # =============================================================================
 # AC5: Auto-Refresh Capability Tests
 # =============================================================================
+
 
 class TestAutoRefresh:
     """Tests for auto-refresh capability (AC5)."""
@@ -211,14 +217,15 @@ class TestAutoRefresh:
         assert response.status_code == 200
         # Check for auto-refresh toggle element
         text_lower = response.text.lower()
-        assert "auto-refresh" in text_lower or "autorefresh" in text_lower, (
-            "Dashboard should have auto-refresh toggle"
-        )
+        assert (
+            "auto-refresh" in text_lower or "autorefresh" in text_lower
+        ), "Dashboard should have auto-refresh toggle"
 
 
 # =============================================================================
 # AC6: Manual Refresh Tests
 # =============================================================================
+
 
 class TestManualRefresh:
     """Tests for manual refresh (AC6)."""
@@ -238,14 +245,15 @@ class TestManualRefresh:
         text_lower = response.text.lower()
         assert "refresh" in text_lower, "Dashboard should have refresh button"
         # Should use htmx for refresh
-        assert "hx-get" in response.text or "hx-post" in response.text, (
-            "Refresh should use htmx attributes"
-        )
+        assert (
+            "hx-get" in response.text or "hx-post" in response.text
+        ), "Refresh should use htmx attributes"
 
 
 # =============================================================================
 # AC7: Recent Activity Summary Tests
 # =============================================================================
+
 
 class TestRecentActivity:
     """Tests for recent activity summary (AC7)."""
@@ -262,14 +270,15 @@ class TestRecentActivity:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "recent" in text_lower or "activity" in text_lower, (
-            "Dashboard should contain 'Recent Activity' section"
-        )
+        assert (
+            "recent" in text_lower or "activity" in text_lower
+        ), "Dashboard should contain 'Recent Activity' section"
 
 
 # =============================================================================
 # Partial Refresh Endpoint Tests
 # =============================================================================
+
 
 class TestDashboardPartials:
     """Tests for htmx partial refresh endpoints."""
@@ -284,18 +293,16 @@ class TestDashboardPartials:
         """
         response = authenticated_client.get("/admin/partials/dashboard-health")
 
-        assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}"
-        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         # Should be an HTML fragment, not a full page
-        assert "<html>" not in response.text.lower(), (
-            "Partial should not contain full HTML structure"
-        )
+        assert (
+            "<html>" not in response.text.lower()
+        ), "Partial should not contain full HTML structure"
         # Should contain health-related content
         text_lower = response.text.lower()
-        assert "health" in text_lower or "status" in text_lower, (
-            "Health partial should contain health-related content"
-        )
+        assert (
+            "health" in text_lower or "status" in text_lower
+        ), "Health partial should contain health-related content"
 
     def test_dashboard_partial_stats(self, authenticated_client: TestClient):
         """
@@ -307,13 +314,11 @@ class TestDashboardPartials:
         """
         response = authenticated_client.get("/admin/partials/dashboard-stats")
 
-        assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}"
-        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         # Should be an HTML fragment, not a full page
-        assert "<html>" not in response.text.lower(), (
-            "Partial should not contain full HTML structure"
-        )
+        assert (
+            "<html>" not in response.text.lower()
+        ), "Partial should not contain full HTML structure"
 
     def test_partials_require_auth(self, web_client: TestClient):
         """
@@ -325,12 +330,14 @@ class TestDashboardPartials:
         """
         # Test health partial
         response = web_client.get("/admin/partials/dashboard-health")
-        assert response.status_code in [302, 303], (
-            f"Health partial should redirect unauthenticated, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Health partial should redirect unauthenticated, got {response.status_code}"
 
         # Test stats partial
         response = web_client.get("/admin/partials/dashboard-stats")
-        assert response.status_code in [302, 303], (
-            f"Stats partial should redirect unauthenticated, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Stats partial should redirect unauthenticated, got {response.status_code}"

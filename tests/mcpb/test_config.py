@@ -170,7 +170,11 @@ class TestLoadConfig:
         try:
             # Mock credentials_exist to return False (no encrypted credentials)
             from unittest.mock import patch
-            with patch("code_indexer.mcpb.credential_storage.credentials_exist", return_value=False):
+
+            with patch(
+                "code_indexer.mcpb.credential_storage.credentials_exist",
+                return_value=False,
+            ):
                 with pytest.raises(
                     ValueError, match="Missing required field: bearer_token"
                 ):
@@ -590,7 +594,11 @@ class TestEnhancedErrorMessages:
         try:
             # Mock credentials_exist to return False (no encrypted credentials)
             from unittest.mock import patch
-            with patch("code_indexer.mcpb.credential_storage.credentials_exist", return_value=False):
+
+            with patch(
+                "code_indexer.mcpb.credential_storage.credentials_exist",
+                return_value=False,
+            ):
                 with pytest.raises(ValueError) as excinfo:
                     load_config(config_path)
 

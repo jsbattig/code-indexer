@@ -26,12 +26,12 @@ class TestServerConfigNewFields:
         """
         config = ServerConfig(server_dir="/tmp/test")
 
-        assert hasattr(config, "anthropic_api_key"), (
-            "ServerConfig should have anthropic_api_key field"
-        )
-        assert config.anthropic_api_key is None, (
-            "anthropic_api_key should default to None"
-        )
+        assert hasattr(
+            config, "anthropic_api_key"
+        ), "ServerConfig should have anthropic_api_key field"
+        assert (
+            config.anthropic_api_key is None
+        ), "anthropic_api_key should default to None"
 
     def test_serverconfig_has_max_concurrent_claude_cli_field(self):
         """
@@ -43,12 +43,12 @@ class TestServerConfigNewFields:
         """
         config = ServerConfig(server_dir="/tmp/test")
 
-        assert hasattr(config, "max_concurrent_claude_cli"), (
-            "ServerConfig should have max_concurrent_claude_cli field"
-        )
-        assert config.max_concurrent_claude_cli == 4, (
-            "max_concurrent_claude_cli should default to 4"
-        )
+        assert hasattr(
+            config, "max_concurrent_claude_cli"
+        ), "ServerConfig should have max_concurrent_claude_cli field"
+        assert (
+            config.max_concurrent_claude_cli == 4
+        ), "max_concurrent_claude_cli should default to 4"
 
     def test_serverconfig_has_description_refresh_interval_hours_field(self):
         """
@@ -60,12 +60,12 @@ class TestServerConfigNewFields:
         """
         config = ServerConfig(server_dir="/tmp/test")
 
-        assert hasattr(config, "description_refresh_interval_hours"), (
-            "ServerConfig should have description_refresh_interval_hours field"
-        )
-        assert config.description_refresh_interval_hours == 24, (
-            "description_refresh_interval_hours should default to 24"
-        )
+        assert hasattr(
+            config, "description_refresh_interval_hours"
+        ), "ServerConfig should have description_refresh_interval_hours field"
+        assert (
+            config.description_refresh_interval_hours == 24
+        ), "description_refresh_interval_hours should default to 24"
 
     def test_serverconfig_accepts_custom_anthropic_api_key(self):
         """
@@ -76,13 +76,12 @@ class TestServerConfigNewFields:
         Then it has the custom value
         """
         config = ServerConfig(
-            server_dir="/tmp/test",
-            anthropic_api_key="sk-ant-test-key-123"
+            server_dir="/tmp/test", anthropic_api_key="sk-ant-test-key-123"
         )
 
-        assert config.anthropic_api_key == "sk-ant-test-key-123", (
-            "anthropic_api_key should accept custom value"
-        )
+        assert (
+            config.anthropic_api_key == "sk-ant-test-key-123"
+        ), "anthropic_api_key should accept custom value"
 
     def test_serverconfig_accepts_custom_max_concurrent_claude_cli(self):
         """
@@ -92,14 +91,11 @@ class TestServerConfigNewFields:
         When I inspect the field
         Then it has the custom value
         """
-        config = ServerConfig(
-            server_dir="/tmp/test",
-            max_concurrent_claude_cli=8
-        )
+        config = ServerConfig(server_dir="/tmp/test", max_concurrent_claude_cli=8)
 
-        assert config.max_concurrent_claude_cli == 8, (
-            "max_concurrent_claude_cli should accept custom value"
-        )
+        assert (
+            config.max_concurrent_claude_cli == 8
+        ), "max_concurrent_claude_cli should accept custom value"
 
     def test_serverconfig_accepts_custom_description_refresh_interval_hours(self):
         """
@@ -110,10 +106,9 @@ class TestServerConfigNewFields:
         Then it has the custom value
         """
         config = ServerConfig(
-            server_dir="/tmp/test",
-            description_refresh_interval_hours=48
+            server_dir="/tmp/test", description_refresh_interval_hours=48
         )
 
-        assert config.description_refresh_interval_hours == 48, (
-            "description_refresh_interval_hours should accept custom value"
-        )
+        assert (
+            config.description_refresh_interval_hours == 48
+        ), "description_refresh_interval_hours should accept custom value"

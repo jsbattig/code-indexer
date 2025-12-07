@@ -81,9 +81,7 @@ def indexed_repository():
         repo_path.mkdir()
 
         # Initialize git repo
-        subprocess.run(
-            ["git", "init"], cwd=repo_path, check=True, capture_output=True
-        )
+        subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=repo_path,
@@ -390,7 +388,9 @@ class TestHNSWCachePerformance:
         CLI mode should bypass cache and load indexes directly each time.
         """
         # Create backend without cache (pass None explicitly)
-        backend = FilesystemBackend(project_root=indexed_repository, hnsw_index_cache=None)
+        backend = FilesystemBackend(
+            project_root=indexed_repository, hnsw_index_cache=None
+        )
 
         # Verify cache is NOT active
         assert (

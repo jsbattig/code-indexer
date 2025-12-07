@@ -105,9 +105,10 @@ class TestCacheStatsEndpoint:
         response = client.get("/cache/stats")
 
         # Should return 401 Unauthorized or 403 Forbidden
-        assert response.status_code in [401, 403], (
-            "Unauthenticated request should be rejected"
-        )
+        assert response.status_code in [
+            401,
+            403,
+        ], "Unauthenticated request should be rejected"
 
     def test_cache_stats_per_repository_structure(self, test_app_with_cache_stats):
         """Test that per_repository_stats has correct structure when populated."""

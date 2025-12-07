@@ -31,18 +31,18 @@ class TestMCPToolsTemporalSchema:
         schema = TOOL_REGISTRY["add_golden_repo"]["inputSchema"]
         props = schema["properties"]
 
-        assert "enable_temporal" in props, (
-            "add_golden_repo inputSchema missing 'enable_temporal' parameter"
-        )
-        assert props["enable_temporal"]["type"] == "boolean", (
-            "enable_temporal should be boolean type"
-        )
-        assert "default" in props["enable_temporal"], (
-            "enable_temporal should have a default value"
-        )
-        assert props["enable_temporal"]["default"] is False, (
-            "enable_temporal should default to false for backward compatibility"
-        )
+        assert (
+            "enable_temporal" in props
+        ), "add_golden_repo inputSchema missing 'enable_temporal' parameter"
+        assert (
+            props["enable_temporal"]["type"] == "boolean"
+        ), "enable_temporal should be boolean type"
+        assert (
+            "default" in props["enable_temporal"]
+        ), "enable_temporal should have a default value"
+        assert (
+            props["enable_temporal"]["default"] is False
+        ), "enable_temporal should default to false for backward compatibility"
 
     def test_add_golden_repo_schema_includes_temporal_options_parameter(self):
         """
@@ -55,15 +55,15 @@ class TestMCPToolsTemporalSchema:
         schema = TOOL_REGISTRY["add_golden_repo"]["inputSchema"]
         props = schema["properties"]
 
-        assert "temporal_options" in props, (
-            "add_golden_repo inputSchema missing 'temporal_options' parameter"
-        )
-        assert props["temporal_options"]["type"] == "object", (
-            "temporal_options should be object type"
-        )
-        assert "description" in props["temporal_options"], (
-            "temporal_options should have a description"
-        )
+        assert (
+            "temporal_options" in props
+        ), "add_golden_repo inputSchema missing 'temporal_options' parameter"
+        assert (
+            props["temporal_options"]["type"] == "object"
+        ), "temporal_options should be object type"
+        assert (
+            "description" in props["temporal_options"]
+        ), "temporal_options should have a description"
 
     def test_temporal_options_schema_includes_max_commits(self):
         """
@@ -74,12 +74,12 @@ class TestMCPToolsTemporalSchema:
         schema = TOOL_REGISTRY["add_golden_repo"]["inputSchema"]
         temporal_props = schema["properties"]["temporal_options"]["properties"]
 
-        assert "max_commits" in temporal_props, (
-            "temporal_options missing 'max_commits' parameter"
-        )
-        assert temporal_props["max_commits"]["type"] == "integer", (
-            "max_commits should be integer type"
-        )
+        assert (
+            "max_commits" in temporal_props
+        ), "temporal_options missing 'max_commits' parameter"
+        assert (
+            temporal_props["max_commits"]["type"] == "integer"
+        ), "max_commits should be integer type"
 
     def test_temporal_options_schema_includes_since_date(self):
         """
@@ -90,12 +90,12 @@ class TestMCPToolsTemporalSchema:
         schema = TOOL_REGISTRY["add_golden_repo"]["inputSchema"]
         temporal_props = schema["properties"]["temporal_options"]["properties"]
 
-        assert "since_date" in temporal_props, (
-            "temporal_options missing 'since_date' parameter"
-        )
-        assert temporal_props["since_date"]["type"] == "string", (
-            "since_date should be string type"
-        )
+        assert (
+            "since_date" in temporal_props
+        ), "temporal_options missing 'since_date' parameter"
+        assert (
+            temporal_props["since_date"]["type"] == "string"
+        ), "since_date should be string type"
 
     def test_temporal_options_schema_includes_diff_context(self):
         """
@@ -106,15 +106,15 @@ class TestMCPToolsTemporalSchema:
         schema = TOOL_REGISTRY["add_golden_repo"]["inputSchema"]
         temporal_props = schema["properties"]["temporal_options"]["properties"]
 
-        assert "diff_context" in temporal_props, (
-            "temporal_options missing 'diff_context' parameter"
-        )
-        assert temporal_props["diff_context"]["type"] == "integer", (
-            "diff_context should be integer type"
-        )
-        assert temporal_props["diff_context"].get("default") == 5, (
-            "diff_context should default to 5"
-        )
+        assert (
+            "diff_context" in temporal_props
+        ), "temporal_options missing 'diff_context' parameter"
+        assert (
+            temporal_props["diff_context"]["type"] == "integer"
+        ), "diff_context should be integer type"
+        assert (
+            temporal_props["diff_context"].get("default") == 5
+        ), "diff_context should default to 5"
 
 
 class TestMCPHandlersTemporalPassing:
@@ -152,9 +152,9 @@ class TestMCPHandlersTemporalPassing:
 
             # Check both positional and keyword args
             if call_kwargs.kwargs:
-                assert call_kwargs.kwargs.get("enable_temporal") is True, (
-                    "enable_temporal=True not passed to GoldenRepoManager"
-                )
+                assert (
+                    call_kwargs.kwargs.get("enable_temporal") is True
+                ), "enable_temporal=True not passed to GoldenRepoManager"
             else:
                 # Enable temporal should be in the call
                 assert True in call_kwargs.args or any(
@@ -201,9 +201,9 @@ class TestMCPHandlersTemporalPassing:
 
             if call_kwargs.kwargs:
                 passed_options = call_kwargs.kwargs.get("temporal_options")
-                assert passed_options == temporal_options, (
-                    f"temporal_options not passed correctly. Expected {temporal_options}, got {passed_options}"
-                )
+                assert (
+                    passed_options == temporal_options
+                ), f"temporal_options not passed correctly. Expected {temporal_options}, got {passed_options}"
 
     @pytest.mark.asyncio
     async def test_add_golden_repo_handler_defaults_enable_temporal_to_false(self):
@@ -234,9 +234,9 @@ class TestMCPHandlersTemporalPassing:
             if call_kwargs.kwargs:
                 # Should either not be passed or be False
                 enable_temporal = call_kwargs.kwargs.get("enable_temporal", False)
-                assert enable_temporal is False, (
-                    "enable_temporal should default to False"
-                )
+                assert (
+                    enable_temporal is False
+                ), "enable_temporal should default to False"
 
 
 class TestGlobalRegistryTemporalStorage:
@@ -295,7 +295,9 @@ class TestGlobalRegistryTemporalStorage:
         repo = registry.get_global_repo("test-repo-global")
         assert repo is not None, "Repository not found in registry"
         assert "temporal_options" in repo, "temporal_options not stored in registry"
-        assert repo["temporal_options"] == temporal_options, "temporal_options value not correct"
+        assert (
+            repo["temporal_options"] == temporal_options
+        ), "temporal_options value not correct"
 
     def test_register_global_repo_defaults_enable_temporal_to_false(self, tmp_path):
         """
@@ -474,26 +476,28 @@ class TestRefreshSchedulerTemporalCommand:
                 )
 
         # Find cidx index commands
-        cidx_index_cmds = [c for c in captured_commands if c[0] == "cidx" and c[1] == "index"]
-        assert len(cidx_index_cmds) == 2, (
-            f"Expected 2 cidx index commands (semantic+FTS and temporal), got {len(cidx_index_cmds)}: {cidx_index_cmds}"
-        )
+        cidx_index_cmds = [
+            c for c in captured_commands if c[0] == "cidx" and c[1] == "index"
+        ]
+        assert (
+            len(cidx_index_cmds) == 2
+        ), f"Expected 2 cidx index commands (semantic+FTS and temporal), got {len(cidx_index_cmds)}: {cidx_index_cmds}"
 
         # First command should be semantic+FTS (cidx index --fts)
         fts_cmd = cidx_index_cmds[0]
         assert "--fts" in fts_cmd, f"First command should have --fts: {fts_cmd}"
-        assert "--index-commits" not in fts_cmd, (
-            f"First command should NOT have --index-commits: {fts_cmd}"
-        )
+        assert (
+            "--index-commits" not in fts_cmd
+        ), f"First command should NOT have --index-commits: {fts_cmd}"
 
         # Second command should be temporal (cidx index --index-commits)
         temporal_cmd = cidx_index_cmds[1]
-        assert "--index-commits" in temporal_cmd, (
-            f"Second command should have --index-commits: {temporal_cmd}"
-        )
-        assert "--fts" not in temporal_cmd, (
-            f"Second command should NOT have --fts: {temporal_cmd}"
-        )
+        assert (
+            "--index-commits" in temporal_cmd
+        ), f"Second command should have --index-commits: {temporal_cmd}"
+        assert (
+            "--fts" not in temporal_cmd
+        ), f"Second command should NOT have --fts: {temporal_cmd}"
 
     def test_create_new_index_includes_temporal_options(self, tmp_path):
         """
@@ -559,10 +563,12 @@ class TestRefreshSchedulerTemporalCommand:
                     source_path=str(source_path),
                 )
 
-        cidx_index_cmds = [c for c in captured_commands if c[0] == "cidx" and c[1] == "index"]
-        assert len(cidx_index_cmds) == 2, (
-            f"Expected 2 cidx index commands, got {len(cidx_index_cmds)}: {cidx_index_cmds}"
-        )
+        cidx_index_cmds = [
+            c for c in captured_commands if c[0] == "cidx" and c[1] == "index"
+        ]
+        assert (
+            len(cidx_index_cmds) == 2
+        ), f"Expected 2 cidx index commands, got {len(cidx_index_cmds)}: {cidx_index_cmds}"
 
         # First command: semantic+FTS (should NOT have temporal options)
         fts_cmd = cidx_index_cmds[0]
@@ -639,12 +645,14 @@ class TestRefreshSchedulerTemporalCommand:
                     source_path=str(source_path),
                 )
 
-        cidx_index_cmds = [c for c in captured_commands if c[0] == "cidx" and c[1] == "index"]
+        cidx_index_cmds = [
+            c for c in captured_commands if c[0] == "cidx" and c[1] == "index"
+        ]
 
         # Should have exactly ONE cidx index command (semantic+FTS only)
-        assert len(cidx_index_cmds) == 1, (
-            f"Expected 1 cidx index command when temporal disabled, got {len(cidx_index_cmds)}: {cidx_index_cmds}"
-        )
+        assert (
+            len(cidx_index_cmds) == 1
+        ), f"Expected 1 cidx index command when temporal disabled, got {len(cidx_index_cmds)}: {cidx_index_cmds}"
 
         fts_cmd = cidx_index_cmds[0]
 
@@ -652,9 +660,9 @@ class TestRefreshSchedulerTemporalCommand:
         assert "--fts" in fts_cmd, f"Command should have --fts: {fts_cmd}"
 
         # Should NOT have temporal flags
-        assert "--index-commits" not in fts_cmd, (
-            f"--index-commits should NOT be in command when temporal disabled: {fts_cmd}"
-        )
+        assert (
+            "--index-commits" not in fts_cmd
+        ), f"--index-commits should NOT be in command when temporal disabled: {fts_cmd}"
 
 
 class TestDiscoverRepositoriesTemporalOutput:
@@ -735,9 +743,13 @@ class TestGetRepositoryStatusTemporalOutput:
         }
 
         with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
-            mock_app.repository_listing_manager.get_repository_details.return_value = mock_status
+            mock_app.repository_listing_manager.get_repository_details.return_value = (
+                mock_status
+            )
 
-            result = await get_repository_status({"user_alias": "test-repo-global"}, user)
+            result = await get_repository_status(
+                {"user_alias": "test-repo-global"}, user
+            )
 
             response_data = json.loads(result["content"][0]["text"])
 

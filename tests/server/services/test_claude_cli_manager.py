@@ -8,6 +8,7 @@ Tests cover:
 - CLI availability checking with caching
 - Graceful shutdown
 """
+
 import fcntl
 import json
 import queue
@@ -80,7 +81,9 @@ class TestNonBlockingWorkSubmission:
         elapsed = time.time() - start
 
         # Should return in <10ms (well before callback completes)
-        assert elapsed < 0.01, f"submit_work took {elapsed*1000:.2f}ms (should be <10ms)"
+        assert (
+            elapsed < 0.01
+        ), f"submit_work took {elapsed*1000:.2f}ms (should be <10ms)"
 
         # Wait for callback to complete
         callback_invoked.wait(timeout=2.0)
@@ -126,7 +129,7 @@ class TestNonBlockingWorkSubmission:
             completion_event.set()
 
         # Mock check_cli_available to return True
-        with patch.object(manager, 'check_cli_available', return_value=True):
+        with patch.object(manager, "check_cli_available", return_value=True):
             manager.submit_work(Path("/tmp/test-repo"), callback)
 
         completion_event.wait(timeout=2.0)
@@ -144,7 +147,7 @@ class TestNonBlockingWorkSubmission:
         mock_result = MagicMock()
         mock_result.returncode = 1
 
-        with patch('subprocess.run', return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             manager = ClaudeCliManager(api_key="test-key", max_workers=1)
 
             callback_result = []
@@ -176,7 +179,7 @@ class TestApiKeySync:
             manager = ClaudeCliManager(api_key="sk-ant-test-key-12345", max_workers=1)
 
             # Mock Path.home() to use tmpdir
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 manager.sync_api_key()
 
             assert json_path.exists()
@@ -194,14 +197,14 @@ class TestApiKeySync:
             existing = {
                 "primaryApiKey": "old-key",
                 "otherField": "value123",
-                "nested": {"key": "value"}
+                "nested": {"key": "value"},
             }
             json_path.write_text(json.dumps(existing, indent=2))
 
             manager = ClaudeCliManager(api_key="new-key", max_workers=1)
 
             # Mock Path.home() to use tmpdir
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 manager.sync_api_key()
 
             config = json.loads(json_path.read_text())
@@ -227,8 +230,8 @@ class TestApiKeySync:
                 lock_acquired.append(operation)
                 return original_flock(fd, operation)
 
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
-                with patch('fcntl.flock', side_effect=tracked_flock):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
+                with patch("fcntl.flock", side_effect=tracked_flock):
                     manager.sync_api_key()
 
             # Should acquire exclusive lock then release
@@ -244,7 +247,7 @@ class TestApiKeySync:
 
             manager = ClaudeCliManager(api_key=None, max_workers=1)
 
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 manager.sync_api_key()
 
             # Should not create file if no API key
@@ -265,8 +268,8 @@ class TestApiKeySync:
             mock_subprocess = MagicMock()
             mock_subprocess.returncode = 0
 
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
-                with patch('subprocess.run', return_value=mock_subprocess):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
+                with patch("subprocess.run", return_value=mock_subprocess):
                     manager = ClaudeCliManager(api_key="test-key", max_workers=1)
 
                     original_sync = manager.sync_api_key
@@ -295,7 +298,7 @@ class TestCliAvailabilityCheck:
         mock_result = MagicMock()
         mock_result.returncode = 0
 
-        with patch('subprocess.run', return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = manager.check_cli_available()
 
         assert result is True
@@ -310,7 +313,7 @@ class TestCliAvailabilityCheck:
         mock_result = MagicMock()
         mock_result.returncode = 1
 
-        with patch('subprocess.run', return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = manager.check_cli_available()
 
         assert result is False
@@ -321,7 +324,7 @@ class TestCliAvailabilityCheck:
         """AC4: check_cli_available() handles subprocess timeout."""
         manager = ClaudeCliManager(api_key="test-key", max_workers=1)
 
-        with patch('subprocess.run', side_effect=subprocess.TimeoutExpired("which", 5)):
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("which", 5)):
             result = manager.check_cli_available()
 
         assert result is False
@@ -341,7 +344,7 @@ class TestCliAvailabilityCheck:
             mock_result.returncode = 0
             return mock_result
 
-        with patch('subprocess.run', side_effect=counting_run):
+        with patch("subprocess.run", side_effect=counting_run):
             # First call - should execute subprocess
             result1 = manager.check_cli_available()
             assert result1 is True
@@ -368,7 +371,7 @@ class TestCliAvailabilityCheck:
             mock_result.returncode = 0
             return mock_result
 
-        with patch('subprocess.run', side_effect=counting_run):
+        with patch("subprocess.run", side_effect=counting_run):
             # First call
             result1 = manager.check_cli_available()
             assert result1 is True
@@ -408,7 +411,7 @@ class TestGracefulShutdown:
         mock_subprocess = MagicMock()
         mock_subprocess.returncode = 0
 
-        with patch('subprocess.run', return_value=mock_subprocess):
+        with patch("subprocess.run", return_value=mock_subprocess):
             manager = ClaudeCliManager(api_key="test-key", max_workers=1)
 
             results = []
@@ -451,7 +454,7 @@ class TestExternalApiNonBlocking:
             start = time.time()
             manager.submit_work(
                 Path("/tmp/test"),
-                lambda success, result: time.sleep(0.5)  # Slow callback
+                lambda success, result: time.sleep(0.5),  # Slow callback
             )
             elapsed = time.time() - start
             return elapsed
@@ -493,7 +496,7 @@ class TestConcurrencyControl:
                     completion_event.set()
 
         # Submit 5 work items
-        with patch.object(manager, 'check_cli_available', return_value=True):
+        with patch.object(manager, "check_cli_available", return_value=True):
             for i in range(5):
                 manager.submit_work(Path(f"/tmp/repo-{i}"), slow_callback)
 
@@ -519,7 +522,7 @@ class TestApiKeySyncEdgeCases:
             manager = ClaudeCliManager(api_key="new-key", max_workers=1)
 
             # Mock Path.home() to use tmpdir
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 manager.sync_api_key()
 
             # Should have overwritten invalid JSON with valid config

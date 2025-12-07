@@ -18,6 +18,7 @@ def _make_cookie_token(secret: str, algorithm: str, claims: Dict[str, Any]) -> s
 @pytest.fixture
 def client():
     from code_indexer.server.app import create_app
+
     app = create_app()
     return TestClient(app)
 
@@ -25,6 +26,7 @@ def client():
 @pytest.fixture
 def jwt_env():
     import code_indexer.server.auth.dependencies as deps
+
     assert deps.jwt_manager is not None
     return deps.jwt_manager
 
@@ -149,4 +151,3 @@ def test_sliding_expiration_works_on_mcp_public(client: TestClient, jwt_env):
     assert resp.status_code == 200
     set_cookie = resp.headers.get("set-cookie")
     assert set_cookie is not None and "cidx_session=" in set_cookie
-

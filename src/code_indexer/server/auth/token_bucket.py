@@ -44,7 +44,9 @@ class TokenBucket:
             return True, 0.0
         # compute seconds until next token reaches 1.0
         needed = max(0.0, 1.0 - self.tokens)
-        retry_after = needed / self.refill_rate if self.refill_rate > 0 else float("inf")
+        retry_after = (
+            needed / self.refill_rate if self.refill_rate > 0 else float("inf")
+        )
         return False, retry_after
 
     def refund(self) -> None:
@@ -119,4 +121,3 @@ class TokenBucketManager:
 
 # Default, module-level rate limiter instance for application use
 rate_limiter = TokenBucketManager()
-

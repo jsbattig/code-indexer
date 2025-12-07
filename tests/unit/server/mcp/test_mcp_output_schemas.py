@@ -36,20 +36,16 @@ class TestToolOutputSchemas:
             schema = tool_def.get("outputSchema")
 
             # Must be a dict
-            assert isinstance(schema, dict), (
-                f"{tool_name}: outputSchema must be a dict"
-            )
+            assert isinstance(schema, dict), f"{tool_name}: outputSchema must be a dict"
 
             # Must have required JSON schema fields
-            assert "type" in schema, (
-                f"{tool_name}: outputSchema missing 'type' field"
-            )
-            assert schema["type"] == "object", (
-                f"{tool_name}: outputSchema type must be 'object'"
-            )
-            assert "properties" in schema, (
-                f"{tool_name}: outputSchema missing 'properties' field"
-            )
+            assert "type" in schema, f"{tool_name}: outputSchema missing 'type' field"
+            assert (
+                schema["type"] == "object"
+            ), f"{tool_name}: outputSchema type must be 'object'"
+            assert (
+                "properties" in schema
+            ), f"{tool_name}: outputSchema missing 'properties' field"
 
     def test_search_code_output_schema(self):
         """Test search_code has complete output schema."""
@@ -284,12 +280,12 @@ class TestToolOutputSchemas:
             schema = tool_def.get("outputSchema", {})
             props = schema.get("properties", {})
 
-            assert "success" in props, (
-                f"{tool_name}: Missing 'success' field in output schema"
-            )
-            assert props["success"]["type"] == "boolean", (
-                f"{tool_name}: 'success' field must be boolean"
-            )
+            assert (
+                "success" in props
+            ), f"{tool_name}: Missing 'success' field in output schema"
+            assert (
+                props["success"]["type"] == "boolean"
+            ), f"{tool_name}: 'success' field must be boolean"
 
     def test_all_schemas_document_error_field(self):
         """Test that all output schemas document the 'error' field for failures."""
@@ -299,12 +295,12 @@ class TestToolOutputSchemas:
 
             # Every schema should document 'error' field
             # (present when success=False)
-            assert "error" in props, (
-                f"{tool_name}: Missing 'error' field in output schema"
-            )
-            assert props["error"]["type"] == "string", (
-                f"{tool_name}: 'error' field must be string"
-            )
+            assert (
+                "error" in props
+            ), f"{tool_name}: Missing 'error' field in output schema"
+            assert (
+                props["error"]["type"] == "string"
+            ), f"{tool_name}: 'error' field must be string"
 
     def test_schema_descriptions_are_meaningful(self):
         """Test that field descriptions are meaningful, not just field names."""
@@ -317,14 +313,14 @@ class TestToolOutputSchemas:
                     desc = field_schema["description"]
 
                     # Description should be more than just the field name
-                    assert len(desc) > len(field_name), (
-                        f"{tool_name}.{field_name}: Description too short"
-                    )
+                    assert len(desc) > len(
+                        field_name
+                    ), f"{tool_name}.{field_name}: Description too short"
 
                     # Description should not just be title-cased field name
-                    assert desc.lower() != field_name.replace("_", " "), (
-                        f"{tool_name}.{field_name}: Description is just field name"
-                    )
+                    assert desc.lower() != field_name.replace(
+                        "_", " "
+                    ), f"{tool_name}.{field_name}: Description is just field name"
 
 
 class TestOutputSchemaCompleteness:
@@ -417,12 +413,17 @@ class TestOutputSchemaCompleteness:
         ]
 
         with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
-            mock_app.activated_repo_manager.list_activated_repositories.return_value = activated_repos
+            mock_app.activated_repo_manager.list_activated_repositories.return_value = (
+                activated_repos
+            )
 
             mock_registry = MagicMock()
             mock_registry.list_global_repos.return_value = global_repos
 
-            with patch("code_indexer.server.mcp.handlers.GlobalRegistry", return_value=mock_registry):
+            with patch(
+                "code_indexer.server.mcp.handlers.GlobalRegistry",
+                return_value=mock_registry,
+            ):
                 # Execute handler
                 result = await list_repositories({}, user)
 
@@ -486,7 +487,9 @@ class TestOutputSchemaCompleteness:
             assert isinstance(stats["total"], int)
 
             # Verify calculation
-            assert stats["total"] == stats["active"] + stats["pending"] + stats["failed"]
+            assert (
+                stats["total"] == stats["active"] + stats["pending"] + stats["failed"]
+            )
 
 
 class TestSearchCodeTemporalFields:
@@ -497,67 +500,97 @@ class TestSearchCodeTemporalFields:
         from code_indexer.server.mcp.tools import TOOL_REGISTRY
 
         schema = TOOL_REGISTRY["search_code"]["outputSchema"]
-        result_items_schema = schema["properties"]["results"]["properties"]["results"]["items"]
+        result_items_schema = schema["properties"]["results"]["properties"]["results"][
+            "items"
+        ]
 
         # Should have source_repo field documented
-        assert "source_repo" in result_items_schema["properties"], \
-            "search_code output schema missing source_repo field (for composite repos)"
+        assert (
+            "source_repo" in result_items_schema["properties"]
+        ), "search_code output schema missing source_repo field (for composite repos)"
 
         source_repo_prop = result_items_schema["properties"]["source_repo"]
-        assert source_repo_prop["type"] in [["string", "null"], "string", ["null", "string"]], \
-            f"source_repo should be string|null type, got {source_repo_prop.get('type')}"
-        assert "description" in source_repo_prop, \
-            "source_repo should have description"
-        assert "composite" in source_repo_prop["description"].lower(), \
-            "source_repo description should mention composite repositories"
+        assert source_repo_prop["type"] in [
+            ["string", "null"],
+            "string",
+            ["null", "string"],
+        ], f"source_repo should be string|null type, got {source_repo_prop.get('type')}"
+        assert "description" in source_repo_prop, "source_repo should have description"
+        assert (
+            "composite" in source_repo_prop["description"].lower()
+        ), "source_repo description should mention composite repositories"
 
     def test_search_code_schema_documents_temporal_context_field(self):
         """Verify temporal_context field is documented in search_code output schema."""
         from code_indexer.server.mcp.tools import TOOL_REGISTRY
 
         schema = TOOL_REGISTRY["search_code"]["outputSchema"]
-        result_items_schema = schema["properties"]["results"]["properties"]["results"]["items"]
+        result_items_schema = schema["properties"]["results"]["properties"]["results"][
+            "items"
+        ]
 
         # Should have temporal_context field documented
-        assert "temporal_context" in result_items_schema["properties"], \
-            "search_code output schema missing temporal_context field"
+        assert (
+            "temporal_context" in result_items_schema["properties"]
+        ), "search_code output schema missing temporal_context field"
 
         temporal_prop = result_items_schema["properties"]["temporal_context"]
-        assert temporal_prop["type"] in [["object", "null"], "object", ["null", "object"]], \
-            f"temporal_context should be object|null type, got {temporal_prop.get('type')}"
-        assert "description" in temporal_prop, \
-            "temporal_context should have description"
+        assert temporal_prop["type"] in [
+            ["object", "null"],
+            "object",
+            ["null", "object"],
+        ], f"temporal_context should be object|null type, got {temporal_prop.get('type')}"
+        assert (
+            "description" in temporal_prop
+        ), "temporal_context should have description"
 
         # Verify nested fields are documented
         if "properties" in temporal_prop:
-            expected_fields = ["first_seen", "last_seen", "commit_count", "commits", "is_removed"]
+            expected_fields = [
+                "first_seen",
+                "last_seen",
+                "commit_count",
+                "commits",
+                "is_removed",
+            ]
             for field in expected_fields:
-                assert field in temporal_prop["properties"], \
-                    f"temporal_context missing nested field: {field}"
+                assert (
+                    field in temporal_prop["properties"]
+                ), f"temporal_context missing nested field: {field}"
 
     def test_search_code_schema_documents_timestamp_fields(self):
         """Verify timestamp fields are documented in search_code output schema."""
         from code_indexer.server.mcp.tools import TOOL_REGISTRY
 
         schema = TOOL_REGISTRY["search_code"]["outputSchema"]
-        result_items_schema = schema["properties"]["results"]["properties"]["results"]["items"]
+        result_items_schema = schema["properties"]["results"]["properties"]["results"][
+            "items"
+        ]
 
         # Should have file_last_modified
-        assert "file_last_modified" in result_items_schema["properties"], \
-            "search_code output schema missing file_last_modified field"
+        assert (
+            "file_last_modified" in result_items_schema["properties"]
+        ), "search_code output schema missing file_last_modified field"
 
         # Should have indexed_timestamp
-        assert "indexed_timestamp" in result_items_schema["properties"], \
-            "search_code output schema missing indexed_timestamp field"
+        assert (
+            "indexed_timestamp" in result_items_schema["properties"]
+        ), "search_code output schema missing indexed_timestamp field"
 
         # Both should be number type
         file_mod_type = result_items_schema["properties"]["file_last_modified"]["type"]
-        assert file_mod_type in ["number", ["number", "null"], ["null", "number"]], \
-            f"file_last_modified should be number|null type, got {file_mod_type}"
+        assert file_mod_type in [
+            "number",
+            ["number", "null"],
+            ["null", "number"],
+        ], f"file_last_modified should be number|null type, got {file_mod_type}"
 
         indexed_type = result_items_schema["properties"]["indexed_timestamp"]["type"]
-        assert indexed_type in ["number", ["number", "null"], ["null", "number"]], \
-            f"indexed_timestamp should be number|null type, got {indexed_type}"
+        assert indexed_type in [
+            "number",
+            ["number", "null"],
+            ["null", "number"],
+        ], f"indexed_timestamp should be number|null type, got {indexed_type}"
 
 
 class TestGlobalRepoStatusOutputSchema:
@@ -570,22 +603,34 @@ class TestGlobalRepoStatusOutputSchema:
         schema = TOOL_REGISTRY["global_repo_status"]["outputSchema"]
 
         # Schema should document actual fields, not just success/error
-        expected_fields = ["success", "error", "alias", "repo_name", "url", "last_refresh"]
+        expected_fields = [
+            "success",
+            "error",
+            "alias",
+            "repo_name",
+            "url",
+            "last_refresh",
+        ]
 
         props = schema["properties"]
         for field in expected_fields:
-            assert field in props, \
-                f"global_repo_status schema missing field: {field}"
+            assert field in props, f"global_repo_status schema missing field: {field}"
 
         # Verify field types
-        assert props["alias"]["type"] == "string", \
-            f"alias should be string, got {props['alias'].get('type')}"
-        assert props["repo_name"]["type"] == "string", \
-            f"repo_name should be string, got {props['repo_name'].get('type')}"
-        assert props["url"]["type"] == "string", \
-            f"url should be string, got {props['url'].get('type')}"
-        assert props["last_refresh"]["type"] in ["string", ["string", "null"], ["null", "string"]], \
-            f"last_refresh should be string|null, got {props['last_refresh'].get('type')}"
+        assert (
+            props["alias"]["type"] == "string"
+        ), f"alias should be string, got {props['alias'].get('type')}"
+        assert (
+            props["repo_name"]["type"] == "string"
+        ), f"repo_name should be string, got {props['repo_name'].get('type')}"
+        assert (
+            props["url"]["type"] == "string"
+        ), f"url should be string, got {props['url'].get('type')}"
+        assert props["last_refresh"]["type"] in [
+            "string",
+            ["string", "null"],
+            ["null", "string"],
+        ], f"last_refresh should be string|null, got {props['last_refresh'].get('type')}"
 
 
 class TestGetGlobalConfigOutputSchema:
@@ -598,14 +643,15 @@ class TestGetGlobalConfigOutputSchema:
         schema = TOOL_REGISTRY["get_global_config"]["outputSchema"]
 
         # Should have refresh_interval documented
-        assert "refresh_interval" in schema["properties"], \
-            "get_global_config schema missing refresh_interval field"
+        assert (
+            "refresh_interval" in schema["properties"]
+        ), "get_global_config schema missing refresh_interval field"
 
         refresh_prop = schema["properties"]["refresh_interval"]
-        assert refresh_prop["type"] == "integer", \
-            f"refresh_interval should be integer type, got {refresh_prop.get('type')}"
-        assert "description" in refresh_prop, \
-            "refresh_interval should have description"
+        assert (
+            refresh_prop["type"] == "integer"
+        ), f"refresh_interval should be integer type, got {refresh_prop.get('type')}"
+        assert "description" in refresh_prop, "refresh_interval should have description"
 
 
 class TestGetRepositoryStatisticsOutputSchema:
@@ -619,28 +665,26 @@ class TestGetRepositoryStatisticsOutputSchema:
         stats_props = schema["properties"]["statistics"]["properties"]
 
         # Should have repository_id
-        assert "repository_id" in stats_props, \
-            "statistics schema missing repository_id"
+        assert "repository_id" in stats_props, "statistics schema missing repository_id"
 
         # Should have files object with nested fields
-        assert "files" in stats_props, \
-            "statistics schema missing files"
+        assert "files" in stats_props, "statistics schema missing files"
         files_props = stats_props["files"]["properties"]
         assert "total" in files_props, "files missing total field"
         assert "indexed" in files_props, "files missing indexed field"
         assert "by_language" in files_props, "files missing by_language field"
 
         # Should have storage object with nested fields
-        assert "storage" in stats_props, \
-            "statistics schema missing storage"
+        assert "storage" in stats_props, "statistics schema missing storage"
         storage_props = stats_props["storage"]["properties"]
-        assert "repository_size_bytes" in storage_props, "storage missing repository_size_bytes"
+        assert (
+            "repository_size_bytes" in storage_props
+        ), "storage missing repository_size_bytes"
         assert "index_size_bytes" in storage_props, "storage missing index_size_bytes"
         assert "embedding_count" in storage_props, "storage missing embedding_count"
 
         # Should have activity object with nested fields
-        assert "activity" in stats_props, \
-            "statistics schema missing activity"
+        assert "activity" in stats_props, "statistics schema missing activity"
         activity_props = stats_props["activity"]["properties"]
         assert "created_at" in activity_props, "activity missing created_at"
         assert "last_sync_at" in activity_props, "activity missing last_sync_at"
@@ -648,8 +692,7 @@ class TestGetRepositoryStatisticsOutputSchema:
         assert "sync_count" in activity_props, "activity missing sync_count"
 
         # Should have health object with nested fields
-        assert "health" in stats_props, \
-            "statistics schema missing health"
+        assert "health" in stats_props, "statistics schema missing health"
         health_props = stats_props["health"]["properties"]
         assert "score" in health_props, "health missing score"
         assert "issues" in health_props, "health missing issues"
@@ -667,23 +710,39 @@ class TestGetRepositoryStatusOutputSchema:
 
         # Expected fields from get_repository_details()
         expected_fields = [
-            "alias", "repo_url", "default_branch", "clone_path",
-            "created_at", "activation_status", "branches_list",
-            "file_count", "index_size", "last_updated",
-            "enable_temporal", "temporal_status"
+            "alias",
+            "repo_url",
+            "default_branch",
+            "clone_path",
+            "created_at",
+            "activation_status",
+            "branches_list",
+            "file_count",
+            "index_size",
+            "last_updated",
+            "enable_temporal",
+            "temporal_status",
         ]
 
         for field in expected_fields:
-            assert field in status_props, \
-                f"get_repository_status schema missing field: {field}"
+            assert (
+                field in status_props
+            ), f"get_repository_status schema missing field: {field}"
 
         # Verify temporal_status has nested structure
         temporal_status_prop = status_props["temporal_status"]
-        assert temporal_status_prop["type"] in [["object", "null"], "object", ["null", "object"]], \
-            f"temporal_status should be object|null, got {temporal_status_prop.get('type')}"
+        assert temporal_status_prop["type"] in [
+            ["object", "null"],
+            "object",
+            ["null", "object"],
+        ], f"temporal_status should be object|null, got {temporal_status_prop.get('type')}"
         if "properties" in temporal_status_prop:
-            assert "enabled" in temporal_status_prop["properties"], "temporal_status missing enabled"
-            assert "diff_context" in temporal_status_prop["properties"], "temporal_status missing diff_context"
+            assert (
+                "enabled" in temporal_status_prop["properties"]
+            ), "temporal_status missing enabled"
+            assert (
+                "diff_context" in temporal_status_prop["properties"]
+            ), "temporal_status missing diff_context"
 
 
 class TestDiscoverRepositoriesOutputSchema:
@@ -698,16 +757,23 @@ class TestDiscoverRepositoriesOutputSchema:
 
         # Should document actual golden repo fields
         expected_fields = [
-            "alias", "repo_url", "default_branch", "clone_path",
-            "created_at", "enable_temporal", "temporal_options"
+            "alias",
+            "repo_url",
+            "default_branch",
+            "clone_path",
+            "created_at",
+            "enable_temporal",
+            "temporal_options",
         ]
 
         # Schema should either have full properties or clear description
-        assert "properties" in repo_items or "description" in repo_items, \
-            "discover_repositories items should have properties or detailed description"
+        assert (
+            "properties" in repo_items or "description" in repo_items
+        ), "discover_repositories items should have properties or detailed description"
 
         if "properties" in repo_items:
             repo_props = repo_items["properties"]
             for field in expected_fields:
-                assert field in repo_props, \
-                    f"discover_repositories schema missing field: {field}"
+                assert (
+                    field in repo_props
+                ), f"discover_repositories schema missing field: {field}"

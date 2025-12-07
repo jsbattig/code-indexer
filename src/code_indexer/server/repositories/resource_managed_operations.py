@@ -390,6 +390,7 @@ async def integrate_resource_manager_with_existing_operations():
     """
     # Example: Wrapping existing golden repo operations
     from pathlib import Path
+
     home_dir = Path.home()
     data_dir = str(home_dir / ".cidx-server" / "data")
     golden_repo_manager = GoldenRepoManager(data_dir=data_dir)

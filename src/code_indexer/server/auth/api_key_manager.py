@@ -24,7 +24,9 @@ class ApiKeyManager:
         self.user_manager = user_manager
         self.password_manager = PasswordManager()
 
-    def generate_key(self, username: str, name: Optional[str] = None) -> Tuple[str, str]:
+    def generate_key(
+        self, username: str, name: Optional[str] = None
+    ) -> Tuple[str, str]:
         """
         Generate a new API key and store it for the user.
 

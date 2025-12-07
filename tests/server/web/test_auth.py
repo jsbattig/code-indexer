@@ -17,6 +17,7 @@ from .conftest import WebTestInfrastructure
 # AC1: Static File Serving Tests
 # =============================================================================
 
+
 class TestStaticFileServing:
     """Tests for static file serving (AC1)."""
 
@@ -31,13 +32,13 @@ class TestStaticFileServing:
         response = web_client.get("/admin/static/pico.min.css")
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        assert "text/css" in response.headers.get("content-type", ""), (
-            f"Expected text/css content-type, got {response.headers.get('content-type')}"
-        )
+        assert "text/css" in response.headers.get(
+            "content-type", ""
+        ), f"Expected text/css content-type, got {response.headers.get('content-type')}"
         # Verify it's actually CSS content
-        assert "html" in response.text.lower() or "{" in response.text, (
-            "Response does not appear to be CSS content"
-        )
+        assert (
+            "html" in response.text.lower() or "{" in response.text
+        ), "Response does not appear to be CSS content"
 
     def test_static_js_served(self, web_client: TestClient):
         """
@@ -51,18 +52,21 @@ class TestStaticFileServing:
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         content_type = response.headers.get("content-type", "")
-        assert "javascript" in content_type or "text/javascript" in content_type, (
-            f"Expected javascript content-type, got {content_type}"
-        )
+        assert (
+            "javascript" in content_type or "text/javascript" in content_type
+        ), f"Expected javascript content-type, got {content_type}"
         # Verify it's actually JavaScript content
-        assert "function" in response.text or "var" in response.text or "const" in response.text, (
-            "Response does not appear to be JavaScript content"
-        )
+        assert (
+            "function" in response.text
+            or "var" in response.text
+            or "const" in response.text
+        ), "Response does not appear to be JavaScript content"
 
 
 # =============================================================================
 # AC2: Login Page Display Tests
 # =============================================================================
+
 
 class TestLoginPageDisplay:
     """Tests for login page display (AC2)."""
@@ -94,13 +98,15 @@ class TestLoginPageDisplay:
         """
         response = web_client.get("/admin/")
 
-        assert response.status_code in [302, 303, 307], (
-            f"Expected redirect (302/303/307), got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+            307,
+        ], f"Expected redirect (302/303/307), got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/admin/login" in location, (
-            f"Expected redirect to /admin/login, got {location}"
-        )
+        assert (
+            "/admin/login" in location
+        ), f"Expected redirect to /admin/login, got {location}"
 
     def test_login_page_styled_with_pico(self, web_client: TestClient):
         """
@@ -114,22 +120,21 @@ class TestLoginPageDisplay:
 
         assert response.status_code == 200
         # Verify Pico CSS is included
-        assert "pico" in response.text.lower(), (
-            "Login page should include Pico CSS reference"
-        )
+        assert (
+            "pico" in response.text.lower()
+        ), "Login page should include Pico CSS reference"
 
 
 # =============================================================================
 # AC3: Authentication Flow Tests
 # =============================================================================
 
+
 class TestAuthenticationFlow:
     """Tests for authentication flow (AC3)."""
 
     def test_login_valid_admin_credentials(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: dict
+        self, web_infrastructure: WebTestInfrastructure, admin_user: dict
     ):
         """
         AC3: Valid admin credentials -> redirect to /admin/, httpOnly signed cookie set.
@@ -154,25 +159,24 @@ class TestAuthenticationFlow:
                 "username": admin_user["username"],
                 "password": admin_user["password"],
                 "csrf_token": csrf_token,
-            }
+            },
         )
 
         # Should redirect to /admin/
-        assert response.status_code in [302, 303], (
-            f"Expected redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert location == "/admin/" or location.endswith("/admin/"), (
-            f"Expected redirect to /admin/, got {location}"
-        )
+        assert location == "/admin/" or location.endswith(
+            "/admin/"
+        ), f"Expected redirect to /admin/, got {location}"
 
         # Should set session cookie
         assert "session" in response.cookies, "Session cookie should be set"
 
     def test_session_cookie_is_httponly(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: dict
+        self, web_infrastructure: WebTestInfrastructure, admin_user: dict
     ):
         """
         AC3: Session cookie has httpOnly flag set.
@@ -195,19 +199,16 @@ class TestAuthenticationFlow:
                 "username": admin_user["username"],
                 "password": admin_user["password"],
                 "csrf_token": csrf_token,
-            }
+            },
         )
 
         # Check cookie headers for httponly flag
         set_cookie_header = response.headers.get("set-cookie", "")
-        assert "httponly" in set_cookie_header.lower(), (
-            "Session cookie should have httpOnly flag"
-        )
+        assert (
+            "httponly" in set_cookie_header.lower()
+        ), "Session cookie should have httpOnly flag"
 
-    def test_login_invalid_credentials(
-        self,
-        web_infrastructure: WebTestInfrastructure
-    ):
+    def test_login_invalid_credentials(self, web_infrastructure: WebTestInfrastructure):
         """
         AC3: Invalid credentials -> stay on login with error message.
 
@@ -231,13 +232,15 @@ class TestAuthenticationFlow:
                 "username": "nonexistent",
                 "password": "wrongpassword",
                 "csrf_token": csrf_token,
-            }
+            },
         )
 
         # Should stay on login page (200) or redirect back to login
-        assert response.status_code in [200, 302, 303], (
-            f"Expected 200 or redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            200,
+            302,
+            303,
+        ], f"Expected 200 or redirect, got {response.status_code}"
 
         # If it's a redirect, follow it to get the error message
         if response.status_code in [302, 303]:
@@ -249,21 +252,19 @@ class TestAuthenticationFlow:
                     "username": "nonexistent",
                     "password": "wrongpassword",
                     "csrf_token": csrf_token,
-                }
+                },
             )
 
         # Should contain error message
-        assert "invalid" in response.text.lower() or "error" in response.text.lower(), (
-            "Response should contain error message"
-        )
+        assert (
+            "invalid" in response.text.lower() or "error" in response.text.lower()
+        ), "Response should contain error message"
 
         # Should NOT set session cookie
         assert "session" not in response.cookies, "Session cookie should NOT be set"
 
     def test_login_non_admin_rejected(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        normal_user: dict
+        self, web_infrastructure: WebTestInfrastructure, normal_user: dict
     ):
         """
         AC3: Non-admin user -> stay on login with "Admin access required" error.
@@ -289,7 +290,7 @@ class TestAuthenticationFlow:
                 "username": normal_user["username"],
                 "password": normal_user["password"],
                 "csrf_token": csrf_token,
-            }
+            },
         )
 
         # If it's a redirect, follow it
@@ -301,7 +302,7 @@ class TestAuthenticationFlow:
                     "username": normal_user["username"],
                     "password": normal_user["password"],
                     "csrf_token": csrf_token,
-                }
+                },
             )
 
         # Should contain admin access required message
@@ -314,13 +315,11 @@ class TestAuthenticationFlow:
 # AC4: Session Management Tests
 # =============================================================================
 
+
 class TestSessionManagement:
     """Tests for session management (AC4)."""
 
-    def test_logout_clears_session(
-        self,
-        authenticated_client: TestClient
-    ):
+    def test_logout_clears_session(self, authenticated_client: TestClient):
         """
         AC4: Logout clears session and redirects to /admin/login.
 
@@ -333,13 +332,14 @@ class TestSessionManagement:
         response = authenticated_client.get("/admin/logout", follow_redirects=False)
 
         # Should redirect to login
-        assert response.status_code in [302, 303], (
-            f"Expected redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/admin/login" in location, (
-            f"Expected redirect to /admin/login, got {location}"
-        )
+        assert (
+            "/admin/login" in location
+        ), f"Expected redirect to /admin/login, got {location}"
 
         # Session cookie should be cleared (max-age=0 or expires in past)
         set_cookie = response.headers.get("set-cookie", "")
@@ -347,9 +347,7 @@ class TestSessionManagement:
         assert "session" in set_cookie.lower(), "Session cookie should be in response"
 
     def test_expired_session_redirects(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: dict
+        self, web_infrastructure: WebTestInfrastructure, admin_user: dict
     ):
         """
         AC4: Expired session redirects to login with "Session expired" message.
@@ -370,26 +368,25 @@ class TestSessionManagement:
         response = client.get("/admin/")
 
         # Should redirect to login
-        assert response.status_code in [302, 303], (
-            f"Expected redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/admin/login" in location, (
-            f"Expected redirect to /admin/login, got {location}"
-        )
+        assert (
+            "/admin/login" in location
+        ), f"Expected redirect to /admin/login, got {location}"
 
 
 # =============================================================================
 # AC5: Navigation Shell Tests
 # =============================================================================
 
+
 class TestNavigationShell:
     """Tests for navigation shell (AC5)."""
 
-    def test_authenticated_access_to_dashboard(
-        self,
-        authenticated_client: TestClient
-    ):
+    def test_authenticated_access_to_dashboard(self, authenticated_client: TestClient):
         """
         AC5: Authenticated pages show navigation header with all links.
 
@@ -404,19 +401,27 @@ class TestNavigationShell:
         assert "Dashboard" in response.text, "Navigation should include Dashboard link"
 
         # Check for all expected navigation items
-        nav_items = ["Dashboard", "Users", "Golden Repos", "Repositories", "Jobs", "Query", "Config"]
+        nav_items = [
+            "Dashboard",
+            "Users",
+            "Golden Repos",
+            "Repositories",
+            "Jobs",
+            "Query",
+            "Config",
+        ]
         for item in nav_items:
             # Check for the item in navigation (case-insensitive)
-            assert item.lower() in response.text.lower() or item.replace(" ", "-").lower() in response.text.lower(), (
-                f"Navigation should include {item} link"
-            )
+            assert (
+                item.lower() in response.text.lower()
+                or item.replace(" ", "-").lower() in response.text.lower()
+            ), f"Navigation should include {item} link"
 
         # Check for logout
         assert "logout" in response.text.lower(), "Page should include logout link"
 
     def test_navigation_current_page_highlighted(
-        self,
-        authenticated_client: TestClient
+        self, authenticated_client: TestClient
     ):
         """
         AC5: Current page is highlighted in navigation.
@@ -432,9 +437,9 @@ class TestNavigationShell:
         # The current page should have some highlighting indicator
         # This could be a class like "active", "current", or aria-current
         assert (
-            'aria-current' in response.text or
-            'class="active"' in response.text.lower() or
-            "active" in response.text.lower()
+            "aria-current" in response.text
+            or 'class="active"' in response.text.lower()
+            or "active" in response.text.lower()
         ), "Current page should be highlighted in navigation"
 
 
@@ -442,13 +447,11 @@ class TestNavigationShell:
 # AC6: Admin-Only Access Enforcement Tests
 # =============================================================================
 
+
 class TestAdminOnlyAccess:
     """Tests for admin-only access enforcement (AC6)."""
 
-    def test_unauthenticated_admin_routes_redirect(
-        self,
-        web_client: TestClient
-    ):
+    def test_unauthenticated_admin_routes_redirect(self, web_client: TestClient):
         """
         AC6: Unauthenticated access to /admin/* (except /admin/login) redirects to login.
 
@@ -469,26 +472,26 @@ class TestAdminOnlyAccess:
 
         for route in protected_routes:
             response = web_client.get(route)
-            assert response.status_code in [302, 303], (
-                f"Expected redirect for {route}, got {response.status_code}"
-            )
+            assert response.status_code in [
+                302,
+                303,
+            ], f"Expected redirect for {route}, got {response.status_code}"
             location = response.headers.get("location", "")
-            assert "/admin/login" in location, (
-                f"Expected redirect to /admin/login for {route}, got {location}"
-            )
+            assert (
+                "/admin/login" in location
+            ), f"Expected redirect to /admin/login for {route}, got {location}"
 
 
 # =============================================================================
 # AC7: CSRF Protection Tests
 # =============================================================================
 
+
 class TestCSRFProtection:
     """Tests for CSRF protection (AC7)."""
 
     def test_login_missing_csrf_rejected(
-        self,
-        web_client: TestClient,
-        admin_user: dict
+        self, web_client: TestClient, admin_user: dict
     ):
         """
         AC7: Forms submitted without valid CSRF token are rejected with 403.
@@ -504,17 +507,15 @@ class TestCSRFProtection:
                 "username": admin_user["username"],
                 "password": admin_user["password"],
                 # No csrf_token
-            }
+            },
         )
 
-        assert response.status_code == 403, (
-            f"Expected 403 Forbidden without CSRF token, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 403
+        ), f"Expected 403 Forbidden without CSRF token, got {response.status_code}"
 
     def test_login_invalid_csrf_rejected(
-        self,
-        web_client: TestClient,
-        admin_user: dict
+        self, web_client: TestClient, admin_user: dict
     ):
         """
         AC7: Forms submitted with invalid CSRF token are rejected with 403.
@@ -526,17 +527,14 @@ class TestCSRFProtection:
                 "username": admin_user["username"],
                 "password": admin_user["password"],
                 "csrf_token": "invalid_token_12345",
-            }
+            },
         )
 
-        assert response.status_code == 403, (
-            f"Expected 403 Forbidden with invalid CSRF token, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 403
+        ), f"Expected 403 Forbidden with invalid CSRF token, got {response.status_code}"
 
-    def test_form_contains_csrf_token(
-        self,
-        web_client: TestClient
-    ):
+    def test_form_contains_csrf_token(self, web_client: TestClient):
         """
         AC7: All forms contain hidden CSRF token field.
 
@@ -547,9 +545,7 @@ class TestCSRFProtection:
         response = web_client.get("/admin/login")
 
         assert response.status_code == 200
-        assert 'name="csrf_token"' in response.text, (
-            "Form should contain csrf_token field"
-        )
-        assert 'type="hidden"' in response.text, (
-            "CSRF token should be a hidden field"
-        )
+        assert (
+            'name="csrf_token"' in response.text
+        ), "Form should contain csrf_token field"
+        assert 'type="hidden"' in response.text, "CSRF token should be a hidden field"

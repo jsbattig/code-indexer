@@ -15,6 +15,7 @@ from .conftest import WebTestInfrastructure
 # AC1: User List Display Tests
 # =============================================================================
 
+
 class TestUserListDisplay:
     """Tests for user list display (AC1)."""
 
@@ -28,13 +29,14 @@ class TestUserListDisplay:
         """
         response = web_client.get("/admin/users")
 
-        assert response.status_code in [302, 303], (
-            f"Expected redirect, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/admin/login" in location, (
-            f"Expected redirect to /admin/login, got {location}"
-        )
+        assert (
+            "/admin/login" in location
+        ), f"Expected redirect to /admin/login, got {location}"
 
     def test_users_page_renders(self, authenticated_client: TestClient):
         """
@@ -47,14 +49,12 @@ class TestUserListDisplay:
         response = authenticated_client.get("/admin/users")
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        assert "Users - CIDX Admin" in response.text, (
-            "Page title should be 'Users - CIDX Admin'"
-        )
+        assert (
+            "Users - CIDX Admin" in response.text
+        ), "Page title should be 'Users - CIDX Admin'"
 
     def test_users_list_shows_users(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC1: User list shows all users in a table with Username, Role, Created Date, Actions.
@@ -66,8 +66,7 @@ class TestUserListDisplay:
         And the table has columns: Username, Role, Created Date, Actions
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         response = client.get("/admin/users")
@@ -83,9 +82,9 @@ class TestUserListDisplay:
         assert "actions" in text_lower, "Table should have Actions column"
 
         # Check that admin user appears in list
-        assert admin_user["username"].lower() in text_lower, (
-            "Admin user should appear in the list"
-        )
+        assert (
+            admin_user["username"].lower() in text_lower
+        ), "Admin user should appear in the list"
 
     def test_users_list_has_create_button(self, authenticated_client: TestClient):
         """
@@ -99,14 +98,15 @@ class TestUserListDisplay:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "create user" in text_lower or "create-user" in text_lower, (
-            "Page should have a Create User button"
-        )
+        assert (
+            "create user" in text_lower or "create-user" in text_lower
+        ), "Page should have a Create User button"
 
 
 # =============================================================================
 # AC2: Create User Form Tests
 # =============================================================================
+
 
 class TestCreateUserForm:
     """Tests for create user form (AC2)."""
@@ -125,23 +125,24 @@ class TestCreateUserForm:
         text_lower = response.text.lower()
 
         # Form should have necessary fields
-        assert 'name="username"' in response.text.lower() or 'name="new_username"' in response.text.lower(), (
-            "Form should have username field"
-        )
-        assert 'name="password"' in response.text.lower() or 'name="new_password"' in response.text.lower(), (
-            "Form should have password field"
-        )
-        assert 'confirm' in text_lower or 'name="confirm_password"' in response.text.lower(), (
-            "Form should have confirm password field"
-        )
-        assert 'role' in text_lower or '<select' in text_lower, (
-            "Form should have role dropdown"
-        )
+        assert (
+            'name="username"' in response.text.lower()
+            or 'name="new_username"' in response.text.lower()
+        ), "Form should have username field"
+        assert (
+            'name="password"' in response.text.lower()
+            or 'name="new_password"' in response.text.lower()
+        ), "Form should have password field"
+        assert (
+            "confirm" in text_lower
+            or 'name="confirm_password"' in response.text.lower()
+        ), "Form should have confirm password field"
+        assert (
+            "role" in text_lower or "<select" in text_lower
+        ), "Form should have role dropdown"
 
     def test_create_user_success(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC2: Valid user creation shows success message and user appears in list.
@@ -152,8 +153,7 @@ class TestCreateUserForm:
         And the new user appears in the list
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -177,17 +177,15 @@ class TestCreateUserForm:
         text_lower = response.text.lower()
 
         # Should show success message
-        assert "success" in text_lower or "created" in text_lower, (
-            "Should show success message after creating user"
-        )
+        assert (
+            "success" in text_lower or "created" in text_lower
+        ), "Should show success message after creating user"
 
         # New user should appear in list
         assert "newuser" in text_lower, "New user should appear in the list"
 
     def test_create_user_duplicate_username(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC2: Duplicate username shows validation error.
@@ -198,8 +196,7 @@ class TestCreateUserForm:
         Then I see an error message about duplicate username
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -223,14 +220,12 @@ class TestCreateUserForm:
         text_lower = response.text.lower()
 
         # Should show error about duplicate
-        assert "error" in text_lower or "exists" in text_lower or "already" in text_lower, (
-            "Should show error for duplicate username"
-        )
+        assert (
+            "error" in text_lower or "exists" in text_lower or "already" in text_lower
+        ), "Should show error for duplicate username"
 
     def test_create_user_password_mismatch(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC2: Password mismatch shows validation error.
@@ -240,8 +235,7 @@ class TestCreateUserForm:
         Then I see an error message about password mismatch
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -265,22 +259,21 @@ class TestCreateUserForm:
         text_lower = response.text.lower()
 
         # Should show error about mismatch
-        assert "error" in text_lower or "match" in text_lower or "mismatch" in text_lower, (
-            "Should show error for password mismatch"
-        )
+        assert (
+            "error" in text_lower or "match" in text_lower or "mismatch" in text_lower
+        ), "Should show error for password mismatch"
 
 
 # =============================================================================
 # AC3: Edit User Role Tests
 # =============================================================================
 
+
 class TestEditUserRole:
     """Tests for edit user role (AC3)."""
 
     def test_edit_user_role(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC3: Role update works and shows success message.
@@ -293,13 +286,11 @@ class TestEditUserRole:
         """
         # Create another user to edit
         web_infrastructure.create_normal_user(
-            username="editroleuser",
-            password="EditRole@123!"
+            username="editroleuser", password="EditRole@123!"
         )
 
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -320,14 +311,12 @@ class TestEditUserRole:
         text_lower = response.text.lower()
 
         # Should show success message
-        assert "success" in text_lower or "updated" in text_lower, (
-            "Should show success message after updating role"
-        )
+        assert (
+            "success" in text_lower or "updated" in text_lower
+        ), "Should show success message after updating role"
 
     def test_cannot_demote_self(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC3: Cannot demote own admin account.
@@ -338,8 +327,7 @@ class TestEditUserRole:
         And my role remains admin
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -360,22 +348,21 @@ class TestEditUserRole:
         text_lower = response.text.lower()
 
         # Should show error about demoting self
-        assert "error" in text_lower or "cannot" in text_lower or "own" in text_lower, (
-            "Should show error when trying to demote own account"
-        )
+        assert (
+            "error" in text_lower or "cannot" in text_lower or "own" in text_lower
+        ), "Should show error when trying to demote own account"
 
 
 # =============================================================================
 # AC4: Change User Password Tests
 # =============================================================================
 
+
 class TestChangeUserPassword:
     """Tests for change user password (AC4)."""
 
     def test_change_user_password(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC4: Password change works and shows success message.
@@ -387,13 +374,11 @@ class TestChangeUserPassword:
         """
         # Create another user to change password
         web_infrastructure.create_normal_user(
-            username="changepassuser",
-            password="OldPass@123!"
+            username="changepassuser", password="OldPass@123!"
         )
 
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -415,22 +400,23 @@ class TestChangeUserPassword:
         text_lower = response.text.lower()
 
         # Should show success message
-        assert "success" in text_lower or "changed" in text_lower or "updated" in text_lower, (
-            "Should show success message after changing password"
-        )
+        assert (
+            "success" in text_lower
+            or "changed" in text_lower
+            or "updated" in text_lower
+        ), "Should show success message after changing password"
 
 
 # =============================================================================
 # AC5: Delete User Tests
 # =============================================================================
 
+
 class TestDeleteUser:
     """Tests for delete user (AC5)."""
 
     def test_delete_user(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC5: User deletion works and shows success message.
@@ -443,13 +429,11 @@ class TestDeleteUser:
         """
         # Create another user to delete
         web_infrastructure.create_normal_user(
-            username="deleteuser",
-            password="DeleteMe@123!"
+            username="deleteuser", password="DeleteMe@123!"
         )
 
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -457,9 +441,9 @@ class TestDeleteUser:
         csrf_token = web_infrastructure.extract_csrf_token(users_page.text)
 
         # Verify user exists initially
-        assert "deleteuser" in users_page.text.lower(), (
-            "User should exist before deletion"
-        )
+        assert (
+            "deleteuser" in users_page.text.lower()
+        ), "User should exist before deletion"
 
         # Delete user
         response = client.post(
@@ -474,23 +458,22 @@ class TestDeleteUser:
         text_lower = response.text.lower()
 
         # Should show success message
-        assert "success" in text_lower or "deleted" in text_lower, (
-            "Should show success message after deleting user"
-        )
+        assert (
+            "success" in text_lower or "deleted" in text_lower
+        ), "Should show success message after deleting user"
 
         # User should no longer appear in the table rows
         # The username may still appear in success message, but not in <td> cells
         import re
+
         # Check that deleteuser doesn't appear as a table cell value (data row)
-        td_pattern = r'<td>deleteuser</td>'
-        assert not re.search(td_pattern, text_lower), (
-            "Deleted user should not appear in the table rows"
-        )
+        td_pattern = r"<td>deleteuser</td>"
+        assert not re.search(
+            td_pattern, text_lower
+        ), "Deleted user should not appear in the table rows"
 
     def test_cannot_delete_self(
-        self,
-        web_infrastructure: WebTestInfrastructure,
-        admin_user: Dict[str, Any]
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
     ):
         """
         AC5: Cannot delete own account.
@@ -501,8 +484,7 @@ class TestDeleteUser:
         And my account remains
         """
         client = web_infrastructure.get_authenticated_client(
-            admin_user["username"],
-            admin_user["password"]
+            admin_user["username"], admin_user["password"]
         )
 
         # Get the users page to get CSRF token
@@ -522,19 +504,20 @@ class TestDeleteUser:
         text_lower = response.text.lower()
 
         # Should show error about deleting self
-        assert "error" in text_lower or "cannot" in text_lower or "own" in text_lower, (
-            "Should show error when trying to delete own account"
-        )
+        assert (
+            "error" in text_lower or "cannot" in text_lower or "own" in text_lower
+        ), "Should show error when trying to delete own account"
 
         # User should still appear in list
-        assert admin_user["username"].lower() in text_lower, (
-            "Admin user should still appear in the list"
-        )
+        assert (
+            admin_user["username"].lower() in text_lower
+        ), "Admin user should still appear in the list"
 
 
 # =============================================================================
 # Partial Refresh Endpoint Tests
 # =============================================================================
+
 
 class TestUsersPartial:
     """Tests for htmx partial refresh endpoint."""
@@ -549,17 +532,15 @@ class TestUsersPartial:
         """
         response = authenticated_client.get("/admin/partials/users-list")
 
-        assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}"
-        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         # Should be an HTML fragment, not a full page
-        assert "<html>" not in response.text.lower(), (
-            "Partial should not contain full HTML structure"
-        )
+        assert (
+            "<html>" not in response.text.lower()
+        ), "Partial should not contain full HTML structure"
         # Should contain user-related content (table)
-        assert "<table" in response.text.lower() or "<tr" in response.text.lower(), (
-            "Users partial should contain table content"
-        )
+        assert (
+            "<table" in response.text.lower() or "<tr" in response.text.lower()
+        ), "Users partial should contain table content"
 
     def test_partials_require_auth(self, web_client: TestClient):
         """
@@ -570,6 +551,7 @@ class TestUsersPartial:
         Then I am redirected to login
         """
         response = web_client.get("/admin/partials/users-list")
-        assert response.status_code in [302, 303], (
-            f"Users partial should redirect unauthenticated, got {response.status_code}"
-        )
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Users partial should redirect unauthenticated, got {response.status_code}"

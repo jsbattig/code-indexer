@@ -417,9 +417,11 @@ def _create_users_page_response(
                 {
                     "username": u.username,
                     "role": u.role.value,
-                    "created_at": u.created_at.strftime("%Y-%m-%d %H:%M")
-                    if u.created_at
-                    else "N/A",
+                    "created_at": (
+                        u.created_at.strftime("%Y-%m-%d %H:%M")
+                        if u.created_at
+                        else "N/A"
+                    ),
                 }
                 for u in users
             ],
@@ -662,9 +664,11 @@ async def users_list_partial(request: Request):
                 {
                     "username": u.username,
                     "role": u.role.value,
-                    "created_at": u.created_at.strftime("%Y-%m-%d %H:%M")
-                    if u.created_at
-                    else "N/A",
+                    "created_at": (
+                        u.created_at.strftime("%Y-%m-%d %H:%M")
+                        if u.created_at
+                        else "N/A"
+                    ),
                 }
                 for u in users
             ],
@@ -751,9 +755,15 @@ def _get_golden_repos_list():
                         if index_path and ".versioned" in index_path:
                             version = Path(index_path).name
                         repo["version"] = version
-                        repo["last_refresh"] = alias_data.get("last_refresh", "")[:19] if alias_data.get("last_refresh") else None
+                        repo["last_refresh"] = (
+                            alias_data.get("last_refresh", "")[:19]
+                            if alias_data.get("last_refresh")
+                            else None
+                        )
                     except Exception as e:
-                        logger.warning("Could not read alias file %s: %s", alias_file, e)
+                        logger.warning(
+                            "Could not read alias file %s: %s", alias_file, e
+                        )
                         repo["version"] = None
                         repo["last_refresh"] = None
                 else:
@@ -779,7 +789,10 @@ def _get_golden_repos_list():
                     index_dir = index_base / "index"
                     if index_dir.exists():
                         for model_dir in index_dir.iterdir():
-                            if model_dir.is_dir() and (model_dir / "hnsw_index.bin").exists():
+                            if (
+                                model_dir.is_dir()
+                                and (model_dir / "hnsw_index.bin").exists()
+                            ):
                                 repo["has_semantic"] = True
                                 break
 
@@ -789,8 +802,16 @@ def _get_golden_repos_list():
                         repo["has_fts"] = True
 
                     # Check temporal index (code-indexer-temporal collection)
-                    temporal_dir = index_dir / "code-indexer-temporal" if index_dir.exists() else None
-                    if temporal_dir and temporal_dir.exists() and (temporal_dir / "hnsw_index.bin").exists():
+                    temporal_dir = (
+                        index_dir / "code-indexer-temporal"
+                        if index_dir.exists()
+                        else None
+                    )
+                    if (
+                        temporal_dir
+                        and temporal_dir.exists()
+                        and (temporal_dir / "hnsw_index.bin").exists()
+                    ):
                         repo["has_temporal"] = True
 
         return repos
@@ -1012,7 +1033,9 @@ async def activate_golden_repo(
         )
 
     # Use golden_alias as user_alias if not provided
-    effective_user_alias = user_alias.strip() if user_alias.strip() else golden_alias.strip()
+    effective_user_alias = (
+        user_alias.strip() if user_alias.strip() else golden_alias.strip()
+    )
 
     # Try to activate the repository
     try:
@@ -1070,7 +1093,9 @@ async def golden_repo_details(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Failed to get golden repo details for '%s': %s", alias, e, exc_info=True)
+        logger.error(
+            "Failed to get golden repo details for '%s': %s", alias, e, exc_info=True
+        )
         raise HTTPException(status_code=404, detail=f"Repository '{alias}' not found")
 
 
@@ -1483,21 +1508,25 @@ def _get_all_jobs(
                 "job_id": job.job_id,
                 "job_type": job.operation_type,
                 "operation_type": job.operation_type,
-                "status": job.status.value
-                if hasattr(job.status, "value")
-                else str(job.status),
+                "status": (
+                    job.status.value
+                    if hasattr(job.status, "value")
+                    else str(job.status)
+                ),
                 "progress": job.progress,
                 "created_at": job.created_at.isoformat() if job.created_at else None,
                 "started_at": job.started_at.isoformat() if job.started_at else None,
-                "completed_at": job.completed_at.isoformat()
-                if job.completed_at
-                else None,
+                "completed_at": (
+                    job.completed_at.isoformat() if job.completed_at else None
+                ),
                 "error_message": job.error,
                 "username": job.username,
                 "user_alias": getattr(job, "user_alias", None),
-                "repository_name": getattr(job.result, "alias", None)
-                if job.result and isinstance(job.result, dict)
-                else None,
+                "repository_name": (
+                    getattr(job.result, "alias", None)
+                    if job.result and isinstance(job.result, dict)
+                    else None
+                ),
                 "repository_url": getattr(job, "repository_url", None),
                 "progress_info": getattr(job, "progress_info", None),
             }
@@ -2006,7 +2035,9 @@ async def query_submit(
                     "CIDX_SERVER_DATA_DIR",
                     os.path.expanduser("~/.cidx-server"),
                 )
-                aliases_dir = Path(server_data_dir) / "data" / "golden-repos" / "aliases"
+                aliases_dir = (
+                    Path(server_data_dir) / "data" / "golden-repos" / "aliases"
+                )
                 alias_manager = AliasManager(str(aliases_dir))
 
                 # Resolve alias to target path
@@ -2029,13 +2060,17 @@ async def query_submit(
 
                         # Convert results to template format
                         for result in search_response.results:
-                            results.append({
-                                "file_path": result.file_path,
-                                "line_numbers": str(result.line_start or 1),
-                                "content": result.content or "",
-                                "score": result.score,
-                                "language": _detect_language_from_path(result.file_path),
-                            })
+                            results.append(
+                                {
+                                    "file_path": result.file_path,
+                                    "line_numbers": str(result.line_start or 1),
+                                    "content": result.content or "",
+                                    "score": result.score,
+                                    "language": _detect_language_from_path(
+                                        result.file_path
+                                    ),
+                                }
+                            )
                     except Exception as e:
                         logger.error("Global repo query failed: %s", e, exc_info=True)
                         error_message = f"Query failed: {str(e)}"
@@ -2063,17 +2098,21 @@ async def query_submit(
 
                 # Convert results to template format with full metadata
                 for result in query_response.get("results", []):
-                    results.append({
-                        "file_path": result.get("file_path", ""),
-                        "line_numbers": f"{result.get('line_number', 1)}",
-                        "content": result.get("code_snippet", ""),
-                        "score": result.get("similarity_score", 0.0),
-                        "language": _detect_language_from_path(result.get("file_path", "")),
-                        "repository_alias": result.get("repository_alias", ""),
-                        "source_repo": result.get("source_repo"),
-                        "metadata": result.get("metadata"),
-                        "temporal_context": result.get("temporal_context"),
-                    })
+                    results.append(
+                        {
+                            "file_path": result.get("file_path", ""),
+                            "line_numbers": f"{result.get('line_number', 1)}",
+                            "content": result.get("code_snippet", ""),
+                            "score": result.get("similarity_score", 0.0),
+                            "language": _detect_language_from_path(
+                                result.get("file_path", "")
+                            ),
+                            "repository_alias": result.get("repository_alias", ""),
+                            "source_repo": result.get("source_repo"),
+                            "metadata": result.get("metadata"),
+                            "temporal_context": result.get("temporal_context"),
+                        }
+                    )
 
     except Exception as e:
         logger.error("Query execution failed: %s", e, exc_info=True)
@@ -2135,6 +2174,7 @@ def _get_semantic_query_manager():
     """Get the semantic query manager instance."""
     try:
         from ..app import semantic_query_manager
+
         return semantic_query_manager
     except Exception as e:
         logger.error("Failed to get semantic query manager: %s", e, exc_info=True)
@@ -2206,9 +2246,7 @@ async def query_results_partial_post(
         )
 
     # Add to query history
-    _add_to_query_history(
-        session.username, query_text.strip(), repository, search_mode
-    )
+    _add_to_query_history(session.username, query_text.strip(), repository, search_mode)
 
     # Handle temporal search mode - default to time_range_all if no specific temporal params
     if search_mode == "temporal":
@@ -2262,7 +2300,9 @@ async def query_results_partial_post(
                     "CIDX_SERVER_DATA_DIR",
                     os.path.expanduser("~/.cidx-server"),
                 )
-                aliases_dir = Path(server_data_dir) / "data" / "golden-repos" / "aliases"
+                aliases_dir = (
+                    Path(server_data_dir) / "data" / "golden-repos" / "aliases"
+                )
                 alias_manager = AliasManager(str(aliases_dir))
 
                 # Resolve alias to target path
@@ -2285,13 +2325,17 @@ async def query_results_partial_post(
 
                         # Convert results to template format
                         for result in search_response.results:
-                            results.append({
-                                "file_path": result.file_path,
-                                "line_numbers": str(result.line_start or 1),
-                                "content": result.content or "",
-                                "score": result.score,
-                                "language": _detect_language_from_path(result.file_path),
-                            })
+                            results.append(
+                                {
+                                    "file_path": result.file_path,
+                                    "line_numbers": str(result.line_start or 1),
+                                    "content": result.content or "",
+                                    "score": result.score,
+                                    "language": _detect_language_from_path(
+                                        result.file_path
+                                    ),
+                                }
+                            )
                     except Exception as e:
                         logger.error("Global repo query failed: %s", e, exc_info=True)
                         error_message = f"Query failed: {str(e)}"
@@ -2319,17 +2363,21 @@ async def query_results_partial_post(
 
                 # Convert results to template format with full metadata
                 for result in query_response.get("results", []):
-                    results.append({
-                        "file_path": result.get("file_path", ""),
-                        "line_numbers": f"{result.get('line_number', 1)}",
-                        "content": result.get("code_snippet", ""),
-                        "score": result.get("similarity_score", 0.0),
-                        "language": _detect_language_from_path(result.get("file_path", "")),
-                        "repository_alias": result.get("repository_alias", ""),
-                        "source_repo": result.get("source_repo"),
-                        "metadata": result.get("metadata"),
-                        "temporal_context": result.get("temporal_context"),
-                    })
+                    results.append(
+                        {
+                            "file_path": result.get("file_path", ""),
+                            "line_numbers": f"{result.get('line_number', 1)}",
+                            "content": result.get("code_snippet", ""),
+                            "score": result.get("similarity_score", 0.0),
+                            "language": _detect_language_from_path(
+                                result.get("file_path", "")
+                            ),
+                            "repository_alias": result.get("repository_alias", ""),
+                            "source_repo": result.get("source_repo"),
+                            "metadata": result.get("metadata"),
+                            "temporal_context": result.get("temporal_context"),
+                        }
+                    )
 
     except Exception as e:
         logger.error("Query execution failed: %s", e, exc_info=True)
@@ -2382,6 +2430,7 @@ def _detect_language_from_path(file_path: str) -> str:
         ".bash": "bash",
     }
     from pathlib import Path
+
     ext = Path(file_path).suffix.lower()
     return ext_to_lang.get(ext, "plaintext")
 
@@ -2455,10 +2504,10 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                 try:
                     val_float = float(value)
                     if val_float <= 0:
-                        field_name = field.replace('_', ' ').title()
+                        field_name = field.replace("_", " ").title()
                         return f"{field_name} must be a positive number"
                 except (ValueError, TypeError):
-                    field_name = field.replace('_', ' ').title()
+                    field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
 
         # Validate cleanup intervals
@@ -2468,10 +2517,10 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                 try:
                     val_int = int(value)
                     if val_int < 1:
-                        field_name = field.replace('_', ' ').title()
+                        field_name = field.replace("_", " ").title()
                         return f"{field_name} must be a positive number"
                 except (ValueError, TypeError):
-                    field_name = field.replace('_', ' ').title()
+                    field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
 
     elif section == "reindexing":
@@ -2495,30 +2544,40 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                 return "Accuracy threshold must be a valid number"
 
         # Validate positive integers
-        for field in ["max_index_age_days", "batch_size", "max_analysis_time_seconds", "max_memory_usage_mb"]:
+        for field in [
+            "max_index_age_days",
+            "batch_size",
+            "max_analysis_time_seconds",
+            "max_memory_usage_mb",
+        ]:
             value = data.get(field)
             if value is not None:
                 try:
                     val_int = int(value)
                     if val_int < 1:
-                        field_name = field.replace('_', ' ').title()
+                        field_name = field.replace("_", " ").title()
                         return f"{field_name} must be a positive number"
                 except (ValueError, TypeError):
-                    field_name = field.replace('_', ' ').title()
+                    field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
 
     elif section == "timeouts":
         # Validate timeout values (must be positive integers)
-        for field in ["git_clone_timeout", "git_pull_timeout", "git_refresh_timeout", "cidx_index_timeout"]:
+        for field in [
+            "git_clone_timeout",
+            "git_pull_timeout",
+            "git_refresh_timeout",
+            "cidx_index_timeout",
+        ]:
             value = data.get(field)
             if value is not None:
                 try:
                     val_int = int(value)
                     if val_int < 1:
-                        field_name = field.replace('_', ' ').title()
+                        field_name = field.replace("_", " ").title()
                         return f"{field_name} must be a positive number"
                 except (ValueError, TypeError):
-                    field_name = field.replace('_', ' ').title()
+                    field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
 
     elif section == "password_security":
@@ -2570,10 +2629,10 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                 try:
                     val_int = int(value)
                     if val_int < 1:
-                        field_name = field.replace('_', ' ').title()
+                        field_name = field.replace("_", " ").title()
                         return f"{field_name} must be a positive number"
                 except (ValueError, TypeError):
-                    field_name = field.replace('_', ' ').title()
+                    field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
 
         min_score = data.get("min_score")
@@ -2592,10 +2651,10 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                 try:
                     val_int = int(value)
                     if val_int < 60:
-                        field_name = field.replace('_', ' ').title()
+                        field_name = field.replace("_", " ").title()
                         return f"{field_name} must be at least 60 seconds"
                 except (ValueError, TypeError):
-                    field_name = field.replace('_', ' ').title()
+                    field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
 
     return None
@@ -2791,6 +2850,7 @@ async def config_section_partial(
 # API Keys Management
 # =============================================================================
 
+
 @web_router.get("/api-keys", response_class=HTMLResponse)
 async def api_keys_page(request: Request):
     """API Keys management page - manage personal API keys."""
@@ -2834,7 +2894,9 @@ async def api_keys_list_partial(request: Request):
     """Partial for API keys list (HTMX refresh)."""
     session = _require_admin_session(request)
     if not session:
-        return HTMLResponse(content="<p>Session expired. Please refresh the page.</p>", status_code=401)
+        return HTMLResponse(
+            content="<p>Session expired. Please refresh the page.</p>", status_code=401
+        )
 
     username = session.username
     keys = dependencies.user_manager.get_api_keys(username)
@@ -2851,6 +2913,7 @@ async def api_keys_list_partial(request: Request):
 # User Self-Service Routes (Any Authenticated User)
 # =============================================================================
 
+
 def _require_authenticated_session(request: Request) -> Optional[SessionData]:
     """Check for valid authenticated session (any role), return None if not authenticated."""
     session_manager = get_session_manager()
@@ -2860,7 +2923,6 @@ def _require_authenticated_session(request: Request) -> Optional[SessionData]:
         return None
 
     return session
-
 
 
 @user_router.get("/login", response_class=HTMLResponse)
@@ -2964,6 +3026,7 @@ async def user_login_submit(
 
     return redirect_response
 
+
 @user_router.get("/api-keys", response_class=HTMLResponse)
 async def user_api_keys_page(request: Request):
     """User API Keys management page - any authenticated user can manage their own API keys."""
@@ -3007,7 +3070,9 @@ async def user_api_keys_list_partial(request: Request):
     """Partial for user API keys list (HTMX refresh)."""
     session = _require_authenticated_session(request)
     if not session:
-        return HTMLResponse(content="<p>Session expired. Please refresh the page.</p>", status_code=401)
+        return HTMLResponse(
+            content="<p>Session expired. Please refresh the page.</p>", status_code=401
+        )
 
     username = session.username
     keys = dependencies.user_manager.get_api_keys(username)

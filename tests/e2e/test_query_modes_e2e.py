@@ -382,9 +382,9 @@ def verify_cleanup(alias: str) -> None:
         with open(registry_path) as f:
             registry = json.load(f)
         for entry in registry.values():
-            assert entry.get("alias_name") != alias, (
-                f"Registry still contains alias {alias}"
-            )
+            assert (
+                entry.get("alias_name") != alias
+            ), f"Registry still contains alias {alias}"
 
     logger.info(f"Cleanup verified for alias: {alias}")
 

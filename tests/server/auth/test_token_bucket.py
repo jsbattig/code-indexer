@@ -107,4 +107,6 @@ def test_manager_refund_logic_not_exceed_capacity():
     m.refund("refunduser")
     tokens_after_refund = m.get_tokens("refunduser")
     assert tokens_after_refund <= 3.0
-    assert tokens_after_refund >= 2.9  # effectively back to capacity after refill rounding
+    assert (
+        tokens_after_refund >= 2.9
+    )  # effectively back to capacity after refill rounding

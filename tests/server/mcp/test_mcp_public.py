@@ -38,8 +38,7 @@ class TestMcpPublicEndpointAccess:
     def test_mcp_public_post_accessible_without_auth(self, client):
         """Test POST /mcp-public accessible without authentication."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -47,10 +46,12 @@ class TestMcpPublicEndpointAccess:
         assert data["id"] == 1
         assert "result" in data
 
-    @pytest.mark.skip(reason="SSE endpoints with infinite generators block TestClient; verified by POST tests and integration")
+    @pytest.mark.skip(
+        reason="SSE endpoints with infinite generators block TestClient; verified by POST tests and integration"
+    )
     def test_mcp_public_get_accessible_without_auth(self, client):
         """Test GET /mcp-public (SSE) accessible without authentication.
-        
+
         Note: This test is skipped because SSE endpoints with infinite generators
         cannot be properly tested with sync TestClient. The endpoint functionality
         is verified by:
@@ -62,8 +63,7 @@ class TestMcpPublicEndpointAccess:
     def test_mcp_public_no_www_authenticate_header(self, client):
         """Test /mcp-public doesn't return WWW-Authenticate header."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response.status_code == 200
         assert "WWW-Authenticate" not in response.headers
@@ -71,8 +71,7 @@ class TestMcpPublicEndpointAccess:
     def test_mcp_public_has_session_id_header(self, client):
         """Test /mcp-public returns Mcp-Session-Id header."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response.status_code == 200
         assert "Mcp-Session-Id" in response.headers
@@ -84,8 +83,7 @@ class TestMcpPublicToolsListUnauthenticated:
     def test_tools_list_returns_only_authenticate(self, client):
         """Test unauthenticated tools/list returns only authenticate tool."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -97,8 +95,7 @@ class TestMcpPublicToolsListUnauthenticated:
     def test_authenticate_tool_has_input_schema(self, client):
         """Test authenticate tool has proper input schema."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
         )
         data = response.json()
         tool = data["result"]["tools"][0]
@@ -120,8 +117,8 @@ class TestMcpPublicToolCallUnauthenticated:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "list_repositories", "arguments": {}}
-            }
+                "params": {"name": "list_repositories", "arguments": {}},
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -137,8 +134,11 @@ class TestMcpPublicToolCallUnauthenticated:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "authenticate", "arguments": {"username": "test", "api_key": "test"}}
-            }
+                "params": {
+                    "name": "authenticate",
+                    "arguments": {"username": "test", "api_key": "test"},
+                },
+            },
         )
         data = response.json()
         if "error" in data:
@@ -151,8 +151,7 @@ class TestMcpPublicInitialize:
     def test_initialize_returns_protocol_version(self, client):
         """Test initialize returns proper MCP protocol info."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -168,8 +167,7 @@ class TestMcpPublicVsRegularMcp:
     def test_regular_mcp_requires_auth(self, client):
         """Test regular /mcp POST requires authentication."""
         response = client.post(
-            "/mcp",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response.status_code == 401
 
@@ -191,8 +189,8 @@ class TestMcpPublicInputValidation:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/list",
-                "params": ["invalid", "array", "params"]
-            }
+                "params": ["invalid", "array", "params"],
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -204,12 +202,7 @@ class TestMcpPublicInputValidation:
         """Test that dict params are accepted normally."""
         response = client.post(
             "/mcp-public",
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/list",
-                "params": {}
-            }
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
         )
         assert response.status_code == 200
         data = response.json()

@@ -131,13 +131,16 @@ def _refresh_jwt_cookie(response: Response, payload: Dict[str, Any]) -> None:
     import logging
 
     if not jwt_manager:
-        logging.getLogger(__name__).error("JWT manager not initialized - cannot refresh cookie")
+        logging.getLogger(__name__).error(
+            "JWT manager not initialized - cannot refresh cookie"
+        )
         return
 
     # Blacklist old token BEFORE creating new one to prevent reuse
     old_jti = payload.get("jti")
     if old_jti:
         from code_indexer.server.app import blacklist_token
+
         blacklist_token(old_jti)
 
     new_token = jwt_manager.create_token(

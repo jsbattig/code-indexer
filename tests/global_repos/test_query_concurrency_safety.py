@@ -24,11 +24,13 @@ class TestQueryTrackerIntegrationInHandlers:
             username="test_user",
             password_hash="test_hash",
             role=UserRole.NORMAL_USER,
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
 
     @pytest.mark.asyncio
-    async def test_search_code_increments_ref_count_for_global_repo(self, mock_user, tmp_path):
+    async def test_search_code_increments_ref_count_for_global_repo(
+        self, mock_user, tmp_path
+    ):
         """Test that search_code increments QueryTracker ref count for global repos."""
         from code_indexer.global_repos.query_tracker import QueryTracker
 
@@ -63,43 +65,52 @@ class TestQueryTrackerIntegrationInHandlers:
             mock_app.app.state = mock_state
 
             # Mock GlobalRegistry
-            with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_registry_cls:
+            with patch(
+                "code_indexer.server.mcp.handlers.GlobalRegistry"
+            ) as mock_registry_cls:
                 mock_registry = Mock()
                 mock_registry.list_global_repos.return_value = [
                     {
                         "alias_name": "test-repo-global",
                         "repo_name": "test-repo",
-                        "index_path": test_index_path
+                        "index_path": test_index_path,
                     }
                 ]
                 mock_registry_cls.return_value = mock_registry
 
                 # Mock AliasManager at the correct import location
-                with patch("code_indexer.global_repos.alias_manager.AliasManager") as mock_alias_cls:
+                with patch(
+                    "code_indexer.global_repos.alias_manager.AliasManager"
+                ) as mock_alias_cls:
                     mock_alias = Mock()
                     mock_alias.read_alias.return_value = test_index_path
                     mock_alias_cls.return_value = mock_alias
 
                     mock_app.semantic_query_manager = Mock()
-                    mock_app.semantic_query_manager._perform_search = Mock(return_value=[])
+                    mock_app.semantic_query_manager._perform_search = Mock(
+                        return_value=[]
+                    )
 
                     from code_indexer.server.mcp.handlers import search_code
 
                     params = {
                         "repository_alias": "test-repo-global",
-                        "query_text": "test query"
+                        "query_text": "test query",
                     }
 
                     # Execute search
                     await search_code(params, mock_user)
 
                     # Verify ref count tracking was called
-                    assert len(increment_calls) >= 1, \
-                        "QueryTracker.increment_ref should be called during global repo search"
-                    assert len(decrement_calls) >= 1, \
-                        "QueryTracker.decrement_ref should be called after search completes"
-                    assert query_tracker.get_ref_count(test_index_path) == 0, \
-                        "Ref count should be 0 after search completes"
+                    assert (
+                        len(increment_calls) >= 1
+                    ), "QueryTracker.increment_ref should be called during global repo search"
+                    assert (
+                        len(decrement_calls) >= 1
+                    ), "QueryTracker.decrement_ref should be called after search completes"
+                    assert (
+                        query_tracker.get_ref_count(test_index_path) == 0
+                    ), "Ref count should be 0 after search completes"
 
     @pytest.mark.asyncio
     async def test_search_code_decrements_ref_on_exception(self, mock_user, tmp_path):
@@ -119,18 +130,22 @@ class TestQueryTrackerIntegrationInHandlers:
         with patch("code_indexer.server.mcp.handlers.app_module") as mock_app:
             mock_app.app.state = mock_state
 
-            with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_registry_cls:
+            with patch(
+                "code_indexer.server.mcp.handlers.GlobalRegistry"
+            ) as mock_registry_cls:
                 mock_registry = Mock()
                 mock_registry.list_global_repos.return_value = [
                     {
                         "alias_name": "test-repo-global",
                         "repo_name": "test-repo",
-                        "index_path": test_index_path
+                        "index_path": test_index_path,
                     }
                 ]
                 mock_registry_cls.return_value = mock_registry
 
-                with patch("code_indexer.global_repos.alias_manager.AliasManager") as mock_alias_cls:
+                with patch(
+                    "code_indexer.global_repos.alias_manager.AliasManager"
+                ) as mock_alias_cls:
                     mock_alias = Mock()
                     mock_alias.read_alias.return_value = test_index_path
                     mock_alias_cls.return_value = mock_alias
@@ -145,15 +160,16 @@ class TestQueryTrackerIntegrationInHandlers:
 
                     params = {
                         "repository_alias": "test-repo-global",
-                        "query_text": "test query"
+                        "query_text": "test query",
                     }
 
                     # Execute search (should handle exception gracefully)
                     await search_code(params, mock_user)
 
                     # Ref count should be 0 after exception (decremented in finally)
-                    assert query_tracker.get_ref_count(test_index_path) == 0, \
-                        "Ref count should be 0 even after exception"
+                    assert (
+                        query_tracker.get_ref_count(test_index_path) == 0
+                    ), "Ref count should be 0 even after exception"
 
 
 class TestCleanupManagerIntegrationInRemoval:
@@ -162,10 +178,14 @@ class TestCleanupManagerIntegrationInRemoval:
     @pytest.fixture
     def golden_repo_manager_with_cleanup(self, tmp_path):
         """Create GoldenRepoManager with CleanupManager dependency."""
-        from code_indexer.server.repositories.golden_repo_manager import GoldenRepoManager
+        from code_indexer.server.repositories.golden_repo_manager import (
+            GoldenRepoManager,
+        )
         from code_indexer.global_repos.query_tracker import QueryTracker
         from code_indexer.global_repos.cleanup_manager import CleanupManager
-        from code_indexer.server.repositories.background_jobs import BackgroundJobManager
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJobManager,
+        )
 
         data_dir = str(tmp_path / "data")
         Path(data_dir).mkdir(parents=True)
@@ -202,7 +222,7 @@ class TestCleanupManagerIntegrationInRemoval:
             repo_url="file://" + str(test_path),
             default_branch="main",
             clone_path=str(test_path),
-            created_at=datetime.now(timezone.utc).isoformat()
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
         manager._save_metadata()
 
@@ -216,11 +236,13 @@ class TestCleanupManagerIntegrationInRemoval:
             cleanup_manager.schedule_cleanup(str(test_path))
 
             import time
+
             time.sleep(0.3)  # Give cleanup manager time to check
 
             # Path should still exist (waiting for query)
-            assert test_path.exists(), \
-                "Path should not be deleted while query is active"
+            assert (
+                test_path.exists()
+            ), "Path should not be deleted while query is active"
 
             # Complete the "query"
             query_tracker.decrement_ref(str(test_path))
@@ -229,8 +251,9 @@ class TestCleanupManagerIntegrationInRemoval:
             time.sleep(0.3)
 
             # Now path should be deleted
-            assert not test_path.exists(), \
-                "Path should be deleted after query completes"
+            assert (
+                not test_path.exists()
+            ), "Path should be deleted after query completes"
         finally:
             cleanup_manager.stop()
 
@@ -299,9 +322,15 @@ class TestActivatedRepoDeactivationWithCleanup:
     @pytest.fixture
     def activated_repo_manager_with_cleanup(self, tmp_path):
         """Create ActivatedRepoManager with cleanup dependencies."""
-        from code_indexer.server.repositories.activated_repo_manager import ActivatedRepoManager
-        from code_indexer.server.repositories.golden_repo_manager import GoldenRepoManager
-        from code_indexer.server.repositories.background_jobs import BackgroundJobManager
+        from code_indexer.server.repositories.activated_repo_manager import (
+            ActivatedRepoManager,
+        )
+        from code_indexer.server.repositories.golden_repo_manager import (
+            GoldenRepoManager,
+        )
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJobManager,
+        )
         from code_indexer.global_repos.query_tracker import QueryTracker
         from code_indexer.global_repos.cleanup_manager import CleanupManager
 
@@ -318,7 +347,7 @@ class TestActivatedRepoDeactivationWithCleanup:
         manager = ActivatedRepoManager(
             data_dir=data_dir,
             golden_repo_manager=golden_repo_manager,
-            background_job_manager=background_job_manager
+            background_job_manager=background_job_manager,
         )
 
         # Inject cleanup dependencies
@@ -331,7 +360,9 @@ class TestActivatedRepoDeactivationWithCleanup:
         self, activated_repo_manager_with_cleanup
     ):
         """Test that deactivation schedules cleanup instead of immediate deletion."""
-        manager, cleanup_manager, query_tracker, golden_manager = activated_repo_manager_with_cleanup
+        manager, cleanup_manager, query_tracker, golden_manager = (
+            activated_repo_manager_with_cleanup
+        )
 
         # Create a golden repo first
         test_username = "testuser"
@@ -351,7 +382,7 @@ class TestActivatedRepoDeactivationWithCleanup:
             repo_url="file://" + str(golden_path),
             default_branch="main",
             clone_path=str(golden_path),
-            created_at=datetime.now(timezone.utc).isoformat()
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
 
         # Create activated repo directory
@@ -362,7 +393,9 @@ class TestActivatedRepoDeactivationWithCleanup:
         (activated_path / "test.txt").write_text("activated test")
 
         # Create metadata
-        from code_indexer.server.repositories.activated_repo_manager import ActivatedRepo
+        from code_indexer.server.repositories.activated_repo_manager import (
+            ActivatedRepo,
+        )
         import json
 
         metadata = ActivatedRepo(
@@ -370,7 +403,7 @@ class TestActivatedRepoDeactivationWithCleanup:
             golden_repo_alias=test_alias,
             current_branch="main",
             activated_at=datetime.now(timezone.utc).isoformat(),
-            last_accessed=datetime.now(timezone.utc).isoformat()
+            last_accessed=datetime.now(timezone.utc).isoformat(),
         )
 
         metadata_file = user_dir / f"{test_alias}_metadata.json"
@@ -383,12 +416,10 @@ class TestActivatedRepoDeactivationWithCleanup:
             query_tracker.increment_ref(str(activated_path))
 
             # Attempt deactivation
-            manager.deactivate_repository(
-                username=test_username,
-                user_alias=test_alias
-            )
+            manager.deactivate_repository(username=test_username, user_alias=test_alias)
 
             import time
+
             time.sleep(0.3)
 
             # Path should still exist due to active query
@@ -430,6 +461,7 @@ class TestEndToEndConcurrencySafety:
 
             # Verify directory still exists (query protection)
             import time
+
             time.sleep(0.3)
             assert test_index.exists(), "Index should exist while query is active"
 
@@ -440,7 +472,9 @@ class TestEndToEndConcurrencySafety:
             time.sleep(0.3)
 
             # Now should be deleted
-            assert not test_index.exists(), "Index should be deleted after query completes"
+            assert (
+                not test_index.exists()
+            ), "Index should be deleted after query completes"
 
         finally:
             cleanup_manager.stop()

@@ -588,7 +588,9 @@ class GitOperationsService:
         # Run numstat separately (git ignores numstat when combined with name-status)
         numstat_cmd = ["git", "diff", "--numstat"] + base_args + path_args
         try:
-            numstat_result = run_git_command(numstat_cmd, cwd=self.repo_path, check=True)
+            numstat_result = run_git_command(
+                numstat_cmd, cwd=self.repo_path, check=True
+            )
             numstat_output = numstat_result.stdout
         except subprocess.CalledProcessError as e:
             logger.debug(f"numstat command returned no output: {e}")
@@ -697,7 +699,9 @@ class GitOperationsService:
                 else:
                     file_path = parts[1]
                     if file_path in files_dict:
-                        files_dict[file_path].status = self._map_status_char(status_char)
+                        files_dict[file_path].status = self._map_status_char(
+                            status_char
+                        )
                     else:
                         files_dict[file_path] = FileDiff(
                             path=file_path,
@@ -773,7 +777,9 @@ class GitOperationsService:
                 else:
                     file_path = parts[1]
                     if file_path in files_dict:
-                        files_dict[file_path].status = self._map_status_char(status_char)
+                        files_dict[file_path].status = self._map_status_char(
+                            status_char
+                        )
                     else:
                         files_dict[file_path] = FileDiff(
                             path=file_path,
@@ -1209,13 +1215,9 @@ class GitOperationsService:
 
         # Validate parameters
         if search_string and search_pattern:
-            raise ValueError(
-                "search_string and search_pattern are mutually exclusive"
-            )
+            raise ValueError("search_string and search_pattern are mutually exclusive")
         if not search_string and not search_pattern:
-            raise ValueError(
-                "Must provide either search_string or search_pattern"
-            )
+            raise ValueError("Must provide either search_string or search_pattern")
 
         # Determine search term for result
         search_term = search_pattern if search_pattern else search_string

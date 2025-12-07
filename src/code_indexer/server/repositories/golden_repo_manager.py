@@ -468,7 +468,11 @@ class GoldenRepoManager:
         Returns:
             True if it's a local path, False if remote
         """
-        return repo_url.startswith("/") or repo_url.startswith("file://") or repo_url.startswith("local://")
+        return (
+            repo_url.startswith("/")
+            or repo_url.startswith("file://")
+            or repo_url.startswith("local://")
+        )
 
     def _clone_local_repository_with_regular_copy(
         self, repo_url: str, clone_path: str

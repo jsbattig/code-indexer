@@ -48,7 +48,9 @@ def repo_with_excludes(tmp_path):
     (tmp_path / "src" / "main.py").write_text("print('hello')")
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "package").mkdir()
-    (tmp_path / "node_modules" / "package" / "index.js").write_text("module.exports = {}")
+    (tmp_path / "node_modules" / "package" / "index.js").write_text(
+        "module.exports = {}"
+    )
     (tmp_path / "__pycache__").mkdir()
     (tmp_path / "__pycache__" / "module.cpython-39.pyc").write_bytes(b"compiled")
     (tmp_path / ".venv").mkdir()
@@ -164,7 +166,9 @@ class TestSubdirectoryPath:
         result = service.generate_tree(path="src/utils")
 
         assert result.root.name == "utils"
-        assert "helper.py" in [c.name for c in result.root.children if not c.is_directory]
+        assert "helper.py" in [
+            c.name for c in result.root.children if not c.is_directory
+        ]
 
     def test_generate_tree_invalid_path_raises(self, sample_repo):
         """Test generate_tree raises for nonexistent path."""
@@ -343,9 +347,7 @@ class TestHiddenFileHandling:
         # Check that .git/ is not in the output (the directory)
         assert ".git/" not in result.tree_string
         # Also check the .git directory is not in the tree structure
-        assert not any(
-            c.name == ".git" for c in result.root.children if c.is_directory
-        )
+        assert not any(c.name == ".git" for c in result.root.children if c.is_directory)
 
 
 class TestShowStats:
@@ -388,7 +390,9 @@ class TestTreeStringFormat:
 
         lines = result.tree_string.split("\n")
         # Find lines at root level
-        root_items = [line for line in lines if line.startswith("|--") or line.startswith("+--")]
+        root_items = [
+            line for line in lines if line.startswith("|--") or line.startswith("+--")
+        ]
 
         # Extract names
         names = []
@@ -400,7 +404,9 @@ class TestTreeStringFormat:
 
         # Directories should come before files
         if "src" in names and "README.md" in names:
-            assert names.index("src") < names.index("README.md") or names.index("src/") < names.index("README.md")
+            assert names.index("src") < names.index("README.md") or names.index(
+                "src/"
+            ) < names.index("README.md")
 
     def test_alphabetical_within_category(self, sample_repo):
         """Test items are sorted alphabetically within directories/files."""

@@ -37,6 +37,7 @@ def admin_api_key(test_app):
     """Create an API key for admin user."""
     _, um = test_app
     from code_indexer.server.auth.api_key_manager import ApiKeyManager
+
     akm = ApiKeyManager(um)
     raw_key, key_id = akm.generate_key("admin", "test-key")
     return raw_key
@@ -48,8 +49,7 @@ class TestAuthenticateToolRegistration:
     def test_authenticate_tool_in_tools_list(self, client):
         """Test authenticate tool appears in tools/list."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -59,8 +59,7 @@ class TestAuthenticateToolRegistration:
     def test_authenticate_tool_has_correct_schema(self, client):
         """Test authenticate tool has required parameters."""
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
         )
         tools = response.json()["result"]["tools"]
         auth_tool = next(t for t in tools if t["name"] == "authenticate")
@@ -81,17 +80,15 @@ class TestAuthenticateSuccess:
                 "method": "tools/call",
                 "params": {
                     "name": "authenticate",
-                    "arguments": {
-                        "username": "admin",
-                        "api_key": admin_api_key
-                    }
-                }
-            }
+                    "arguments": {"username": "admin", "api_key": admin_api_key},
+                },
+            },
         )
         assert response.status_code == 200
         data = response.json()
         content = data["result"]["content"][0]["text"]
         import json
+
         result = json.loads(content)
         assert result["success"] is True
         assert result["username"] == "admin"
@@ -106,12 +103,9 @@ class TestAuthenticateSuccess:
                 "method": "tools/call",
                 "params": {
                     "name": "authenticate",
-                    "arguments": {
-                        "username": "admin",
-                        "api_key": admin_api_key
-                    }
-                }
-            }
+                    "arguments": {"username": "admin", "api_key": admin_api_key},
+                },
+            },
         )
         assert "cidx_session" in response.cookies
 
@@ -125,12 +119,9 @@ class TestAuthenticateSuccess:
                 "method": "tools/call",
                 "params": {
                     "name": "authenticate",
-                    "arguments": {
-                        "username": "admin",
-                        "api_key": admin_api_key
-                    }
-                }
-            }
+                    "arguments": {"username": "admin", "api_key": admin_api_key},
+                },
+            },
         )
 
         # Verify cookie exists
@@ -163,16 +154,14 @@ class TestAuthenticateFailure:
                 "method": "tools/call",
                 "params": {
                     "name": "authenticate",
-                    "arguments": {
-                        "username": "nonexistent",
-                        "api_key": admin_api_key
-                    }
-                }
-            }
+                    "arguments": {"username": "nonexistent", "api_key": admin_api_key},
+                },
+            },
         )
         data = response.json()
         content = data["result"]["content"][0]["text"]
         import json
+
         result = json.loads(content)
         assert result["success"] is False
         assert "Invalid credentials" in result["error"]
@@ -187,16 +176,14 @@ class TestAuthenticateFailure:
                 "method": "tools/call",
                 "params": {
                     "name": "authenticate",
-                    "arguments": {
-                        "username": "admin",
-                        "api_key": "cidx_sk_invalid"
-                    }
-                }
-            }
+                    "arguments": {"username": "admin", "api_key": "cidx_sk_invalid"},
+                },
+            },
         )
         data = response.json()
         content = data["result"]["content"][0]["text"]
         import json
+
         result = json.loads(content)
         assert result["success"] is False
         assert "Invalid credentials" in result["error"]
@@ -209,15 +196,13 @@ class TestAuthenticateFailure:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {
-                    "name": "authenticate",
-                    "arguments": {}
-                }
-            }
+                "params": {"name": "authenticate", "arguments": {}},
+            },
         )
         data = response.json()
         content = data["result"]["content"][0]["text"]
         import json
+
         result = json.loads(content)
         assert result["success"] is False
 
@@ -240,15 +225,16 @@ class TestAuthenticateRateLimiting:
                         "name": "authenticate",
                         "arguments": {
                             "username": username,
-                            "api_key": "cidx_sk_invalid"
-                        }
-                    }
-                }
+                            "api_key": "cidx_sk_invalid",
+                        },
+                    },
+                },
             )
             assert response.status_code == 200
             data = response.json()
             content = data["result"]["content"][0]["text"]
             import json
+
             result = json.loads(content)
             # First 10 attempts may show Invalid credentials (rate limiter allows 10)
             assert result["success"] is False
@@ -262,16 +248,14 @@ class TestAuthenticateRateLimiting:
                 "method": "tools/call",
                 "params": {
                     "name": "authenticate",
-                    "arguments": {
-                        "username": username,
-                        "api_key": "cidx_sk_invalid"
-                    }
-                }
-            }
+                    "arguments": {"username": username, "api_key": "cidx_sk_invalid"},
+                },
+            },
         )
         data = response.json()
         content = data["result"]["content"][0]["text"]
         import json
+
         result = json.loads(content)
         assert result["success"] is False
         assert "rate" in result["error"].lower()
@@ -295,21 +279,18 @@ class TestAuthenticateRateLimiting:
                 "method": "tools/call",
                 "params": {
                     "name": "authenticate",
-                    "arguments": {
-                        "username": "admin",
-                        "api_key": admin_api_key
-                    }
-                }
-            }
+                    "arguments": {"username": "admin", "api_key": admin_api_key},
+                },
+            },
         )
         assert response.status_code == 200
         data = response.json()
         content = data["result"]["content"][0]["text"]
         import json
+
         result = json.loads(content)
         assert result["success"] is True
 
         tokens_after = rate_limiter.get_tokens("admin")
         # Allow tiny drift due to time passing, but ensure effectively unchanged
         assert tokens_after >= tokens_before - 0.1
-

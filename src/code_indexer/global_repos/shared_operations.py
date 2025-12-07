@@ -123,7 +123,9 @@ class GlobalRepoOperations:
             "repo_name": repo.get("repo_name"),
             "url": repo.get("repo_url"),  # repo_url → url
             "last_refresh": repo.get("last_refresh"),
-            "enable_temporal": repo.get("enable_temporal", False),  # Default to False for legacy repos
+            "enable_temporal": repo.get(
+                "enable_temporal", False
+            ),  # Default to False for legacy repos
         }
 
     def get_config(self) -> Dict[str, Any]:

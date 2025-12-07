@@ -183,11 +183,13 @@ class TestSemanticSearchServiceLineNumbers:
 
         # Assert: All results should have DIFFERENT line numbers
         line_starts = [r.line_start for r in formatted_results]
-        assert line_starts == [10, 50, 100], (
-            f"Expected distinct line_start values [10, 50, 100], got {line_starts}"
-        )
+        assert line_starts == [
+            10,
+            50,
+            100,
+        ], f"Expected distinct line_start values [10, 50, 100], got {line_starts}"
 
         # Verify they are NOT all zero (the bug we're fixing)
-        assert not all(ls == 0 for ls in line_starts), (
-            "BUG: All line_start values are 0 - indicates wrong payload key used"
-        )
+        assert not all(
+            ls == 0 for ls in line_starts
+        ), "BUG: All line_start values are 0 - indicates wrong payload key used"

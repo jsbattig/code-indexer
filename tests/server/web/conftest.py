@@ -89,6 +89,7 @@ class WebTestInfrastructure:
 
         # Also override in app module since it imports directly
         import code_indexer.server.app as app_module
+
         app_module.user_manager = test_user_manager
 
         self.user_manager = test_user_manager
@@ -98,9 +99,7 @@ class WebTestInfrastructure:
         self.client = TestClient(self.app, follow_redirects=False)
 
     def create_admin_user(
-        self,
-        username: str = "testadmin",
-        password: str = "TestAdmin@123!"
+        self, username: str = "testadmin", password: str = "TestAdmin@123!"
     ) -> Dict[str, Any]:
         """Create an admin user for testing.
 
@@ -122,9 +121,7 @@ class WebTestInfrastructure:
         }
 
     def create_normal_user(
-        self,
-        username: str = "testuser",
-        password: str = "TestUser@456!"
+        self, username: str = "testuser", password: str = "TestUser@456!"
     ) -> Dict[str, Any]:
         """Create a normal (non-admin) user for testing.
 
@@ -146,9 +143,7 @@ class WebTestInfrastructure:
         }
 
     def create_power_user(
-        self,
-        username: str = "testpoweruser",
-        password: str = "TestPower@789!"
+        self, username: str = "testpoweruser", password: str = "TestPower@789!"
     ) -> Dict[str, Any]:
         """Create a power user for testing.
 
@@ -170,10 +165,7 @@ class WebTestInfrastructure:
         }
 
     def _create_session_directly(
-        self,
-        client: TestClient,
-        username: str,
-        role: str
+        self, client: TestClient, username: str, role: str
     ) -> None:
         """
         Directly create a session and inject it into the test client.
@@ -206,10 +198,7 @@ class WebTestInfrastructure:
                     client.cookies.set(cookie_name, cookie_value)
 
     def _authenticate_via_login(
-        self,
-        client: TestClient,
-        username: str,
-        password: str
+        self, client: TestClient, username: str, password: str
     ) -> None:
         """
         Authenticate via normal /admin/login flow.
@@ -230,11 +219,7 @@ class WebTestInfrastructure:
         }
         client.post("/admin/login", data=login_data)
 
-    def get_authenticated_client(
-        self,
-        username: str,
-        password: str
-    ) -> TestClient:
+    def get_authenticated_client(self, username: str, password: str) -> TestClient:
         """
         Get a TestClient with an authenticated session.
 
@@ -268,16 +253,14 @@ class WebTestInfrastructure:
         """Extract CSRF token from HTML form."""
         # Look for hidden input with name csrf_token
         match = re.search(
-            r'<input[^>]*name=["\']csrf_token["\'][^>]*value=["\']([^"\']+)["\']',
-            html
+            r'<input[^>]*name=["\']csrf_token["\'][^>]*value=["\']([^"\']+)["\']', html
         )
         if match:
             return match.group(1)
 
         # Also try reverse order (value before name)
         match = re.search(
-            r'<input[^>]*value=["\']([^"\']+)["\'][^>]*name=["\']csrf_token["\']',
-            html
+            r'<input[^>]*value=["\']([^"\']+)["\'][^>]*name=["\']csrf_token["\']', html
         )
         if match:
             return match.group(1)
@@ -360,11 +343,9 @@ def power_user(web_infrastructure: WebTestInfrastructure) -> Dict[str, Any]:
 
 @pytest.fixture
 def authenticated_client(
-    web_infrastructure: WebTestInfrastructure,
-    admin_user: Dict[str, Any]
+    web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
 ) -> TestClient:
     """TestClient with valid admin session."""
     return web_infrastructure.get_authenticated_client(
-        admin_user["username"],
-        admin_user["password"]
+        admin_user["username"], admin_user["password"]
     )

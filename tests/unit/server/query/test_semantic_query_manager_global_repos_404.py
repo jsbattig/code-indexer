@@ -91,7 +91,9 @@ def background_job_manager_mock():
 
 
 @pytest.fixture
-def semantic_query_manager(temp_dirs, activated_repo_manager_mock, background_job_manager_mock):
+def semantic_query_manager(
+    temp_dirs, activated_repo_manager_mock, background_job_manager_mock
+):
     """Create SemanticQueryManager with mocked dependencies."""
     return SemanticQueryManager(
         data_dir=temp_dirs["data_dir"],
@@ -347,7 +349,9 @@ class TestGlobalReposIntegration:
 
         # Setup: Create SemanticQueryManager
         activated_repo_manager_mock = MagicMock()
-        activated_repo_manager_mock.activated_repos_dir = temp_dirs["activated_repos_dir"]
+        activated_repo_manager_mock.activated_repos_dir = temp_dirs[
+            "activated_repos_dir"
+        ]
         activated_repo_manager_mock.list_activated_repositories.return_value = []
 
         background_job_manager_mock = MagicMock()

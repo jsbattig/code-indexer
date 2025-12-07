@@ -55,8 +55,12 @@ class QueryResult:
     repository_alias: str
     source_repo: Optional[str] = None  # Which component repo (for composite repos)
     # Temporal metadata fields (Story #503 - MCP/REST API parity with CLI)
-    metadata: Optional[Dict[str, Any]] = None  # Commit info: hash, date, author, message, diff_type
-    temporal_context: Optional[Dict[str, Any]] = None  # Aggregate: first_seen, last_seen, commit_count
+    metadata: Optional[Dict[str, Any]] = (
+        None  # Commit info: hash, date, author, message, diff_type
+    )
+    temporal_context: Optional[Dict[str, Any]] = (
+        None  # Aggregate: first_seen, last_seen, commit_count
+    )
 
     @classmethod
     def from_search_result(
@@ -415,12 +419,14 @@ class SemanticQueryManager:
 
                 # Format global repos to match user_repos structure
                 for global_repo in global_repos:
-                    global_repos_list.append({
-                        "user_alias": global_repo["alias_name"],
-                        "username": "global",
-                        "is_global": True,
-                        "repo_url": global_repo.get("repo_url", ""),
-                    })
+                    global_repos_list.append(
+                        {
+                            "user_alias": global_repo["alias_name"],
+                            "username": "global",
+                            "is_global": True,
+                            "repo_url": global_repo.get("repo_url", ""),
+                        }
+                    )
         except Exception as e:
             # Log but don't fail if global repos can't be loaded
             self.logger.warning(f"Failed to load global repos: {e}")
@@ -697,7 +703,9 @@ class SemanticQueryManager:
                 if repo_info.get("is_global"):
                     from code_indexer.global_repos.alias_manager import AliasManager
 
-                    data_dir = Path(self.activated_repo_manager.activated_repos_dir).parent
+                    data_dir = Path(
+                        self.activated_repo_manager.activated_repos_dir
+                    ).parent
                     aliases_dir = data_dir / "golden-repos" / "aliases"
                     alias_manager = AliasManager(str(aliases_dir))
 
@@ -993,9 +1001,7 @@ class SemanticQueryManager:
 
             # For hybrid mode, merge FTS and semantic results
             if search_mode == "hybrid":
-                return self._merge_hybrid_results(
-                    fts_results, semantic_results, limit
-                )
+                return self._merge_hybrid_results(fts_results, semantic_results, limit)
 
             return semantic_results
 
@@ -1594,7 +1600,9 @@ class SemanticQueryManager:
 
                 query_result = QueryResult(
                     file_path=result.get("path", ""),
-                    line_number=result.get("line", 0),  # FIX: Tantivy returns 'line', not 'line_start'
+                    line_number=result.get(
+                        "line", 0
+                    ),  # FIX: Tantivy returns 'line', not 'line_start'
                     code_snippet=result.get("snippet", ""),
                     similarity_score=score,
                     repository_alias=repository_alias,
@@ -1669,7 +1677,9 @@ class SemanticQueryManager:
             result_map[key] = result  # FTS overwrites semantic for same key
 
         # Sort by RRF score and build merged results
-        sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
+        sorted_keys = sorted(
+            rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True
+        )
 
         for key in sorted_keys[:limit]:
             if key in result_map:

@@ -708,6 +708,16 @@ class SemanticQueryRequest(BaseModel):
         description="Filter temporal results by chunk type (commit_message or commit_diff).",
     )
 
+    # Omni-search parameters (Story #521)
+    aggregation_mode: Optional[str] = Field(
+        default="global",
+        description="Result aggregation: 'global' returns top-K by score, 'per_repo' samples proportionally",
+    )
+    exclude_patterns: Optional[List[str]] = Field(
+        default=None,
+        description="Regex patterns to exclude repositories from omni-search",
+    )
+
     @field_validator("query_text")
     @classmethod
     def validate_query_text(cls, v: str) -> str:
@@ -6132,7 +6142,7 @@ def create_app() -> FastAPI:
             "authorization_servers": [issuer_url],
             "bearer_methods_supported": ["header"],
             "scopes_supported": ["mcp:read", "mcp:write"],
-            "resource_documentation": "https://github.com/jsbattig/code-indexer"
+            "resource_documentation": "https://github.com/jsbattig/code-indexer",
         }
 
     # Favicon redirect

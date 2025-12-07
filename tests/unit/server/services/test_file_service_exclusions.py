@@ -102,9 +102,9 @@ class TestFileServiceExclusions:
 
         # Verify no .git files are included
         for path in file_paths:
-            assert ".git" not in path or path.endswith(".gitignore"), (
-                f"Found .git file: {path}"
-            )
+            assert ".git" not in path or path.endswith(
+                ".gitignore"
+            ), f"Found .git file: {path}"
 
         # Verify source files ARE included
         assert "README.md" in file_paths
@@ -124,9 +124,9 @@ class TestFileServiceExclusions:
         # No excluded directories should appear
         for path in file_paths:
             assert ".code-indexer" not in path, f"Found .code-indexer file: {path}"
-            assert path == ".gitignore" or ".git/" not in path, (
-                f"Found .git file: {path}"
-            )
+            assert (
+                path == ".gitignore" or ".git/" not in path
+            ), f"Found .git file: {path}"
 
     def test_respects_gitignore_patterns(self, temp_repo, service):
         """Test that .gitignore patterns are respected."""
@@ -175,7 +175,9 @@ logs/
         for path in file_paths:
             assert not path.startswith("build/"), f"build/ should be ignored: {path}"
             assert not path.startswith("dist/"), f"dist/ should be ignored: {path}"
-            assert not path.startswith(".vscode/"), f".vscode/ should be ignored: {path}"
+            assert not path.startswith(
+                ".vscode/"
+            ), f".vscode/ should be ignored: {path}"
             assert not path.endswith(".pyc"), f".pyc files should be ignored: {path}"
             assert not path.endswith(".log"), f".log files should be ignored: {path}"
             assert not path.startswith("logs/"), f"logs/ should be ignored: {path}"
@@ -245,9 +247,9 @@ src/generated/
         for path in file_paths:
             assert "node_modules" not in path, f"node_modules should be ignored: {path}"
             assert "__pycache__" not in path, f"__pycache__ should be ignored: {path}"
-            assert not path.startswith("src/generated/"), (
-                f"src/generated/ should be ignored: {path}"
-            )
+            assert not path.startswith(
+                "src/generated/"
+            ), f"src/generated/ should be ignored: {path}"
 
     def test_alphabetical_sorting_shows_source_before_hidden(self, temp_repo, service):
         """Test that after exclusions, source files come before remaining hidden files."""

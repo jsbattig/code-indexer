@@ -163,7 +163,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Downloading nsJSON plugin..."
-          $nsjsonUrl = "https://nsis.sourceforge.io/mediawiki/images/f/f0/NsJSON.zip"
+          $nsjsonUrl = "https://github.com/Pieter-Dewachter/nsJSON/releases/download/v1.1.1.1/NsJSON-1.1.1.1.zip"
           Invoke-WebRequest -Uri $nsjsonUrl -OutFile nsJSON.zip
 
           Write-Host "Extracting nsJSON plugin..."

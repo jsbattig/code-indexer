@@ -24,6 +24,7 @@ CSRF_COOKIE_NAME = "csrf_token"
 @dataclass
 class SessionData:
     """Data stored in a session."""
+
     username: str
     role: str
     csrf_token: str
@@ -208,7 +209,9 @@ def get_session_manager() -> SessionManager:
     """Get the global session manager instance."""
     global _session_manager
     if _session_manager is None:
-        raise RuntimeError("Session manager not initialized. Call init_session_manager first.")
+        raise RuntimeError(
+            "Session manager not initialized. Call init_session_manager first."
+        )
     return _session_manager
 
 

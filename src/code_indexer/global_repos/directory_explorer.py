@@ -257,7 +257,9 @@ class DirectoryExplorerService:
             )
 
         # Build the tree starting from start_path
-        root_name = start_path.name if start_path != self.repo_path else self.repo_path.name
+        root_name = (
+            start_path.name if start_path != self.repo_path else self.repo_path.name
+        )
         root = build_tree(start_path, "", 0)
 
         if root is None:
@@ -338,9 +340,7 @@ class DirectoryExplorerService:
             # Add truncation indicator if files were hidden
             if node.truncated and node.hidden_count > 0:
                 connector = "+--"
-                lines.append(
-                    f"{prefix}{connector} [+{node.hidden_count} more files]"
-                )
+                lines.append(f"{prefix}{connector} [+{node.hidden_count} more files]")
 
         format_children(root)
 

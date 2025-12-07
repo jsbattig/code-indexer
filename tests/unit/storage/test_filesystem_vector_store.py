@@ -987,8 +987,14 @@ class TestProgressReporting:
         # NOTE (Story #540 Fix): Progress callback format changed in HNSW manager
         # Messages now use emojis and different wording
         hnsw_messages = [cb["info"] for cb in callbacks[5:]]
-        assert "🔧 Rebuilding HNSW index..." in hnsw_messages or "🔧 Building HNSW index..." in hnsw_messages
-        assert any("HNSW index built" in msg or "index complete" in msg for msg in hnsw_messages)
+        assert (
+            "🔧 Rebuilding HNSW index..." in hnsw_messages
+            or "🔧 Building HNSW index..." in hnsw_messages
+        )
+        assert any(
+            "HNSW index built" in msg or "index complete" in msg
+            for msg in hnsw_messages
+        )
 
 
 class TestFilesystemClientCompatibility:

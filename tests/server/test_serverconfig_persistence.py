@@ -35,8 +35,7 @@ class TestServerConfigSerialization:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = ServerConfigManager(tmpdir)
             config = ServerConfig(
-                server_dir=tmpdir,
-                anthropic_api_key="sk-ant-test-key-123"
+                server_dir=tmpdir, anthropic_api_key="sk-ant-test-key-123"
             )
 
             manager.save_config(config)
@@ -45,12 +44,12 @@ class TestServerConfigSerialization:
             with open(manager.config_file_path, "r") as f:
                 config_dict = json.load(f)
 
-            assert "anthropic_api_key" in config_dict, (
-                "Serialized config should include anthropic_api_key"
-            )
-            assert config_dict["anthropic_api_key"] == "sk-ant-test-key-123", (
-                "Serialized anthropic_api_key should match original value"
-            )
+            assert (
+                "anthropic_api_key" in config_dict
+            ), "Serialized config should include anthropic_api_key"
+            assert (
+                config_dict["anthropic_api_key"] == "sk-ant-test-key-123"
+            ), "Serialized anthropic_api_key should match original value"
 
     def test_serverconfig_serialization_includes_max_concurrent_claude_cli(self):
         """
@@ -62,10 +61,7 @@ class TestServerConfigSerialization:
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = ServerConfigManager(tmpdir)
-            config = ServerConfig(
-                server_dir=tmpdir,
-                max_concurrent_claude_cli=8
-            )
+            config = ServerConfig(server_dir=tmpdir, max_concurrent_claude_cli=8)
 
             manager.save_config(config)
 
@@ -73,14 +69,16 @@ class TestServerConfigSerialization:
             with open(manager.config_file_path, "r") as f:
                 config_dict = json.load(f)
 
-            assert "max_concurrent_claude_cli" in config_dict, (
-                "Serialized config should include max_concurrent_claude_cli"
-            )
-            assert config_dict["max_concurrent_claude_cli"] == 8, (
-                "Serialized max_concurrent_claude_cli should match original value"
-            )
+            assert (
+                "max_concurrent_claude_cli" in config_dict
+            ), "Serialized config should include max_concurrent_claude_cli"
+            assert (
+                config_dict["max_concurrent_claude_cli"] == 8
+            ), "Serialized max_concurrent_claude_cli should match original value"
 
-    def test_serverconfig_serialization_includes_description_refresh_interval_hours(self):
+    def test_serverconfig_serialization_includes_description_refresh_interval_hours(
+        self,
+    ):
         """
         AC2: Serialization includes description_refresh_interval_hours field.
 
@@ -91,8 +89,7 @@ class TestServerConfigSerialization:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = ServerConfigManager(tmpdir)
             config = ServerConfig(
-                server_dir=tmpdir,
-                description_refresh_interval_hours=48
+                server_dir=tmpdir, description_refresh_interval_hours=48
             )
 
             manager.save_config(config)
@@ -101,12 +98,12 @@ class TestServerConfigSerialization:
             with open(manager.config_file_path, "r") as f:
                 config_dict = json.load(f)
 
-            assert "description_refresh_interval_hours" in config_dict, (
-                "Serialized config should include description_refresh_interval_hours"
-            )
-            assert config_dict["description_refresh_interval_hours"] == 48, (
-                "Serialized description_refresh_interval_hours should match original value"
-            )
+            assert (
+                "description_refresh_interval_hours" in config_dict
+            ), "Serialized config should include description_refresh_interval_hours"
+            assert (
+                config_dict["description_refresh_interval_hours"] == 48
+            ), "Serialized description_refresh_interval_hours should match original value"
 
 
 # =============================================================================
@@ -143,9 +140,9 @@ class TestServerConfigBackwardCompatibility:
             config = manager.load_config()
 
             assert config is not None, "Old config should load successfully"
-            assert config.anthropic_api_key is None, (
-                "Missing anthropic_api_key should default to None"
-            )
+            assert (
+                config.anthropic_api_key is None
+            ), "Missing anthropic_api_key should default to None"
 
     def test_deserialize_old_config_without_max_concurrent_claude_cli(self):
         """
@@ -173,9 +170,9 @@ class TestServerConfigBackwardCompatibility:
             config = manager.load_config()
 
             assert config is not None, "Old config should load successfully"
-            assert config.max_concurrent_claude_cli == 4, (
-                "Missing max_concurrent_claude_cli should default to 4"
-            )
+            assert (
+                config.max_concurrent_claude_cli == 4
+            ), "Missing max_concurrent_claude_cli should default to 4"
 
     def test_deserialize_old_config_without_description_refresh_interval_hours(self):
         """
@@ -203,9 +200,9 @@ class TestServerConfigBackwardCompatibility:
             config = manager.load_config()
 
             assert config is not None, "Old config should load successfully"
-            assert config.description_refresh_interval_hours == 24, (
-                "Missing description_refresh_interval_hours should default to 24"
-            )
+            assert (
+                config.description_refresh_interval_hours == 24
+            ), "Missing description_refresh_interval_hours should default to 24"
 
     def test_roundtrip_serialization_preserves_new_fields(self):
         """
@@ -222,7 +219,7 @@ class TestServerConfigBackwardCompatibility:
                 server_dir=tmpdir,
                 anthropic_api_key="sk-ant-test-key-123",
                 max_concurrent_claude_cli=8,
-                description_refresh_interval_hours=48
+                description_refresh_interval_hours=48,
             )
 
             # Save
@@ -232,15 +229,15 @@ class TestServerConfigBackwardCompatibility:
             loaded_config = manager.load_config()
 
             assert loaded_config is not None, "Config should reload successfully"
-            assert loaded_config.anthropic_api_key == "sk-ant-test-key-123", (
-                "anthropic_api_key should be preserved"
-            )
-            assert loaded_config.max_concurrent_claude_cli == 8, (
-                "max_concurrent_claude_cli should be preserved"
-            )
-            assert loaded_config.description_refresh_interval_hours == 48, (
-                "description_refresh_interval_hours should be preserved"
-            )
+            assert (
+                loaded_config.anthropic_api_key == "sk-ant-test-key-123"
+            ), "anthropic_api_key should be preserved"
+            assert (
+                loaded_config.max_concurrent_claude_cli == 8
+            ), "max_concurrent_claude_cli should be preserved"
+            assert (
+                loaded_config.description_refresh_interval_hours == 48
+            ), "description_refresh_interval_hours should be preserved"
 
 
 # =============================================================================
@@ -259,19 +256,16 @@ class TestServerConfigValidation:
         When I validate the config
         Then it raises ValueError
         """
-        config = ServerConfig(
-            server_dir="/tmp/test",
-            max_concurrent_claude_cli=0
-        )
+        config = ServerConfig(server_dir="/tmp/test", max_concurrent_claude_cli=0)
 
         manager = ServerConfigManager("/tmp/test")
 
         with pytest.raises(ValueError) as exc_info:
             manager.validate_config(config)
 
-        assert "max_concurrent_claude_cli" in str(exc_info.value).lower(), (
-            "Error message should mention max_concurrent_claude_cli"
-        )
+        assert (
+            "max_concurrent_claude_cli" in str(exc_info.value).lower()
+        ), "Error message should mention max_concurrent_claude_cli"
 
     def test_validation_rejects_max_concurrent_claude_cli_negative(self):
         """
@@ -281,19 +275,16 @@ class TestServerConfigValidation:
         When I validate the config
         Then it raises ValueError
         """
-        config = ServerConfig(
-            server_dir="/tmp/test",
-            max_concurrent_claude_cli=-1
-        )
+        config = ServerConfig(server_dir="/tmp/test", max_concurrent_claude_cli=-1)
 
         manager = ServerConfigManager("/tmp/test")
 
         with pytest.raises(ValueError) as exc_info:
             manager.validate_config(config)
 
-        assert "max_concurrent_claude_cli" in str(exc_info.value).lower(), (
-            "Error message should mention max_concurrent_claude_cli"
-        )
+        assert (
+            "max_concurrent_claude_cli" in str(exc_info.value).lower()
+        ), "Error message should mention max_concurrent_claude_cli"
 
     def test_validation_rejects_description_refresh_interval_hours_less_than_1(self):
         """
@@ -304,8 +295,7 @@ class TestServerConfigValidation:
         Then it raises ValueError
         """
         config = ServerConfig(
-            server_dir="/tmp/test",
-            description_refresh_interval_hours=0
+            server_dir="/tmp/test", description_refresh_interval_hours=0
         )
 
         manager = ServerConfigManager("/tmp/test")
@@ -313,9 +303,9 @@ class TestServerConfigValidation:
         with pytest.raises(ValueError) as exc_info:
             manager.validate_config(config)
 
-        assert "description_refresh_interval_hours" in str(exc_info.value).lower(), (
-            "Error message should mention description_refresh_interval_hours"
-        )
+        assert (
+            "description_refresh_interval_hours" in str(exc_info.value).lower()
+        ), "Error message should mention description_refresh_interval_hours"
 
     def test_validation_rejects_description_refresh_interval_hours_negative(self):
         """
@@ -326,8 +316,7 @@ class TestServerConfigValidation:
         Then it raises ValueError
         """
         config = ServerConfig(
-            server_dir="/tmp/test",
-            description_refresh_interval_hours=-1
+            server_dir="/tmp/test", description_refresh_interval_hours=-1
         )
 
         manager = ServerConfigManager("/tmp/test")
@@ -335,9 +324,9 @@ class TestServerConfigValidation:
         with pytest.raises(ValueError) as exc_info:
             manager.validate_config(config)
 
-        assert "description_refresh_interval_hours" in str(exc_info.value).lower(), (
-            "Error message should mention description_refresh_interval_hours"
-        )
+        assert (
+            "description_refresh_interval_hours" in str(exc_info.value).lower()
+        ), "Error message should mention description_refresh_interval_hours"
 
     def test_validation_accepts_valid_max_concurrent_claude_cli(self):
         """
@@ -347,10 +336,7 @@ class TestServerConfigValidation:
         When I validate the config
         Then it passes without error
         """
-        config = ServerConfig(
-            server_dir="/tmp/test",
-            max_concurrent_claude_cli=4
-        )
+        config = ServerConfig(server_dir="/tmp/test", max_concurrent_claude_cli=4)
 
         manager = ServerConfigManager("/tmp/test")
 
@@ -366,8 +352,7 @@ class TestServerConfigValidation:
         Then it passes without error
         """
         config = ServerConfig(
-            server_dir="/tmp/test",
-            description_refresh_interval_hours=24
+            server_dir="/tmp/test", description_refresh_interval_hours=24
         )
 
         manager = ServerConfigManager("/tmp/test")

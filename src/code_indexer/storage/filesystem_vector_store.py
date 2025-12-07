@@ -439,7 +439,9 @@ class FilesystemVectorStore:
         # Story #540: Save path index to disk
         with self._path_index_lock:
             if collection_name in self._path_indexes:
-                self._save_path_index(collection_name, self._path_indexes[collection_name])
+                self._save_path_index(
+                    collection_name, self._path_indexes[collection_name]
+                )
 
         vector_count = len(self._id_index.get(collection_name, {}))
 
@@ -665,7 +667,9 @@ class FilesystemVectorStore:
             # CRITICAL FIX (Story #540 Code Review): Lazy-load path index if not already loaded
             # This handles watch mode scenario where upsert_points can be called WITHOUT begin_indexing()
             if collection_name not in self._path_indexes:
-                self._path_indexes[collection_name] = self._load_path_index(collection_name)
+                self._path_indexes[collection_name] = self._load_path_index(
+                    collection_name
+                )
 
             path_index = self._path_indexes[collection_name]
 
@@ -686,7 +690,9 @@ class FilesystemVectorStore:
                         for orphan_id in orphan_point_ids:
                             if orphan_id in self._id_index.get(collection_name, {}):
                                 vector_file = self._id_index[collection_name][orphan_id]
-                                orphans_to_delete.append((file_path, orphan_id, vector_file))
+                                orphans_to_delete.append(
+                                    (file_path, orphan_id, vector_file)
+                                )
 
         # STEP 2: Perform file deletions OUTSIDE lock (I/O operations)
         # This releases both _path_index_lock and _id_index_lock before I/O
@@ -713,9 +719,9 @@ class FilesystemVectorStore:
 
                         # Track deletion for HNSW incremental updates
                         if collection_name in self._indexing_session_changes:
-                            self._indexing_session_changes[collection_name]["deleted"].add(
-                                orphan_id
-                            )
+                            self._indexing_session_changes[collection_name][
+                                "deleted"
+                            ].add(orphan_id)
 
                         # Remove from path index
                         path_index.remove_point(file_path, orphan_id)
@@ -1905,7 +1911,9 @@ class FilesystemVectorStore:
 
                 def hnsw_loader():
                     """Loader function for cache miss."""
-                    index = hnsw_manager.load_index(collection_path, max_elements=100000)
+                    index = hnsw_manager.load_index(
+                        collection_path, max_elements=100000
+                    )
                     # Load ID mapping from metadata for cache entry
                     id_mapping = hnsw_manager._load_id_mapping(collection_path)
                     return index, id_mapping
@@ -1916,7 +1924,9 @@ class FilesystemVectorStore:
                 )
             else:
                 # No cache - load directly (original behavior)
-                hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+                hnsw_index = hnsw_manager.load_index(
+                    collection_path, max_elements=100000
+                )
 
             hnsw_load_ms = (time.time() - t_hnsw) * 1000
 

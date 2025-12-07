@@ -154,8 +154,15 @@ class TestPathIndexPersistence:
             path_index.save(index_file)
             loaded_index = PathIndex.load(index_file)
 
-            assert loaded_index.get_point_ids("src/auth.py") == {"auth_a1", "auth_a2", "auth_a3"}
-            assert loaded_index.get_point_ids("src/utils.py") == {"utils_u1", "utils_u2"}
+            assert loaded_index.get_point_ids("src/auth.py") == {
+                "auth_a1",
+                "auth_a2",
+                "auth_a3",
+            }
+            assert loaded_index.get_point_ids("src/utils.py") == {
+                "utils_u1",
+                "utils_u2",
+            }
             assert loaded_index.get_point_ids("src/config.py") == {"config_c1"}
 
     def test_load_nonexistent_file_returns_empty_index(self):
