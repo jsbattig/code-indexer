@@ -11,9 +11,10 @@ All handlers return MCP-compliant responses with content arrays:
 }
 """
 
+import fnmatch
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
@@ -93,6 +94,61 @@ def _get_query_tracker():
     return getattr(app_module.app.state, "query_tracker", None)
 
 
+WILDCARD_CHARS = {'*', '?', '['}
+
+
+def _has_wildcard(pattern: str) -> bool:
+    """Check if pattern contains wildcard characters."""
+    return any(c in pattern for c in WILDCARD_CHARS)
+
+
+def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
+    """Expand wildcard patterns to matching repository aliases.
+
+    Args:
+        patterns: List of repo patterns (may include wildcards like '*-global')
+
+    Returns:
+        Expanded list of unique repository aliases
+    """
+    golden_repos_dir = _get_golden_repos_dir()
+    if not golden_repos_dir:
+        logger.debug("No golden_repos_dir, returning patterns unchanged")
+        return patterns
+
+    # Get available repos
+    try:
+        registry = GlobalRegistry(golden_repos_dir)
+        available_repos = [r["alias"] for r in registry.list_global_repos()]
+    except Exception as e:
+        logger.warning(f"Failed to list global repos for wildcard expansion: {e}")
+        return patterns
+
+    expanded = []
+    for pattern in patterns:
+        if _has_wildcard(pattern):
+            # Expand wildcard
+            matches = [repo for repo in available_repos if fnmatch.fnmatch(repo, pattern)]
+            if matches:
+                logger.debug(f"Expanded wildcard '{pattern}' -> {matches}")
+                expanded.extend(matches)
+            else:
+                logger.warning(f"Wildcard pattern '{pattern}' matched no repositories")
+        else:
+            # Keep literal pattern
+            expanded.append(pattern)
+
+    # Deduplicate while preserving order
+    seen = set()
+    result = []
+    for repo in expanded:
+        if repo not in seen:
+            seen.add(repo)
+            result.append(repo)
+
+    return result
+
+
 async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-search across multiple repositories.
 
@@ -100,8 +156,9 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
     Aggregates results from all specified repos, sorted by score.
     """
     import json as json_module
-    
+
     repo_aliases = params.get("repository_alias", [])
+    repo_aliases = _expand_wildcard_patterns(repo_aliases)
     limit = params.get("limit", 10)
     aggregation_mode = params.get("aggregation_mode", "global")
     
@@ -609,8 +666,9 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 async def _omni_list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-list-files across multiple repositories."""
     import json as json_module
-    
+
     repo_aliases = params.get("repository_alias", [])
+    repo_aliases = _expand_wildcard_patterns(repo_aliases)
     
     if not repo_aliases:
         return _mcp_response({
@@ -1494,8 +1552,9 @@ async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]
     """Handle omni-regex search across multiple repositories."""
     import json as json_module
     import time
-    
+
     repo_aliases = args.get("repo_identifier", [])
+    repo_aliases = _expand_wildcard_patterns(repo_aliases)
     
     if not repo_aliases:
         return _mcp_response({
@@ -1668,8 +1727,9 @@ HANDLER_REGISTRY = {
 async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-git-log across multiple repositories."""
     import json as json_module
-    
+
     repo_aliases = args.get("repo_identifier", [])
+    repo_aliases = _expand_wildcard_patterns(repo_aliases)
     limit = args.get("limit", 20)
     
     if not repo_aliases:
@@ -2268,8 +2328,9 @@ async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str
     """Handle omni-git-search across multiple repositories."""
     import json as json_module
     import time
-    
+
     repo_aliases = args.get("repo_identifier", [])
+    repo_aliases = _expand_wildcard_patterns(repo_aliases)
     query = args.get("query", "")
     is_regex = args.get("is_regex", False)
     

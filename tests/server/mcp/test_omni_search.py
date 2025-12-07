@@ -5,7 +5,7 @@ Tests polymorphic repository_alias parameter and routing to OmniSearchService.
 """
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from code_indexer.server.mcp.handlers import search_code, _mcp_response
 from code_indexer.server.auth.user_manager import User, UserRole
 from datetime import datetime
@@ -102,7 +102,7 @@ class TestOmniSearchDetection:
                 }
             )
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Should route to omni-search handler
             assert mock_omni.called
@@ -120,7 +120,7 @@ class TestOmniSearchDetection:
             "limit": 5,
         }
 
-        result = await search_code(params, mock_user)
+        await search_code(params, mock_user)
 
         # Should call single-repo query manager (searches all activated repos)
         assert mock_semantic_query_manager.query_user_repositories.called
@@ -375,32 +375,36 @@ class TestOmniSearchAggregation:
                 },
             })
 
-        with patch("code_indexer.server.mcp.handlers.search_code", side_effect=mock_search):
-            from code_indexer.server.mcp.handlers import _omni_search_code
-            result = await _omni_search_code(params, mock_user)
+        with patch("code_indexer.server.mcp.handlers._expand_wildcard_patterns") as mock_expand:
+            # Return patterns unchanged (no wildcard expansion needed for literal names)
+            mock_expand.side_effect = lambda patterns: patterns
 
-            import json
-            response_data = json.loads(result["content"][0]["text"])
+            with patch("code_indexer.server.mcp.handlers.search_code", side_effect=mock_search):
+                from code_indexer.server.mcp.handlers import _omni_search_code
+                result = await _omni_search_code(params, mock_user)
 
-            assert response_data["success"] is True
-            final_results = response_data["results"]["results"]
+                import json
+                response_data = json.loads(result["content"][0]["text"])
 
-            # With limit=10 and 2 repos, should take 5 from each repo
-            assert len(final_results) == 10
+                assert response_data["success"] is True
+                final_results = response_data["results"]["results"]
 
-            # Count results from each repo
-            repo1_results = [r for r in final_results if r.get("source_repo") == "repo1"]
-            repo2_results = [r for r in final_results if r.get("source_repo") == "repo2"]
+                # With limit=10 and 2 repos, should take 5 from each repo
+                assert len(final_results) == 10
 
-            assert len(repo1_results) == 5
-            assert len(repo2_results) == 5
+                # Count results from each repo
+                repo1_results = [r for r in final_results if r.get("source_repo") == "repo1"]
+                repo2_results = [r for r in final_results if r.get("source_repo") == "repo2"]
 
-            # Verify each repo's results are sorted by score (highest first)
-            repo1_scores = [r["similarity_score"] for r in repo1_results]
-            assert repo1_scores == sorted(repo1_scores, reverse=True)
+                assert len(repo1_results) == 5
+                assert len(repo2_results) == 5
 
-            repo2_scores = [r["similarity_score"] for r in repo2_results]
-            assert repo2_scores == sorted(repo2_scores, reverse=True)
+                # Verify each repo's results are sorted by score (highest first)
+                repo1_scores = [r["similarity_score"] for r in repo1_results]
+                assert repo1_scores == sorted(repo1_scores, reverse=True)
+
+                repo2_scores = [r["similarity_score"] for r in repo2_results]
+                assert repo2_scores == sorted(repo2_scores, reverse=True)
 
 
 class TestOmniSearchJsonStringArrayParsing:
@@ -488,7 +492,7 @@ class TestOmniSearchJsonStringArrayParsing:
             "limit": 5,
         }
 
-        result = await search_code(params, mock_user)
+        await search_code(params, mock_user)
 
         # Should route to single-repo search (treats malformed JSON as string)
         assert mock_semantic_query_manager.query_user_repositories.called
