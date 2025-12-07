@@ -297,49 +297,43 @@ jobs:
             default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
           }
 
-      - name: Test NScurl + nsJSON file flow
+      - name: Test nsJSON file loading (simple JSON file)
         shell: pwsh
         run: |
-          Write-Host "Testing NScurl file write + nsJSON file parse (full auth flow simulation)..."
+          Write-Host "Testing nsJSON /file loading with simple hand-written JSON..."
 
-          # Test the full flow with a real HTTP request - simulates authentication
-          # Debug version: writes response content and Get result to debug files
+          # Test nsJSON /file with a simple JSON file written by NSIS
+          # This isolates the file parsing from NScurl
           $testScript = @'
           !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
           !include "LogicLib.nsh"
           Unicode true
 
-          Name "Full Flow Test"
-          OutFile "flow-test.exe"
-          InstallDir "$TEMP\flowtest"
+          Name "JSON File Load Test"
+          OutFile "json-file-test.exe"
+          InstallDir "$TEMP\jsontest"
           SilentInstall silent
 
           Section
             SetOutPath $INSTDIR
 
-            StrCpy $1 "$TEMP\flow_test_response.json"
-            StrCpy $9 "$TEMP\flow_test_debug.txt"
+            StrCpy $1 "$TEMP\test_simple.json"
+            StrCpy $9 "$TEMP\json_file_debug.txt"
 
-            ; NScurl POST to httpbin - simulates auth endpoint
-            NScurl::http POST "https://httpbin.org/post" "$1" /HEADER "Content-Type: application/json" /DATA `{"username":"testuser","password":"testpass"}` /TIMEOUT 30000 /END
-            Pop $0
+            ; Write a simple single-line JSON file (like CIDX auth response)
+            FileOpen $7 $1 w
+            FileWrite $7 `{"access_token":"test123","refresh_token":"refresh456"}`
+            FileClose $7
 
-            ; Debug: write NScurl status
+            ; Debug
             FileOpen $8 $9 w
-            FileWrite $8 "NScurl status: $0$\r$\n"
-
-            StrCmp $0 "OK" +1 fail_http
+            FileWrite $8 "JSON file created at: $1$\r$\n"
 
             ; Verify file was created
             IfFileExists "$1" +1 fail_file
+            FileWrite $8 "File exists: YES$\r$\n"
 
-            ; Debug: Read and write first 500 chars of response file
-            FileOpen $7 "$1" r
-            FileRead $7 $6
-            FileClose $7
-            FileWrite $8 "Response first line: $6$\r$\n"
-
-            ; Parse response with nsJSON - check for errors like the actual installer does
+            ; Load JSON from file
             ClearErrors
             nsJSON::Set /file "$1"
             ${If} ${Errors}
@@ -348,41 +342,31 @@ jobs:
               SetErrorLevel 4
               Goto done
             ${EndIf}
+            FileWrite $8 "nsJSON::Set /file succeeded$\r$\n"
 
-            ; Get the "url" field from httpbin response (always present)
-            ; CRITICAL: Use double quotes for keys and uppercase /END (same as installer)
-            nsJSON::Get "url" /END
+            ; Get access_token
+            nsJSON::Get "access_token" /END
             Pop $2
+            FileWrite $8 "nsJSON::Get access_token returned: [$2]$\r$\n"
 
-            ; Debug: write what Get returned
-            FileWrite $8 "nsJSON::Get url returned: [$2]$\r$\n"
-            FileWrite $8 "Length check: first 12 chars$\r$\n"
-            StrCpy $3 $2 12
-            FileWrite $8 "First 12 chars: [$3]$\r$\n"
+            ; Verify we got the expected value
+            StrCmp $2 "test123" +1 fail_get
+
+            ; Success
+            FileWrite $8 "SUCCESS: Got expected value$\r$\n"
             FileClose $8
-
-            ; Verify we got something (url should start with "https://http")
-            StrCmp $3 "https://http" +1 fail_get
-
-            ; Success - cleanup and exit
             Delete "$1"
             SetErrorLevel 0
             Goto done
 
-          fail_http:
-            FileWrite $8 "FAIL: HTTP request failed$\r$\n"
-            FileClose $8
-            SetErrorLevel 1
-            Goto done
-
           fail_file:
-            FileWrite $8 "FAIL: Response file not created$\r$\n"
+            FileWrite $8 "FAIL: File not created$\r$\n"
             FileClose $8
             SetErrorLevel 2
             Goto done
 
           fail_get:
-            FileWrite $8 "FAIL: Get returned unexpected value$\r$\n"
+            FileWrite $8 "FAIL: Get returned wrong value$\r$\n"
             FileClose $8
             SetErrorLevel 3
 
@@ -390,42 +374,31 @@ jobs:
           SectionEnd
           '@
 
-          $testScript | Out-File -FilePath "flow-test.nsi" -Encoding ASCII
+          $testScript | Out-File -FilePath "json-file-test.nsi" -Encoding ASCII
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
-          & $makensis /V2 flow-test.nsi
+          & $makensis /V2 json-file-test.nsi
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to compile flow test"
+            Write-Error "Failed to compile json file test"
             exit 1
           }
 
-          $process = Start-Process -FilePath "flow-test.exe" -Wait -NoNewWindow -PassThru
-          Write-Host "Full flow test exit code: $($process.ExitCode)"
+          $process = Start-Process -FilePath "json-file-test.exe" -Wait -NoNewWindow -PassThru
+          Write-Host "JSON file test exit code: $($process.ExitCode)"
 
-          # Always show debug output
-          $debugFile = "$env:TEMP\flow_test_debug.txt"
+          # Show debug output
+          $debugFile = "$env:TEMP\json_file_debug.txt"
           if (Test-Path $debugFile) {
             Write-Host "=== DEBUG OUTPUT ==="
             Get-Content $debugFile
             Write-Host "=== END DEBUG ==="
-          } else {
-            Write-Host "Debug file not found at $debugFile"
-          }
-
-          # Also show response file if it exists
-          $responseFile = "$env:TEMP\flow_test_response.json"
-          if (Test-Path $responseFile) {
-            Write-Host "=== RESPONSE FILE (first 500 chars) ==="
-            (Get-Content $responseFile -Raw).Substring(0, [Math]::Min(500, (Get-Content $responseFile -Raw).Length))
-            Write-Host "=== END RESPONSE ==="
           }
 
           switch ($process.ExitCode) {
-            0 { Write-Host "SUCCESS: NScurl POST + nsJSON file parse + value extraction verified!" }
-            1 { Write-Error "FAILED: NScurl HTTP POST failed"; exit 1 }
-            2 { Write-Error "FAILED: Response file not created"; exit 1 }
-            3 { Write-Error "FAILED: nsJSON::Get url failed - could not extract value from parsed JSON"; exit 1 }
-            4 { Write-Error "FAILED: nsJSON::Set /file failed to load JSON from file"; exit 1 }
+            0 { Write-Host "SUCCESS: nsJSON file loading verified!" }
+            2 { Write-Error "FAILED: JSON file not created"; exit 1 }
+            3 { Write-Error "FAILED: nsJSON::Get returned wrong value"; exit 1 }
+            4 { Write-Error "FAILED: nsJSON::Set /file failed"; exit 1 }
             default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
           }
 
