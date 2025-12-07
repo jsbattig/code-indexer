@@ -402,6 +402,162 @@ jobs:
             default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
           }
 
+      - name: Test FULL auth flow (NScurl POST + nsJSON parse + token extraction)
+        shell: pwsh
+        env:
+          CIDX_SERVER_URL: ${{ secrets.CIDX_TEST_SERVER_URL }}
+          CIDX_USERNAME: ${{ secrets.CIDX_TEST_USERNAME }}
+          CIDX_PASSWORD: ${{ secrets.CIDX_TEST_PASSWORD }}
+        run: |
+          Write-Host "Testing FULL authentication flow against real CIDX server..."
+
+          # Check if secrets are configured
+          if (-not $env:CIDX_SERVER_URL -or -not $env:CIDX_USERNAME -or -not $env:CIDX_PASSWORD) {
+            Write-Host "WARNING: CIDX test secrets not configured. Skipping full auth flow test."
+            Write-Host "To enable this test, set these repository secrets:"
+            Write-Host "  - CIDX_TEST_SERVER_URL (e.g., https://your-server:8383)"
+            Write-Host "  - CIDX_TEST_USERNAME"
+            Write-Host "  - CIDX_TEST_PASSWORD"
+            exit 0
+          }
+
+          Write-Host "Server URL: $env:CIDX_SERVER_URL"
+          Write-Host "Username: $env:CIDX_USERNAME"
+          Write-Host "Password: [REDACTED]"
+
+          # Create NSIS test script for full auth flow
+          $testScript = @"
+          !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
+          !include "NScurl.nsh"
+          !include "LogicLib.nsh"
+          Unicode true
+
+          Name "Full Auth Flow Test"
+          OutFile "full-auth-test.exe"
+          InstallDir "`$TEMP\authtest"
+          SilentInstall silent
+
+          Section
+            SetOutPath `$INSTDIR
+
+            StrCpy `$9 "`$TEMP\full_auth_debug.txt"
+            StrCpy `$1 "`$TEMP\auth_response.json"
+
+            FileOpen `$8 `$9 w
+            FileWrite `$8 "=== FULL AUTH FLOW TEST ===$\r$\n"
+            FileWrite `$8 "Server: $($env:CIDX_SERVER_URL)$\r$\n"
+            FileWrite `$8 "Username: $($env:CIDX_USERNAME)$\r$\n"
+
+            ; Step 1: NScurl POST to /auth/login
+            FileWrite `$8 "Step 1: NScurl POST to /auth/login...$\r$\n"
+
+            NScurl::http POST "$($env:CIDX_SERVER_URL)/auth/login" MEMORY /HEADER "Content-Type: application/json" /DATA '{"username":"$($env:CIDX_USERNAME)","password":"$($env:CIDX_PASSWORD)"}' /INSIST /TIMEOUT 30000 /END
+            Pop `$0
+
+            FileWrite `$8 "NScurl returned: [`$0]$\r$\n"
+
+            ; Check if request succeeded
+            StrCpy `$2 `$0 12
+            StrCmp `$2 "https://http" fail_nscurl
+            StrCmp `$0 "" fail_nscurl
+
+            ; Check for error responses
+            StrCpy `$2 `$0 5
+            StrCmp `$2 "Error" fail_nscurl
+
+            ; Step 2: Write response to file for nsJSON parsing
+            FileWrite `$8 "Step 2: Writing response to file...$\r$\n"
+            FileOpen `$7 `$1 w
+            FileWrite `$7 `$0
+            FileClose `$7
+
+            FileWrite `$8 "Response written to: `$1$\r$\n"
+
+            ; Step 3: Parse with nsJSON
+            FileWrite `$8 "Step 3: Parsing with nsJSON::Set /file...$\r$\n"
+            ClearErrors
+            nsJSON::Set /file "`$1"
+            `${If} `${Errors}
+              FileWrite `$8 "FAIL: nsJSON::Set /file returned error$\r$\n"
+              FileClose `$8
+              SetErrorLevel 3
+              Goto done
+            `${EndIf}
+            FileWrite `$8 "nsJSON::Set /file succeeded$\r$\n"
+
+            ; Step 4: Extract access_token
+            FileWrite `$8 "Step 4: Extracting access_token...$\r$\n"
+            nsJSON::Get "access_token" /END
+            Pop `$2
+            FileWrite `$8 "access_token: [`$2]$\r$\n"
+
+            ; Validate access_token is not empty
+            StrCmp `$2 "" fail_token
+            StrCmp `$2 "null" fail_token
+
+            ; Step 5: Extract refresh_token
+            FileWrite `$8 "Step 5: Extracting refresh_token...$\r$\n"
+            nsJSON::Get "refresh_token" /END
+            Pop `$3
+            FileWrite `$8 "refresh_token: [`$3]$\r$\n"
+
+            ; Validate refresh_token is not empty
+            StrCmp `$3 "" fail_token
+            StrCmp `$3 "null" fail_token
+
+            ; SUCCESS!
+            FileWrite `$8 "=== SUCCESS: Full auth flow completed! ===$\r$\n"
+            FileClose `$8
+            Delete "`$1"
+            SetErrorLevel 0
+            Goto done
+
+          fail_nscurl:
+            FileWrite `$8 "FAIL: NScurl request failed$\r$\n"
+            FileClose `$8
+            SetErrorLevel 2
+            Goto done
+
+          fail_token:
+            FileWrite `$8 "FAIL: Token extraction failed (empty or null)$\r$\n"
+            FileClose `$8
+            SetErrorLevel 4
+
+          done:
+          SectionEnd
+"@
+
+          $testScript | Out-File -FilePath "full-auth-test.nsi" -Encoding ASCII
+
+          Write-Host "Compiling full auth flow test..."
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $makensis /V2 full-auth-test.nsi
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to compile full auth flow test"
+            exit 1
+          }
+
+          Write-Host "Running full auth flow test..."
+          $process = Start-Process -FilePath "full-auth-test.exe" -Wait -NoNewWindow -PassThru
+          Write-Host "Full auth flow test exit code: $($process.ExitCode)"
+
+          # Show debug output
+          $debugFile = "$env:TEMP\full_auth_debug.txt"
+          if (Test-Path $debugFile) {
+            Write-Host "=== DEBUG OUTPUT ==="
+            Get-Content $debugFile
+            Write-Host "=== END DEBUG ==="
+          }
+
+          switch ($process.ExitCode) {
+            0 { Write-Host "SUCCESS: Full authentication flow verified against real CIDX server!" }
+            2 { Write-Error "FAILED: NScurl POST request failed"; exit 1 }
+            3 { Write-Error "FAILED: nsJSON parsing failed"; exit 1 }
+            4 { Write-Error "FAILED: Token extraction failed"; exit 1 }
+            default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
+          }
+
       - name: Test installer binary extraction
         shell: pwsh
         run: |

@@ -19,6 +19,7 @@ from sse_starlette.sse import EventSourceResponse
 import asyncio
 import uuid
 import json
+from code_indexer import __version__
 
 mcp_router = APIRouter()
 
@@ -218,7 +219,7 @@ async def process_jsonrpc_request(
             result = {
                 "protocolVersion": "2025-06-18",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "CIDX", "version": "7.3.0"},
+                "serverInfo": {"name": "CIDX", "version": __version__},
             }
             return create_jsonrpc_response(result, request_id)
         elif method == "tools/list":
