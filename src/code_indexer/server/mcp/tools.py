@@ -680,7 +680,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["global", "per_repo"],
                     "default": "global",
-                    "description": "Result aggregation for omni-list-files: 'global' returns files sorted by repo then path, 'per_repo' samples proportionally.",
+                    "description": "How to aggregate file listings across multiple repositories. 'global' (default): Returns files sorted by repo then path - shows all files in order. 'per_repo': Distributes limit evenly across repos - ensures balanced representation (e.g., limit=30 across 3 repos returns ~10 from each repo).",
                 },
                 "path": {
                     "type": "string",
@@ -1587,11 +1587,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["global", "per_repo"],
                     "default": "global",
-                    "description": (
-                        "Result aggregation for omni-regex search: 'global' merges all "
-                        "matches sorted by relevance, 'per_repo' groups by repository. "
-                        "Only applies when repository_alias is an array."
-                    ),
+                    "description": "How to aggregate regex search results across multiple repositories. 'global' (default): Returns top N matches by relevance across ALL repos - best for finding absolute best matches (e.g., limit=20 across 3 repos returns 20 best total). 'per_repo': Distributes N results evenly across repos - ensures balanced representation (e.g., limit=20 across 3 repos returns ~7 from each repo).",
                 },
                 "pattern": {
                     "type": "string",
@@ -1778,10 +1774,7 @@ TOOL_REGISTRY["git_log"] = {
             "aggregation_mode": {
                 "type": "string",
                 "enum": ["global", "per_repo"],
-                "description": (
-                    "For omni-search (array repository_alias): how to aggregate results. "
-                    "'global' merges commits by date (default). 'per_repo' groups by repository."
-                ),
+                "description": "How to aggregate git log results across multiple repositories. 'global' (default): Merges commits by date across ALL repos - shows complete chronological history. 'per_repo': Distributes limit evenly across repos - ensures balanced representation (e.g., limit=30 across 3 repos returns ~10 commits from each repo).",
                 "default": "global",
             },
         },
@@ -2290,10 +2283,7 @@ TOOL_REGISTRY["git_search_commits"] = {
             "aggregation_mode": {
                 "type": "string",
                 "enum": ["global", "per_repo"],
-                "description": (
-                    "For omni-search (array repository_alias): how to aggregate results. "
-                    "'global' merges all matches by relevance (default). 'per_repo' groups by repository."
-                ),
+                "description": "How to aggregate commit search results across multiple repositories. 'global' (default): Returns top N commits by relevance across ALL repos - best for finding most relevant matches. 'per_repo': Distributes N results evenly across repos - ensures balanced representation (e.g., limit=30 across 3 repos returns ~10 commits from each repo).",
                 "default": "global",
             },
         },
