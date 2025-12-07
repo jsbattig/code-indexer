@@ -332,133 +332,68 @@ SectionEnd
 ; AC3: API Authentication Function
 
 Function AuthenticateWithAPI
-    DetailPrint "=== AuthenticateWithAPI: Starting ==="
+    DetailPrint "AuthenticateWithAPI: Starting"
     DetailPrint "Server URL: $ServerUrl"
-    DetailPrint "Username: $Username"
-    DetailPrint "Password length: [REDACTED]"
 
-    ; Build JSON string manually
+    ; Build JSON request body
     StrCpy $0 `{"username":"$Username","password":"$Password"}`
-    DetailPrint "JSON payload built (length check): $0"
 
-    ; Make HTTP request
-    DetailPrint "=== Making NScurl POST request ==="
-    NScurl::http POST "$ServerUrl/auth/login" Memory /HEADER "Content-Type: application/json" /DATA "$0" /END
-    Pop $1
-    DetailPrint "NScurl transfer status: $1"
-
-    ; Check for connection errors
-    ${If} $1 != "OK"
-        StrCpy $ErrorMessage "Connection failed: $1"
-        StrCpy $AuthSuccess "0"
-        DetailPrint "=== FAILED: Connection error: $1 ==="
-        Return
-    ${EndIf}
-
-    ; Get response body
-    DetailPrint "=== Getting response data ==="
-    NScurl::query "@RECVDATA@"
-    Pop $1
-
-    ; Log response (truncate if too long for security)
-    StrLen $2 $1
-    DetailPrint "Response length: $2 bytes"
-    ${If} $2 > 0
-        DetailPrint "Response preview: $1"
-    ${Else}
-        DetailPrint "=== WARNING: Empty response from server ==="
-    ${EndIf}
-
-    ; Write to temp file
-    DetailPrint "=== Writing response to temp file ==="
+    ; Define temp file path
     StrCpy $3 "$TEMP\mcpb_auth_response.json"
-    DetailPrint "Temp file path: $3"
 
-    FileOpen $2 $3 w
-    ${If} $2 == ""
-        DetailPrint "=== FAILED: Could not open temp file for writing ==="
-        StrCpy $ErrorMessage "Failed to write temp file"
+    ; Make HTTP POST request - write response directly to file (NOT Memory mode)
+    DetailPrint "Sending authentication request..."
+    NScurl::http POST "$ServerUrl/auth/login" "$3" /HEADER "Content-Type: application/json" /DATA "$0" /TIMEOUT 30000 /END
+    Pop $0
+
+    DetailPrint "NScurl status: $0"
+
+    ${If} $0 != "OK"
+        StrCpy $ErrorMessage "Connection failed: $0"
         StrCpy $AuthSuccess "0"
         Return
     ${EndIf}
 
-    FileWrite $2 $1
-    FileClose $2
-    DetailPrint "Temp file written successfully"
-
-    ; Verify temp file exists and has content
-    ${If} ${FileExists} $3
-        DetailPrint "Temp file exists: $3"
-    ${Else}
-        DetailPrint "=== FAILED: Temp file does not exist after write ==="
-        StrCpy $ErrorMessage "Temp file not created"
-        StrCpy $AuthSuccess "0"
-        Return
-    ${EndIf}
-
-    ; Parse JSON from temp file
-    DetailPrint "=== Parsing JSON from temp file ==="
+    ; Parse the response file directly with nsJSON
+    DetailPrint "Parsing response..."
     ClearErrors
-    nsJSON::Set /file $3
+    nsJSON::Set /file "$3"
+
     ${If} ${Errors}
-        DetailPrint "=== FAILED: nsJSON::Set /file failed ==="
-        StrCpy $ErrorMessage "Failed to parse JSON response"
+        StrCpy $ErrorMessage "Invalid server response"
         StrCpy $AuthSuccess "0"
-        Delete $3
+        Delete "$3"
         Return
     ${EndIf}
-    DetailPrint "JSON parsed successfully"
 
     ; Clean up temp file
-    Delete $3
-    DetailPrint "Temp file deleted"
+    Delete "$3"
 
     ; Extract access_token
-    DetailPrint "=== Extracting access_token ==="
     ClearErrors
     nsJSON::Get "access_token" /END
     Pop $AccessToken
-    DetailPrint "access_token value: $AccessToken"
 
-    ; Check if we got a token
     ${If} $AccessToken == ""
     ${OrIf} $AccessToken == "null"
-        DetailPrint "=== No access_token - checking for error message ==="
-
-        ClearErrors
+        ; Try to get error message
         nsJSON::Get "detail" /END
         Pop $0
-        DetailPrint "detail field: $0"
-
         ${If} $0 != ""
         ${AndIf} $0 != "null"
             StrCpy $ErrorMessage "$0"
         ${Else}
-            ClearErrors
-            nsJSON::Get "error" /END
-            Pop $0
-            DetailPrint "error field: $0"
-            ${If} $0 != ""
-            ${AndIf} $0 != "null"
-                StrCpy $ErrorMessage "$0"
-            ${Else}
-                StrCpy $ErrorMessage "Invalid username or password"
-            ${EndIf}
+            StrCpy $ErrorMessage "Invalid username or password"
         ${EndIf}
-
         StrCpy $AuthSuccess "0"
-        DetailPrint "=== FAILED: $ErrorMessage ==="
         Return
     ${EndIf}
 
     ; Get refresh token
-    DetailPrint "=== Extracting refresh_token ==="
-    ClearErrors
     nsJSON::Get "refresh_token" /END
     Pop $RefreshToken
-    DetailPrint "refresh_token extracted"
 
-    DetailPrint "=== SUCCESS: Authentication complete ==="
+    DetailPrint "Authentication successful"
     StrCpy $AuthSuccess "1"
 FunctionEnd
 
