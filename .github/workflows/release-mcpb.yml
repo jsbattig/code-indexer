@@ -448,30 +448,25 @@ jobs:
             FileWrite $8 "Server: __SERVER_URL__$\r$\n"
             FileWrite $8 "Username: __USERNAME__$\r$\n"
 
-            ; Step 1: NScurl POST to /auth/login
-            FileWrite $8 "Step 1: NScurl POST to /auth/login...$\r$\n"
+            ; Step 1: NScurl POST to /auth/login - write directly to file (not MEMORY)
+            FileWrite $8 "Step 1: NScurl POST to /auth/login (output to file)...$\r$\n"
 
-            NScurl::http POST "__SERVER_URL__/auth/login" MEMORY /HEADER "Content-Type: application/json" /DATA '{"username":"__USERNAME__","password":"__PASSWORD__"}' /INSIST /TIMEOUT 30000 /END
+            NScurl::http POST "__SERVER_URL__/auth/login" "$1" /HEADER "Content-Type: application/json" /DATA '{"username":"__USERNAME__","password":"__PASSWORD__"}' /INSIST /TIMEOUT 30000 /END
             Pop $0
 
-            FileWrite $8 "NScurl returned: [$0]$\r$\n"
+            FileWrite $8 "NScurl status: [$0]$\r$\n"
 
-            ; Check if request succeeded
-            StrCpy $2 $0 12
-            StrCmp $2 "https://http" fail_nscurl
-            StrCmp $0 "" fail_nscurl
+            ; Check if request succeeded - "OK" means success for file output
+            StrCmp $0 "OK" +3
+            FileWrite $8 "FAIL: NScurl returned error: $0$\r$\n"
+            Goto fail_nscurl
 
-            ; Check for error responses
-            StrCpy $2 $0 5
-            StrCmp $2 "Error" fail_nscurl
+            ; Verify file was created
+            IfFileExists $1 +3
+            FileWrite $8 "FAIL: Response file not created$\r$\n"
+            Goto fail_nscurl
 
-            ; Step 2: Write response to file for nsJSON parsing
-            FileWrite $8 "Step 2: Writing response to file...$\r$\n"
-            FileOpen $7 $1 w
-            FileWrite $7 $0
-            FileClose $7
-
-            FileWrite $8 "Response written to: $1$\r$\n"
+            FileWrite $8 "Response saved to: $1$\r$\n"
 
             ; Step 3: Parse with nsJSON
             FileWrite $8 "Step 3: Parsing with nsJSON::Set /file...$\r$\n"
