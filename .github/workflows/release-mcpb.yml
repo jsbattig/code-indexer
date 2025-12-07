@@ -332,8 +332,8 @@ jobs:
             nsJSON::Get `url` /end
             Pop $2
 
-            ; Verify we got something (url should contain "httpbin.org")
-            StrCpy $3 $2 11  ; Get first 11 chars
+            ; Verify we got something (url should start with "https://http")
+            StrCpy $3 $2 12  ; Get first 12 chars
             StrCmp $3 "https://http" +1 fail_get
 
             ; Success - cleanup and exit
