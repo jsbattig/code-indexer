@@ -359,15 +359,21 @@ Function AuthenticateWithAPI
     Pop $1
     DetailPrint "Response: $1"
 
-    ; Parse response JSON using nsJSON
-    nsJSON::Set /value "$1"
-    Pop $0
-    ${If} $0 != "ok"
+    ; nsJSON cannot parse from variable - must write to temp file first
+    FileOpen $2 "$TEMP\mcpb_auth_response.json" w
+    FileWrite $2 "$1"
+    FileClose $2
+
+    ; Parse response JSON from temp file
+    nsJSON::Set /file "$TEMP\mcpb_auth_response.json"
+    IfErrors 0 +5
         StrCpy $ErrorMessage "Authentication failed - invalid server response"
         StrCpy $AuthSuccess "0"
-        DetailPrint "Failed to parse JSON response: $0"
+        DetailPrint "Failed to parse JSON response"
         Return
-    ${EndIf}
+
+    ; Clean up temp file
+    Delete "$TEMP\mcpb_auth_response.json"
 
     ; Extract access_token - check if it exists
     nsJSON::Get "access_token" /END
