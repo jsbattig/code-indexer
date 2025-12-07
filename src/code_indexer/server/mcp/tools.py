@@ -954,6 +954,10 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "boolean",
                     "description": "Whether operation succeeded",
                 },
+                "server_version": {
+                    "type": "string",
+                    "description": "Server version string",
+                },
                 "health": {
                     "type": "object",
                     "description": "System health information",

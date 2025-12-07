@@ -1325,13 +1325,18 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Check system health status."""
     try:
+        from code_indexer import __version__
         from code_indexer.server.services.health_service import health_service
 
         # Call the actual method (not async)
         health_response = health_service.get_system_health()
         # Use mode='json' to serialize datetime objects to ISO format strings
         return _mcp_response(
-            {"success": True, "health": health_response.model_dump(mode="json")}
+            {
+                "success": True,
+                "server_version": __version__,
+                "health": health_response.model_dump(mode="json"),
+            }
         )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "health": {}})

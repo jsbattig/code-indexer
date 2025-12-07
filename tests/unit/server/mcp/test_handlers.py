@@ -814,6 +814,8 @@ class TestHealthCheck:
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
+            assert "server_version" in data
+            assert isinstance(data["server_version"], str)
             assert "health" in data
 
 
