@@ -428,7 +428,7 @@ jobs:
           # Create NSIS test script with placeholders (use single-quoted here-string)
           $testScript = @'
           !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
-          !include "NScurl.nsh"
+          ; NScurl.nsh not needed - using direct NScurl::http call
           !include "LogicLib.nsh"
           Unicode true
 
