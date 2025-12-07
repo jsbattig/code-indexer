@@ -34,11 +34,11 @@ class TestExpandWildcardPatterns:
             with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_reg:
                 mock_instance = Mock()
                 mock_instance.list_global_repos.return_value = [
-                    {"alias": "evolution-global"},
-                    {"alias": "evo-mobile-global"},
-                    {"alias": "backend-global"},
-                    {"alias": "frontend-global"},
-                    {"alias": "other-project"},
+                    {"alias_name": "evolution-global"},
+                    {"alias_name": "evo-mobile-global"},
+                    {"alias_name": "backend-global"},
+                    {"alias_name": "frontend-global"},
+                    {"alias_name": "other-project"},
                 ]
                 mock_reg.return_value = mock_instance
                 yield mock_reg

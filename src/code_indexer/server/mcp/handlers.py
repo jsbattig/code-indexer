@@ -119,7 +119,7 @@ def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
     # Get available repos
     try:
         registry = GlobalRegistry(golden_repos_dir)
-        available_repos = [r["alias"] for r in registry.list_global_repos()]
+        available_repos = [r["alias_name"] for r in registry.list_global_repos()]
     except Exception as e:
         logger.warning(f"Failed to list global repos for wildcard expansion: {e}")
         return patterns
