@@ -425,8 +425,8 @@ jobs:
           Write-Host "Username: $env:CIDX_USERNAME"
           Write-Host "Password: [REDACTED]"
 
-          # Create NSIS test script for full auth flow
-          $testScript = @"
+          # Create NSIS test script with placeholders (use single-quoted here-string)
+          $testScript = @'
           !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
           !include "NScurl.nsh"
           !include "LogicLib.nsh"
@@ -434,98 +434,103 @@ jobs:
 
           Name "Full Auth Flow Test"
           OutFile "full-auth-test.exe"
-          InstallDir "`$TEMP\authtest"
+          InstallDir "$TEMP\authtest"
           SilentInstall silent
 
           Section
-            SetOutPath `$INSTDIR
+            SetOutPath $INSTDIR
 
-            StrCpy `$9 "`$TEMP\full_auth_debug.txt"
-            StrCpy `$1 "`$TEMP\auth_response.json"
+            StrCpy $9 "$TEMP\full_auth_debug.txt"
+            StrCpy $1 "$TEMP\auth_response.json"
 
-            FileOpen `$8 `$9 w
-            FileWrite `$8 "=== FULL AUTH FLOW TEST ===$\r$\n"
-            FileWrite `$8 "Server: $($env:CIDX_SERVER_URL)$\r$\n"
-            FileWrite `$8 "Username: $($env:CIDX_USERNAME)$\r$\n"
+            FileOpen $8 $9 w
+            FileWrite $8 "=== FULL AUTH FLOW TEST ===$\r$\n"
+            FileWrite $8 "Server: __SERVER_URL__$\r$\n"
+            FileWrite $8 "Username: __USERNAME__$\r$\n"
 
             ; Step 1: NScurl POST to /auth/login
-            FileWrite `$8 "Step 1: NScurl POST to /auth/login...$\r$\n"
+            FileWrite $8 "Step 1: NScurl POST to /auth/login...$\r$\n"
 
-            NScurl::http POST "$($env:CIDX_SERVER_URL)/auth/login" MEMORY /HEADER "Content-Type: application/json" /DATA '{"username":"$($env:CIDX_USERNAME)","password":"$($env:CIDX_PASSWORD)"}' /INSIST /TIMEOUT 30000 /END
-            Pop `$0
+            NScurl::http POST "__SERVER_URL__/auth/login" MEMORY /HEADER "Content-Type: application/json" /DATA '{"username":"__USERNAME__","password":"__PASSWORD__"}' /INSIST /TIMEOUT 30000 /END
+            Pop $0
 
-            FileWrite `$8 "NScurl returned: [`$0]$\r$\n"
+            FileWrite $8 "NScurl returned: [$0]$\r$\n"
 
             ; Check if request succeeded
-            StrCpy `$2 `$0 12
-            StrCmp `$2 "https://http" fail_nscurl
-            StrCmp `$0 "" fail_nscurl
+            StrCpy $2 $0 12
+            StrCmp $2 "https://http" fail_nscurl
+            StrCmp $0 "" fail_nscurl
 
             ; Check for error responses
-            StrCpy `$2 `$0 5
-            StrCmp `$2 "Error" fail_nscurl
+            StrCpy $2 $0 5
+            StrCmp $2 "Error" fail_nscurl
 
             ; Step 2: Write response to file for nsJSON parsing
-            FileWrite `$8 "Step 2: Writing response to file...$\r$\n"
-            FileOpen `$7 `$1 w
-            FileWrite `$7 `$0
-            FileClose `$7
+            FileWrite $8 "Step 2: Writing response to file...$\r$\n"
+            FileOpen $7 $1 w
+            FileWrite $7 $0
+            FileClose $7
 
-            FileWrite `$8 "Response written to: `$1$\r$\n"
+            FileWrite $8 "Response written to: $1$\r$\n"
 
             ; Step 3: Parse with nsJSON
-            FileWrite `$8 "Step 3: Parsing with nsJSON::Set /file...$\r$\n"
+            FileWrite $8 "Step 3: Parsing with nsJSON::Set /file...$\r$\n"
             ClearErrors
-            nsJSON::Set /file "`$1"
-            `${If} `${Errors}
-              FileWrite `$8 "FAIL: nsJSON::Set /file returned error$\r$\n"
-              FileClose `$8
+            nsJSON::Set /file "$1"
+            ${If} ${Errors}
+              FileWrite $8 "FAIL: nsJSON::Set /file returned error$\r$\n"
+              FileClose $8
               SetErrorLevel 3
               Goto done
-            `${EndIf}
-            FileWrite `$8 "nsJSON::Set /file succeeded$\r$\n"
+            ${EndIf}
+            FileWrite $8 "nsJSON::Set /file succeeded$\r$\n"
 
             ; Step 4: Extract access_token
-            FileWrite `$8 "Step 4: Extracting access_token...$\r$\n"
+            FileWrite $8 "Step 4: Extracting access_token...$\r$\n"
             nsJSON::Get "access_token" /END
-            Pop `$2
-            FileWrite `$8 "access_token: [`$2]$\r$\n"
+            Pop $2
+            FileWrite $8 "access_token: [$2]$\r$\n"
 
             ; Validate access_token is not empty
-            StrCmp `$2 "" fail_token
-            StrCmp `$2 "null" fail_token
+            StrCmp $2 "" fail_token
+            StrCmp $2 "null" fail_token
 
             ; Step 5: Extract refresh_token
-            FileWrite `$8 "Step 5: Extracting refresh_token...$\r$\n"
+            FileWrite $8 "Step 5: Extracting refresh_token...$\r$\n"
             nsJSON::Get "refresh_token" /END
-            Pop `$3
-            FileWrite `$8 "refresh_token: [`$3]$\r$\n"
+            Pop $3
+            FileWrite $8 "refresh_token: [$3]$\r$\n"
 
             ; Validate refresh_token is not empty
-            StrCmp `$3 "" fail_token
-            StrCmp `$3 "null" fail_token
+            StrCmp $3 "" fail_token
+            StrCmp $3 "null" fail_token
 
             ; SUCCESS!
-            FileWrite `$8 "=== SUCCESS: Full auth flow completed! ===$\r$\n"
-            FileClose `$8
-            Delete "`$1"
+            FileWrite $8 "=== SUCCESS: Full auth flow completed! ===$\r$\n"
+            FileClose $8
+            Delete "$1"
             SetErrorLevel 0
             Goto done
 
           fail_nscurl:
-            FileWrite `$8 "FAIL: NScurl request failed$\r$\n"
-            FileClose `$8
+            FileWrite $8 "FAIL: NScurl request failed$\r$\n"
+            FileClose $8
             SetErrorLevel 2
             Goto done
 
           fail_token:
-            FileWrite `$8 "FAIL: Token extraction failed (empty or null)$\r$\n"
-            FileClose `$8
+            FileWrite $8 "FAIL: Token extraction failed (empty or null)$\r$\n"
+            FileClose $8
             SetErrorLevel 4
 
           done:
           SectionEnd
-"@
+          '@
+
+          # Substitute placeholders with actual values
+          $testScript = $testScript -replace '__SERVER_URL__', $env:CIDX_SERVER_URL
+          $testScript = $testScript -replace '__USERNAME__', $env:CIDX_USERNAME
+          $testScript = $testScript -replace '__PASSWORD__', $env:CIDX_PASSWORD
 
           $testScript | Out-File -FilePath "full-auth-test.nsi" -Encoding ASCII
 
