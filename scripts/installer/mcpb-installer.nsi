@@ -61,6 +61,11 @@ Var ErrorMessage
 Var SilentMode
 Var AuthSuccess
 Var ClaudeIntegrationFailed
+Var VerifyBinary
+Var VerifyConfigDir
+Var VerifyConfigFile
+Var VerifyClaudeConfig
+Var VerifyUninstaller
 
 ;--------------------------------
 ; MUI Settings
@@ -311,6 +316,9 @@ Section "Install MCPB" SecInstall
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MCPB" "NoModify" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MCPB" "NoRepair" 1
     DetailPrint "Add/Remove Programs registry entries created"
+
+    ; Verify installation and show summary
+    Call VerifyInstallation
 
     DetailPrint "MCPB installation completed successfully"
 
@@ -596,6 +604,142 @@ Function IntegrateWithClaudeDesktop
 
             DetailPrint "Claude Desktop integration completed successfully"
             DetailPrint "Claude Desktop configured with MCPB integration"
+FunctionEnd
+
+;--------------------------------
+; Verification and Summary Function
+
+Function VerifyInstallation
+    DetailPrint "Verifying installation..."
+
+    ; Initialize all verification variables to FAILED
+    StrCpy $VerifyBinary "FAILED"
+    StrCpy $VerifyConfigDir "FAILED"
+    StrCpy $VerifyConfigFile "FAILED"
+    StrCpy $VerifyClaudeConfig "FAILED"
+    StrCpy $VerifyUninstaller "FAILED"
+
+    ; Check MCPB binary
+    IfFileExists "C:\\mcpb\\server\\mcpb-windows-x64.exe" 0 +3
+        StrCpy $VerifyBinary "OK"
+        DetailPrint "[OK] MCPB binary exists"
+        Goto check_config_dir
+    DetailPrint "[FAILED] MCPB binary not found"
+
+    check_config_dir:
+    ; Check configuration directory
+    IfFileExists "$PROFILE\\.mcpb\\*.*" 0 +3
+        StrCpy $VerifyConfigDir "OK"
+        DetailPrint "[OK] Configuration directory exists"
+        Goto check_config_file
+    DetailPrint "[FAILED] Configuration directory not found"
+
+    check_config_file:
+    ; Check configuration file
+    IfFileExists "$PROFILE\\.mcpb\\config.json" 0 +3
+        StrCpy $VerifyConfigFile "OK"
+        DetailPrint "[OK] Configuration file exists"
+        Goto check_claude_config
+    DetailPrint "[FAILED] Configuration file not found"
+
+    check_claude_config:
+    ; Check Claude Desktop config (or check if integration failed)
+    ${If} $ClaudeIntegrationFailed == "1"
+        StrCpy $VerifyClaudeConfig "WARNING"
+        DetailPrint "[WARNING] Claude Desktop integration failed"
+    ${Else}
+        IfFileExists "$APPDATA\\Claude\\claude_desktop_config.json" 0 +3
+            StrCpy $VerifyClaudeConfig "OK"
+            DetailPrint "[OK] Claude Desktop config exists"
+            Goto check_uninstaller
+        StrCpy $VerifyClaudeConfig "WARNING"
+        DetailPrint "[WARNING] Claude Desktop config not found"
+    ${EndIf}
+
+    check_uninstaller:
+    ; Check uninstaller
+    IfFileExists "$INSTDIR\\uninstall.exe" 0 +3
+        StrCpy $VerifyUninstaller "OK"
+        DetailPrint "[OK] Uninstaller exists"
+        Goto show_summary
+    DetailPrint "[FAILED] Uninstaller not found"
+
+    show_summary:
+    ; Build summary based on mode
+    ${If} $SilentMode == "1"
+        ; Silent mode - use DetailPrint
+        DetailPrint ""
+        DetailPrint "========================================="
+        DetailPrint "MCPB Installation Summary"
+        DetailPrint "========================================="
+        DetailPrint ""
+        DetailPrint "[$VerifyBinary] MCPB binary installed"
+        DetailPrint "     C:\\mcpb\\server\\mcpb-windows-x64.exe"
+        DetailPrint ""
+        DetailPrint "[$VerifyConfigDir] Configuration directory created"
+        DetailPrint "     %USERPROFILE%\\.mcpb\\"
+        DetailPrint ""
+        DetailPrint "[$VerifyConfigFile] Configuration file created"
+        DetailPrint "     %USERPROFILE%\\.mcpb\\config.json"
+        DetailPrint ""
+        ${If} $VerifyClaudeConfig == "OK"
+            DetailPrint "[OK] Claude Desktop integration"
+            DetailPrint "     %APPDATA%\\Claude\\claude_desktop_config.json"
+        ${ElseIf} $VerifyClaudeConfig == "WARNING"
+            DetailPrint "[WARNING] Claude Desktop integration"
+            DetailPrint "     Not configured (Claude Desktop may not be installed)"
+        ${Else}
+            DetailPrint "[FAILED] Claude Desktop integration"
+        ${EndIf}
+        DetailPrint ""
+        DetailPrint "[$VerifyUninstaller] Uninstaller created"
+        DetailPrint "     C:\\mcpb\\uninstall.exe"
+        DetailPrint ""
+        DetailPrint "========================================="
+        ${If} $ClaudeIntegrationFailed == "0"
+            DetailPrint "Installation completed successfully!"
+            DetailPrint "Please restart Claude Desktop to use MCPB."
+        ${Else}
+            DetailPrint "Installation completed with warnings."
+            DetailPrint "MCPB installed successfully, but Claude Desktop"
+            DetailPrint "integration was not configured."
+        ${EndIf}
+        DetailPrint "========================================="
+    ${Else}
+        ; GUI mode - use MessageBox
+        StrCpy $0 "MCPB Installation Summary$\r$\n"
+        StrCpy $0 "$0========================$\r$\n$\r$\n"
+        StrCpy $0 "$0[$VerifyBinary] MCPB binary installed$\r$\n"
+        StrCpy $0 "$0     C:\\mcpb\\server\\mcpb-windows-x64.exe$\r$\n$\r$\n"
+        StrCpy $0 "$0[$VerifyConfigDir] Configuration directory created$\r$\n"
+        StrCpy $0 "$0     %USERPROFILE%\\.mcpb\\$\r$\n$\r$\n"
+        StrCpy $0 "$0[$VerifyConfigFile] Configuration file created$\r$\n"
+        StrCpy $0 "$0     %USERPROFILE%\\.mcpb\\config.json$\r$\n$\r$\n"
+
+        ${If} $VerifyClaudeConfig == "OK"
+            StrCpy $0 "$0[OK] Claude Desktop integration$\r$\n"
+            StrCpy $0 "$0     %APPDATA%\\Claude\\claude_desktop_config.json$\r$\n$\r$\n"
+        ${ElseIf} $VerifyClaudeConfig == "WARNING"
+            StrCpy $0 "$0[WARNING] Claude Desktop integration$\r$\n"
+            StrCpy $0 "$0     Not configured (Claude Desktop may not be installed)$\r$\n$\r$\n"
+        ${Else}
+            StrCpy $0 "$0[FAILED] Claude Desktop integration$\r$\n$\r$\n"
+        ${EndIf}
+
+        StrCpy $0 "$0[$VerifyUninstaller] Uninstaller created$\r$\n"
+        StrCpy $0 "$0     C:\\mcpb\\uninstall.exe$\r$\n$\r$\n"
+
+        ${If} $ClaudeIntegrationFailed == "0"
+            StrCpy $0 "$0Installation completed successfully!$\r$\n"
+            StrCpy $0 "$0Please restart Claude Desktop to use MCPB."
+            MessageBox MB_OK|MB_ICONINFORMATION "$0"
+        ${Else}
+            StrCpy $0 "$0Installation completed with warnings.$\r$\n"
+            StrCpy $0 "$0MCPB installed successfully, but Claude Desktop$\r$\n"
+            StrCpy $0 "$0integration was not configured."
+            MessageBox MB_OK|MB_ICONWARNING "$0"
+        ${EndIf}
+    ${EndIf}
 FunctionEnd
 
 ;--------------------------------
