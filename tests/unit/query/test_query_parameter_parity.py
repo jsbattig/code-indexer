@@ -276,6 +276,10 @@ class TestQueryParameterParity:
         normalized_expected.discard("query")
         normalized_expected.add("query_text")
 
+        # MCP-only parameters (not in REST, but intentionally MCP-only)
+        # response_format: Story #582 - omni-search result grouping (flat vs grouped)
+        normalized_expected.add("response_format")
+
         extra = mcp_params - normalized_expected
 
         assert not extra, f"MCP API has unexpected parameters: {sorted(extra)}"
@@ -285,14 +289,20 @@ class TestQueryParameterParity:
         rest_params = get_rest_parameters()
         mcp_params = get_mcp_parameters()
 
+        # MCP-only parameters that are intentionally not in REST
+        # response_format: Story #582 - omni-search result grouping
+        mcp_only_params = {"response_format"}
+
         # REST and MCP should have identical parameter names
-        # (both use query_text, both use same naming conventions)
+        # (except for documented MCP-only parameters)
 
         rest_only = rest_params - mcp_params
-        mcp_only = mcp_params - rest_params
+        mcp_only = mcp_params - rest_params - mcp_only_params
 
         assert not rest_only, f"Parameters only in REST: {sorted(rest_only)}"
-        assert not mcp_only, f"Parameters only in MCP: {sorted(mcp_only)}"
+        assert (
+            not mcp_only
+        ), f"Parameters only in MCP (excluding documented MCP-only): {sorted(mcp_only)}"
 
     def test_core_parameters_exist(self):
         """Verify core query parameters exist in all interfaces."""

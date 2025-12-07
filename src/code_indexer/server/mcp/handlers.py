@@ -11,6 +11,7 @@ All handlers return MCP-compliant responses with content arrays:
 }
 """
 
+import difflib
 import fnmatch
 import json
 import logging
@@ -23,13 +24,14 @@ from code_indexer.server import app as app_module
 
 logger = logging.getLogger(__name__)
 
+
 def _parse_json_string_array(value: Any) -> Any:
     """Parse JSON string arrays from MCP clients that serialize arrays as strings.
-    
+
     Some MCP clients send arrays as JSON strings like '["repo1", "repo2"]'
     instead of actual arrays. This function handles that case.
     """
-    if isinstance(value, str) and value.startswith('['):
+    if isinstance(value, str) and value.startswith("["):
         try:
             parsed = json.loads(value)
             if isinstance(parsed, list):
@@ -37,8 +39,6 @@ def _parse_json_string_array(value: Any) -> Any:
         except (json.JSONDecodeError, ValueError):
             pass
     return value
-
-
 
 
 def _mcp_response(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,7 +94,148 @@ def _get_query_tracker():
     return getattr(app_module.app.state, "query_tracker", None)
 
 
-WILDCARD_CHARS = {'*', '?', '['}
+def _error_with_suggestions(
+    error_msg: str,
+    attempted_value: str,
+    available_values: List[str],
+    max_suggestions: int = 3,
+) -> Dict[str, Any]:
+    """Create structured error response with fuzzy-matched suggestions.
+
+    Args:
+        error_msg: The error message to include
+        attempted_value: The value the user tried (e.g., "myrepo-gloabl")
+        available_values: List of valid values to match against
+        max_suggestions: Maximum number of suggestions to return
+
+    Returns:
+        Structured error envelope with suggestions and available_values
+    """
+    # Use difflib for fuzzy matching
+    suggestions = difflib.get_close_matches(
+        attempted_value,
+        available_values,
+        n=max_suggestions,
+        cutoff=0.6,  # 60% similarity threshold
+    )
+
+    return {
+        "success": False,
+        "error": error_msg,
+        "suggestions": suggestions,
+        "available_values": available_values[:10],  # Limit to prevent huge responses
+    }
+
+
+def _get_available_repos() -> List[str]:
+    """Get list of available global repository aliases for suggestions."""
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+        registry = GlobalRegistry(golden_repos_dir)
+        return [r["alias_name"] for r in registry.list_global_repos()]
+    except Exception:
+        return []
+
+
+def _format_omni_response(
+    all_results: List[Dict[str, Any]],
+    response_format: str,
+    total_repos_searched: int,
+    errors: Dict[str, str],
+    cursor: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Format omni-search results based on response_format parameter.
+
+    Args:
+        all_results: Flat list of results with source_repo field
+        response_format: "flat" or "grouped"
+        total_repos_searched: Number of repos successfully searched
+        errors: Dict of repo alias -> error message for failed repos
+        cursor: Optional cursor for pagination
+
+    Returns:
+        Formatted response dict
+    """
+    base_response: Dict[str, Any] = {
+        "success": True,
+        "total_repos_searched": total_repos_searched,
+        "errors": errors,
+    }
+
+    if cursor:
+        base_response["cursor"] = cursor
+
+    if response_format == "grouped":
+        results_by_repo: Dict[str, Dict[str, Any]] = {}
+        for result in all_results:
+            repo = result.get("source_repo", "unknown")
+            if repo not in results_by_repo:
+                results_by_repo[repo] = {"count": 0, "results": []}
+            results_by_repo[repo]["count"] += 1
+            results_by_repo[repo]["results"].append(result)
+
+        base_response["results_by_repo"] = results_by_repo
+        base_response["total_results"] = len(all_results)
+    else:
+        base_response["results"] = all_results
+        base_response["total_results"] = len(all_results)
+
+    return base_response
+
+
+
+
+def _is_temporal_query(params: Dict[str, Any]) -> bool:
+    """Check if query includes temporal parameters.
+    
+    Returns True if any temporal search parameters are present and truthy.
+    """
+    temporal_params = ["time_range", "time_range_all", "at_commit", "include_removed"]
+    return any(params.get(p) for p in temporal_params)
+
+
+def _get_temporal_status(repo_aliases: List[str]) -> Dict[str, Any]:
+    """Get temporal indexing status for each repository.
+    
+    Args:
+        repo_aliases: List of repository aliases to check
+        
+    Returns:
+        Dict with temporal_repos, non_temporal_repos, and optional warning
+    """
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+        registry = GlobalRegistry(golden_repos_dir)
+        all_repos = {r["alias_name"]: r for r in registry.list_global_repos()}
+        
+        temporal_repos = []
+        non_temporal_repos = []
+        
+        for alias in repo_aliases:
+            if alias in all_repos:
+                if all_repos[alias].get("enable_temporal", False):
+                    temporal_repos.append(alias)
+                else:
+                    non_temporal_repos.append(alias)
+        
+        status: Dict[str, Any] = {
+            "temporal_repos": temporal_repos,
+            "non_temporal_repos": non_temporal_repos,
+        }
+        
+        if not temporal_repos and non_temporal_repos:
+            status["warning"] = (
+                "None of the searched repositories have temporal indexing enabled. "
+                "Temporal queries will return no results. "
+                "Re-index with --index-commits to enable temporal search."
+            )
+        
+        return status
+    except Exception:
+        return {}
+
+
+WILDCARD_CHARS = {"*", "?", "["}
 
 
 def _has_wildcard(pattern: str) -> bool:
@@ -128,7 +269,9 @@ def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
     for pattern in patterns:
         if _has_wildcard(pattern):
             # Expand wildcard
-            matches = [repo for repo in available_repos if fnmatch.fnmatch(repo, pattern)]
+            matches = [
+                repo for repo in available_repos if fnmatch.fnmatch(repo, pattern)
+            ]
             if matches:
                 logger.debug(f"Expanded wildcard '{pattern}' -> {matches}")
                 expanded.extend(matches)
@@ -161,31 +304,33 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
     limit = params.get("limit", 10)
     aggregation_mode = params.get("aggregation_mode", "global")
-    
+
     if not repo_aliases:
-        return _mcp_response({
-            "success": True,
-            "results": {
-                "cursor": "",
-                "total_results": 0,
-                "total_repos_searched": 0,
-                "results": [],
-                "errors": {},
-            },
-        })
-    
+        return _mcp_response(
+            {
+                "success": True,
+                "results": {
+                    "cursor": "",
+                    "total_results": 0,
+                    "total_repos_searched": 0,
+                    "results": [],
+                    "errors": {},
+                },
+            }
+        )
+
     all_results = []
     errors = {}
     repos_searched = 0
-    
+
     for repo_alias in repo_aliases:
         try:
             # Build single-repo params and call existing search_code
             single_params = dict(params)
             single_params["repository_alias"] = repo_alias
-            
+
             single_result = await search_code(single_params, user)
-            
+
             # Parse the MCP response to extract results
             content = single_result.get("content", [])
             if content and content[0].get("type") == "text":
@@ -202,19 +347,22 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
         except Exception as e:
             errors[repo_alias] = str(e)
             logger.warning(f"Omni-search failed for {repo_alias}: {e}")
-    
+
     # Aggregate results based on mode
     if aggregation_mode == "per_repo":
         # Per-repo mode: take proportional results from each repo
         from collections import defaultdict
+
         results_by_repo = defaultdict(list)
         for r in all_results:
             results_by_repo[r.get("source_repo", "unknown")].append(r)
-        
+
         # Sort each repo's results by score
         for repo in results_by_repo:
-            results_by_repo[repo].sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
-        
+            results_by_repo[repo].sort(
+                key=lambda x: x.get("similarity_score", 0), reverse=True
+            )
+
         # Take proportional results from each repo
         num_repos = len(results_by_repo)
         if num_repos > 0:
@@ -231,17 +379,32 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
         # Global mode: sort all by score, take top N
         all_results.sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
         final_results = all_results[:limit]
-    
-    return _mcp_response({
-        "success": True,
-        "results": {
-            "cursor": "",
-            "total_results": len(final_results),
-            "total_repos_searched": repos_searched,
-            "results": final_results,
-            "errors": errors,
-        },
-    })
+
+    # Get response_format parameter (default to "flat" for backward compatibility)
+    response_format = params.get("response_format", "flat")
+
+    # Use _format_omni_response helper to format results
+    formatted = _format_omni_response(
+        all_results=final_results,
+        response_format=response_format,
+        total_repos_searched=repos_searched,
+        errors=errors,
+        cursor="",
+    )
+
+    # Add temporal_status if this is a temporal query (Story #583)
+    if _is_temporal_query(params):
+        temporal_status = _get_temporal_status(repo_aliases)
+        if temporal_status:
+            formatted["temporal_status"] = temporal_status
+
+    # Wrap in nested "results" key for backward compatibility with existing API contract
+    return _mcp_response(
+        {
+            "success": True,
+            "results": formatted,
+        }
+    )
 
 
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -274,13 +437,14 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
             if not repo_entry:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Global repository '{repository_alias}' not found",
-                        "results": [],
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Global repository '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["results"] = []
+                return _mcp_response(error_envelope)
 
             # Use AliasManager to get current target path (registry path becomes stale after refresh)
             from code_indexer.global_repos.alias_manager import AliasManager
@@ -289,13 +453,14 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             target_path = alias_manager.read_alias(repository_alias)
 
             if not target_path:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Alias for '{repository_alias}' not found",
-                        "results": [],
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Alias for '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["results"] = []
+                return _mcp_response(error_envelope)
 
             global_repo_path = Path(target_path)
 
@@ -553,13 +718,14 @@ async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str,
             )
 
             if not repo_entry:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Global repository '{user_alias}' not found",
-                        "status": {},
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Global repository '{user_alias}' not found",
+                    attempted_value=user_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["status"] = {}
+                return _mcp_response(error_envelope)
 
             # Build status directly from registry entry (no alias file needed)
             status = {
@@ -669,27 +835,29 @@ async def _omni_list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
     repo_aliases = params.get("repository_alias", [])
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
-    
+
     if not repo_aliases:
-        return _mcp_response({
-            "success": True,
-            "files": [],
-            "total_files": 0,
-            "repos_searched": 0,
-            "errors": {},
-        })
-    
+        return _mcp_response(
+            {
+                "success": True,
+                "files": [],
+                "total_files": 0,
+                "repos_searched": 0,
+                "errors": {},
+            }
+        )
+
     all_files = []
     errors = {}
     repos_searched = 0
-    
+
     for repo_alias in repo_aliases:
         try:
             single_params = dict(params)
             single_params["repository_alias"] = repo_alias
-            
+
             single_result = await list_files(single_params, user)
-            
+
             content = single_result.get("content", [])
             if content and content[0].get("type") == "text":
                 result_data = json_module.loads(content[0]["text"])
@@ -704,14 +872,21 @@ async def _omni_list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]
         except Exception as e:
             errors[repo_alias] = str(e)
             logger.warning(f"Omni-list-files failed for {repo_alias}: {e}")
-    
-    return _mcp_response({
-        "success": True,
-        "files": all_files,
-        "total_files": len(all_files),
-        "repos_searched": repos_searched,
-        "errors": errors,
-    })
+
+    # Get response_format parameter (default to "flat" for backward compatibility)
+    response_format = params.get("response_format", "flat")
+    formatted = _format_omni_response(
+        all_results=all_files,
+        response_format=response_format,
+        total_repos_searched=repos_searched,
+        errors=errors,
+    )
+    # Add files-specific field for backward compatibility
+    if response_format == "flat":
+        formatted["files"] = formatted.pop("results")
+        formatted["total_files"] = formatted.pop("total_results")
+        formatted["repos_searched"] = formatted.pop("total_repos_searched")
+    return _mcp_response(formatted)
 
 
 async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -723,11 +898,11 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         repository_alias = params["repository_alias"]
         repository_alias = _parse_json_string_array(repository_alias)
         params["repository_alias"] = repository_alias  # Update params for downstream
-        
+
         # Route to omni-search when repository_alias is an array
         if isinstance(repository_alias, list):
             return await _omni_list_files(params, user)
-        
+
         path_filter = params.get("path", "")
 
         # Check if this is a global repository (ends with -global suffix)
@@ -744,13 +919,14 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
             if not repo_entry:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Global repository '{repository_alias}' not found",
-                        "files": [],
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Global repository '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["files"] = []
+                return _mcp_response(error_envelope)
 
             # Use AliasManager to get current target path (registry path becomes stale after refresh)
             from code_indexer.global_repos.alias_manager import AliasManager
@@ -759,13 +935,14 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             target_path = alias_manager.read_alias(repository_alias)
 
             if not target_path:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Alias for '{repository_alias}' not found",
-                        "files": [],
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Alias for '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["files"] = []
+                return _mcp_response(error_envelope)
 
             # Use resolved path instead of alias for file_service
             query_params = FileListQueryParams(
@@ -842,14 +1019,15 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
             )
 
             if not repo_entry:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Global repository '{repository_alias}' not found",
-                        "content": [],
-                        "metadata": {},
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Global repository '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["content"] = []
+                error_envelope["metadata"] = {}
+                return _mcp_response(error_envelope)
 
             # Use AliasManager to get current target path (registry path becomes stale after refresh)
             from code_indexer.global_repos.alias_manager import AliasManager
@@ -858,14 +1036,15 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
             target_path = alias_manager.read_alias(repository_alias)
 
             if not target_path:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Alias for '{repository_alias}' not found",
-                        "content": [],
-                        "metadata": {},
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Alias for '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["content"] = []
+                error_envelope["metadata"] = {}
+                return _mcp_response(error_envelope)
 
             # Use resolved path for file_service
             result = app_module.file_service.get_file_content_by_path(
@@ -941,13 +1120,14 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             )
 
             if not repo_entry:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Global repository '{repository_alias}' not found",
-                        "structure": {},
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Global repository '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["structure"] = {}
+                return _mcp_response(error_envelope)
 
             # Use AliasManager to get current target path (registry path becomes stale after refresh)
             from code_indexer.global_repos.alias_manager import AliasManager
@@ -956,13 +1136,14 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             target_path = alias_manager.read_alias(repository_alias)
 
             if not target_path:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Alias for '{repository_alias}' not found",
-                        "structure": {},
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Alias for '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["structure"] = {}
+                return _mcp_response(error_envelope)
 
             # Use resolved path instead of alias for file_service
             repository_alias = target_path
@@ -1057,13 +1238,14 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
             if not repo_entry:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Global repository '{repository_alias}' not found",
-                        "branches": [],
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Global repository '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["branches"] = []
+                return _mcp_response(error_envelope)
 
             # Use AliasManager to get current target path (registry path becomes stale after refresh)
             from code_indexer.global_repos.alias_manager import AliasManager
@@ -1072,13 +1254,14 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             target_path = alias_manager.read_alias(repository_alias)
 
             if not target_path:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Alias for '{repository_alias}' not found",
-                        "branches": [],
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Alias for '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["branches"] = []
+                return _mcp_response(error_envelope)
 
             # Use resolved path for git operations
             repo_path = target_path
@@ -1294,13 +1477,14 @@ async def get_repository_statistics(
             )
 
             if not repo_entry:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Global repository '{repository_alias}' not found",
-                        "statistics": {},
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Global repository '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["statistics"] = {}
+                return _mcp_response(error_envelope)
 
             from code_indexer.global_repos.alias_manager import AliasManager
 
@@ -1308,13 +1492,14 @@ async def get_repository_statistics(
             target_path = alias_manager.read_alias(repository_alias)
 
             if not target_path:
-                return _mcp_response(
-                    {
-                        "success": False,
-                        "error": f"Alias for '{repository_alias}' not found",
-                        "statistics": {},
-                    }
+                available_repos = _get_available_repos()
+                error_envelope = _error_with_suggestions(
+                    error_msg=f"Alias for '{repository_alias}' not found",
+                    attempted_value=repository_alias,
+                    available_values=available_repos,
                 )
+                error_envelope["statistics"] = {}
+                return _mcp_response(error_envelope)
 
             # Build basic statistics for global repo
             statistics = {
@@ -1555,32 +1740,34 @@ async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]
 
     repo_aliases = args.get("repository_alias", [])
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
-    
+
     if not repo_aliases:
-        return _mcp_response({
-            "success": True,
-            "matches": [],
-            "total_matches": 0,
-            "truncated": False,
-            "search_engine": "ripgrep",
-            "search_time_ms": 0,
-            "repos_searched": 0,
-            "errors": {},
-        })
-    
+        return _mcp_response(
+            {
+                "success": True,
+                "matches": [],
+                "total_matches": 0,
+                "truncated": False,
+                "search_engine": "ripgrep",
+                "search_time_ms": 0,
+                "repos_searched": 0,
+                "errors": {},
+            }
+        )
+
     start_time = time.time()
     all_matches = []
     errors = {}
     repos_searched = 0
     truncated = False
-    
+
     for repo_alias in repo_aliases:
         try:
             single_args = dict(args)
             single_args["repository_alias"] = repo_alias
-            
+
             single_result = await handle_regex_search(single_args, user)
-            
+
             content = single_result.get("content", [])
             if content and content[0].get("type") == "text":
                 result_data = json_module.loads(content[0]["text"])
@@ -1597,19 +1784,24 @@ async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]
         except Exception as e:
             errors[repo_alias] = str(e)
             logger.warning(f"Omni-regex failed for {repo_alias}: {e}")
-    
+
     elapsed_ms = int((time.time() - start_time) * 1000)
-    
-    return _mcp_response({
-        "success": True,
-        "matches": all_matches,
-        "total_matches": len(all_matches),
-        "truncated": truncated,
-        "search_engine": "ripgrep",
-        "search_time_ms": elapsed_ms,
-        "repos_searched": repos_searched,
-        "errors": errors,
-    })
+
+    response_format = args.get("response_format", "flat")
+    formatted = _format_omni_response(
+        all_results=all_matches,
+        response_format=response_format,
+        total_repos_searched=repos_searched,
+        errors=errors,
+    )
+    formatted["truncated"] = truncated
+    formatted["search_engine"] = "ripgrep"
+    formatted["search_time_ms"] = elapsed_ms
+    if response_format == "flat":
+        formatted["matches"] = formatted.pop("results")
+        formatted["total_matches"] = formatted.pop("total_results")
+        formatted["repos_searched"] = formatted.pop("total_repos_searched")
+    return _mcp_response(formatted)
 
 
 async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -1722,8 +1914,6 @@ HANDLER_REGISTRY = {
 }
 
 
-
-
 async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-git-log across multiple repositories."""
     import json as json_module
@@ -1731,32 +1921,34 @@ async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     repo_aliases = args.get("repository_alias", [])
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
     limit = args.get("limit", 20)
-    
+
     if not repo_aliases:
-        return _mcp_response({
-            "success": True,
-            "commits": [],
-            "total_count": 0,
-            "truncated": False,
-            "repos_searched": 0,
-            "errors": {},
-        })
-    
+        return _mcp_response(
+            {
+                "success": True,
+                "commits": [],
+                "total_count": 0,
+                "truncated": False,
+                "repos_searched": 0,
+                "errors": {},
+            }
+        )
+
     all_commits = []
     errors = {}
     repos_searched = 0
     truncated = False
-    
+
     per_repo_limit = max(1, limit // len(repo_aliases)) if repo_aliases else limit
-    
+
     for repo_alias in repo_aliases:
         try:
             single_args = dict(args)
             single_args["repository_alias"] = repo_alias
             single_args["limit"] = per_repo_limit
-            
+
             single_result = await handle_git_log(single_args, user)
-            
+
             resp_content = single_result.get("content", [])
             if resp_content and resp_content[0].get("type") == "text":
                 result_data = json_module.loads(resp_content[0]["text"])
@@ -1773,19 +1965,25 @@ async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         except Exception as e:
             errors[repo_alias] = str(e)
             logger.warning(f"Omni-git-log failed for {repo_alias}: {e}")
-    
+
     # Sort by date descending and apply limit
     all_commits.sort(key=lambda x: x.get("date", ""), reverse=True)
     final_commits = all_commits[:limit]
-    
-    return _mcp_response({
-        "success": True,
-        "commits": final_commits,
-        "total_count": len(final_commits),
-        "truncated": truncated or len(all_commits) > limit,
-        "repos_searched": repos_searched,
-        "errors": errors,
-    })
+
+    response_format = args.get("response_format", "flat")
+    formatted = _format_omni_response(
+        all_results=final_commits,
+        response_format=response_format,
+        total_repos_searched=repos_searched,
+        errors=errors,
+    )
+    formatted["truncated"] = truncated or len(all_commits) > limit
+    if response_format == "flat":
+        formatted["commits"] = formatted.pop("results")
+        formatted["total_count"] = formatted.pop("total_results")
+        formatted["repos_searched"] = formatted.pop("total_repos_searched")
+    return _mcp_response(formatted)
+
 
 async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for git_log tool - retrieve commit history from a repository."""
@@ -1799,7 +1997,6 @@ async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     # Route to omni-search when repository_alias is an array
     if isinstance(repository_alias, list):
         return await _omni_git_log(args, user)
-
 
     # Validate required parameters
     if not repository_alias:
@@ -2322,8 +2519,6 @@ HANDLER_REGISTRY["git_blame"] = handle_git_blame
 HANDLER_REGISTRY["git_file_history"] = handle_git_file_history
 
 
-
-
 async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-git-search across multiple repositories."""
     import json as json_module
@@ -2333,33 +2528,35 @@ async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str
     repo_aliases = _expand_wildcard_patterns(repo_aliases)
     query = args.get("query", "")
     is_regex = args.get("is_regex", False)
-    
+
     if not repo_aliases:
-        return _mcp_response({
-            "success": True,
-            "query": query,
-            "is_regex": is_regex,
-            "matches": [],
-            "total_matches": 0,
-            "truncated": False,
-            "search_time_ms": 0,
-            "repos_searched": 0,
-            "errors": {},
-        })
-    
+        return _mcp_response(
+            {
+                "success": True,
+                "query": query,
+                "is_regex": is_regex,
+                "matches": [],
+                "total_matches": 0,
+                "truncated": False,
+                "search_time_ms": 0,
+                "repos_searched": 0,
+                "errors": {},
+            }
+        )
+
     start_time = time.time()
     all_matches = []
     errors = {}
     repos_searched = 0
     truncated = False
-    
+
     for repo_alias in repo_aliases:
         try:
             single_args = dict(args)
             single_args["repository_alias"] = repo_alias
-            
+
             single_result = await handle_git_search_commits(single_args, user)
-            
+
             resp_content = single_result.get("content", [])
             if resp_content and resp_content[0].get("type") == "text":
                 result_data = json_module.loads(resp_content[0]["text"])
@@ -2376,20 +2573,26 @@ async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str
         except Exception as e:
             errors[repo_alias] = str(e)
             logger.warning(f"Omni-git-search failed for {repo_alias}: {e}")
-    
+
     elapsed_ms = int((time.time() - start_time) * 1000)
-    
-    return _mcp_response({
-        "success": True,
-        "query": query,
-        "is_regex": is_regex,
-        "matches": all_matches,
-        "total_matches": len(all_matches),
-        "truncated": truncated,
-        "search_time_ms": elapsed_ms,
-        "repos_searched": repos_searched,
-        "errors": errors,
-    })
+
+    response_format = args.get("response_format", "flat")
+    formatted = _format_omni_response(
+        all_results=all_matches,
+        response_format=response_format,
+        total_repos_searched=repos_searched,
+        errors=errors,
+    )
+    formatted["query"] = query
+    formatted["is_regex"] = is_regex
+    formatted["truncated"] = truncated
+    formatted["search_time_ms"] = elapsed_ms
+    if response_format == "flat":
+        formatted["matches"] = formatted.pop("results")
+        formatted["total_matches"] = formatted.pop("total_results")
+        formatted["repos_searched"] = formatted.pop("total_repos_searched")
+    return _mcp_response(formatted)
+
 
 # Story #556: Git Content Search handlers
 async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -2405,7 +2608,6 @@ async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[st
     # Route to omni-search when repository_alias is an array
     if isinstance(repository_alias, list):
         return await _omni_git_search_commits(args, user)
-
 
     # Validate required parameters
     if not repository_alias:

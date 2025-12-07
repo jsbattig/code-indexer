@@ -103,7 +103,7 @@ class TestSearchCodeErrorSuggestions:
 
         params = {
             "query_text": "test",
-            "repository_alias": "evolution-gloabl",  # typo
+            "repository_alias": "evolutoin-global",  # typo: evolutoin instead of evolution
         }
 
         with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
@@ -122,5 +122,5 @@ class TestSearchCodeErrorSuggestions:
 
                 assert response_data["success"] is False
                 assert "suggestions" in response_data
-                assert "evolution-global" in response_data["suggestions"]
+                assert "evolution-global" in response_data["suggestions"]  # Should suggest correct spelling
                 assert "available_values" in response_data
