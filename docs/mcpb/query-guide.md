@@ -1389,6 +1389,86 @@ Omni-search is available in the following MCP tools:
 
 All tools support both aggregation_mode options and the source_repo response field.
 
+### Wildcard Patterns
+
+Omni-search supports Unix-shell style wildcard patterns for flexible repository selection. Instead of listing repository aliases explicitly, you can use patterns to match multiple repositories dynamically.
+
+**Supported Wildcard Characters**:
+
+| Pattern | Description | Example |
+|---------|-------------|---------|
+| `*` | Matches any characters (zero or more) | `*-global` matches all repos ending in "-global" |
+| `?` | Matches single character | `repo-?` matches repo-1, repo-2, etc. |
+| `[seq]` | Matches any character in sequence | `repo-[abc]` matches repo-a, repo-b, repo-c |
+
+**Wildcard Examples**:
+
+Match all global repositories:
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "authentication",
+      "repository_alias": ["*-global"],
+      "limit": 10
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+Match repositories starting with "evo":
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "database",
+      "repository_alias": ["evo*"],
+      "limit": 10
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+Mix wildcard patterns with literal repository names:
+```bash
+echo '{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "error handling",
+      "repository_alias": ["*-global", "my-specific-repo"],
+      "limit": 20
+    }
+  },
+  "id": 1
+}' | cidx-bridge
+```
+
+**Wildcard Behavior**:
+
+- Patterns are expanded to matching repository names before search execution
+- If a pattern matches no repositories, it is silently ignored (warning logged)
+- Duplicate repositories from overlapping patterns are automatically removed
+- Literal patterns (no wildcard characters) are passed through unchanged
+- Expansion happens server-side based on currently activated global repositories
+
+**Use Cases**:
+
+- Search all microservices: `["*-service"]`
+- Search all frontend apps: `["frontend-*"]`
+- Search environment-specific repos: `["*-prod", "*-staging"]`
+- Search all repos with common suffix: `["*-api", "*-backend"]`
+
 ### Filtering Across Repositories
 
 All standard filters work with multi-repository searches:
