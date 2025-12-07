@@ -233,6 +233,41 @@ jobs:
           $size = (Get-Item "scripts\installer\mcpb-windows-x64-setup.exe").Length
           Write-Host "Installer verified: mcpb-windows-x64-setup.exe ($size bytes)"
 
+      - name: Verify CIDX server connectivity
+        shell: pwsh
+        env:
+          CIDX_SERVER_URL: ${{ secrets.CIDX_TEST_SERVER_URL }}
+          CIDX_USERNAME: ${{ secrets.CIDX_TEST_USERNAME }}
+          CIDX_PASSWORD: ${{ secrets.CIDX_TEST_PASSWORD }}
+        run: |
+          Write-Host "Testing connectivity to CIDX server..."
+          Write-Host "Server URL: $env:CIDX_SERVER_URL"
+
+          # Test basic HTTPS connectivity
+          try {
+            $response = Invoke-RestMethod -Uri "$env:CIDX_SERVER_URL/health" -Method GET -TimeoutSec 30
+            Write-Host "Health check response: $response"
+          } catch {
+            Write-Host "Health endpoint not available (this is OK): $_"
+          }
+
+          # Test actual authentication endpoint
+          Write-Host "Testing authentication endpoint..."
+          $body = @{
+            username = $env:CIDX_USERNAME
+            password = $env:CIDX_PASSWORD
+          } | ConvertTo-Json
+
+          try {
+            $response = Invoke-RestMethod -Uri "$env:CIDX_SERVER_URL/auth/login" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 30
+            Write-Host "Authentication successful!"
+            Write-Host "Access token received: $($response.access_token.Substring(0, 20))..."
+          } catch {
+            Write-Error "Authentication failed: $_"
+            Write-Host "Response: $($_.Exception.Response)"
+            exit 1
+          }
+
       - name: Test installer with real authentication
         shell: pwsh
         env:
