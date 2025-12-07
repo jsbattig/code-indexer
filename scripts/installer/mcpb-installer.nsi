@@ -356,10 +356,10 @@ Function AuthenticateWithAPI
 
     ; Parse the response file directly with nsJSON
     DetailPrint "Parsing response..."
+    ClearErrors
     nsJSON::Set /file "$3"
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Invalid server response: $0"
+    ${If} ${Errors}
+        StrCpy $ErrorMessage "Invalid server response"
         StrCpy $AuthSuccess "0"
         Delete "$3"
         Return
@@ -415,40 +415,40 @@ Function CreateMCPBConfig
     DetailPrint "Created directory: $PROFILE\.mcpb"
 
     ; Construct config.json using nsJSON
+    ClearErrors
     nsJSON::Set /value "{}"
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to initialize config JSON: $0"
+    ${If} ${Errors}
+        StrCpy $ErrorMessage "Failed to initialize config JSON"
         DetailPrint "$ErrorMessage"
         SetErrors
         Return
     ${EndIf}
 
     ; Set server_url
+    ClearErrors
     nsJSON::Set "server_url" /VALUE `"$ServerUrl"` /END
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to set server_url in config: $0"
+    ${If} ${Errors}
+        StrCpy $ErrorMessage "Failed to set server_url in config"
         DetailPrint "$ErrorMessage"
         SetErrors
         Return
     ${EndIf}
 
     ; Set access_token
+    ClearErrors
     nsJSON::Set "access_token" /VALUE `"$AccessToken"` /END
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to set access_token in config: $0"
+    ${If} ${Errors}
+        StrCpy $ErrorMessage "Failed to set access_token in config"
         DetailPrint "$ErrorMessage"
         SetErrors
         Return
     ${EndIf}
 
     ; Set refresh_token
+    ClearErrors
     nsJSON::Set "refresh_token" /VALUE `"$RefreshToken"` /END
-    Pop $0
-    ${If} $0 != "ok"
-        StrCpy $ErrorMessage "Failed to set refresh_token in config: $0"
+    ${If} ${Errors}
+        StrCpy $ErrorMessage "Failed to set refresh_token in config"
         DetailPrint "$ErrorMessage"
         SetErrors
         Return
@@ -516,10 +516,10 @@ Function IntegrateWithClaudeDesktop
             DetailPrint "claude_desktop_config.json does not exist, creating new"
 
             ; Create new config with mcpb entry
+            ClearErrors
             nsJSON::Set /value "{$\"mcpServers$\":{$\"mcpb$\":{$\"command$\":$\"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe$\",$\"args$\":[]}}}"
-            Pop $1
-            ${If} $1 != "ok"
-                DetailPrint "Failed to create Claude Desktop config JSON: $1"
+            ${If} ${Errors}
+                DetailPrint "Failed to create Claude Desktop config JSON"
                 DetailPrint "Warning: Failed to create Claude Desktop config"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -547,10 +547,10 @@ Function IntegrateWithClaudeDesktop
             DetailPrint "Existing config: $2"
 
             ; Parse existing JSON
+            ClearErrors
             nsJSON::Set /value "$2"
-            Pop $3
-            ${If} $3 != "ok"
-                DetailPrint "Failed to parse existing config at $0: $3"
+            ${If} ${Errors}
+                DetailPrint "Failed to parse existing config at $0"
                 DetailPrint "Warning: Existing Claude Desktop config at $0 is invalid JSON"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -564,8 +564,8 @@ Function IntegrateWithClaudeDesktop
             ${If} $3 != "ok"
                 ; mcpServers doesn't exist, create it
                 DetailPrint "mcpServers object not found, creating"
+                ClearErrors
                 nsJSON::Set "mcpServers" /VALUE `{}` /END
-                Pop $3
             ${EndIf}
 
             ; Check if mcpb entry already exists
@@ -588,10 +588,10 @@ Function IntegrateWithClaudeDesktop
             ${EndIf}
 
             ; Add mcpb entry to mcpServers
+            ClearErrors
             nsJSON::Set "mcpServers" "mcpb" /VALUE `{"command":"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe","args":[]}` /END
-            Pop $3
-            ${If} $3 != "ok"
-                DetailPrint "Failed to merge mcpb entry: $3"
+            ${If} ${Errors}
+                DetailPrint "Failed to merge mcpb entry"
                 DetailPrint "Warning: Failed to merge MCPB into Claude Desktop config"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -753,10 +753,10 @@ Function un.RemoveMcpbFromClaudeConfig
         DetailPrint "Existing Claude Desktop config: $2"
 
         ; Parse existing JSON
+        ClearErrors
         nsJSON::Set /value "$2"
-        Pop $3
-        ${If} $3 != "ok"
-            DetailPrint "Failed to parse Claude Desktop config: $3"
+        ${If} ${Errors}
+            DetailPrint "Failed to parse Claude Desktop config"
             Return
         ${EndIf}
 

@@ -249,18 +249,18 @@ jobs:
 
           Section
             ; Test 1: nsJSON::Set /value (EXACT same pattern as CreateMCPBConfig)
+            ClearErrors
             nsJSON::Set /value "{}"
-            Pop $0
-            StrCmp $0 "ok" 0 fail_set
+            IfErrors fail_set 0
 
             ; Test 2: nsJSON::Set key/value (EXACT same pattern as CreateMCPBConfig)
+            ClearErrors
             nsJSON::Set "access_token" /VALUE '"test_token_123"' /END
-            Pop $0
-            StrCmp $0 "ok" 0 fail_set2
+            IfErrors fail_set2 0
 
+            ClearErrors
             nsJSON::Set "refresh_token" /VALUE '"refresh_456"' /END
-            Pop $0
-            StrCmp $0 "ok" 0 fail_set3
+            IfErrors fail_set3 0
 
             ; Test 3: nsJSON::Get access_token (same as AuthenticateWithAPI pattern)
             nsJSON::Get "access_token" /END
