@@ -241,6 +241,7 @@ jobs:
           # Test nsJSON in isolation - exact same pattern as CreateMCPBConfig
           $testScript = @'
           !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
+          Unicode true
 
           Name "nsJSON Direct Test"
           OutFile "nsjson-test.exe"
