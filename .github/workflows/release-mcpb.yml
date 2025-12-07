@@ -342,7 +342,8 @@ jobs:
             nsJSON::Set /file "$1"
 
             ; Get the "url" field from httpbin response (always present)
-            nsJSON::Get `url` /end
+            ; CRITICAL: Use double quotes for keys and uppercase /END (same as installer)
+            nsJSON::Get "url" /END
             Pop $2
 
             ; Debug: write what Get returned
