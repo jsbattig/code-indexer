@@ -261,6 +261,7 @@ jobs:
             StrCmp $2 "OK" 0 fail_http
 
             ; Test nsJSON parsing
+            ClearErrors
             nsJSON::Set /file "$1"
             IfErrors fail_json
 
