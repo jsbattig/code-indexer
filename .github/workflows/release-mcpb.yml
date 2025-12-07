@@ -297,6 +297,85 @@ jobs:
             default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
           }
 
+      - name: Test NScurl + nsJSON file flow
+        shell: pwsh
+        run: |
+          Write-Host "Testing NScurl file write + nsJSON file parse (full auth flow simulation)..."
+
+          # Test the full flow with a real HTTP request - simulates authentication
+          $testScript = @'
+          !addplugindir "C:\Program Files (x86)\NSIS\Plugins\x86-unicode"
+          Unicode true
+
+          Name "Full Flow Test"
+          OutFile "flow-test.exe"
+          InstallDir "$TEMP\flowtest"
+          SilentInstall silent
+
+          Section
+            SetOutPath $INSTDIR
+
+            StrCpy $1 "$TEMP\flow_test_response.json"
+
+            ; NScurl POST to httpbin - simulates auth endpoint
+            NScurl::http POST "https://httpbin.org/post" "$1" /HEADER "Content-Type: application/json" /DATA `{"username":"testuser","password":"testpass"}` /TIMEOUT 30000 /END
+            Pop $0
+            StrCmp $0 "OK" +1 fail_http
+
+            ; Verify file was created
+            IfFileExists "$1" +1 fail_file
+
+            ; Parse response with nsJSON - don't check return, just verify Get works
+            nsJSON::Set /file "$1"
+
+            ; Get the "url" field from httpbin response (always present)
+            nsJSON::Get `url` /end
+            Pop $2
+
+            ; Verify we got something (url should contain "httpbin.org")
+            StrCpy $3 $2 11  ; Get first 11 chars
+            StrCmp $3 "https://http" +1 fail_get
+
+            ; Success - cleanup and exit
+            Delete "$1"
+            SetErrorLevel 0
+            Goto done
+
+          fail_http:
+            SetErrorLevel 1
+            Goto done
+
+          fail_file:
+            SetErrorLevel 2
+            Goto done
+
+          fail_get:
+            SetErrorLevel 3
+
+          done:
+          SectionEnd
+          '@
+
+          $testScript | Out-File -FilePath "flow-test.nsi" -Encoding ASCII
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $makensis /V2 flow-test.nsi
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to compile flow test"
+            exit 1
+          }
+
+          $process = Start-Process -FilePath "flow-test.exe" -Wait -NoNewWindow -PassThru
+          Write-Host "Full flow test exit code: $($process.ExitCode)"
+
+          switch ($process.ExitCode) {
+            0 { Write-Host "SUCCESS: NScurl POST + nsJSON file parse + value extraction verified!" }
+            1 { Write-Error "FAILED: NScurl HTTP POST failed"; exit 1 }
+            2 { Write-Error "FAILED: Response file not created"; exit 1 }
+            3 { Write-Error "FAILED: nsJSON::Get url failed - could not extract value from parsed JSON"; exit 1 }
+            default { Write-Error "FAILED: Unknown error $($process.ExitCode)"; exit 1 }
+          }
+
       - name: Test installer binary extraction
         shell: pwsh
         run: |
