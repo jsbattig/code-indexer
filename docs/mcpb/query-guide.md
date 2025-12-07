@@ -6,6 +6,164 @@ Last Updated: 2025-11-26
 
 This guide demonstrates practical query patterns using the CIDX MCP Bridge search_code tool. All examples use verified parameters from src/code_indexer/server/mcp/tools.py:9-147.
 
+## Getting Started
+
+New to CIDX? Follow this quick guide to start searching code:
+
+### Step 1: List Available Repositories
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "list_global_repos",
+    "arguments": {}
+  }
+}
+```
+This returns all indexed repositories you can search.
+
+### Step 2: Your First Semantic Search
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "user authentication",
+      "repository_alias": "your-repo-global",
+      "limit": 5
+    }
+  }
+}
+```
+
+### Step 3: Try Multi-Repository Search
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "error handling",
+      "repository_alias": ["repo1-global", "repo2-global"],
+      "limit": 10
+    }
+  }
+}
+```
+
+### Step 4: Use Wildcards for Broad Searches
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "database connection",
+      "repository_alias": ["*-global"],
+      "limit": 10
+    }
+  }
+}
+```
+
+### Common Starting Points
+| Goal | Tool | Example |
+|------|------|---------|
+| Find code by concept | search_code | "authentication logic" |
+| Find exact text | search_code (FTS) | "def authenticate(" |
+| Find patterns | regex_search | "TODO\|FIXME" |
+| Browse files | list_files | List all .py files |
+| View git history | git_log | Recent commits |
+
+## Interactive Examples
+
+Copy-paste these examples to try common operations:
+
+### Example 1: Find Authentication Code Across All Repos
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "user authentication and password validation",
+      "repository_alias": ["*-global"],
+      "search_mode": "semantic",
+      "limit": 10,
+      "aggregation_mode": "per_repo"
+    }
+  }
+}
+```
+**Expected:** Returns authentication-related code from each matching repository.
+
+### Example 2: Find All TODO Comments
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "regex_search",
+    "arguments": {
+      "repository_alias": ["evolution-global", "evo-mobile-global"],
+      "pattern": "TODO|FIXME|HACK|XXX",
+      "case_sensitive": false
+    }
+  }
+}
+```
+**Expected:** Returns all TODO-style comments across both repositories.
+
+### Example 3: Search Commit History
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "git_search_commits",
+    "arguments": {
+      "repository_alias": ["*-global"],
+      "query": "fix bug",
+      "limit": 20
+    }
+  }
+}
+```
+**Expected:** Returns commits mentioning "fix bug" from all repositories.
+
+### Example 4: Find Function Definitions
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "def validate_password",
+      "repository_alias": "evolution-global",
+      "search_mode": "fts",
+      "limit": 5
+    }
+  }
+}
+```
+**Expected:** Returns exact matches for the function definition.
+
+### Example 5: Compare Implementations Across Repos
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "query_text": "database connection pooling",
+      "repository_alias": ["backend-global", "api-global", "worker-global"],
+      "aggregation_mode": "per_repo",
+      "limit": 15
+    }
+  }
+}
+```
+**Expected:** Returns 5 results from each repo, allowing comparison of implementations.
+
 ## Query Decision Matrix
 
 Choose search mode based on your use case:
@@ -1540,6 +1698,51 @@ echo '{
 ```
 
 Filters apply to each repository independently before aggregation.
+
+## Troubleshooting
+
+### Common Errors and Solutions
+
+#### "Repository not found"
+**Cause:** The repository alias doesn't exist or isn't indexed.
+**Solution:**
+1. Run `list_global_repos` to see available repositories
+2. Ensure you're using the `-global` suffix (e.g., `evolution-global`)
+3. If the repo isn't listed, an admin needs to add it via `add_golden_repo`
+
+#### "Invalid token" or "Unauthorized"
+**Cause:** Authentication issue.
+**Solution:**
+1. Ensure you have a valid JWT token
+2. Token may have expired - request a new one via `/auth/login`
+3. Check if your user has appropriate permissions
+
+#### Empty search results
+**Cause:** Query too specific or repo not indexed.
+**Solution:**
+1. Try broader search terms
+2. Check if the repository is fully indexed (use `global_repo_status`)
+3. Try semantic search instead of FTS for conceptual queries
+
+#### Slow searches
+**Cause:** Large result set or multiple repositories.
+**Solution:**
+1. Reduce `limit` parameter (start with 5-10)
+2. Add path filters: `path_filter: "src/**/*.py"`
+3. Use `aggregation_mode: "per_repo"` to limit per-repo results
+
+#### Wildcard pattern matches nothing
+**Cause:** No repositories match the pattern.
+**Solution:**
+1. Run `list_global_repos` to see actual repository names
+2. Check pattern syntax: `*` matches any characters, `?` matches single char
+3. Ensure pattern matches the full alias (e.g., `*-global` not `*global`)
+
+### Performance Tips
+- **Start small:** Use `limit: 5` initially, increase if needed
+- **Filter early:** Use `path_filter` and `language` to narrow scope
+- **Semantic vs FTS:** Use semantic for concepts, FTS for exact text
+- **Monitor timing:** Check `execution_time_ms` in responses
 
 ### Best Practices
 
