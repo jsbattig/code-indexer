@@ -18,8 +18,6 @@ jobs:
         include:
           - os: ubuntu-22.04
             platform: linux-x64
-          - os: macos-13  # Intel Mac
-            platform: darwin-x64
           - os: macos-latest  # Apple Silicon Mac (M1/M2)
             platform: darwin-arm64
           - os: windows-latest
@@ -664,7 +662,6 @@ jobs:
           ## Platforms
 
           - **Windows Installer**: mcpb-windows-x64-setup.exe (automated setup with GUI)
-          - **macOS (Intel)**: mcpb-darwin-x64.zip
           - **macOS (Apple Silicon)**: mcpb-darwin-arm64.zip
           - **Linux (x86_64)**: mcpb-linux-x64.zip
           - **Windows (Manual)**: mcpb-windows-x64.zip
@@ -683,7 +680,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/mcpb-darwin-x64/mcpb-darwin-x64.mcpb
             artifacts/mcpb-darwin-arm64/mcpb-darwin-arm64.mcpb
             artifacts/mcpb-linux-x64/mcpb-linux-x64.mcpb
             artifacts/mcpb-windows-x64/mcpb-windows-x64.mcpb
