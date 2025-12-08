@@ -73,7 +73,7 @@ class TestAC1_MCPBExtraction:
 
     def test_extracts_mcpb_exe(self, nsis_script_content):
         """Script extracts cidx-semantic-search.exe using File command."""
-        assert re.search(r'File\s+"[^"]*mcpb-windows-x64\.exe"', nsis_script_content)
+        assert re.search(r'File\s+"[^"]*cidx-semantic-search\.exe"', nsis_script_content)
 
     def test_creates_directory_structure(self, nsis_script_content):
         """Script creates directory structure."""
@@ -153,8 +153,8 @@ class TestAC4_MCPBConfiguration:
     """Test AC4: MCPB configuration generation."""
 
     def test_creates_mcpb_directory(self, nsis_script_content):
-        """Script creates .mcpb directory under %USERPROFILE%."""
-        assert re.search(r'(CreateDirectory|SetOutPath).*PROFILE.*\.mcpb', nsis_script_content, re.IGNORECASE)
+        """Script creates .mcpb directory under %APPDATA%."""
+        assert re.search(r'(CreateDirectory|SetOutPath).*APPDATA.*\.mcpb', nsis_script_content, re.IGNORECASE)
 
     def test_constructs_config_json(self, nsis_script_content):
         """Script constructs config.json with nsJSON."""
@@ -326,13 +326,13 @@ class TestUninstallerAC2_ConfigurationDirectoryRemoval:
     """Test AC2: Configuration directory removal."""
 
     def test_removes_config_directory(self, nsis_script_content):
-        """Script removes %USERPROFILE%\\.mcpb directory."""
-        assert re.search(r'RMDir\s+/r\s+"\$PROFILE\\\.mcpb"', nsis_script_content, re.IGNORECASE)
+        """Script removes %APPDATA%\\.mcpb directory."""
+        assert re.search(r'RMDir\s+/r\s+"\$APPDATA\\\.mcpb"', nsis_script_content, re.IGNORECASE)
 
     def test_handles_missing_config_directory(self, nsis_script_content):
         """Script handles missing config directory gracefully."""
         # Should check if config directory exists before removal
-        assert re.search(r'IfFileExists.*PROFILE.*\.mcpb', nsis_script_content, re.IGNORECASE)
+        assert re.search(r'IfFileExists.*APPDATA.*\.mcpb', nsis_script_content, re.IGNORECASE)
 
     def test_logs_config_removal(self, nsis_script_content):
         """Script logs configuration directory removal."""
@@ -358,7 +358,7 @@ class TestUninstallerAC3_ClaudeDesktopConfigCleanup:
     def test_removes_only_mcpb_key(self, nsis_script_content):
         """Function removes only mcpb key from mcpServers."""
         # Should use nsJSON::Delete for specific key removal
-        assert re.search(r'nsJSON::Delete.*mcpServers.*mcpb', nsis_script_content, re.IGNORECASE)
+        assert re.search(r'nsJSON::Delete.*mcpServers.*cidx-semantic-search', nsis_script_content, re.IGNORECASE)
 
     def test_preserves_other_mcp_servers(self, nsis_script_content):
         """Function preserves other mcpServers entries."""
@@ -381,7 +381,7 @@ class TestUninstallerAC3_ClaudeDesktopConfigCleanup:
     def test_handles_missing_mcpb_entry(self, nsis_script_content):
         """Function handles missing mcpb entry gracefully."""
         # Should check if mcpb entry exists before trying to delete
-        assert re.search(r'nsJSON::Get.*mcpb', nsis_script_content, re.IGNORECASE)
+        assert re.search(r'nsJSON::Get.*cidx-semantic-search', nsis_script_content, re.IGNORECASE)
 
 
 class TestUninstallerAC4_AddRemoveProgramsIntegration:

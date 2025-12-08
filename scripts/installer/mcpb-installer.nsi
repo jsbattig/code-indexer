@@ -246,10 +246,10 @@ Section "Install MCPB" SecInstall
     ; Note: Binary must exist at build time in scripts/installer/ directory
     ; Build with: python scripts/build_binary.py --platform windows
     File "cidx-semantic-search.exe"
-    DetailPrint "CIDX semantic search binary extracted to C:\mcpb\server\cidx-semantic-search.exe"
+    DetailPrint "CIDX semantic search binary extracted to C:\\mcpb\\server\\cidx-semantic-search.exe"
 
     ; Verify file exists after extraction (paranoid check for filesystem errors)
-    IfFileExists "C:\mcpb\server\cidx-semantic-search.exe" extraction_success 0
+    IfFileExists "C:\\mcpb\\server\\cidx-semantic-search.exe" extraction_success 0
         StrCpy $ErrorMessage "MCPB binary not found after extraction - possible filesystem error"
         DetailPrint "$ErrorMessage"
         ${If} $SilentMode == "1"
@@ -331,7 +331,7 @@ Section "Install MCPB" SecInstall
         ${EndIf}
     ${Else}
         DetailPrint "Installation completed successfully!"
-        DetailPrint "MCPB binary: C:\mcpb\server\cidx-semantic-search.exe"
+        DetailPrint "MCPB binary: C:\\mcpb\\server\\cidx-semantic-search.exe"
         DetailPrint "Configuration: $APPDATA\\.mcpb\\config.json"
     ${EndIf}
 SectionEnd
@@ -638,7 +638,7 @@ Function VerifyInstallation
     StrCpy $VerifyUninstaller "FAILED"
 
     ; Check MCPB binary
-    IfFileExists "C:\mcpb\server\cidx-semantic-search.exe" 0 +3
+    IfFileExists "C:\\mcpb\\server\\cidx-semantic-search.exe" 0 +3
         StrCpy $VerifyBinary "OK"
         DetailPrint "[OK] MCPB binary exists"
         Goto check_config_dir
@@ -692,7 +692,7 @@ Function VerifyInstallation
         DetailPrint "========================================="
         DetailPrint ""
         DetailPrint "[$VerifyBinary] MCPB binary installed"
-        DetailPrint "     C:\mcpb\server\cidx-semantic-search.exe"
+        DetailPrint "     C:\\mcpb\\server\\cidx-semantic-search.exe"
         DetailPrint ""
         DetailPrint "[$VerifyConfigDir] Configuration directory created"
         DetailPrint "     %APPDATA%\\.mcpb\\"
@@ -733,7 +733,7 @@ Function VerifyInstallation
         StrCpy $0 "MCPB Installation Summary$\r$\n"
         StrCpy $0 "$0========================$\r$\n$\r$\n"
         StrCpy $0 "$0[$VerifyBinary] MCPB binary installed$\r$\n"
-        StrCpy $0 "$0     C:\mcpb\server\cidx-semantic-search.exe$\r$\n$\r$\n"
+        StrCpy $0 "$0     C:\\mcpb\\server\\cidx-semantic-search.exe$\r$\n$\r$\n"
         StrCpy $0 "$0[$VerifyConfigDir] Configuration directory created$\r$\n"
         StrCpy $0 "$0     %APPDATA%\\.mcpb\\$\r$\n$\r$\n"
         StrCpy $0 "$0[$VerifyConfigFile] Configuration file created$\r$\n"
