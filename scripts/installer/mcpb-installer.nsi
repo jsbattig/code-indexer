@@ -242,14 +242,14 @@ Section "Install MCPB" SecInstall
     SetOutPath "C:\\mcpb\\server"
     DetailPrint "SetOutPath: C:\\mcpb\\server"
 
-    ; Extract mcpb-windows-x64.exe from installer
+    ; Extract cidx-semantic-search.exe from installer
     ; Note: Binary must exist at build time in scripts/installer/ directory
     ; Build with: python scripts/build_binary.py --platform windows
-    File "mcpb-windows-x64.exe"
-    DetailPrint "MCPB binary extracted to C:\\mcpb\\server\\mcpb-windows-x64.exe"
+    File "cidx-semantic-search.exe"
+    DetailPrint "CIDX semantic search binary extracted to C:\mcpb\server\cidx-semantic-search.exe"
 
     ; Verify file exists after extraction (paranoid check for filesystem errors)
-    IfFileExists "C:\\mcpb\\server\\mcpb-windows-x64.exe" extraction_success 0
+    IfFileExists "C:\mcpb\server\cidx-semantic-search.exe" extraction_success 0
         StrCpy $ErrorMessage "MCPB binary not found after extraction - possible filesystem error"
         DetailPrint "$ErrorMessage"
         ${If} $SilentMode == "1"
@@ -331,8 +331,8 @@ Section "Install MCPB" SecInstall
         ${EndIf}
     ${Else}
         DetailPrint "Installation completed successfully!"
-        DetailPrint "MCPB binary: C:\\mcpb\\server\\mcpb-windows-x64.exe"
-        DetailPrint "Configuration: $PROFILE\\.mcpb\\config.json"
+        DetailPrint "MCPB binary: C:\mcpb\server\cidx-semantic-search.exe"
+        DetailPrint "Configuration: $APPDATA\\.mcpb\\config.json"
     ${EndIf}
 SectionEnd
 
@@ -412,15 +412,15 @@ Function CreateMCPBConfig
 
     ClearErrors
 
-    ; Create .mcpb directory under %USERPROFILE%
-    CreateDirectory "$PROFILE\.mcpb"
+    ; Create .mcpb directory under %APPDATA%
+    CreateDirectory "$APPDATA\.mcpb"
     ${If} ${Errors}
-        StrCpy $ErrorMessage "Failed to create directory: $PROFILE\.mcpb"
+        StrCpy $ErrorMessage "Failed to create directory: $APPDATA\.mcpb"
         DetailPrint "$ErrorMessage"
         Return
     ${EndIf}
 
-    DetailPrint "Created directory: $PROFILE\.mcpb"
+    DetailPrint "Created directory: $APPDATA\.mcpb"
 
     ; Construct config.json using nsJSON
     ; CRITICAL: Match CI test pattern - don't check intermediate errors, just verify final result
@@ -446,9 +446,9 @@ Function CreateMCPBConfig
 
     ; Write config.json file
     ClearErrors
-    FileOpen $1 "$PROFILE\.mcpb\config.json" w
+    FileOpen $1 "$APPDATA\.mcpb\config.json" w
     ${If} ${Errors}
-        StrCpy $ErrorMessage "Failed to open config file for writing: $PROFILE\.mcpb\config.json"
+        StrCpy $ErrorMessage "Failed to open config file for writing: $APPDATA\.mcpb\config.json"
         DetailPrint "$ErrorMessage"
         Return
     ${EndIf}
@@ -457,13 +457,13 @@ Function CreateMCPBConfig
     FileClose $1
 
     ${If} ${Errors}
-        StrCpy $ErrorMessage "Failed to write config file: $PROFILE\.mcpb\config.json"
+        StrCpy $ErrorMessage "Failed to write config file: $APPDATA\.mcpb\config.json"
         DetailPrint "$ErrorMessage"
         Return
     ${EndIf}
 
-    DetailPrint "Config file created successfully: $PROFILE\.mcpb\config.json"
-    DetailPrint "MCPB configuration created at $PROFILE\.mcpb\config.json"
+    DetailPrint "Config file created successfully: $APPDATA\.mcpb\config.json"
+    DetailPrint "MCPB configuration created at $APPDATA\.mcpb\config.json"
 FunctionEnd
 
 ;--------------------------------
@@ -486,7 +486,7 @@ Function IntegrateWithClaudeDesktop
             DetailPrint "Skipping Claude Desktop integration (not installed)"
         ${Else}
             DetailPrint "Warning: Claude Desktop not found - skipping integration"
-            MessageBox MB_OK|MB_ICONINFORMATION "Claude Desktop is not installed on this system.$\r$\n$\r$\nMCPB has been installed successfully, but automatic integration with Claude Desktop was skipped.$\r$\n$\r$\nTo manually configure Claude Desktop, add this to claude_desktop_config.json:$\r$\n$\r$\n{$\r$\n  $\"mcpServers$\": {$\r$\n    $\"mcpb$\": {$\r$\n      $\"command$\": $\"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe$\",$\r$\n      $\"args$\": []$\r$\n    }$\r$\n  }$\r$\n}"
+            MessageBox MB_OK|MB_ICONINFORMATION "Claude Desktop is not installed on this system.$\r$\n$\r$\nMCPB has been installed successfully, but automatic integration with Claude Desktop was skipped.$\r$\n$\r$\nTo manually configure Claude Desktop, add this to claude_desktop_config.json:$\r$\n$\r$\n{$\r$\n  $\"mcpServers$\": {$\r$\n    $\"cidx-semantic-search$\": {$\r$\n      $\"command$\": $\"$INSTDIR\\server\\cidx-semantic-search.exe$\",$\r$\n      $\"args$\": []$\r$\n    }$\r$\n  }$\r$\n}"
         ${EndIf}
         Return
 
@@ -512,12 +512,12 @@ Function IntegrateWithClaudeDesktop
 
             ; Add mcpServers object
             nsJSON::Set "mcpServers" /value `{}`
-            ; Add mcpb entry under mcpServers
-            nsJSON::Set "mcpServers" "mcpb" /value `{}`
+            ; Add cidx-semantic-search entry under mcpServers
+            nsJSON::Set "mcpServers" "cidx-semantic-search" /value `{}`
             ; Set command path (variable expansion works in backticks)
-            nsJSON::Set "mcpServers" "mcpb" "command" /value `"$INSTDIR\server\mcpb-windows-x64.exe"`
+            nsJSON::Set "mcpServers" "cidx-semantic-search" "command" /value `"$INSTDIR\server\cidx-semantic-search.exe"`
             ; Set empty args array
-            nsJSON::Set "mcpServers" "mcpb" "args" /value `[]`
+            nsJSON::Set "mcpServers" "cidx-semantic-search" "args" /value `[]`
 
             Goto write_config
 
@@ -546,30 +546,48 @@ Function IntegrateWithClaudeDesktop
                 nsJSON::Set "mcpServers" /VALUE `{}` /END
             ${EndIf}
 
-            ; Check if mcpb entry already exists
-            nsJSON::Get "mcpServers" "mcpb" /END
+            ; Check if cidx-semantic-search entry already exists
+            nsJSON::Get "mcpServers" "cidx-semantic-search" /END
             Pop $4  ; Value
             Pop $3  ; Result
 
             ${If} $3 == "ok"
-                ; mcpb entry already exists
-                DetailPrint "Existing mcpb entry found in Claude Desktop config"
+                ; cidx-semantic-search entry already exists
+                DetailPrint "Existing cidx-semantic-search entry found in Claude Desktop config"
                 ${If} $SilentMode == "1"
-                    DetailPrint "Silent mode: Overwriting existing mcpb entry"
+                    DetailPrint "Silent mode: Overwriting existing cidx-semantic-search entry"
                 ${Else}
-                    MessageBox MB_YESNO|MB_ICONQUESTION "An existing MCPB configuration was found in Claude Desktop.$\r$\n$\r$\nDo you want to overwrite it with the new configuration?" IDYES overwrite
-                    DetailPrint "User chose not to overwrite existing mcpb entry"
+                    MessageBox MB_YESNO|MB_ICONQUESTION "An existing CIDX semantic search configuration was found in Claude Desktop.$\r$\n$\r$\nDo you want to overwrite it with the new configuration?" IDYES overwrite
+                    DetailPrint "User chose not to overwrite existing cidx-semantic-search entry"
                     Return
                     overwrite:
-                    DetailPrint "User confirmed overwrite of existing mcpb entry"
+                    DetailPrint "User confirmed overwrite of existing cidx-semantic-search entry"
                 ${EndIf}
             ${EndIf}
 
-            ; Add mcpb entry to mcpServers
+            ; Add cidx-semantic-search entry to mcpServers - build incrementally like new config
             ClearErrors
-            nsJSON::Set "mcpServers" "mcpb" /VALUE `{"command":"$INSTDIR\\\\server\\\\mcpb-windows-x64.exe","args":[]}` /END
+            nsJSON::Set "mcpServers" "cidx-semantic-search" /value `{}`
             ${If} ${Errors}
-                DetailPrint "Failed to merge mcpb entry"
+                DetailPrint "Failed to create cidx-semantic-search object in mcpServers"
+                DetailPrint "Warning: Failed to merge MCPB into Claude Desktop config"
+                StrCpy $ClaudeIntegrationFailed "1"
+                Return
+            ${EndIf}
+
+            ; Set command path
+            nsJSON::Set "mcpServers" "cidx-semantic-search" "command" /value `"$INSTDIR\server\cidx-semantic-search.exe"`
+            ${If} ${Errors}
+                DetailPrint "Failed to set cidx-semantic-search command"
+                DetailPrint "Warning: Failed to merge MCPB into Claude Desktop config"
+                StrCpy $ClaudeIntegrationFailed "1"
+                Return
+            ${EndIf}
+
+            ; Set empty args array
+            nsJSON::Set "mcpServers" "cidx-semantic-search" "args" /value `[]`
+            ${If} ${Errors}
+                DetailPrint "Failed to set cidx-semantic-search args"
                 DetailPrint "Warning: Failed to merge MCPB into Claude Desktop config"
                 StrCpy $ClaudeIntegrationFailed "1"
                 Return
@@ -620,7 +638,7 @@ Function VerifyInstallation
     StrCpy $VerifyUninstaller "FAILED"
 
     ; Check MCPB binary
-    IfFileExists "C:\\mcpb\\server\\mcpb-windows-x64.exe" 0 +3
+    IfFileExists "C:\mcpb\server\cidx-semantic-search.exe" 0 +3
         StrCpy $VerifyBinary "OK"
         DetailPrint "[OK] MCPB binary exists"
         Goto check_config_dir
@@ -628,7 +646,7 @@ Function VerifyInstallation
 
     check_config_dir:
     ; Check configuration directory
-    IfFileExists "$PROFILE\\.mcpb\\*.*" 0 +3
+    IfFileExists "$APPDATA\\.mcpb\\*.*" 0 +3
         StrCpy $VerifyConfigDir "OK"
         DetailPrint "[OK] Configuration directory exists"
         Goto check_config_file
@@ -636,7 +654,7 @@ Function VerifyInstallation
 
     check_config_file:
     ; Check configuration file
-    IfFileExists "$PROFILE\\.mcpb\\config.json" 0 +3
+    IfFileExists "$APPDATA\\.mcpb\\config.json" 0 +3
         StrCpy $VerifyConfigFile "OK"
         DetailPrint "[OK] Configuration file exists"
         Goto check_claude_config
@@ -645,15 +663,15 @@ Function VerifyInstallation
     check_claude_config:
     ; Check Claude Desktop config (or check if integration failed)
     ${If} $ClaudeIntegrationFailed == "1"
-        StrCpy $VerifyClaudeConfig "WARNING"
-        DetailPrint "[WARNING] Claude Desktop integration failed"
+        StrCpy $VerifyClaudeConfig "NOT_INSTALLED"
+        DetailPrint "[WARNING] Claude Desktop directory not found"
     ${Else}
         IfFileExists "$APPDATA\\Claude\\claude_desktop_config.json" 0 +3
             StrCpy $VerifyClaudeConfig "OK"
             DetailPrint "[OK] Claude Desktop config exists"
             Goto check_uninstaller
-        StrCpy $VerifyClaudeConfig "WARNING"
-        DetailPrint "[WARNING] Claude Desktop config not found"
+        StrCpy $VerifyClaudeConfig "WRITE_FAILED"
+        DetailPrint "[WARNING] Claude Desktop config file not created"
     ${EndIf}
 
     check_uninstaller:
@@ -674,20 +692,25 @@ Function VerifyInstallation
         DetailPrint "========================================="
         DetailPrint ""
         DetailPrint "[$VerifyBinary] MCPB binary installed"
-        DetailPrint "     C:\\mcpb\\server\\mcpb-windows-x64.exe"
+        DetailPrint "     C:\mcpb\server\cidx-semantic-search.exe"
         DetailPrint ""
         DetailPrint "[$VerifyConfigDir] Configuration directory created"
-        DetailPrint "     %USERPROFILE%\\.mcpb\\"
+        DetailPrint "     %APPDATA%\\.mcpb\\"
         DetailPrint ""
         DetailPrint "[$VerifyConfigFile] Configuration file created"
-        DetailPrint "     %USERPROFILE%\\.mcpb\\config.json"
+        DetailPrint "     %APPDATA%\\.mcpb\\config.json"
         DetailPrint ""
         ${If} $VerifyClaudeConfig == "OK"
             DetailPrint "[OK] Claude Desktop integration"
             DetailPrint "     %APPDATA%\\Claude\\claude_desktop_config.json"
-        ${ElseIf} $VerifyClaudeConfig == "WARNING"
-            DetailPrint "[WARNING] Claude Desktop integration"
-            DetailPrint "     Not configured (Claude Desktop may not be installed)"
+        ${ElseIf} $VerifyClaudeConfig == "NOT_INSTALLED"
+            DetailPrint "[WARNING] Claude Desktop not detected"
+            DetailPrint "     %APPDATA%\\Claude\\ does not exist"
+            DetailPrint "     Install Claude Desktop and re-run MCPB installer"
+        ${ElseIf} $VerifyClaudeConfig == "WRITE_FAILED"
+            DetailPrint "[WARNING] Failed to write Claude Desktop config"
+            DetailPrint "     Installer could not create config file"
+            DetailPrint "     Check permissions and antivirus settings"
         ${Else}
             DetailPrint "[FAILED] Claude Desktop integration"
         ${EndIf}
@@ -710,18 +733,23 @@ Function VerifyInstallation
         StrCpy $0 "MCPB Installation Summary$\r$\n"
         StrCpy $0 "$0========================$\r$\n$\r$\n"
         StrCpy $0 "$0[$VerifyBinary] MCPB binary installed$\r$\n"
-        StrCpy $0 "$0     C:\\mcpb\\server\\mcpb-windows-x64.exe$\r$\n$\r$\n"
+        StrCpy $0 "$0     C:\mcpb\server\cidx-semantic-search.exe$\r$\n$\r$\n"
         StrCpy $0 "$0[$VerifyConfigDir] Configuration directory created$\r$\n"
-        StrCpy $0 "$0     %USERPROFILE%\\.mcpb\\$\r$\n$\r$\n"
+        StrCpy $0 "$0     %APPDATA%\\.mcpb\\$\r$\n$\r$\n"
         StrCpy $0 "$0[$VerifyConfigFile] Configuration file created$\r$\n"
-        StrCpy $0 "$0     %USERPROFILE%\\.mcpb\\config.json$\r$\n$\r$\n"
+        StrCpy $0 "$0     %APPDATA%\\.mcpb\\config.json$\r$\n$\r$\n"
 
         ${If} $VerifyClaudeConfig == "OK"
             StrCpy $0 "$0[OK] Claude Desktop integration$\r$\n"
             StrCpy $0 "$0     %APPDATA%\\Claude\\claude_desktop_config.json$\r$\n$\r$\n"
-        ${ElseIf} $VerifyClaudeConfig == "WARNING"
-            StrCpy $0 "$0[WARNING] Claude Desktop integration$\r$\n"
-            StrCpy $0 "$0     Not configured (Claude Desktop may not be installed)$\r$\n$\r$\n"
+        ${ElseIf} $VerifyClaudeConfig == "NOT_INSTALLED"
+            StrCpy $0 "$0[WARNING] Claude Desktop not detected$\r$\n"
+            StrCpy $0 "$0     %APPDATA%\\Claude\\ does not exist$\r$\n"
+            StrCpy $0 "$0     Install Claude Desktop and re-run MCPB installer$\r$\n$\r$\n"
+        ${ElseIf} $VerifyClaudeConfig == "WRITE_FAILED"
+            StrCpy $0 "$0[WARNING] Failed to write Claude Desktop config$\r$\n"
+            StrCpy $0 "$0     Installer could not create config file$\r$\n"
+            StrCpy $0 "$0     Check permissions and antivirus settings$\r$\n$\r$\n"
         ${Else}
             StrCpy $0 "$0[FAILED] Claude Desktop integration$\r$\n$\r$\n"
         ${EndIf}
@@ -780,23 +808,23 @@ Section "Uninstall"
 
     remove_config:
         ; AC2: Remove configuration directory
-        DetailPrint "Removing configuration directory: $PROFILE\.mcpb"
+        DetailPrint "Removing configuration directory: $APPDATA\.mcpb"
 
-        IfFileExists "$PROFILE\.mcpb\*.*" config_exists config_missing
+        IfFileExists "$APPDATA\.mcpb\*.*" config_exists config_missing
 
         config_missing:
             DetailPrint "Configuration directory not found (already removed or never created)"
             Goto remove_claude_config
 
         config_exists:
-            RMDir /r "$PROFILE\.mcpb"
+            RMDir /r "$APPDATA\.mcpb"
 
-            IfFileExists "$PROFILE\.mcpb\*.*" config_locked config_removed
+            IfFileExists "$APPDATA\.mcpb\*.*" config_locked config_removed
 
             config_locked:
                 DetailPrint "Warning: Configuration directory could not be removed"
                 IfSilent silent_config_error
-                MessageBox MB_OK|MB_ICONEXCLAMATION "Configuration directory $PROFILE\.mcpb could not be removed."
+                MessageBox MB_OK|MB_ICONEXCLAMATION "Configuration directory $APPDATA\.mcpb could not be removed."
                 silent_config_error:
                 SetErrorLevel 2
                 Goto remove_claude_config
@@ -871,24 +899,24 @@ Function un.RemoveMcpbFromClaudeConfig
             Return
         ${EndIf}
 
-        ; Check if mcpb entry exists
-        nsJSON::Get "mcpServers" "mcpb" /END
+        ; Check if cidx-semantic-search entry exists
+        nsJSON::Get "mcpServers" "cidx-semantic-search" /END
         Pop $4  ; Value
         Pop $3  ; Result
 
         ${If} $3 != "ok"
-            ; mcpb entry doesn't exist - nothing to remove
-            DetailPrint "mcpb entry not found in mcpServers - nothing to remove"
+            ; cidx-semantic-search entry doesn't exist - nothing to remove
+            DetailPrint "cidx-semantic-search entry not found in mcpServers - nothing to remove"
             Return
         ${EndIf}
 
-        ; Remove mcpb entry from mcpServers
-        DetailPrint "Removing mcpb entry from mcpServers"
-        nsJSON::Delete "mcpServers" "mcpb" /END
+        ; Remove cidx-semantic-search entry from mcpServers
+        DetailPrint "Removing cidx-semantic-search entry from mcpServers"
+        nsJSON::Delete "mcpServers" "cidx-semantic-search" /END
         Pop $3
 
         ${If} $3 != "ok"
-            DetailPrint "Failed to remove mcpb entry: $3"
+            DetailPrint "Failed to remove cidx-semantic-search entry: $3"
             Return
         ${EndIf}
 
@@ -914,5 +942,5 @@ Function un.RemoveMcpbFromClaudeConfig
             Return
         ${EndIf}
 
-        DetailPrint "MCPB entry removed from Claude Desktop config successfully"
+        DetailPrint "CIDX semantic search entry removed from Claude Desktop config successfully"
 FunctionEnd

@@ -73,12 +73,12 @@ class TestBinaryMetadata:
     def test_metadata_from_json(self):
         """Test creating metadata from JSON data."""
         json_data = {
-            "binary": "mcpb-windows-x64.exe",
+            "binary": "cidx-semantic-search.exe",
             "sha256": "c" * 64,
             "size": 3072000,
         }
         metadata = BinaryMetadata(**json_data)
-        assert metadata.binary == "mcpb-windows-x64.exe"
+        assert metadata.binary == "cidx-semantic-search.exe"
         assert metadata.sha256 == "c" * 64
         assert metadata.size == 3072000
 

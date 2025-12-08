@@ -72,7 +72,7 @@ class TestAC1_MCPBExtraction:
         assert re.search(r'SetOutPath\s+"C:\\\\mcpb\\\\server', nsis_script_content)
 
     def test_extracts_mcpb_exe(self, nsis_script_content):
-        """Script extracts mcpb-windows-x64.exe using File command."""
+        """Script extracts cidx-semantic-search.exe using File command."""
         assert re.search(r'File\s+"[^"]*mcpb-windows-x64\.exe"', nsis_script_content)
 
     def test_creates_directory_structure(self, nsis_script_content):

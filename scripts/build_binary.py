@@ -211,14 +211,12 @@ def create_bundle(
 
     # Determine server/ subdirectory path for binary
     if platform_id.startswith("windows"):
-        server_binary_name = f"server/mcpb-{platform_id}.exe"
-        entry_point = (
-            f"server/mcpb-{platform_id}"  # .exe added automatically by Windows
-        )
-        command = f"${{__dirname}}/server/mcpb-{platform_id}.exe"
+        server_binary_name = "server/cidx-semantic-search.exe"
+        entry_point = "server/cidx-semantic-search"  # .exe added automatically by Windows
+        command = "${__dirname}/server/cidx-semantic-search.exe"
     else:
         server_binary_name = (
-            f"server/mcpb-{platform_id}"  # No .mcpb extension inside bundle
+            f"server/cidx-semantic-search-{platform_id}"  # No .mcpb extension inside bundle
         )
         entry_point = server_binary_name
         command = f"${{__dirname}}/{entry_point}"
@@ -290,9 +288,10 @@ def build_binary(output_dir: Path, platform_id: Optional[str] = None) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine binary name
-    binary_name = f"mcpb-{platform_id}"
     if platform_id.startswith("windows"):
-        binary_name += ".exe"
+        binary_name = "cidx-semantic-search.exe"
+    else:
+        binary_name = f"cidx-semantic-search-{platform_id}"
     # Don't add .mcpb here - only the bundle gets .mcpb extension
 
     # Find spec file

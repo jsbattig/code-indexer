@@ -30,7 +30,7 @@ Download for your platform from [GitHub Releases](https://github.com/jsbattig/co
 - macOS (Apple Silicon): `mcpb-darwin-arm64`
 - macOS (Intel): `mcpb-darwin-x64`
 - Linux: `mcpb-linux-x64`
-- Windows: `mcpb-windows-x64.exe`
+- Windows: `cidx-semantic-search.exe`
 
 Make executable (macOS/Linux):
 ```bash
