@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+
+{% block title %}SSH Keys - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="ssh-keys-header">
+    <h1>SSH Key Management</h1>
+    <div class="ssh-keys-actions">
+        <button
+            id="create-key-btn"
+            class="primary"
+            onclick="toggleCreateForm()"
+        >
+            Create SSH Key
+        </button>
+        <button
+            id="refresh-btn"
+            class="outline"
+            onclick="location.reload()"
+        >
+            Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Hidden CSRF token for dynamic forms -->
+<input type="hidden" id="csrf-token-source" value="{{ csrf_token }}">
+
+<!-- Create Key Form (hidden by default) -->
+<section id="create-key-form" class="form-section" style="display: none;">
+    <article>
+        <header>
+            <h2>Create New SSH Key</h2>
+        </header>
+        <form method="post" action="/admin/ssh-keys/create">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <label for="key_name">Key Name</label>
+            <input
+                type="text"
+                id="key_name"
+                name="key_name"
+                placeholder="e.g., github-key, gitlab-deploy"
+                required
+                pattern="[a-zA-Z0-9_-]+"
+                title="Only letters, numbers, hyphens, and underscores allowed"
+            >
+            <small>Used as filename in ~/.ssh/</small>
+
+            <label for="key_type">Key Type</label>
+            <select id="key_type" name="key_type" required>
+                <option value="ed25519" selected>ed25519 (recommended)</option>
+                <option value="rsa">rsa (4096 bits)</option>
+            </select>
+
+            <label for="email">Email (optional)</label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="your.email@example.com"
+            >
+            <small>Added as comment to public key</small>
+
+            <label for="description">Description (optional)</label>
+            <input
+                type="text"
+                id="description"
+                name="description"
+                placeholder="Purpose of this key"
+            >
+
+            <div class="form-actions">
+                <button type="submit" class="primary">Generate Key</button>
+                <button type="button" class="secondary" onclick="toggleCreateForm()">Cancel</button>
+            </div>
+        </form>
+    </article>
+</section>
+
+<!-- Migration Status Section -->
+{% if migration_result %}
+<article>
+    <header>
+        <h2>Migration Status</h2>
+    </header>
+    {% if migration_result.skipped %}
+    <p><mark>Migration already completed</mark></p>
+    {% else %}
+    <p>
+        <strong>{{ migration_result.keys_discovered }}</strong> keys discovered,
+        <strong>{{ migration_result.keys_imported }}</strong> imported,
+        <strong>{{ migration_result.mappings_imported }}</strong> existing mappings imported
+    </p>
+    {% if migration_result.failed_hosts %}
+    <details>
+        <summary>Failed Hosts ({{ migration_result.failed_hosts|length }})</summary>
+        <ul>
+            {% for key_name, hostname, reason in migration_result.failed_hosts %}
+            <li>{{ key_name }} -> {{ hostname }}: {{ reason }}</li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+    {% endif %}
+</article>
+{% endif %}
+
+<!-- Managed Keys Section -->
+<article>
+    <header>
+        <h2>Managed Keys</h2>
+    </header>
+    {% if managed_keys %}
+    <table role="grid">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Fingerprint</th>
+                <th>Hosts</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in managed_keys %}
+            <tr id="key-row-{{ key.name }}">
+                <td>{{ key.name }}</td>
+                <td>{{ key.key_type }}</td>
+                <td><code style="font-size: 0.85em;">{{ key.fingerprint }}</code></td>
+                <td>
+                    {% if key.hosts %}
+                        {{ key.hosts|join(", ") }}
+                    {% else %}
+                        <span style="color: #888;">none</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button
+                            class="outline secondary"
+                            style="margin: 0; padding: 0.25rem 0.5rem; font-size: 0.85rem;"
+                            onclick="showPublicKey('{{ key.name }}')">
+                            View Public Key
+                        </button>
+                        <button
+                            class="outline secondary"
+                            style="margin: 0; padding: 0.25rem 0.5rem; font-size: 0.85rem;"
+                            onclick="copyPublicKey('{{ key.name }}', '{{ key.public_key|replace("'", "\\'") if key.public_key else "" }}')">
+                            Copy Public Key
+                        </button>
+                        <button
+                            class="outline"
+                            style="margin: 0; padding: 0.25rem 0.5rem; font-size: 0.85rem;"
+                            onclick="showAssignHostDialog('{{ key.name }}')">
+                            Assign Host
+                        </button>
+                        <button
+                            class="outline contrast"
+                            style="margin: 0; padding: 0.25rem 0.5rem; font-size: 0.85rem;"
+                            onclick="deleteKey('{{ key.name }}')">
+                            Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No managed SSH keys found. <a href="#" onclick="toggleCreateForm(); return false;">Create your first key</a></p>
+    {% endif %}
+</article>
+
+<!-- Unmanaged Keys Section -->
+{% if unmanaged_keys %}
+<article>
+    <header>
+        <h2>Unmanaged Keys</h2>
+    </header>
+    <p class="warning">These keys exist in ~/.ssh but are not managed by CIDX.</p>
+    <table role="grid">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Path</th>
+                <th>Fingerprint</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in unmanaged_keys %}
+            <tr>
+                <td>{{ key.name }}</td>
+                <td><code>{{ key.private_path }}</code></td>
+                <td>{{ key.fingerprint or "unknown" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+{% endif %}
+
+<!-- Public Key Modal -->
+<dialog id="public-key-modal">
+    <article>
+        <header>
+            <a href="#close" aria-label="Close" class="close" onclick="closePublicKeyModal()"></a>
+            <h3>Public Key: <span id="modal-key-name"></span></h3>
+        </header>
+        <pre id="modal-public-key" style="background: #1a1a1a; padding: 1rem; overflow-x: auto; font-size: 0.9rem;"></pre>
+        <footer>
+            <button class="secondary" onclick="copyModalPublicKey()">Copy to Clipboard</button>
+            <button class="outline" onclick="closePublicKeyModal()">Close</button>
+        </footer>
+    </article>
+</dialog>
+
+<!-- Assign Host Modal -->
+<dialog id="assign-host-modal">
+    <article>
+        <header>
+            <a href="#close" aria-label="Close" class="close" onclick="closeAssignHostModal()"></a>
+            <h3>Assign Host to Key: <span id="assign-key-name"></span></h3>
+        </header>
+        <form id="assign-host-form" method="post" action="/admin/ssh-keys/assign-host">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="key_name" id="assign-key-name-input">
+
+            <label for="hostname">Hostname</label>
+            <input
+                type="text"
+                id="hostname"
+                name="hostname"
+                placeholder="e.g., github.com, gitlab.com"
+                required
+                pattern="[a-zA-Z0-9.-]+"
+                title="Valid hostname (e.g., github.com)"
+            >
+            <small>Git hosting provider hostname</small>
+
+            <footer>
+                <button type="submit" class="primary">Assign Host</button>
+                <button type="button" class="secondary" onclick="closeAssignHostModal()">Cancel</button>
+            </footer>
+        </form>
+    </article>
+</dialog>
+
+<!-- Delete Confirmation Modal -->
+<dialog id="delete-confirm-modal">
+    <article>
+        <header>
+            <h3>Confirm Deletion</h3>
+        </header>
+        <p>Are you sure you want to delete key <strong id="delete-key-name"></strong>?</p>
+        <p><mark>This will delete the key files from ~/.ssh/ and remove all host mappings.</mark></p>
+        <footer>
+            <form id="delete-key-form" method="post" action="/admin/ssh-keys/delete">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="key_name" id="delete-key-name-input">
+                <button type="submit" class="contrast">Delete Key</button>
+                <button type="button" class="secondary" onclick="closeDeleteModal()">Cancel</button>
+            </form>
+        </footer>
+    </article>
+</dialog>
+
+<style>
+.ssh-keys-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.ssh-keys-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.form-section {
+    margin-bottom: 2rem;
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.message-success {
+    background: #1e4620;
+    border-left: 4px solid #2ea043;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.message-error {
+    background: #4a1c1c;
+    border-left: 4px solid #cf222e;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+dialog {
+    max-width: 600px;
+    border-radius: 0.5rem;
+    border: 1px solid #444;
+}
+
+dialog::backdrop {
+    background: rgba(0, 0, 0, 0.7);
+}
+</style>
+
+<script>
+function toggleCreateForm() {
+    const form = document.getElementById('create-key-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function showPublicKey(keyName) {
+    fetch(`/api/ssh-keys/${keyName}/public`)
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    throw new Error(`HTTP ${response.status}: ${text}`);
+                });
+            }
+            return response.text();
+        })
+        .then(publicKey => {
+            document.getElementById('modal-key-name').textContent = keyName;
+            document.getElementById('modal-public-key').textContent = publicKey;
+            document.getElementById('public-key-modal').showModal();
+        })
+        .catch(err => {
+            alert('Failed to fetch public key: ' + err.message);
+        });
+}
+
+function closePublicKeyModal() {
+    document.getElementById('public-key-modal').close();
+}
+
+function copyModalPublicKey() {
+    const publicKey = document.getElementById('modal-public-key').textContent;
+    navigator.clipboard.writeText(publicKey).then(() => {
+        alert('Public key copied to clipboard!');
+    }).catch(err => {
+        alert('Failed to copy: ' + err.message);
+    });
+}
+
+function copyPublicKey(keyName, publicKey) {
+    if (!publicKey) {
+        // Fetch if not available inline
+        fetch(`/api/ssh-keys/${keyName}/public`)
+            .then(response => response.text())
+            .then(key => {
+                navigator.clipboard.writeText(key).then(() => {
+                    alert('Public key copied to clipboard!');
+                });
+            })
+            .catch(err => alert('Failed to copy: ' + err.message));
+    } else {
+        navigator.clipboard.writeText(publicKey).then(() => {
+            alert('Public key copied to clipboard!');
+        }).catch(err => {
+            alert('Failed to copy: ' + err.message);
+        });
+    }
+}
+
+function showAssignHostDialog(keyName) {
+    document.getElementById('assign-key-name').textContent = keyName;
+    document.getElementById('assign-key-name-input').value = keyName;
+    // Update CSRF token from current page
+    const currentToken = document.getElementById('csrf-token-source').value;
+    document.querySelector('#assign-host-form input[name="csrf_token"]').value = currentToken;
+    document.getElementById('assign-host-modal').showModal();
+}
+
+function closeAssignHostModal() {
+    document.getElementById('assign-host-modal').close();
+}
+
+function deleteKey(keyName) {
+    document.getElementById('delete-key-name').textContent = keyName;
+    document.getElementById('delete-key-name-input').value = keyName;
+    // Update CSRF token from current page
+    const currentToken = document.getElementById('csrf-token-source').value;
+    document.querySelector('#delete-key-form input[name="csrf_token"]').value = currentToken;
+    document.getElementById('delete-confirm-modal').showModal();
+}
+
+function closeDeleteModal() {
+    document.getElementById('delete-confirm-modal').close();
+}
+</script>
+{% endblock %}

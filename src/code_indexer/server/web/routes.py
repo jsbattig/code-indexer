@@ -3102,3 +3102,233 @@ async def user_logout(request: Request):
     session_manager.clear_session(response)
 
     return response
+
+
+# SSH Keys Management Page
+@web_router.get("/ssh-keys", response_class=HTMLResponse)
+async def ssh_keys_page(request: Request):
+    """SSH Keys management page - view migration status and manage SSH keys."""
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Generate fresh CSRF token
+    csrf_token = generate_csrf_token()
+
+    # Get migration result from app state (set during server startup)
+    migration_result = getattr(request.app.state, "ssh_migration_result", None)
+
+    # Get SSH keys list
+    managed_keys = []
+    unmanaged_keys = []
+    try:
+        from ..services.ssh_key_manager import SSHKeyManager
+
+        manager = SSHKeyManager()
+        key_list = manager.list_keys()
+        managed_keys = key_list.managed
+        unmanaged_keys = key_list.unmanaged
+    except Exception as e:
+        logger.error(f"Failed to list SSH keys: {e}")
+
+    response = templates.TemplateResponse(
+        request,
+        "ssh_keys.html",
+        {
+            "show_nav": True,
+            "current_page": "ssh-keys",
+            "username": session.username,
+            "migration_result": migration_result,
+            "managed_keys": managed_keys,
+            "unmanaged_keys": unmanaged_keys,
+            "csrf_token": csrf_token,
+        },
+    )
+
+    # Set CSRF cookie
+    set_csrf_cookie(response, csrf_token)
+
+    return response
+
+
+def _create_ssh_keys_page_response(
+    request: Request,
+    session: SessionData,
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> Response:
+    """Helper to create SSH keys page response with messages."""
+    # Generate fresh CSRF token
+    csrf_token = generate_csrf_token()
+
+    migration_result = getattr(request.app.state, "ssh_migration_result", None)
+
+    managed_keys = []
+    unmanaged_keys = []
+    try:
+        from ..services.ssh_key_manager import SSHKeyManager
+        manager = SSHKeyManager()
+        key_list = manager.list_keys()
+        managed_keys = key_list.managed
+        unmanaged_keys = key_list.unmanaged
+    except Exception as e:
+        logger.error(f"Failed to list SSH keys: {e}")
+
+    response = templates.TemplateResponse(
+        request,
+        "ssh_keys.html",
+        {
+            "show_nav": True,
+            "current_page": "ssh-keys",
+            "username": session.username,
+            "migration_result": migration_result,
+            "managed_keys": managed_keys,
+            "unmanaged_keys": unmanaged_keys,
+            "csrf_token": csrf_token,
+            "success_message": success_message,
+            "error_message": error_message,
+        },
+    )
+
+    # Set CSRF cookie
+    set_csrf_cookie(response, csrf_token)
+
+    return response
+
+
+@web_router.post("/ssh-keys/create", response_class=HTMLResponse)
+async def create_ssh_key(
+    request: Request,
+    key_name: str = Form(...),
+    key_type: str = Form(...),
+    email: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Create a new SSH key."""
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_ssh_keys_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    try:
+        from ..services.ssh_key_manager import SSHKeyManager
+        from ..services.ssh_key_generator import (
+            InvalidKeyNameError,
+            KeyAlreadyExistsError,
+        )
+
+        manager = SSHKeyManager()
+        metadata = manager.create_key(
+            name=key_name,
+            key_type=key_type,
+            email=email if email else None,
+            description=description if description else None,
+        )
+
+        return _create_ssh_keys_page_response(
+            request,
+            session,
+            success_message=f"SSH key '{key_name}' created successfully. Public key is ready to copy.",
+        )
+    except InvalidKeyNameError as e:
+        return _create_ssh_keys_page_response(
+            request, session, error_message=f"Invalid key name: {e}"
+        )
+    except KeyAlreadyExistsError as e:
+        return _create_ssh_keys_page_response(
+            request, session, error_message=f"Key already exists: {e}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to create SSH key: {e}")
+        return _create_ssh_keys_page_response(
+            request, session, error_message=f"Failed to create key: {e}"
+        )
+
+
+@web_router.post("/ssh-keys/delete", response_class=HTMLResponse)
+async def delete_ssh_key(
+    request: Request,
+    key_name: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Delete an SSH key."""
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_ssh_keys_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    try:
+        from ..services.ssh_key_manager import SSHKeyManager
+
+        manager = SSHKeyManager()
+        manager.delete_key(key_name)
+
+        return _create_ssh_keys_page_response(
+            request,
+            session,
+            success_message=f"SSH key '{key_name}' deleted successfully.",
+        )
+    except Exception as e:
+        logger.error(f"Failed to delete SSH key: {e}")
+        return _create_ssh_keys_page_response(
+            request, session, error_message=f"Failed to delete key: {e}"
+        )
+
+
+@web_router.post("/ssh-keys/assign-host", response_class=HTMLResponse)
+async def assign_host_to_key(
+    request: Request,
+    key_name: str = Form(...),
+    hostname: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Assign a host to an SSH key."""
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_ssh_keys_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    try:
+        from ..services.ssh_key_manager import SSHKeyManager, HostConflictError
+
+        manager = SSHKeyManager()
+        manager.assign_key_to_host(key_name, hostname)
+
+        return _create_ssh_keys_page_response(
+            request,
+            session,
+            success_message=f"Host '{hostname}' assigned to key '{key_name}' successfully.",
+        )
+    except HostConflictError as e:
+        return _create_ssh_keys_page_response(
+            request, session, error_message=f"Host conflict: {e}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to assign host to SSH key: {e}")
+        return _create_ssh_keys_page_response(
+            request, session, error_message=f"Failed to assign host: {e}"
+        )
