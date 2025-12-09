@@ -29,6 +29,7 @@ from .utils.exception_logger import ExceptionLogger
 from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
 from .disabled_commands import require_mode
 from . import __version__
+from .cli_scip import scip_group
 
 # Module-level imports for test mocking (noqa: F401 = intentionally unused for test patching)
 from .api_clients.admin_client import AdminAPIClient  # noqa: F401
@@ -1716,6 +1717,10 @@ def cli(
     if verbose:
         console.print(f"🔍 Detected mode: {detected_mode}", style="dim")
         console.print(f"📁 Project root: {project_root}", style="dim")
+
+
+# Register SCIP commands
+cli.add_command(scip_group)
 
 
 @cli.command()
@@ -15373,3 +15378,6 @@ def watch_stop_command(ctx):
 
 if __name__ == "__main__":
     main()
+
+
+# SCIP commands registered via cli_scip import

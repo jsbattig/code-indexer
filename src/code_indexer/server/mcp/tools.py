@@ -19,7 +19,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 "repository_alias": {
                     "oneOf": [
                         {"type": "string"},
-                        {"type": "array", "items": {"type": "string"}}
+                        {"type": "array", "items": {"type": "string"}},
                     ],
                     "description": "Repository alias(es) to search. String for single repo, array for omni-search across multiple repos. Supports wildcard patterns like '*-global' when using array.",
                 },
@@ -158,7 +158,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["flat", "grouped"],
                     "default": "flat",
-                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
+                    "description": 'Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n\'flat\' (default): Returns all results in a single array, each with source_repo field.\nExample response: {"results": [{"file_path": "src/auth.py", "source_repo": "backend-global", "content": "...", "score": 0.95}, {"file_path": "Login.tsx", "source_repo": "frontend-global", "content": "...", "score": 0.89}], "total_results": 2}\n\n\'grouped\': Groups results by repository under results_by_repo object.\nExample response: {"results_by_repo": {"backend-global": {"count": 1, "results": [{"file_path": "src/auth.py", "content": "...", "score": 0.95}]}, "frontend-global": {"count": 1, "results": [{"file_path": "Login.tsx", "content": "...", "score": 0.89}]}}, "total_results": 2}\n\nUse \'grouped\' when you need to process results per-repository or display results organized by source.',
                 },
             },
             "required": ["query_text"],
@@ -678,7 +678,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 "repository_alias": {
                     "oneOf": [
                         {"type": "string"},
-                        {"type": "array", "items": {"type": "string"}}
+                        {"type": "array", "items": {"type": "string"}},
                     ],
                     "description": "Repository alias(es): String for single repo, array for omni-list-files across multiple repos.",
                 },
@@ -696,7 +696,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["flat", "grouped"],
                     "default": "flat",
-                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
+                    "description": 'Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n\'flat\' (default): Returns all results in a single array, each with source_repo field.\nExample response: {"results": [{"file_path": "src/auth.py", "source_repo": "backend-global", "content": "...", "score": 0.95}, {"file_path": "Login.tsx", "source_repo": "frontend-global", "content": "...", "score": 0.89}], "total_results": 2}\n\n\'grouped\': Groups results by repository under results_by_repo object.\nExample response: {"results_by_repo": {"backend-global": {"count": 1, "results": [{"file_path": "src/auth.py", "content": "...", "score": 0.95}]}, "frontend-global": {"count": 1, "results": [{"file_path": "Login.tsx", "content": "...", "score": 0.89}]}}, "total_results": 2}\n\nUse \'grouped\' when you need to process results per-repository or display results organized by source.',
                 },
             },
             "required": ["repository_alias"],
@@ -1591,7 +1591,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 "repository_alias": {
                     "oneOf": [
                         {"type": "string"},
-                        {"type": "array", "items": {"type": "string"}}
+                        {"type": "array", "items": {"type": "string"}},
                     ],
                     "description": (
                         "Repository identifier(s): String for single repo search, "
@@ -1659,7 +1659,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "enum": ["flat", "grouped"],
                     "default": "flat",
-                    "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
+                    "description": 'Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n\'flat\' (default): Returns all results in a single array, each with source_repo field.\nExample response: {"results": [{"file_path": "src/auth.py", "source_repo": "backend-global", "content": "...", "score": 0.95}, {"file_path": "Login.tsx", "source_repo": "frontend-global", "content": "...", "score": 0.89}], "total_results": 2}\n\n\'grouped\': Groups results by repository under results_by_repo object.\nExample response: {"results_by_repo": {"backend-global": {"count": 1, "results": [{"file_path": "src/auth.py", "content": "...", "score": 0.95}]}, "frontend-global": {"count": 1, "results": [{"file_path": "Login.tsx", "content": "...", "score": 0.89}]}}, "total_results": 2}\n\nUse \'grouped\' when you need to process results per-repository or display results organized by source.',
                 },
             },
             "required": ["repository_alias", "pattern"],
@@ -1739,7 +1739,7 @@ TOOL_REGISTRY["git_log"] = {
             "repository_alias": {
                 "oneOf": [
                     {"type": "string"},
-                    {"type": "array", "items": {"type": "string"}}
+                    {"type": "array", "items": {"type": "string"}},
                 ],
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project' or "
@@ -1803,7 +1803,7 @@ TOOL_REGISTRY["git_log"] = {
                 "type": "string",
                 "enum": ["flat", "grouped"],
                 "default": "flat",
-                "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
+                "description": 'Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n\'flat\' (default): Returns all results in a single array, each with source_repo field.\nExample response: {"results": [{"file_path": "src/auth.py", "source_repo": "backend-global", "content": "...", "score": 0.95}, {"file_path": "Login.tsx", "source_repo": "frontend-global", "content": "...", "score": 0.89}], "total_results": 2}\n\n\'grouped\': Groups results by repository under results_by_repo object.\nExample response: {"results_by_repo": {"backend-global": {"count": 1, "results": [{"file_path": "src/auth.py", "content": "...", "score": 0.95}]}, "frontend-global": {"count": 1, "results": [{"file_path": "Login.tsx", "content": "...", "score": 0.89}]}}, "total_results": 2}\n\nUse \'grouped\' when you need to process results per-repository or display results organized by source.',
             },
         },
         "required": ["repository_alias"],
@@ -2252,7 +2252,7 @@ TOOL_REGISTRY["git_search_commits"] = {
             "repository_alias": {
                 "oneOf": [
                     {"type": "string"},
-                    {"type": "array", "items": {"type": "string"}}
+                    {"type": "array", "items": {"type": "string"}},
                 ],
                 "description": (
                     "Repository identifier: either an alias (e.g., 'my-project') or "
@@ -2318,7 +2318,7 @@ TOOL_REGISTRY["git_search_commits"] = {
                 "type": "string",
                 "enum": ["flat", "grouped"],
                 "default": "flat",
-                "description": "Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n'flat' (default): Returns all results in a single array, each with source_repo field.\nExample response: {\"results\": [{\"file_path\": \"src/auth.py\", \"source_repo\": \"backend-global\", \"content\": \"...\", \"score\": 0.95}, {\"file_path\": \"Login.tsx\", \"source_repo\": \"frontend-global\", \"content\": \"...\", \"score\": 0.89}], \"total_results\": 2}\n\n'grouped': Groups results by repository under results_by_repo object.\nExample response: {\"results_by_repo\": {\"backend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"src/auth.py\", \"content\": \"...\", \"score\": 0.95}]}, \"frontend-global\": {\"count\": 1, \"results\": [{\"file_path\": \"Login.tsx\", \"content\": \"...\", \"score\": 0.89}]}}, \"total_results\": 2}\n\nUse 'grouped' when you need to process results per-repository or display results organized by source.",
+                "description": 'Response format for omni-search (multi-repo) results. Only applies when repository_alias is an array.\n\n\'flat\' (default): Returns all results in a single array, each with source_repo field.\nExample response: {"results": [{"file_path": "src/auth.py", "source_repo": "backend-global", "content": "...", "score": 0.95}, {"file_path": "Login.tsx", "source_repo": "frontend-global", "content": "...", "score": 0.89}], "total_results": 2}\n\n\'grouped\': Groups results by repository under results_by_repo object.\nExample response: {"results_by_repo": {"backend-global": {"count": 1, "results": [{"file_path": "src/auth.py", "content": "...", "score": 0.95}]}, "frontend-global": {"count": 1, "results": [{"file_path": "Login.tsx", "content": "...", "score": 0.89}]}}, "total_results": 2}\n\nUse \'grouped\' when you need to process results per-repository or display results organized by source.',
             },
         },
         "required": ["repository_alias", "query"],
@@ -2688,20 +2688,387 @@ TOOL_REGISTRY["directory_tree"] = {
         },
         "required": ["success"],
     },
-    "authenticate": {
-        "name": "authenticate",
-        "description": "Authenticate with username and API key to establish session. Required before using other tools on /mcp-public endpoint.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "username": {"type": "string", "description": "Username"},
-                "api_key": {
-                    "type": "string",
-                    "description": "API key (format: cidx_sk_...)",
+}
+
+# Tool 10: Authenticate (Public endpoint)
+TOOL_REGISTRY["authenticate"] = {
+    "name": "authenticate",
+    "description": (
+        "TL;DR: Authenticate with username and API key to establish session. "
+        "WHEN TO USE: Required before using other tools on /mcp-public endpoint. "
+        "WHEN NOT TO USE: Already authenticated. "
+        "RELATED TOOLS: create_user (create new user account)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "username": {"type": "string", "description": "Username"},
+            "api_key": {
+                "type": "string",
+                "description": "API key (format: cidx_sk_...)",
+            },
+        },
+        "required": ["username", "api_key"],
+    },
+    "required_permission": "public",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Whether authentication succeeded",
+            },
+            "token": {
+                "type": "string",
+                "description": "JWT session token for subsequent requests",
+            },
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+# Tool 11: SSH Key Create (Story #584)
+TOOL_REGISTRY["cidx_ssh_key_create"] = {
+    "name": "cidx_ssh_key_create",
+    "description": (
+        "TL;DR: Create new SSH key pair managed by CIDX server. "
+        "WHEN TO USE: (1) Generate SSH key for remote repository access, "
+        "(2) Create key with specific type (ed25519/rsa), "
+        "(3) Generate key with email/description metadata. "
+        "WHEN NOT TO USE: Key already exists with that name -> delete first | "
+        "Need to import existing key -> not yet supported. "
+        "SECURITY: Keys stored in ~/.ssh/ with metadata in ~/.code-indexer-server/ssh_keys/. "
+        "Generated keys are 4096-bit RSA or Ed25519 (default). "
+        "RELATED TOOLS: cidx_ssh_key_list (view keys), cidx_ssh_key_assign_host "
+        "(configure SSH host), cidx_ssh_key_show_public (get public key for server upload)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": (
+                    "Key name (identifier). Must be filesystem-safe (alphanumeric, "
+                    "dashes, underscores). Used for filenames: ~/.ssh/cidx-managed-{name}"
+                ),
+            },
+            "key_type": {
+                "type": "string",
+                "enum": ["ed25519", "rsa"],
+                "default": "ed25519",
+                "description": (
+                    "Key type to generate. ed25519: Modern, secure, fast (default). "
+                    "rsa: 4096-bit, wider compatibility with older systems."
+                ),
+            },
+            "email": {
+                "type": "string",
+                "description": (
+                    "Email address for key comment (appears in public key). "
+                    "Optional but recommended for key identification on remote servers."
+                ),
+            },
+            "description": {
+                "type": "string",
+                "description": (
+                    "Human-readable description of key purpose. "
+                    "Example: 'GitHub personal repos' or 'Production server access'"
+                ),
+            },
+        },
+        "required": ["name"],
+    },
+    "required_permission": "activate_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Whether key creation succeeded",
+            },
+            "name": {"type": "string", "description": "Key name (identifier)"},
+            "fingerprint": {
+                "type": "string",
+                "description": "SSH key fingerprint (SHA256)",
+            },
+            "key_type": {"type": "string", "description": "Key type (ed25519/rsa)"},
+            "public_key": {
+                "type": "string",
+                "description": (
+                    "Full public key content (suitable for copying to authorized_keys "
+                    "or git hosting services)"
+                ),
+            },
+            "email": {
+                "type": ["string", "null"],
+                "description": "Email address (if provided)",
+            },
+            "description": {
+                "type": ["string", "null"],
+                "description": "Key description (if provided)",
+            },
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+# Tool 12: SSH Key List (Story #584)
+TOOL_REGISTRY["cidx_ssh_key_list"] = {
+    "name": "cidx_ssh_key_list",
+    "description": (
+        "TL;DR: List all SSH keys (CIDX-managed and unmanaged). "
+        "WHEN TO USE: (1) See available keys, (2) Check key fingerprints, "
+        "(3) View which hosts are assigned to each key, (4) Discover unmanaged keys in ~/.ssh. "
+        "WHEN NOT TO USE: Need public key content -> use cidx_ssh_key_show_public. "
+        "KEY TYPES: Managed keys have metadata (email, description, hosts), "
+        "unmanaged keys are detected in ~/.ssh but not managed by CIDX. "
+        "RELATED TOOLS: cidx_ssh_key_create (create key), cidx_ssh_key_show_public "
+        "(get public key), cidx_ssh_key_assign_host (assign to host)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+    "required_permission": "activate_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
+            "managed": {
+                "type": "array",
+                "description": "CIDX-managed keys with full metadata",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Key name"},
+                        "fingerprint": {
+                            "type": "string",
+                            "description": "SSH fingerprint (SHA256)",
+                        },
+                        "key_type": {
+                            "type": "string",
+                            "description": "Key type (ed25519/rsa)",
+                        },
+                        "hosts": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Hostnames configured in SSH config",
+                        },
+                        "email": {
+                            "type": ["string", "null"],
+                            "description": "Email address",
+                        },
+                        "description": {
+                            "type": ["string", "null"],
+                            "description": "Key description",
+                        },
+                        "is_imported": {
+                            "type": "boolean",
+                            "description": "Whether key was imported (not yet implemented)",
+                        },
+                    },
                 },
             },
-            "required": ["username", "api_key"],
+            "unmanaged": {
+                "type": "array",
+                "description": (
+                    "Keys detected in ~/.ssh but not managed by CIDX "
+                    "(cannot be assigned to hosts or deleted via CIDX)"
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Filename without extension",
+                        },
+                        "fingerprint": {
+                            "type": "string",
+                            "description": "SSH fingerprint (SHA256)",
+                        },
+                        "private_path": {
+                            "type": "string",
+                            "description": "Full path to private key file",
+                        },
+                    },
+                },
+            },
+            "error": {"type": "string", "description": "Error message if failed"},
         },
-        "required_permission": "public",
+        "required": ["success"],
+    },
+}
+
+# Tool 13: SSH Key Delete (Story #584)
+TOOL_REGISTRY["cidx_ssh_key_delete"] = {
+    "name": "cidx_ssh_key_delete",
+    "description": (
+        "TL;DR: Delete CIDX-managed SSH key and remove from SSH config. "
+        "WHEN TO USE: (1) Remove unused key, (2) Rotate compromised key, "
+        "(3) Clean up old keys. "
+        "WHEN NOT TO USE: Key is actively used by repositories -> reassign hosts first. "
+        "SECURITY WARNING: Deletes both private and public key files from ~/.ssh/. "
+        "Removes all Host entries from SSH config that use this key. "
+        "Operation is IDEMPOTENT (always succeeds even if key doesn't exist). "
+        "DESTRUCTIVE: Cannot be undone. "
+        "RELATED TOOLS: cidx_ssh_key_list (view keys before deletion), "
+        "cidx_ssh_key_create (create replacement key)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Key name to delete",
+            },
+        },
+        "required": ["name"],
+    },
+    "required_permission": "activate_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
+            "message": {
+                "type": "string",
+                "description": "Confirmation message",
+            },
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+# Tool 14: SSH Key Show Public (Story #584)
+TOOL_REGISTRY["cidx_ssh_key_show_public"] = {
+    "name": "cidx_ssh_key_show_public",
+    "description": (
+        "TL;DR: Get public key content for copying to remote servers. "
+        "WHEN TO USE: (1) Upload public key to GitHub/GitLab, "
+        "(2) Add to authorized_keys on remote server, "
+        "(3) Share public key with team member. "
+        "WHEN NOT TO USE: Need full key metadata -> use cidx_ssh_key_list. "
+        "OUTPUT: Returns formatted public key string suitable for direct copy/paste "
+        "to authorized_keys or git hosting services. "
+        "SECURITY: Only returns PUBLIC key (safe to share). Private key never exposed. "
+        "RELATED TOOLS: cidx_ssh_key_list (view all keys), cidx_ssh_key_create "
+        "(create new key), cidx_ssh_key_assign_host (configure SSH host)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Key name to retrieve public key for",
+            },
+        },
+        "required": ["name"],
+    },
+    "required_permission": "activate_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
+            "name": {"type": "string", "description": "Key name"},
+            "public_key": {
+                "type": "string",
+                "description": (
+                    "Full public key content (suitable for copying to authorized_keys "
+                    "or git hosting services). Format: 'ssh-ed25519 AAAA... user@host' "
+                    "or 'ssh-rsa AAAA... user@host'"
+                ),
+            },
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
+    },
+}
+
+# Tool 15: SSH Key Assign Host (Story #584)
+TOOL_REGISTRY["cidx_ssh_key_assign_host"] = {
+    "name": "cidx_ssh_key_assign_host",
+    "description": (
+        "TL;DR: Assign SSH key to hostname in SSH config (~/.ssh/config). "
+        "WHEN TO USE: (1) Configure key for GitHub/GitLab host, "
+        "(2) Set up key for remote server access, "
+        "(3) Create SSH Host entry for repository cloning. "
+        "WHEN NOT TO USE: Host already configured -> use force=true to override. "
+        "CONFIGURATION: Adds 'Host {hostname}' entry to SSH config with IdentityFile "
+        "pointing to the managed key. Updates ~/.ssh/config with proper formatting "
+        "and preserves existing configuration. "
+        "CONFLICT HANDLING: By default, fails if hostname already exists in SSH config. "
+        "Use force=true to replace existing Host entry. "
+        "RELATED TOOLS: cidx_ssh_key_create (create key first), "
+        "cidx_ssh_key_list (view configured hosts), cidx_ssh_key_show_public "
+        "(get public key for remote server setup)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Key name to assign",
+            },
+            "hostname": {
+                "type": "string",
+                "description": (
+                    "Hostname or Host alias for SSH config. Examples: 'github.com', "
+                    "'gitlab.com', 'myserver.example.com', 'production-server'"
+                ),
+            },
+            "force": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Force overwrite if hostname already exists in SSH config. "
+                    "Default: false (fails on conflict). Set to true to replace "
+                    "existing Host entry."
+                ),
+            },
+        },
+        "required": ["name", "hostname"],
+    },
+    "required_permission": "activate_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Whether operation succeeded",
+            },
+            "name": {"type": "string", "description": "Key name"},
+            "fingerprint": {
+                "type": "string",
+                "description": "SSH key fingerprint (SHA256)",
+            },
+            "key_type": {"type": "string", "description": "Key type (ed25519/rsa)"},
+            "hosts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "All hostnames now configured for this key",
+            },
+            "email": {
+                "type": ["string", "null"],
+                "description": "Email address",
+            },
+            "description": {
+                "type": ["string", "null"],
+                "description": "Key description",
+            },
+            "error": {"type": "string", "description": "Error message if failed"},
+        },
+        "required": ["success"],
     },
 }
