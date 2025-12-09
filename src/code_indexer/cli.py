@@ -9396,6 +9396,207 @@ def server_restart(ctx, server_dir: Optional[str]):
         sys.exit(1)
 
 
+# SSH Key Management commands
+@cli.group("ssh-key")
+@click.pass_context
+def ssh_key_group(ctx):
+    """Manage SSH keys for private repository access.
+
+    Create, list, delete, and assign SSH keys for authenticating
+    with private Git repositories (GitHub, GitLab, etc.).
+
+    Available commands:
+      create       - Generate new SSH key pair
+      list         - List all managed and unmanaged keys
+      delete       - Delete key and remove mappings
+      show-public  - Display public key for copying
+      assign       - Assign key to remote host
+    """
+    pass
+
+
+@ssh_key_group.command("create")
+@click.argument("name")
+@click.option(
+    "--key-type",
+    "-t",
+    type=click.Choice(["ed25519", "rsa"]),
+    default="ed25519",
+    help="Type of SSH key to generate (default: ed25519)",
+)
+@click.option(
+    "--email",
+    "-e",
+    help="Email comment to include in the key",
+)
+@click.option(
+    "--description",
+    "-d",
+    help="Human-readable description for the key",
+)
+@click.pass_context
+def ssh_key_create(ctx, name: str, key_type: str, email: str, description: str):
+    """Create a new SSH key pair.
+
+    NAME is the name for the key (used as filename in ~/.ssh/).
+    """
+    try:
+        from .server.services.ssh_key_manager import SSHKeyManager
+
+        manager = SSHKeyManager()
+        metadata = manager.create_key(
+            name=name,
+            key_type=key_type,
+            email=email,
+            description=description,
+        )
+
+        console.print(f"[green]SSH key '{name}' created successfully[/green]")
+        console.print()
+        console.print("[cyan]Public key (copy this to GitHub/GitLab):[/cyan]")
+        console.print()
+        console.print(metadata.public_key)
+        console.print()
+        console.print(f"[dim]Fingerprint: {metadata.fingerprint}[/dim]")
+        console.print(f"[dim]Key type: {metadata.key_type}[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@ssh_key_group.command("list")
+@click.pass_context
+def ssh_key_list(ctx):
+    """List all SSH keys.
+
+    Shows both CIDX-managed keys and unmanaged keys found in ~/.ssh/.
+    """
+    try:
+        from .server.services.ssh_key_manager import SSHKeyManager
+
+        manager = SSHKeyManager()
+        result = manager.list_keys()
+
+        if not result.managed and not result.unmanaged:
+            console.print("[yellow]No SSH keys found.[/yellow]")
+            return
+
+        if result.managed:
+            console.print("[bold cyan]Managed Keys:[/bold cyan]")
+            for key in result.managed:
+                hosts_str = ", ".join(key.hosts) if key.hosts else "none"
+                console.print(f"  [green]{key.name}[/green]")
+                console.print(f"    Type: {key.key_type}")
+                console.print(f"    Fingerprint: {key.fingerprint}")
+                console.print(f"    Hosts: {hosts_str}")
+                console.print()
+
+        if result.unmanaged:
+            console.print("[bold yellow]Unmanaged Keys:[/bold yellow]")
+            for key in result.unmanaged:
+                console.print(f"  [yellow]{key.name}[/yellow]")
+                console.print(f"    Path: {key.private_path}")
+                if key.fingerprint:
+                    console.print(f"    Fingerprint: {key.fingerprint}")
+                console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@ssh_key_group.command("delete")
+@click.argument("name")
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Delete without confirmation",
+)
+@click.pass_context
+def ssh_key_delete(ctx, name: str, force: bool):
+    """Delete an SSH key and its host mappings.
+
+    NAME is the name of the key to delete.
+    """
+    if not force:
+        if not click.confirm(f"Delete SSH key '{name}' and all its host mappings?"):
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
+
+    try:
+        from .server.services.ssh_key_manager import SSHKeyManager
+
+        manager = SSHKeyManager()
+        manager.delete_key(name)
+
+        console.print(f"[green]SSH key '{name}' deleted successfully[/green]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@ssh_key_group.command("show-public")
+@click.argument("name")
+@click.pass_context
+def ssh_key_show_public(ctx, name: str):
+    """Display the public key for copying.
+
+    NAME is the name of the key.
+    """
+    try:
+        from .server.services.ssh_key_manager import SSHKeyManager
+
+        manager = SSHKeyManager()
+        public_key = manager.get_public_key(name)
+
+        console.print(public_key)
+
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+@ssh_key_group.command("assign")
+@click.argument("name")
+@click.option(
+    "--host",
+    "-h",
+    required=True,
+    help="Hostname to assign (e.g., github.com)",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Override user section conflicts",
+)
+@click.pass_context
+def ssh_key_assign(ctx, name: str, host: str, force: bool):
+    """Assign an SSH key to a remote host.
+
+    NAME is the name of the key to assign.
+    This updates ~/.ssh/config to use this key for the specified host.
+    """
+    try:
+        from .server.services.ssh_key_manager import SSHKeyManager
+
+        manager = SSHKeyManager()
+        metadata = manager.assign_key_to_host(name, host, force=force)
+
+        console.print(f"[green]Key '{name}' assigned to '{host}'[/green]")
+        console.print()
+        console.print("[dim]Host mappings for this key:[/dim]")
+        for h in metadata.hosts:
+            console.print(f"  - {h}")
+
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+
+
 # System monitoring commands
 @cli.group("system")
 @click.pass_context

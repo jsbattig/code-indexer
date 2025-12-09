@@ -2922,3 +2922,250 @@ async def handle_authenticate(
 
 # Register the handler
 HANDLER_REGISTRY["authenticate"] = handle_authenticate
+
+
+# SSH Key Management Handlers (Story #572)
+from ..services.ssh_key_manager import (
+    SSHKeyManager,
+    KeyMetadata,
+    KeyListResult,
+    KeyNotFoundError,
+    HostConflictError,
+)
+from ..services.ssh_key_generator import (
+    InvalidKeyNameError,
+    KeyAlreadyExistsError,
+)
+
+# SSH Key Manager singleton
+_ssh_key_manager: SSHKeyManager = None
+
+
+def get_ssh_key_manager() -> SSHKeyManager:
+    """Get or create the SSH key manager instance."""
+    global _ssh_key_manager
+    if _ssh_key_manager is None:
+        _ssh_key_manager = SSHKeyManager()
+    return _ssh_key_manager
+
+
+async def handle_ssh_key_create(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Create a new SSH key pair.
+
+    Args:
+        args: Dict with name, key_type (optional), email (optional), description (optional)
+        user: Authenticated user
+
+    Returns:
+        Dict with success status and public key
+    """
+    name = args.get("name")
+    if not name:
+        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+
+    key_type = args.get("key_type", "ed25519")
+    email = args.get("email")
+    description = args.get("description")
+
+    manager = get_ssh_key_manager()
+
+    try:
+        metadata = manager.create_key(
+            name=name,
+            key_type=key_type,
+            email=email,
+            description=description,
+        )
+
+        return _mcp_response({
+            "success": True,
+            "name": metadata.name,
+            "fingerprint": metadata.fingerprint,
+            "key_type": metadata.key_type,
+            "public_key": metadata.public_key,
+            "email": metadata.email,
+            "description": metadata.description,
+        })
+
+    except InvalidKeyNameError as e:
+        return _mcp_response({"success": False, "error": f"Invalid key name: {str(e)}"})
+    except KeyAlreadyExistsError as e:
+        return _mcp_response({"success": False, "error": f"Key already exists: {str(e)}"})
+    except Exception as e:
+        logger.exception(f"Error creating SSH key: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["cidx_ssh_key_create"] = handle_ssh_key_create
+
+
+async def handle_ssh_key_list(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    List all managed and unmanaged SSH keys.
+
+    Args:
+        args: Empty dict (no parameters needed)
+        user: Authenticated user
+
+    Returns:
+        Dict with managed and unmanaged key lists
+    """
+    manager = get_ssh_key_manager()
+
+    try:
+        result = manager.list_keys()
+
+        managed = [
+            {
+                "name": k.name,
+                "fingerprint": k.fingerprint,
+                "key_type": k.key_type,
+                "hosts": k.hosts,
+                "email": k.email,
+                "description": k.description,
+                "is_imported": k.is_imported,
+            }
+            for k in result.managed
+        ]
+
+        unmanaged = [
+            {
+                "name": k.name,
+                "fingerprint": k.fingerprint,
+                "private_path": str(k.private_path),
+            }
+            for k in result.unmanaged
+        ]
+
+        return _mcp_response({
+            "success": True,
+            "managed": managed,
+            "unmanaged": unmanaged,
+        })
+
+    except Exception as e:
+        logger.exception(f"Error listing SSH keys: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["cidx_ssh_key_list"] = handle_ssh_key_list
+
+
+async def handle_ssh_key_delete(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Delete an SSH key.
+
+    Args:
+        args: Dict with name
+        user: Authenticated user
+
+    Returns:
+        Dict with success status
+    """
+    name = args.get("name")
+    if not name:
+        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+
+    manager = get_ssh_key_manager()
+
+    try:
+        manager.delete_key(name)
+        return _mcp_response({
+            "success": True,
+            "message": f"Key '{name}' deleted",
+        })
+
+    except Exception as e:
+        logger.exception(f"Error deleting SSH key: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["cidx_ssh_key_delete"] = handle_ssh_key_delete
+
+
+async def handle_ssh_key_show_public(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Get the public key content for copy/paste.
+
+    Args:
+        args: Dict with name
+        user: Authenticated user
+
+    Returns:
+        Dict with public key content
+    """
+    name = args.get("name")
+    if not name:
+        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+
+    manager = get_ssh_key_manager()
+
+    try:
+        public_key = manager.get_public_key(name)
+        return _mcp_response({
+            "success": True,
+            "name": name,
+            "public_key": public_key,
+        })
+
+    except KeyNotFoundError:
+        return _mcp_response({"success": False, "error": f"Key not found: {name}"})
+    except Exception as e:
+        logger.exception(f"Error getting public key: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["cidx_ssh_key_show_public"] = handle_ssh_key_show_public
+
+
+async def handle_ssh_key_assign_host(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Assign a host to an SSH key.
+
+    Args:
+        args: Dict with name and hostname
+        user: Authenticated user
+
+    Returns:
+        Dict with updated key information
+    """
+    name = args.get("name")
+    hostname = args.get("hostname")
+
+    if not name:
+        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+    if not hostname:
+        return _mcp_response({"success": False, "error": "Missing required parameter: hostname"})
+
+    force = args.get("force", False)
+
+    manager = get_ssh_key_manager()
+
+    try:
+        metadata = manager.assign_key_to_host(
+            key_name=name,
+            hostname=hostname,
+            force=force,
+        )
+
+        return _mcp_response({
+            "success": True,
+            "name": metadata.name,
+            "fingerprint": metadata.fingerprint,
+            "key_type": metadata.key_type,
+            "hosts": metadata.hosts,
+            "email": metadata.email,
+            "description": metadata.description,
+        })
+
+    except KeyNotFoundError:
+        return _mcp_response({"success": False, "error": f"Key not found: {name}"})
+    except HostConflictError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Error assigning host to key: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["cidx_ssh_key_assign_host"] = handle_ssh_key_assign_host

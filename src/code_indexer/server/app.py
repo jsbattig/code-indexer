@@ -62,6 +62,7 @@ from .auth.oauth.routes import router as oauth_router
 from .mcp.protocol import mcp_router
 from .global_routes.routes import router as global_routes_router
 from .web import web_router, user_router, init_session_manager
+from .routers.ssh_keys import router as ssh_keys_router
 from .models.branch_models import BranchListResponse
 from .models.activated_repository import ActivatedRepository
 from .services.branch_service import BranchService
@@ -1735,6 +1736,37 @@ def create_app() -> FastAPI:
             logger.error(
                 f"Failed to migrate/bootstrap cidx-meta on startup: {e}", exc_info=True
             )
+
+        # Startup: Run SSH key migration (first-time auto-discovery)
+        logger.info("Server startup: Checking SSH key migration")
+        try:
+            from code_indexer.server.services.ssh_startup_migration import (
+                run_ssh_migration_on_startup,
+            )
+
+            migration_result = run_ssh_migration_on_startup(
+                server_data_dir=server_data_dir,
+                skip_key_testing=True,  # Skip actual SSH testing during startup
+            )
+
+            # Store migration result in app state for Web UI access
+            app.state.ssh_migration_result = migration_result
+
+            if migration_result.skipped:
+                logger.info("SSH key migration: Skipped (already completed)")
+            else:
+                logger.info(
+                    f"SSH key migration: Completed - "
+                    f"{migration_result.keys_discovered} keys discovered, "
+                    f"{migration_result.keys_imported} imported"
+                )
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to run SSH key migration on startup: {e}", exc_info=True
+            )
+            app.state.ssh_migration_result = None
 
         # Startup: Initialize and start global repos background services
         logger.info("Server startup: Starting global repos background services")
@@ -6096,6 +6128,7 @@ def create_app() -> FastAPI:
     app.include_router(oauth_router)
     app.include_router(mcp_router)
     app.include_router(global_routes_router)
+    app.include_router(ssh_keys_router)
 
     # Mount Web Admin UI routes and static files
     from fastapi.staticfiles import StaticFiles
