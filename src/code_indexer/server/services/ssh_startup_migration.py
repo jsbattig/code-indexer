@@ -1,0 +1,97 @@
+"""
+SSH Key Migration Startup Service.
+
+Provides a simple entry point for running SSH key migration during server startup.
+"""
+
+import logging
+from pathlib import Path
+from typing import Optional
+
+from .migration_orchestrator import MigrationOrchestrator, MigrationResult
+
+
+logger = logging.getLogger(__name__)
+
+
+def run_ssh_migration_on_startup(
+    server_data_dir: str,
+    ssh_dir: Optional[str] = None,
+    skip_key_testing: bool = False,
+) -> MigrationResult:
+    """
+    Run SSH key migration on server startup.
+
+    This function is called during server startup to auto-discover and import
+    existing SSH keys. It runs only once (migration metadata prevents re-running).
+
+    Args:
+        server_data_dir: Path to CIDX server data directory (e.g., ~/.code-indexer-server)
+        ssh_dir: Path to SSH directory. Defaults to ~/.ssh
+        skip_key_testing: If True, skip SSH authentication testing during migration
+
+    Returns:
+        MigrationResult with details of the migration
+    """
+    server_data_path = Path(server_data_dir)
+
+    # Set up paths
+    if ssh_dir is None:
+        ssh_path = Path.home() / ".ssh"
+    else:
+        ssh_path = Path(ssh_dir)
+
+    metadata_dir = server_data_path / "ssh_keys"
+    migration_metadata_path = server_data_path / "ssh_migration.json"
+    cidx_config_path = server_data_path / "config.json"
+
+    logger.info("SSH key migration: Checking if migration is needed...")
+
+    # Create orchestrator
+    orchestrator = MigrationOrchestrator(
+        ssh_dir=ssh_path,
+        metadata_dir=metadata_dir,
+        migration_metadata_path=migration_metadata_path,
+        cidx_config_path=cidx_config_path,
+        skip_key_testing=skip_key_testing,
+    )
+
+    # Check if migration should run
+    if not orchestrator.should_run_migration():
+        logger.info("SSH key migration: Already completed, skipping")
+        return MigrationResult(
+            skipped=True,
+            reason="Already completed",
+        )
+
+    # Run migration
+    logger.info("SSH key migration: Running first-time migration...")
+
+    try:
+        result = orchestrator.run_migration()
+
+        if result.completed:
+            logger.info(
+                f"SSH key migration: Completed successfully - "
+                f"{result.keys_discovered} keys discovered, "
+                f"{result.keys_imported} imported, "
+                f"{result.mappings_imported} existing mappings imported"
+            )
+            if result.failed_hosts:
+                logger.warning(
+                    f"SSH key migration: {len(result.failed_hosts)} hosts failed "
+                    f"during key testing (timeouts or connection failures)"
+                )
+        else:
+            logger.warning(f"SSH key migration: Completed with issues - {result.reason}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"SSH key migration: Failed with error - {e}")
+        # Return a failed result but don't crash server startup
+        return MigrationResult(
+            completed=False,
+            skipped=False,
+            reason=str(e),
+        )
