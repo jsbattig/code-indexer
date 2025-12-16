@@ -423,3 +423,29 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 assert Path(scip_dir_arg) == golden_repos_dir
                 # Should contain SCIP files
                 assert list(Path(scip_dir_arg).glob("**/*.scip"))
+
+
+class TestScipHandlerRegistration:
+    """Tests for SCIP handler registration in HANDLER_REGISTRY."""
+
+    def test_scip_handlers_registered_in_handler_registry(self) -> None:
+        """Verify all 7 SCIP handlers are registered in HANDLER_REGISTRY.
+
+        This test prevents regression of the bug where SCIP handlers were defined
+        but not registered, causing "Handler not implemented" errors.
+        """
+        from code_indexer.server.mcp.handlers import HANDLER_REGISTRY
+
+        expected_handlers = [
+            "scip_definition",
+            "scip_references",
+            "scip_dependencies",
+            "scip_dependents",
+            "scip_impact",
+            "scip_callchain",
+            "scip_context",
+        ]
+
+        for handler_name in expected_handlers:
+            assert handler_name in HANDLER_REGISTRY, f"Handler '{handler_name}' not registered in HANDLER_REGISTRY"
+            assert callable(HANDLER_REGISTRY[handler_name]), f"Handler '{handler_name}' is not callable"

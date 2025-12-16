@@ -3963,3 +3963,12 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 # Register the quick_reference handler
 HANDLER_REGISTRY["cidx_quick_reference"] = quick_reference
+
+# Register SCIP handlers
+HANDLER_REGISTRY["scip_definition"] = scip_definition
+HANDLER_REGISTRY["scip_references"] = scip_references
+HANDLER_REGISTRY["scip_dependencies"] = scip_dependencies
+HANDLER_REGISTRY["scip_dependents"] = scip_dependents
+HANDLER_REGISTRY["scip_impact"] = scip_impact
+HANDLER_REGISTRY["scip_callchain"] = scip_callchain
+HANDLER_REGISTRY["scip_context"] = scip_context
