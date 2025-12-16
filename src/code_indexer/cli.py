@@ -6444,13 +6444,22 @@ def _status_impl(ctx):
                                     if status_file.exists():
                                         try:
                                             import json
+
                                             with open(status_file) as f:
                                                 scip_status_data = json.load(f)
 
-                                            overall_status = scip_status_data.get("overall_status", "unknown")
-                                            total_projects = scip_status_data.get("total_projects", 0)
-                                            successful = scip_status_data.get("successful_projects", 0)
-                                            failed = scip_status_data.get("failed_projects", 0)
+                                            overall_status = scip_status_data.get(
+                                                "overall_status", "unknown"
+                                            )
+                                            total_projects = scip_status_data.get(
+                                                "total_projects", 0
+                                            )
+                                            successful = scip_status_data.get(
+                                                "successful_projects", 0
+                                            )
+                                            failed = scip_status_data.get(
+                                                "failed_projects", 0
+                                            )
 
                                             # Status emoji based on overall status
                                             if overall_status == "success":
@@ -6464,13 +6473,17 @@ def _status_impl(ctx):
                                                 status_text = "Generation failed"
                                             else:
                                                 status_emoji = "📊"
-                                                status_text = f"{len(scip_db_files)} databases"
+                                                status_text = (
+                                                    f"{len(scip_db_files)} databases"
+                                                )
 
                                             index_files_status.append(
                                                 f"SCIP Index: {status_emoji} {size_mb:.1f} MB ({status_text})"
                                             )
                                         except Exception as e:
-                                            logger.debug(f"Failed to parse SCIP status.json: {e}")
+                                            logger.debug(
+                                                f"Failed to parse SCIP status.json: {e}"
+                                            )
                                             # Fallback to basic display
                                             index_files_status.append(fallback_msg)
                                     else:
@@ -9460,6 +9473,177 @@ def server_restart(ctx, server_dir: Optional[str]):
     except KeyboardInterrupt:
         console.print("\n❌ Operation cancelled by user", style="red")
         sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        sys.exit(1)
+
+
+@server_group.command("add-index")
+@click.argument("alias")
+@click.argument("index_type", type=click.Choice(["semantic_fts", "temporal", "scip"]))
+@click.option("--quiet", is_flag=True, help="Minimal output for scripting")
+@click.option("--wait", is_flag=True, help="Wait for job completion")
+@click.option(
+    "--timeout", default=1800, help="Timeout in seconds for --wait (default: 1800)"
+)
+@click.pass_context
+def server_add_index(
+    ctx, alias: str, index_type: str, quiet: bool, wait: bool, timeout: int
+):
+    """Add an index type to a golden repository.
+
+    ALIAS is the golden repository alias.
+    INDEX_TYPE is one of: semantic_fts, temporal, scip
+    """
+    try:
+        from .api_clients.admin_client import AdminAPIClient
+        from .remote.config import RemoteConfig
+
+        # Get project root
+        project_root = find_project_root(Path.cwd())
+
+        # Load remote configuration
+        remote_config = RemoteConfig(project_root)
+        decrypted_creds = remote_config.get_decrypted_credentials()
+        server_url = remote_config.server_url
+
+        if not decrypted_creds or not server_url:
+            console.print(
+                "❌ Error: Not authenticated. Run 'cidx server login' first.",
+                style="red",
+            )
+            sys.exit(1)
+
+        # Convert DecryptedCredentials to dict for AdminAPIClient
+        credentials = {
+            "username": decrypted_creds.username,
+            "password": decrypted_creds.password,
+        }
+
+        # Create admin client and call add_index_to_golden_repo
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=None,
+        )
+
+        result = run_async(admin_client.add_index_to_golden_repo(alias, index_type))
+
+        job_id = result.get("job_id")
+
+        if not quiet:
+            console.print(f"✅ Job submitted: {job_id}", style="green")
+
+        # If --wait flag is set, poll job status until completion
+        if wait:
+            start_time = time.time()
+
+            while True:
+                # Check timeout
+                if time.time() - start_time > timeout:
+                    console.print(
+                        "❌ Error: Timeout waiting for job completion", style="red"
+                    )
+                    sys.exit(2)
+
+                # Get job status
+                job_status = run_async(admin_client.get_job_status(job_id))
+                status = job_status.get("status")
+
+                if status == "completed":
+                    if not quiet:
+                        console.print(
+                            f"✅ Index '{index_type}' added to '{alias}' successfully",
+                            style="green",
+                        )
+                    sys.exit(0)
+
+                if status == "failed":
+                    error = job_status.get("error", "Unknown error")
+                    console.print(
+                        f"❌ Error: Index addition failed: {error}", style="red"
+                    )
+                    sys.exit(1)
+
+                # Display progress if not quiet
+                if not quiet:
+                    progress = job_status.get("progress", 0)
+                    console.print(f"Progress: {progress}%", end="\r")
+
+                # Wait 2 seconds before polling again
+                time.sleep(2)
+        else:
+            # No --wait flag, just output job_id
+            if quiet:
+                console.print(job_id)
+            sys.exit(0)
+
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        sys.exit(1)
+
+
+@server_group.command("list-indexes")
+@click.argument("alias")
+@click.option("--json", "json_output", is_flag=True, help="JSON output")
+@click.pass_context
+def server_list_indexes(ctx, alias: str, json_output: bool):
+    """List index status for a golden repository.
+
+    ALIAS is the golden repository alias.
+    """
+    try:
+        from .api_clients.admin_client import AdminAPIClient
+        from .remote.config import RemoteConfig
+        import json as json_lib
+
+        # Get project root
+        project_root = find_project_root(Path.cwd())
+
+        # Load remote configuration
+        remote_config = RemoteConfig(project_root)
+        decrypted_creds = remote_config.get_decrypted_credentials()
+        server_url = remote_config.server_url
+
+        if not decrypted_creds or not server_url:
+            console.print(
+                "❌ Error: Not authenticated. Run 'cidx server login' first.",
+                style="red",
+            )
+            sys.exit(1)
+
+        # Convert DecryptedCredentials to dict for AdminAPIClient
+        credentials = {
+            "username": decrypted_creds.username,
+            "password": decrypted_creds.password,
+        }
+
+        # Create admin client and call get_golden_repo_indexes
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=None,
+        )
+
+        result = run_async(admin_client.get_golden_repo_indexes(alias))
+
+        if json_output:
+            console.print(json_lib.dumps(result, indent=2))
+        else:
+            # Display formatted output
+            console.print(f"\nIndex Status for '{result['alias']}':", style="cyan bold")
+            console.print()
+            indexes = result.get("indexes", {})
+            for index_type in ["semantic_fts", "temporal", "scip"]:
+                index_info = indexes.get(index_type, {})
+                present = index_info.get("present", False)
+                status = "present" if present else "not present"
+                style = "green" if present else "dim"
+                console.print(f"  {index_type:15} {status}", style=style)
+            console.print()
+
+        sys.exit(0)
+
     except Exception as e:
         console.print(f"❌ Error: {str(e)}", style="red")
         sys.exit(1)

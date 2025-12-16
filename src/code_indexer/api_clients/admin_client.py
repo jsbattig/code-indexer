@@ -801,6 +801,140 @@ class AdminAPIClient(CIDXRemoteAPIClient):
         except Exception as e:
             raise APIClientError(f"Unexpected error deleting golden repository: {e}")
 
+    async def add_index_to_golden_repo(
+        self, alias: str, index_type: str
+    ) -> Dict[str, Any]:
+        """Add an index type to a golden repository (admin only).
+
+        Args:
+            alias: Golden repository alias
+            index_type: Type of index to add (semantic_fts, temporal, scip)
+
+        Returns:
+            Dictionary with job_id and status
+
+        Raises:
+            APIClientError: If API request fails
+            AuthenticationError: If authentication fails or insufficient privileges
+            NetworkError: If network request fails
+        """
+        try:
+            request_data = {"index_type": index_type}
+            response = await self._authenticated_request(
+                "POST", f"/api/admin/golden-repos/{alias}/indexes", json=request_data
+            )
+
+            if response.status_code == 202:
+                return dict(response.json())
+            elif response.status_code == 400:
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", "Invalid request")
+                except Exception:
+                    error_detail = "Invalid request"
+                raise APIClientError(f"Invalid request: {error_detail}", 400)
+            elif response.status_code == 403:
+                raise AuthenticationError(
+                    "Insufficient privileges for adding index to golden repository (admin role required)"
+                )
+            elif response.status_code == 404:
+                raise APIClientError(f"Golden repository '{alias}' not found", 404)
+            elif response.status_code == 409:
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", "Index already exists")
+                except Exception:
+                    error_detail = "Index already exists"
+                raise APIClientError(error_detail, 409)
+            else:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get(
+                        "detail", f"HTTP {response.status_code}"
+                    )
+                except Exception:
+                    error_detail = f"HTTP {response.status_code}"
+
+                raise APIClientError(
+                    f"Failed to add index to golden repository: {error_detail}",
+                    response.status_code,
+                )
+
+        except (
+            APIClientError,
+            AuthenticationError,
+            NetworkError,
+            NetworkConnectionError,
+            NetworkTimeoutError,
+            DNSResolutionError,
+            SSLCertificateError,
+            ServerError,
+            RateLimitError,
+        ):
+            raise
+        except Exception as e:
+            raise APIClientError(
+                f"Unexpected error adding index to golden repository: {e}"
+            )
+
+    async def get_golden_repo_indexes(self, alias: str) -> Dict[str, Any]:
+        """Get index status for a golden repository (admin only).
+
+        Args:
+            alias: Golden repository alias
+
+        Returns:
+            Dictionary with alias and index presence information
+
+        Raises:
+            APIClientError: If API request fails
+            AuthenticationError: If authentication fails or insufficient privileges
+            NetworkError: If network request fails
+        """
+        try:
+            response = await self.get(f"/api/admin/golden-repos/{alias}/indexes")
+
+            if response.status_code == 200:
+                return dict(response.json())
+            elif response.status_code == 403:
+                raise AuthenticationError(
+                    "Insufficient privileges for golden repository index query (admin role required)"
+                )
+            elif response.status_code == 404:
+                raise APIClientError(f"Golden repository '{alias}' not found", 404)
+            else:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get(
+                        "detail", f"HTTP {response.status_code}"
+                    )
+                except Exception:
+                    error_detail = f"HTTP {response.status_code}"
+
+                raise APIClientError(
+                    f"Failed to get golden repository indexes: {error_detail}",
+                    response.status_code,
+                )
+
+        except (
+            APIClientError,
+            AuthenticationError,
+            NetworkError,
+            NetworkConnectionError,
+            NetworkTimeoutError,
+            DNSResolutionError,
+            SSLCertificateError,
+            ServerError,
+            RateLimitError,
+        ):
+            raise
+        except Exception as e:
+            raise APIClientError(
+                f"Unexpected error getting golden repository indexes: {e}"
+            )
+
     async def cleanup_jobs(self, max_age_hours: int = 24) -> Dict[str, Any]:  # type: ignore[empty-body]
         """Clean up old completed/failed background jobs (admin only).
 
