@@ -1587,3 +1587,97 @@ class GoldenRepoManager:
             return scip_dir.exists()
 
         return False
+
+    def get_golden_repo_indexes(self, alias: str) -> Dict[str, Any]:
+        """
+        Get structured status of all index types for a golden repository.
+
+        This method examines the filesystem to determine which index types exist
+        for the specified golden repository and returns their current status.
+
+        Args:
+            alias: The golden repo alias
+
+        Returns:
+            Dictionary with structure:
+            {
+                "alias": str,
+                "indexes": {
+                    "semantic_fts": {"exists": bool, "path": str|None, "last_updated": str|None},
+                    "temporal": {"exists": bool, "path": str|None, "last_updated": str|None},
+                    "scip": {"exists": bool, "path": str|None, "last_updated": str|None}
+                }
+            }
+
+        Raises:
+            ValueError: If alias not found
+        """
+        # Validate alias exists
+        if alias not in self.golden_repos:
+            raise ValueError(f"Golden repository '{alias}' not found")
+
+        golden_repo = self.golden_repos[alias]
+        repo_dir = Path(golden_repo.clone_path)
+
+        # Check each index type using helper method
+        indexes = {
+            "semantic_fts": self._get_index_status(repo_dir, "semantic_fts", golden_repo),
+            "temporal": self._get_index_status(repo_dir, "temporal", golden_repo),
+            "scip": self._get_index_status(repo_dir, "scip", golden_repo)
+        }
+
+        return {
+            "alias": alias,
+            "indexes": indexes
+        }
+
+    def _get_index_status(self, repo_dir: Path, index_type: str, golden_repo: GoldenRepo) -> Dict[str, Any]:
+        """
+        Get status dictionary for a single index type.
+
+        Args:
+            repo_dir: Repository directory path
+            index_type: Index type ("semantic_fts", "temporal", "scip")
+            golden_repo: Golden repository object
+
+        Returns:
+            Status dict with exists, path, last_updated keys
+        """
+        path_map = {
+            "semantic_fts": "tantivy_index",
+            "temporal": "index",
+            "scip": "scip"
+        }
+
+        exists = self._index_exists(golden_repo, index_type)
+        if exists:
+            index_path = repo_dir / ".code-indexer" / path_map[index_type]
+            return {
+                "exists": True,
+                "path": str(index_path),
+                "last_updated": self._get_directory_last_modified(index_path)
+            }
+        return {"exists": False, "path": None, "last_updated": None}
+
+    def _get_directory_last_modified(self, dir_path: Path) -> Optional[str]:
+        """
+        Get the last modified timestamp of a directory in ISO 8601 format.
+
+        Args:
+            dir_path: Path to directory
+
+        Returns:
+            ISO 8601 timestamp string or None if directory doesn't exist
+        """
+        if not dir_path.exists():
+            return None
+
+        try:
+            mtime = dir_path.stat().st_mtime
+            dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            return dt.isoformat()
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                f"Failed to get last modified time for {dir_path}: {e}"
+            )
+            return None

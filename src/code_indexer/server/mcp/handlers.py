@@ -1757,6 +1757,89 @@ async def handle_set_global_config(args: Dict[str, Any], user: User) -> Dict[str
         return _mcp_response({"success": False, "error": str(e)})
 
 
+async def handle_add_golden_repo_index(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for add_golden_repo_index tool (Story #596 AC1, AC3, AC4, AC5)."""
+    alias = args.get("alias")
+    index_type = args.get("index_type")
+
+    # Validate required parameters
+    if not alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: alias"}
+        )
+
+    if not index_type:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: index_type"}
+        )
+
+    try:
+        # Get GoldenRepoManager from app state
+        golden_repo_manager = getattr(app_module, "golden_repo_manager", None)
+        if not golden_repo_manager:
+            return _mcp_response(
+                {"success": False, "error": "Golden repository manager not available"}
+            )
+
+        # Call backend method to submit background job
+        job_id = golden_repo_manager.add_index_to_golden_repo(
+            alias=alias,
+            index_type=index_type,
+            submitter_username=user.username
+        )
+
+        return _mcp_response({
+            "success": True,
+            "job_id": job_id,
+            "message": f"Index type '{index_type}' is being added to golden repo '{alias}'. Use get_job_statistics to track progress."
+        })
+
+    except ValueError as e:
+        # AC4: Unknown alias, AC3: Invalid type, AC5: Already exists
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.error(f"Error adding index to golden repo: {e}")
+        return _mcp_response(
+            {"success": False, "error": f"Failed to add index: {str(e)}"}
+        )
+
+
+async def handle_get_golden_repo_indexes(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for get_golden_repo_indexes tool (Story #596 AC2, AC4)."""
+    alias = args.get("alias")
+
+    # Validate required parameter
+    if not alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: alias"}
+        )
+
+    try:
+        # Get GoldenRepoManager from app state
+        golden_repo_manager = getattr(app_module, "golden_repo_manager", None)
+        if not golden_repo_manager:
+            return _mcp_response(
+                {"success": False, "error": "Golden repository manager not available"}
+            )
+
+        # Get index status from backend
+        status = golden_repo_manager.get_golden_repo_indexes(alias)
+
+        return _mcp_response({
+            "success": True,
+            **status
+        })
+
+    except ValueError as e:
+        # AC4: Unknown alias
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.error(f"Error getting golden repo indexes: {e}")
+        return _mcp_response(
+            {"success": False, "error": f"Failed to get indexes: {str(e)}"}
+        )
+
+
 async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handle omni-regex search across multiple repositories."""
     import json as json_module
@@ -1935,6 +2018,8 @@ HANDLER_REGISTRY = {
     "global_repo_status": handle_global_repo_status,
     "get_global_config": handle_get_global_config,
     "set_global_config": handle_set_global_config,
+    "add_golden_repo_index": handle_add_golden_repo_index,
+    "get_golden_repo_indexes": handle_get_golden_repo_indexes,
     "regex_search": handle_regex_search,
 }
 

@@ -1385,6 +1385,111 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["success"],
         },
     },
+    "add_golden_repo_index": {
+        "name": "add_golden_repo_index",
+        "description": "Add an index type to an existing golden repository. Submits a background job and returns job_id for tracking. INDEX TYPES: 'semantic_fts' (semantic search + full-text search), 'temporal' (git history/time-based search), 'scip' (call graph for code navigation). WORKFLOW: (1) Call add_golden_repo_index with alias and index_type, (2) Returns job_id immediately, (3) Monitor progress via get_job_statistics. REQUIREMENTS: Repository must already exist as golden repo (use add_golden_repo first if needed). ERROR CASES: Returns error if alias not found, invalid index_type, or index already exists (idempotent). PERFORMANCE: Index addition runs in background - semantic_fts takes seconds to minutes, temporal depends on commit history size, scip depends on codebase complexity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string",
+                    "description": "Golden repository alias (base name, not '-global' suffix)",
+                },
+                "index_type": {
+                    "type": "string",
+                    "enum": ["semantic_fts", "temporal", "scip"],
+                    "description": "Index type to add: 'semantic_fts' for semantic+FTS search, 'temporal' for git history search, 'scip' for call graph navigation",
+                },
+            },
+            "required": ["alias", "index_type"],
+        },
+        "required_permission": "manage_golden_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean",
+                    "description": "Whether operation succeeded",
+                },
+                "job_id": {
+                    "type": "string",
+                    "description": "Background job ID for tracking progress",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Status message with guidance on tracking progress",
+                },
+                "error": {
+                    "type": "string",
+                    "description": "Error message if operation failed (alias not found, invalid type, or index already exists)",
+                },
+            },
+            "required": ["success"],
+        },
+    },
+    "get_golden_repo_indexes": {
+        "name": "get_golden_repo_indexes",
+        "description": "Get structured status of all index types for a golden repository. Shows which indexes exist (semantic_fts, temporal, scip) with paths and last updated timestamps. USE CASES: (1) Check if index types are available before querying, (2) Verify index addition completed successfully, (3) Troubleshoot missing search capabilities. RESPONSE: Returns exists flag, filesystem path, and last_updated timestamp for each index type. Empty/null values indicate index does not exist yet.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string",
+                    "description": "Golden repository alias (base name, not '-global' suffix)",
+                }
+            },
+            "required": ["alias"],
+        },
+        "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean",
+                    "description": "Whether operation succeeded",
+                },
+                "alias": {
+                    "type": "string",
+                    "description": "Golden repository alias",
+                },
+                "indexes": {
+                    "type": "object",
+                    "description": "Status of each index type",
+                    "properties": {
+                        "semantic_fts": {
+                            "type": "object",
+                            "properties": {
+                                "exists": {"type": "boolean"},
+                                "path": {"type": ["string", "null"]},
+                                "last_updated": {"type": ["string", "null"]},
+                            },
+                        },
+                        "temporal": {
+                            "type": "object",
+                            "properties": {
+                                "exists": {"type": "boolean"},
+                                "path": {"type": ["string", "null"]},
+                                "last_updated": {"type": ["string", "null"]},
+                            },
+                        },
+                        "scip": {
+                            "type": "object",
+                            "properties": {
+                                "exists": {"type": "boolean"},
+                                "path": {"type": ["string", "null"]},
+                                "last_updated": {"type": ["string", "null"]},
+                            },
+                        },
+                    },
+                },
+                "error": {
+                    "type": "string",
+                    "description": "Error message if operation failed (alias not found)",
+                },
+            },
+            "required": ["success"],
+        },
+    },
     "manage_composite_repository": {
         "name": "manage_composite_repository",
         "description": "Manage composite repository operations",
