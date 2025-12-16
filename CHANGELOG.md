@@ -99,7 +99,25 @@ cidx server list-indexes my-repo --json
 
 **Agent Usage**: AI agents can now respond to natural language requests like "add temporal search to my-repo repository" by calling MCP tools directly.
 
-**Epic #592 Progress**: Backend service (#593), REST API (#594), CLI commands (#595), and MCP tools (#596) complete. Web UI (#597) pending.
+#### Web UI for Index Management (Story #597)
+
+**Feature**: Added visual interface for managing golden repository indexes through the admin Web UI.
+
+**Capabilities**:
+- View index status (Semantic+FTS, Temporal, SCIP) with visual indicators on Golden Repos detail page
+- Add missing indexes via dropdown form with confirmation dialog
+- Real-time job progress tracking with 5-second polling
+- Success/failure notifications with auto-refresh on completion
+- Empty state handling when all indexes present
+
+**Implementation**:
+- `golden_repo_indexes.js` (~270 lines) - Frontend logic for form submission, job polling, progress display
+- `golden_repos_list.html` - Indexes Management section in details row
+- `admin.css` - Styling for index status grid, forms, job progress, spinner animations
+
+**User Experience**: Administrators can now add indexes without CLI/API knowledge, with clear visual feedback throughout the async operation.
+
+**Epic #592 Complete**: All 5 stories shipped - Backend service (#593), REST API (#594), CLI commands (#595), MCP tools (#596), and Web UI (#597) all implemented. Golden repositories now support incremental index addition across all interface layers.
 
 ## [8.5.0] - 2025-12-14
 

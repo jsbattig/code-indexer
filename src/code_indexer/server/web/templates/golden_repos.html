@@ -204,6 +204,13 @@ function restoreOpenDetails() {
     }
 }
 
+// Load index management functions
+(function() {
+    const script = document.createElement('script');
+    script.src = '/admin/static/js/golden_repo_indexes.js';
+    document.head.appendChild(script);
+})();
+
 function showActivateModal(alias) {
     const modal = document.getElementById('activate-modal');
     const aliasInput = document.getElementById('activate-golden-alias');

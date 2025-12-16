@@ -131,6 +131,80 @@
                         </div>
                         {% endif %}
                     </div>
+
+                    <!-- Indexes Management Section -->
+                    <div class="indexes-management">
+                        <h4>Indexes Management</h4>
+                        <div class="indexes-status-grid">
+                            <div class="index-status-item">
+                                <label>Semantic + FTS:</label>
+                                <span class="index-status" data-index-type="semantic_fts" data-repo-alias="{{ repo.alias }}">
+                                    {% if repo.has_semantic and repo.has_fts %}
+                                    <span class="status-icon present">✓</span> <span class="status-text">Present</span>
+                                    {% else %}
+                                    <span class="status-icon not-present">-</span> <span class="status-text">Not Present</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            <div class="index-status-item">
+                                <label>Temporal (Git History):</label>
+                                <span class="index-status" data-index-type="temporal" data-repo-alias="{{ repo.alias }}">
+                                    {% if repo.has_temporal %}
+                                    <span class="status-icon present">✓</span> <span class="status-text">Present</span>
+                                    {% else %}
+                                    <span class="status-icon not-present">-</span> <span class="status-text">Not Present</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            <div class="index-status-item">
+                                <label>SCIP (Code Intelligence):</label>
+                                <span class="index-status" data-index-type="scip" data-repo-alias="{{ repo.alias }}">
+                                    {% if repo.has_scip %}
+                                    <span class="status-icon present">✓</span> <span class="status-text">Present</span>
+                                    {% else %}
+                                    <span class="status-icon not-present">-</span> <span class="status-text">Not Present</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Add Index Button and Form -->
+                        <div class="add-index-container" id="add-index-container-{{ repo.alias }}">
+                            {% if not (repo.has_semantic and repo.has_fts and repo.has_temporal and repo.has_scip) %}
+                            <button class="outline small" onclick="showAddIndexForm('{{ repo.alias }}')">Add Index</button>
+
+                            <div id="add-index-form-{{ repo.alias }}" class="add-index-form" style="display: none;">
+                                <label for="index-type-{{ repo.alias }}">Select Index Type:</label>
+                                <select id="index-type-{{ repo.alias }}" name="index_type">
+                                    {% if not (repo.has_semantic and repo.has_fts) %}
+                                    <option value="semantic_fts">Semantic + FTS</option>
+                                    {% endif %}
+                                    {% if not repo.has_temporal %}
+                                    <option value="temporal">Temporal (Git History)</option>
+                                    {% endif %}
+                                    {% if not repo.has_scip %}
+                                    <option value="scip">SCIP (Code Intelligence)</option>
+                                    {% endif %}
+                                </select>
+                                <div class="form-actions">
+                                    <button class="small" onclick="submitAddIndex('{{ repo.alias }}')">Submit</button>
+                                    <button class="outline small" onclick="hideAddIndexForm('{{ repo.alias }}')">Cancel</button>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="all-indexes-present"><em>All index types are present</em></p>
+                            {% endif %}
+                        </div>
+
+                        <!-- Job Progress Container -->
+                        <div id="job-progress-{{ repo.alias }}" class="job-progress-container" style="display: none;">
+                            <div class="job-progress-header">
+                                <span class="job-status-text">Job Status: <span id="job-status-text-{{ repo.alias }}">pending</span></span>
+                                <span class="spinner" id="job-spinner-{{ repo.alias }}"></span>
+                            </div>
+                            <div class="job-progress-details" id="job-progress-details-{{ repo.alias }}"></div>
+                        </div>
+                    </div>
                 </article>
             </td>
         </tr>
