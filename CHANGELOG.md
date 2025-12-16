@@ -37,6 +37,70 @@ job_id = manager.add_index_to_golden_repo(
 
 **Foundation**: This backend service provides the core capability for REST API, CLI, MCP, and Web UI interfaces to add indexes incrementally.
 
+#### REST API for Golden Repo Index Management (Story #594)
+
+**Feature**: Added REST API endpoints for managing golden repository indexes, enabling HTTP-based administration and automation.
+
+**Endpoints**:
+- `POST /api/admin/golden-repos/{alias}/indexes` - Add index type to repository
+- `GET /api/admin/golden-repos/{alias}/indexes` - Query index status
+
+**Request/Response**:
+```json
+POST body: {"index_type": "temporal"}
+Response: {"job_id": "abc-123", "status": "pending"}
+
+GET response: {
+  "alias": "my-repo",
+  "indexes": {
+    "semantic_fts": {"present": true},
+    "temporal": {"present": false},
+    "scip": {"present": true}
+  }
+}
+```
+
+**Error Handling**: 404 (unknown alias), 400 (invalid type), 409 (already exists), 401 (unauthorized)
+
+#### CLI Server Mode Commands for Index Management (Story #595)
+
+**Feature**: Added CLI commands for adding and querying index types on golden repositories via server mode.
+
+**Commands**:
+- `cidx server add-index <alias> <index_type>` - Add index type (semantic_fts, temporal, scip)
+- `cidx server list-indexes <alias>` - Query index status
+
+**Features**:
+- `--wait` flag polls until job completes (2-second intervals)
+- `--timeout` flag for configurable polling timeout (default 1800s)
+- `--quiet` flag for minimal output (scripting-friendly)
+- `--json` flag for machine-readable output (list-indexes)
+- Exit codes: 0 (success), 1 (error), 2 (timeout)
+
+**Usage**:
+```bash
+cidx server add-index my-repo temporal --wait --timeout 3600
+cidx server list-indexes my-repo --json
+```
+
+#### MCP Tools for Index Management (Story #596)
+
+**Feature**: Added MCP (Model Context Protocol) tools for AI agents to manage golden repository indexes programmatically.
+
+**Tools**:
+- `add_golden_repo_index` - Submit background job to add index type
+- `get_golden_repo_indexes` - Query current index status for all three index types
+
+**Integration**:
+- Returns job_id for tracking via get_job_statistics tool
+- Full enum validation for index_type ["semantic_fts", "temporal", "scip"]
+- Comprehensive error handling (unknown alias, invalid type, already exists)
+- Required permissions: manage_golden_repos (add), query_repos (get)
+
+**Agent Usage**: AI agents can now respond to natural language requests like "add temporal search to my-repo repository" by calling MCP tools directly.
+
+**Epic #592 Progress**: Backend service (#593), REST API (#594), CLI commands (#595), and MCP tools (#596) complete. Web UI (#597) pending.
+
 ## [8.5.0] - 2025-12-14
 
 ### Changed
