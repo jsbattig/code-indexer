@@ -1400,3 +1400,190 @@ class GoldenRepoManager:
             await branch_service.get_golden_repo_branches(alias)
         )
         return branches
+
+    def add_index_to_golden_repo(
+        self,
+        alias: str,
+        index_type: str,
+        submitter_username: str = "admin",
+    ) -> str:
+        """
+        Add an index type to an existing golden repository.
+
+        This method submits a background job and returns immediately with a job_id.
+        Use BackgroundJobManager to track progress and results.
+
+        Args:
+            alias: The golden repo alias
+            index_type: One of "semantic_fts", "temporal", "scip"
+            submitter_username: Username for audit logging
+
+        Returns:
+            job_id: The background job ID for tracking
+
+        Raises:
+            ValueError: If alias not found, index_type invalid, or index already exists
+        """
+        # AC4: Validate alias exists
+        if alias not in self.golden_repos:
+            raise ValueError(f"Golden repository '{alias}' not found")
+
+        # AC2: Validate index_type
+        valid_index_types = ["semantic_fts", "temporal", "scip"]
+        if index_type not in valid_index_types:
+            raise ValueError(
+                f"Invalid index_type: {index_type}. Must be one of: {', '.join(valid_index_types)}"
+            )
+
+        # AC3: Check if index already exists (idempotent behavior)
+        golden_repo = self.golden_repos[alias]
+        if self._index_exists(golden_repo, index_type):
+            raise ValueError(
+                f"Index type '{index_type}' already exists for golden repo '{alias}'"
+            )
+
+        # AC1: Create background job and return job_id
+        def background_worker() -> Dict[str, Any]:
+            """Execute add index operation in background thread."""
+            try:
+                # Get repository details
+                repo = self.golden_repos[alias]
+                repo_path = repo.clone_path
+
+                # Initialize stdout/stderr tracking (AC5, AC6, AC7)
+                captured_stdout = ""
+                captured_stderr = ""
+
+                # AC5: semantic_fts - execute cidx index --fts
+                if index_type == "semantic_fts":
+                    command = ["cidx", "index", "--fts"]
+                    result = subprocess.run(
+                        command,
+                        cwd=repo_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                    )
+                    captured_stdout = result.stdout
+                    captured_stderr = result.stderr
+                    if result.returncode != 0:
+                        raise GoldenRepoError(
+                            f"Failed to create semantic_fts index: {result.stderr}"
+                        )
+
+                # AC6: temporal - execute cidx index --index-commits with options
+                elif index_type == "temporal":
+                    command = ["cidx", "index", "--index-commits"]
+
+                    # Read temporal options from GoldenRepo
+                    temporal_options = repo.temporal_options or {}
+
+                    # Apply temporal options or use defaults
+                    max_commits = temporal_options.get("max_commits", 1000)
+                    command.extend(["--max-commits", str(max_commits)])
+
+                    if "since_date" in temporal_options:
+                        command.extend(["--since-date", temporal_options["since_date"]])
+
+                    diff_context = temporal_options.get("diff_context", 5)
+                    command.extend(["--diff-context", str(diff_context)])
+
+                    if temporal_options.get("all_branches"):
+                        command.append("--all-branches")
+
+                    result = subprocess.run(
+                        command,
+                        cwd=repo_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                    )
+                    captured_stdout = result.stdout
+                    captured_stderr = result.stderr
+                    if result.returncode != 0:
+                        raise GoldenRepoError(
+                            f"Failed to create temporal index: {result.stderr}"
+                        )
+
+                # AC7: scip - execute cidx scip generate
+                elif index_type == "scip":
+                    command = ["cidx", "scip", "generate"]
+                    result = subprocess.run(
+                        command,
+                        cwd=repo_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                    )
+                    captured_stdout = result.stdout
+                    captured_stderr = result.stderr
+                    if result.returncode != 0:
+                        raise GoldenRepoError(
+                            f"Failed to create SCIP index: {result.stderr}"
+                        )
+
+                return {
+                    "success": True,
+                    "message": f"Index type '{index_type}' added successfully to '{alias}'",
+                    "stdout": captured_stdout,
+                    "stderr": captured_stderr,
+                }
+            except subprocess.CalledProcessError as e:
+                raise GoldenRepoError(
+                    f"Failed to add index: Command failed with exit code {e.returncode}: {e.stderr}"
+                )
+            except Exception as e:
+                raise GoldenRepoError(f"Failed to add index: {str(e)}")
+
+        # Submit to BackgroundJobManager
+        job_id = self.background_job_manager.submit_job(
+            operation_type="add_index",
+            func=background_worker,
+            submitter_username=submitter_username,
+            is_admin=True,
+        )
+        return job_id
+
+    def _index_exists(self, golden_repo: GoldenRepo, index_type: str) -> bool:
+        """
+        Check if an index type already exists for a golden repository.
+
+        Args:
+            golden_repo: The golden repository object
+            index_type: The index type to check ("semantic_fts", "temporal", "scip")
+
+        Returns:
+            True if the index exists, False otherwise
+        """
+        repo_dir = Path(golden_repo.clone_path)
+
+        if index_type == "semantic_fts":
+            # AC3: semantic_fts requires BOTH vector index AND FTS index with actual files
+            vector_index = repo_dir / ".code-indexer" / "index"
+            fts_index = repo_dir / ".code-indexer" / "tantivy_index"
+
+            # Check for actual index files, not just directories
+            has_vector_files = False
+            has_fts_files = False
+
+            if vector_index.exists():
+                # Check for any .json files in index subdirectories (collection folders)
+                has_vector_files = any(vector_index.rglob("*.json"))
+
+            if fts_index.exists():
+                # Check for meta.json or any index files
+                has_fts_files = (fts_index / "meta.json").exists() or any(fts_index.rglob("*.json"))
+
+            return has_vector_files and has_fts_files
+
+        elif index_type == "temporal":
+            # Temporal index detection is not yet implemented - always allow creation
+            # TODO: Implement proper detection by checking chunk metadata for commit hashes
+            return False
+
+        elif index_type == "scip":
+            # AC3: scip requires .code-indexer/scip/ directory
+            scip_dir = repo_dir / ".code-indexer" / "scip"
+            return scip_dir.exists()
+
+        return False

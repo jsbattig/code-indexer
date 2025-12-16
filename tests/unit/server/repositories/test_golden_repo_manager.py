@@ -575,6 +575,395 @@ class TestGoldenRepoManager:
         assert manager.data_dir == temp_data_dir
         assert os.path.exists(manager.golden_repos_dir)
 
+    def test_add_index_to_golden_repo_success(self, golden_repo_manager):
+        """Test successfully adding an index type to an existing golden repository (AC1)."""
+        # Add test repository
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path="/path/to/test-repo",
+            created_at="2023-01-01T00:00:00Z",
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        # Mock index existence check to return False (no existing index)
+        with patch.object(
+            golden_repo_manager, "_index_exists"
+        ) as mock_index_exists:
+            mock_index_exists.return_value = False
+
+            result = golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo",
+                index_type="temporal",
+                submitter_username="admin"
+            )
+
+            # Should return job_id string
+            assert isinstance(result, str)
+            assert result == "test-job-id-12345"
+
+            # Verify job was submitted with correct parameters
+            golden_repo_manager.background_job_manager.submit_job.assert_called_once()
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+            assert call_args[1]["operation_type"] == "add_index"
+            assert call_args[1]["submitter_username"] == "admin"
+            assert call_args[1]["is_admin"] is True
+
+    def test_add_index_to_golden_repo_invalid_index_type(self, golden_repo_manager):
+        """Test adding index with invalid index_type raises ValueError (AC2)."""
+        # Add test repository
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path="/path/to/test-repo",
+            created_at="2023-01-01T00:00:00Z",
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        with pytest.raises(ValueError, match="Invalid index_type: invalid_type. Must be one of: semantic_fts, temporal, scip"):
+            golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo",
+                index_type="invalid_type",
+                submitter_username="admin"
+            )
+
+        # No job should be created on validation failure
+        golden_repo_manager.background_job_manager.submit_job.assert_not_called()
+
+    def test_add_index_to_golden_repo_nonexistent_alias(self, golden_repo_manager):
+        """Test adding index to non-existent alias raises ValueError (AC4)."""
+        with pytest.raises(ValueError, match="Golden repository 'nonexistent' not found"):
+            golden_repo_manager.add_index_to_golden_repo(
+                alias="nonexistent",
+                index_type="temporal",
+                submitter_username="admin"
+            )
+
+        # No job should be created on validation failure
+        golden_repo_manager.background_job_manager.submit_job.assert_not_called()
+
+    def test_add_index_to_golden_repo_index_already_exists(self, golden_repo_manager):
+        """Test adding index when it already exists raises ValueError (AC3)."""
+        # Add test repository
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path="/path/to/test-repo",
+            created_at="2023-01-01T00:00:00Z",
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        # Mock index existence check to return True (index already exists)
+        with patch.object(
+            golden_repo_manager, "_index_exists"
+        ) as mock_index_exists:
+            mock_index_exists.return_value = True
+
+            with pytest.raises(ValueError, match="Index type 'temporal' already exists for golden repo 'test-repo'"):
+                golden_repo_manager.add_index_to_golden_repo(
+                    alias="test-repo",
+                    index_type="temporal",
+                    submitter_username="admin"
+                )
+
+            # No job should be created when index already exists
+            golden_repo_manager.background_job_manager.submit_job.assert_not_called()
+
+    def test_background_worker_semantic_fts_execution(self, golden_repo_manager):
+        """Test background worker executes correct command for semantic_fts index (AC5)."""
+        # Add test repository with actual path
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path=os.path.join(golden_repo_manager.golden_repos_dir, "test-repo"),
+            created_at="2023-01-01T00:00:00Z",
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        # Mock index existence check
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
+            mock_index_exists.return_value = False
+
+            # Call add_index_to_golden_repo
+            job_id = golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo",
+                index_type="semantic_fts",
+                submitter_username="admin"
+            )
+
+            # Get the background worker function
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+            background_worker = call_args[1]["func"]
+
+            # Execute the background worker and verify command
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                result = background_worker()
+
+                # Verify cidx index --fts was called with correct cwd
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args
+                command = call_args[0][0]
+                cwd = call_args[1]["cwd"]
+
+                assert command == ["cidx", "index", "--fts"]
+                assert cwd == test_repo.clone_path
+                assert result["success"] is True
+
+    def test_background_worker_temporal_execution(self, golden_repo_manager):
+        """Test background worker executes correct command for temporal index (AC6)."""
+        # Add test repository with temporal options
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path=os.path.join(golden_repo_manager.golden_repos_dir, "test-repo"),
+            created_at="2023-01-01T00:00:00Z",
+            enable_temporal=True,
+            temporal_options={"max_commits": 500, "since_date": "2024-01-01", "diff_context": 10}
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        # Mock index existence check
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
+            mock_index_exists.return_value = False
+
+            # Call add_index_to_golden_repo
+            job_id = golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo",
+                index_type="temporal",
+                submitter_username="admin"
+            )
+
+            # Get the background worker function
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+            background_worker = call_args[1]["func"]
+
+            # Execute the background worker and verify command
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                result = background_worker()
+
+                # Verify cidx index --index-commits was called with options
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args
+                command = call_args[0][0]
+                cwd = call_args[1]["cwd"]
+
+                assert "cidx" in command
+                assert "index" in command
+                assert "--index-commits" in command
+                assert "--max-commits" in command
+                assert "500" in command
+                assert "--since-date" in command
+                assert "2024-01-01" in command
+                assert "--diff-context" in command
+                assert "10" in command
+                assert cwd == test_repo.clone_path
+                assert result["success"] is True
+
+    def test_background_worker_scip_execution(self, golden_repo_manager):
+        """Test background worker executes correct command for SCIP index (AC7)."""
+        # Add test repository
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path=os.path.join(golden_repo_manager.golden_repos_dir, "test-repo"),
+            created_at="2023-01-01T00:00:00Z",
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        # Mock index existence check
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
+            mock_index_exists.return_value = False
+
+            # Call add_index_to_golden_repo
+            job_id = golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo",
+                index_type="scip",
+                submitter_username="admin"
+            )
+
+            # Get the background worker function
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+            background_worker = call_args[1]["func"]
+
+            # Execute the background worker and verify command
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                result = background_worker()
+
+                # Verify cidx scip generate was called with correct cwd
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args
+                command = call_args[0][0]
+                cwd = call_args[1]["cwd"]
+
+                assert command == ["cidx", "scip", "generate"]
+                assert cwd == test_repo.clone_path
+                assert result["success"] is True
+
+    def test_background_worker_timeout_handling(self, golden_repo_manager):
+        """Test that all subprocess calls include timeout parameter (CRITICAL ISSUE #6)."""
+        # Test semantic_fts
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path=os.path.join(golden_repo_manager.golden_repos_dir, "test-repo"),
+            created_at="2023-01-01T00:00:00Z",
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
+            mock_index_exists.return_value = False
+
+            for index_type in ["semantic_fts", "temporal", "scip"]:
+                job_id = golden_repo_manager.add_index_to_golden_repo(
+                    alias="test-repo",
+                    index_type=index_type,
+                    submitter_username="admin"
+                )
+
+                # Get the background worker function
+                call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+                background_worker = call_args[1]["func"]
+
+                # Execute and verify timeout parameter
+                with patch("subprocess.run") as mock_run:
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    background_worker()
+
+                    # Verify timeout=300 was passed
+                    call_kwargs = mock_run.call_args[1]
+                    assert "timeout" in call_kwargs, f"Missing timeout for {index_type}"
+                    assert call_kwargs["timeout"] == 300, f"Wrong timeout for {index_type}"
+
+    def test_background_worker_captures_stdout_stderr(self, golden_repo_manager):
+        """Test that background worker captures and returns stdout/stderr (CRITICAL ISSUE #3)."""
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path=os.path.join(golden_repo_manager.golden_repos_dir, "test-repo"),
+            created_at="2023-01-01T00:00:00Z",
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
+            mock_index_exists.return_value = False
+
+            job_id = golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo",
+                index_type="semantic_fts",
+                submitter_username="admin"
+            )
+
+            # Get the background worker function
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+            background_worker = call_args[1]["func"]
+
+            # Execute and verify stdout/stderr capture
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    returncode=0,
+                    stdout="Index created successfully",
+                    stderr="Processing 100 files..."
+                )
+
+                result = background_worker()
+
+                # Verify result contains stdout and stderr
+                assert result["success"] is True
+                assert "stdout" in result, "Missing stdout in result"
+                assert "stderr" in result, "Missing stderr in result"
+                assert result["stdout"] == "Index created successfully"
+                assert result["stderr"] == "Processing 100 files..."
+
+    def test_background_worker_temporal_default_options(self, golden_repo_manager):
+        """Test that temporal index uses correct default options (AC6)."""
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path=os.path.join(golden_repo_manager.golden_repos_dir, "test-repo"),
+            created_at="2023-01-01T00:00:00Z",
+            enable_temporal=False,
+            temporal_options=None,  # No options provided
+        )
+        golden_repo_manager.golden_repos["test-repo"] = test_repo
+
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
+            mock_index_exists.return_value = False
+
+            job_id = golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo",
+                index_type="temporal",
+                submitter_username="admin"
+            )
+
+            # Get the background worker function
+            call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+            background_worker = call_args[1]["func"]
+
+            # Execute and verify default options are in command
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                background_worker()
+
+                call_args = mock_run.call_args
+                command = call_args[0][0]
+
+                # Verify required base flags
+                assert "cidx" in command
+                assert "index" in command
+                assert "--index-commits" in command
+                # Verify default max-commits (1000)
+                assert "--max-commits" in command
+                assert "1000" in command
+                # Verify default diff-context (5)
+                assert "--diff-context" in command
+                assert "5" in command
+
+    def test_index_exists_semantic_fts_validates_actual_files(self, golden_repo_manager, temp_data_dir):
+        """Test that _index_exists checks for actual index files, not just directories (CRITICAL ISSUE #9)."""
+        # Create test repository
+        test_repo = GoldenRepo(
+            alias="test-repo",
+            repo_url="https://github.com/test/repo.git",
+            default_branch="main",
+            clone_path=os.path.join(temp_data_dir, "test-repo"),
+            created_at="2023-01-01T00:00:00Z",
+        )
+
+        # Create directories but no actual index files
+        index_dir = os.path.join(test_repo.clone_path, ".code-indexer", "index")
+        fts_dir = os.path.join(test_repo.clone_path, ".code-indexer", "tantivy_index")
+        os.makedirs(index_dir, exist_ok=True)
+        os.makedirs(fts_dir, exist_ok=True)
+
+        # Should return False because directories are empty
+        assert golden_repo_manager._index_exists(test_repo, "semantic_fts") is False
+
+        # Create actual index files
+        collection_dir = os.path.join(index_dir, "test_collection")
+        os.makedirs(collection_dir, exist_ok=True)
+        with open(os.path.join(collection_dir, "vector_1.json"), "w") as f:
+            f.write("{}")
+        with open(os.path.join(fts_dir, "meta.json"), "w") as f:
+            f.write("{}")
+
+        # Now should return True
+        assert golden_repo_manager._index_exists(test_repo, "semantic_fts") is True
+
 
 class TestGoldenRepo:
     """Test suite for GoldenRepo model."""
