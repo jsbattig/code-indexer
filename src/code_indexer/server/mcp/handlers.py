@@ -3779,4 +3779,4 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 
 # Register the quick_reference handler
-HANDLER_REGISTRY["quick_reference"] = quick_reference
+HANDLER_REGISTRY["cidx_quick_reference"] = quick_reference

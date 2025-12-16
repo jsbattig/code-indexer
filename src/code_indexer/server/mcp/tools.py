@@ -3599,8 +3599,8 @@ TOOL_REGISTRY["scip_context"] = {
 # Documentation & Help Tools
 # =============================================================================
 
-TOOL_REGISTRY["quick_reference"] = {
-    "name": "quick_reference",
+TOOL_REGISTRY["cidx_quick_reference"] = {
+    "name": "cidx_quick_reference",
     "description": (
         "TL;DR: Get quick reference documentation for CIDX MCP tools. Returns concise summaries of available tools with their purposes and when to use them. "
         "USE CASES: (1) Discover what tools are available, (2) Understand tool purposes before using them, (3) Find the right tool for a specific task, (4) Filter tools by category (search, scip, git, directory, user management). "
