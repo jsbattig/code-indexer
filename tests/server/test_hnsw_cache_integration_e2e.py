@@ -9,7 +9,6 @@ These tests use ZERO mocking - all real components:
 - Real cache with actual timing measurements
 """
 
-import os
 import tempfile
 import time
 from pathlib import Path

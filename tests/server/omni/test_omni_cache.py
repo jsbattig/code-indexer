@@ -4,7 +4,6 @@ Tests for OmniCache - cursor pagination with TTL and LRU eviction.
 Tests AC5: Cursor pagination cache with thread safety.
 """
 
-import pytest
 import time
 import threading
 from code_indexer.server.omni.omni_cache import OmniCache

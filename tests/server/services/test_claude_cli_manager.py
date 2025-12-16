@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import List, Tuple
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from code_indexer.server.services.claude_cli_manager import ClaudeCliManager
 

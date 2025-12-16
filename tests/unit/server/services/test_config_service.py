@@ -9,15 +9,12 @@ Tests verify that:
 """
 
 import pytest
-from pathlib import Path
 
 from code_indexer.server.services.config_service import ConfigService
 from code_indexer.server.utils.config_manager import (
     ServerConfig,
-    ServerResourceConfig,
     CacheConfig,
     ReindexingConfig,
-    PasswordSecurityConfig,
 )
 
 

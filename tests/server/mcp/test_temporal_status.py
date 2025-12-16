@@ -1,6 +1,5 @@
 """Tests for temporal status visibility in omni-search."""
 
-import pytest
 from unittest.mock import patch, Mock
 from code_indexer.server.mcp.handlers import _is_temporal_query, _get_temporal_status
 

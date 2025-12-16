@@ -15,9 +15,8 @@ import tempfile
 import shutil
 from pathlib import Path
 
-import pytest
 
-from code_indexer.server.auth.user_manager import UserManager, UserRole
+from code_indexer.server.auth.user_manager import UserManager
 from code_indexer.server.utils.config_manager import PasswordSecurityConfig
 
 

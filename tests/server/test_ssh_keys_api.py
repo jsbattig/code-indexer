@@ -1,20 +1,11 @@
 """Tests for SSH Keys REST API endpoints."""
 
-import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
-import json
 
 from code_indexer.server.services.ssh_key_manager import (
     SSHKeyManager,
     KeyMetadata,
     KeyListResult,
-    KeyNotFoundError,
-    HostConflictError,
-)
-from code_indexer.server.services.ssh_key_generator import (
-    InvalidKeyNameError,
-    KeyAlreadyExistsError,
 )
 
 
@@ -117,7 +108,6 @@ class TestSSHKeysRouterEndpoints:
     def test_get_public_key_success(self):
         """Should return public key content."""
         from code_indexer.server.routers.ssh_keys import get_public_key
-        from fastapi import Response
 
         mock_manager = MagicMock(spec=SSHKeyManager)
         mock_manager.get_public_key.return_value = "ssh-ed25519 AAAA... test"

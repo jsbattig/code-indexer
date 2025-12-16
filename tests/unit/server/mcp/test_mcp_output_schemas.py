@@ -10,7 +10,6 @@ to expect without guessing.
 
 import pytest
 import json
-from typing import Dict, Any
 from code_indexer.server.mcp.tools import TOOL_REGISTRY
 
 
@@ -452,7 +451,7 @@ class TestOutputSchemaCompleteness:
     async def test_get_job_statistics_schema_matches_handler_response(self):
         """Test that get_job_statistics output schema matches actual handler response."""
         from code_indexer.server.mcp.handlers import get_job_statistics
-        from code_indexer.server.auth.user_manager import User, UserRole
+        from code_indexer.server.auth.user_manager import User
         from unittest.mock import Mock, patch
 
         # Mock user

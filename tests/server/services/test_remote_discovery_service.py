@@ -1,7 +1,5 @@
 """Unit tests for RemoteDiscoveryService."""
 
-import pytest
-from pathlib import Path
 
 from code_indexer.server.services.remote_discovery_service import (
     RemoteDiscoveryService,

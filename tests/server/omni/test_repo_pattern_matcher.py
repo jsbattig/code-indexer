@@ -4,7 +4,6 @@ Unit tests for RepoPatternMatcher component.
 Tests the repository pattern matching and filtering logic for omni-search.
 """
 
-import pytest
 from code_indexer.server.omni.repo_pattern_matcher import RepoPatternMatcher
 
 

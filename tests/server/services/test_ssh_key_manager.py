@@ -1,17 +1,12 @@
 """Unit tests for SSHKeyManager service (core orchestrator)."""
 
 import pytest
-from pathlib import Path
 import json
-import os
 
 from code_indexer.server.services.ssh_key_manager import (
     SSHKeyManager,
-    KeyMetadata,
-    KeyListResult,
     KeyNotFoundError,
     HostConflictError,
-    PublicKeyNotFoundError,
 )
 
 

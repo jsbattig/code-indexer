@@ -1,13 +1,10 @@
 """Unit tests for SSHKeyGenerator service."""
 
 import pytest
-from pathlib import Path
-import os
 import stat
 
 from code_indexer.server.services.ssh_key_generator import (
     SSHKeyGenerator,
-    GeneratedKey,
     InvalidKeyNameError,
     KeyAlreadyExistsError,
 )

@@ -1,6 +1,5 @@
 """Tests for response_format parameter in omni-search handlers."""
 
-import pytest
 from code_indexer.server.mcp.handlers import _format_omni_response
 
 

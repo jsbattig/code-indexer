@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
 from datetime import datetime
 import json
 
@@ -10,7 +9,6 @@ from code_indexer.server.services.ssh_key_manager import (
     SSHKeyManager,
     KeyMetadata,
     KeyListResult,
-    KeyNotFoundError,
 )
 from code_indexer.server.auth.user_manager import User, UserRole
 

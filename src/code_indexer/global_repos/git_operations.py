@@ -990,7 +990,7 @@ class GitOperationsService:
         cmd = [
             "git",
             "log",
-            f"--format=%H%x00%h%x00%an%x00%aI%x00%s%x00",
+            "--format=%H%x00%h%x00%an%x00%aI%x00%s%x00",
             "--numstat",
             f"-{limit + 1}",
         ]

@@ -19,7 +19,6 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
-from code_indexer.server.omni.omni_search_service import OmniSearchService
 from code_indexer.server import app as app_module
 
 logger = logging.getLogger(__name__)
@@ -183,11 +182,9 @@ def _format_omni_response(
     return base_response
 
 
-
-
 def _is_temporal_query(params: Dict[str, Any]) -> bool:
     """Check if query includes temporal parameters.
-    
+
     Returns True if any temporal search parameters are present and truthy.
     """
     temporal_params = ["time_range", "time_range_all", "at_commit", "include_removed"]
@@ -196,10 +193,10 @@ def _is_temporal_query(params: Dict[str, Any]) -> bool:
 
 def _get_temporal_status(repo_aliases: List[str]) -> Dict[str, Any]:
     """Get temporal indexing status for each repository.
-    
+
     Args:
         repo_aliases: List of repository aliases to check
-        
+
     Returns:
         Dict with temporal_repos, non_temporal_repos, and optional warning
     """
@@ -207,29 +204,29 @@ def _get_temporal_status(repo_aliases: List[str]) -> Dict[str, Any]:
         golden_repos_dir = _get_golden_repos_dir()
         registry = GlobalRegistry(golden_repos_dir)
         all_repos = {r["alias_name"]: r for r in registry.list_global_repos()}
-        
+
         temporal_repos = []
         non_temporal_repos = []
-        
+
         for alias in repo_aliases:
             if alias in all_repos:
                 if all_repos[alias].get("enable_temporal", False):
                     temporal_repos.append(alias)
                 else:
                     non_temporal_repos.append(alias)
-        
+
         status: Dict[str, Any] = {
             "temporal_repos": temporal_repos,
             "non_temporal_repos": non_temporal_repos,
         }
-        
+
         if not temporal_repos and non_temporal_repos:
             status["warning"] = (
                 "None of the searched repositories have temporal indexing enabled. "
                 "Temporal queries will return no results. "
                 "Re-index with --index-commits to enable temporal search."
             )
-        
+
         return status
     except Exception:
         return {}
@@ -702,7 +699,6 @@ async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str,
 
 async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get detailed status of a repository."""
-    from pathlib import Path
 
     try:
         user_alias = params["repository_alias"]
@@ -767,7 +763,7 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             return _mcp_response(
                 {
                     "success": False,
-                    "error": f"Repository '.*' not found",
+                    "error": "Repository '.*' not found",
                     "job_id": None,
                 }
             )
@@ -1551,6 +1547,29 @@ async def get_job_statistics(params: Dict[str, Any], user: User) -> Dict[str, An
         return _mcp_response({"success": False, "error": str(e), "statistics": {}})
 
 
+async def get_job_details(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Get detailed information about a specific job including error messages."""
+    try:
+        job_id = params.get("job_id")
+        if not job_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: job_id"}
+            )
+
+        job = app_module.background_job_manager.get_job(job_id, user.username)
+        if not job:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": f"Job '{job_id}' not found or access denied",
+                }
+            )
+
+        return _mcp_response({"success": True, "job": job})
+    except Exception as e:
+        return _mcp_response({"success": False, "error": str(e)})
+
+
 async def get_all_repositories_status(
     params: Dict[str, Any], user: User
 ) -> Dict[str, Any]:
@@ -1842,7 +1861,7 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
         resolved = _resolve_repo_path(repository_alias, golden_repos_dir)
         if not resolved:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
         repo_path = Path(resolved)
 
@@ -1909,6 +1928,7 @@ HANDLER_REGISTRY = {
     "create_user": create_user,
     "get_repository_statistics": get_repository_statistics,
     "get_job_statistics": get_job_statistics,
+    "get_job_details": get_job_details,
     "get_all_repositories_status": get_all_repositories_status,
     "manage_composite_repository": manage_composite_repository,
     "list_global_repos": handle_list_global_repos,
@@ -2016,7 +2036,7 @@ async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2086,7 +2106,7 @@ async def handle_git_show_commit(args: Dict[str, Any], user: User) -> Dict[str, 
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2172,7 +2192,7 @@ async def handle_git_file_at_revision(
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2328,7 +2348,7 @@ async def handle_git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2405,7 +2425,7 @@ async def handle_git_blame(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2474,7 +2494,7 @@ async def handle_git_file_history(args: Dict[str, Any], user: User) -> Dict[str,
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute query
@@ -2631,7 +2651,7 @@ async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[st
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute search
@@ -2712,7 +2732,7 @@ async def handle_git_search_diffs(args: Dict[str, Any], user: User) -> Dict[str,
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and execute search
@@ -2797,7 +2817,7 @@ async def handle_directory_tree(args: Dict[str, Any], user: User) -> Dict[str, A
         repo_path = _resolve_repo_path(repository_alias, golden_repos_dir)
         if repo_path is None:
             return _mcp_response(
-                {"success": False, "error": f"Repository '.*' not found"}
+                {"success": False, "error": "Repository '.*' not found"}
             )
 
         # Create service and generate tree
@@ -2927,8 +2947,6 @@ HANDLER_REGISTRY["authenticate"] = handle_authenticate
 # SSH Key Management Handlers (Story #572)
 from ..services.ssh_key_manager import (
     SSHKeyManager,
-    KeyMetadata,
-    KeyListResult,
     KeyNotFoundError,
     HostConflictError,
 )
@@ -2962,7 +2980,9 @@ async def handle_ssh_key_create(args: Dict[str, Any], user: User) -> Dict[str, A
     """
     name = args.get("name")
     if not name:
-        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: name"}
+        )
 
     key_type = args.get("key_type", "ed25519")
     email = args.get("email")
@@ -2978,20 +2998,24 @@ async def handle_ssh_key_create(args: Dict[str, Any], user: User) -> Dict[str, A
             description=description,
         )
 
-        return _mcp_response({
-            "success": True,
-            "name": metadata.name,
-            "fingerprint": metadata.fingerprint,
-            "key_type": metadata.key_type,
-            "public_key": metadata.public_key,
-            "email": metadata.email,
-            "description": metadata.description,
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "name": metadata.name,
+                "fingerprint": metadata.fingerprint,
+                "key_type": metadata.key_type,
+                "public_key": metadata.public_key,
+                "email": metadata.email,
+                "description": metadata.description,
+            }
+        )
 
     except InvalidKeyNameError as e:
         return _mcp_response({"success": False, "error": f"Invalid key name: {str(e)}"})
     except KeyAlreadyExistsError as e:
-        return _mcp_response({"success": False, "error": f"Key already exists: {str(e)}"})
+        return _mcp_response(
+            {"success": False, "error": f"Key already exists: {str(e)}"}
+        )
     except Exception as e:
         logger.exception(f"Error creating SSH key: {e}")
         return _mcp_response({"success": False, "error": str(e)})
@@ -3038,11 +3062,13 @@ async def handle_ssh_key_list(args: Dict[str, Any], user: User) -> Dict[str, Any
             for k in result.unmanaged
         ]
 
-        return _mcp_response({
-            "success": True,
-            "managed": managed,
-            "unmanaged": unmanaged,
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "managed": managed,
+                "unmanaged": unmanaged,
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Error listing SSH keys: {e}")
@@ -3065,16 +3091,20 @@ async def handle_ssh_key_delete(args: Dict[str, Any], user: User) -> Dict[str, A
     """
     name = args.get("name")
     if not name:
-        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: name"}
+        )
 
     manager = get_ssh_key_manager()
 
     try:
         manager.delete_key(name)
-        return _mcp_response({
-            "success": True,
-            "message": f"Key '{name}' deleted",
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "message": f"Key '{name}' deleted",
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Error deleting SSH key: {e}")
@@ -3084,7 +3114,9 @@ async def handle_ssh_key_delete(args: Dict[str, Any], user: User) -> Dict[str, A
 HANDLER_REGISTRY["cidx_ssh_key_delete"] = handle_ssh_key_delete
 
 
-async def handle_ssh_key_show_public(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def handle_ssh_key_show_public(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """
     Get the public key content for copy/paste.
 
@@ -3097,17 +3129,21 @@ async def handle_ssh_key_show_public(args: Dict[str, Any], user: User) -> Dict[s
     """
     name = args.get("name")
     if not name:
-        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: name"}
+        )
 
     manager = get_ssh_key_manager()
 
     try:
         public_key = manager.get_public_key(name)
-        return _mcp_response({
-            "success": True,
-            "name": name,
-            "public_key": public_key,
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "name": name,
+                "public_key": public_key,
+            }
+        )
 
     except KeyNotFoundError:
         return _mcp_response({"success": False, "error": f"Key not found: {name}"})
@@ -3119,7 +3155,9 @@ async def handle_ssh_key_show_public(args: Dict[str, Any], user: User) -> Dict[s
 HANDLER_REGISTRY["cidx_ssh_key_show_public"] = handle_ssh_key_show_public
 
 
-async def handle_ssh_key_assign_host(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def handle_ssh_key_assign_host(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """
     Assign a host to an SSH key.
 
@@ -3134,9 +3172,13 @@ async def handle_ssh_key_assign_host(args: Dict[str, Any], user: User) -> Dict[s
     hostname = args.get("hostname")
 
     if not name:
-        return _mcp_response({"success": False, "error": "Missing required parameter: name"})
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: name"}
+        )
     if not hostname:
-        return _mcp_response({"success": False, "error": "Missing required parameter: hostname"})
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: hostname"}
+        )
 
     force = args.get("force", False)
 
@@ -3149,15 +3191,17 @@ async def handle_ssh_key_assign_host(args: Dict[str, Any], user: User) -> Dict[s
             force=force,
         )
 
-        return _mcp_response({
-            "success": True,
-            "name": metadata.name,
-            "fingerprint": metadata.fingerprint,
-            "key_type": metadata.key_type,
-            "hosts": metadata.hosts,
-            "email": metadata.email,
-            "description": metadata.description,
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "name": metadata.name,
+                "fingerprint": metadata.fingerprint,
+                "key_type": metadata.key_type,
+                "hosts": metadata.hosts,
+                "email": metadata.email,
+                "description": metadata.description,
+            }
+        )
 
     except KeyNotFoundError:
         return _mcp_response({"success": False, "error": f"Key not found: {name}"})
@@ -3169,3 +3213,491 @@ async def handle_ssh_key_assign_host(args: Dict[str, Any], user: User) -> Dict[s
 
 
 HANDLER_REGISTRY["cidx_ssh_key_assign_host"] = handle_ssh_key_assign_host
+
+
+# SCIP Call Graph Query Handlers
+
+
+def _find_scip_files() -> List[Path]:
+    """Find all .scip files in .code-indexer/scip/ directory."""
+    scip_dir = Path.cwd() / ".code-indexer" / "scip"
+    if not scip_dir.exists():
+        return []
+    return list(scip_dir.glob("**/*.scip"))
+
+
+async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Find definition locations for a symbol across all indexed projects.
+
+    Args:
+        params: Dictionary containing:
+            - symbol: Symbol name to search for
+            - exact: Optional boolean for exact match
+            - project: Optional project filter
+        user: Authenticated user (for permission checking)
+
+    Returns:
+        MCP-compliant response with definition results
+    """
+    from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
+
+    try:
+        symbol = params.get("symbol")
+        exact = params.get("exact", False)
+        project = params.get("project")
+
+        if not symbol:
+            return _mcp_response(
+                {"success": False, "error": "symbol parameter is required"}
+            )
+
+        scip_files = _find_scip_files()
+        all_results: List[QueryResult] = []
+
+        for scip_file in scip_files:
+            try:
+                engine = SCIPQueryEngine(scip_file)
+                results = engine.find_definition(symbol, exact=exact)
+
+                if project:
+                    results = [r for r in results if project in r.project]
+
+                all_results.extend(results)
+            except Exception as e:
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                continue
+
+        # Convert QueryResult objects to dicts
+        results_dicts = [
+            {
+                "symbol": r.symbol,
+                "project": r.project,
+                "file_path": r.file_path,
+                "line": r.line,
+                "column": r.column,
+                "kind": r.kind,
+                "relationship": r.relationship,
+                "context": r.context,
+            }
+            for r in all_results
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "symbol": symbol,
+                "total_results": len(results_dicts),
+                "results": results_dicts,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in scip_definition: {e}")
+        return _mcp_response({"success": False, "error": str(e), "results": []})
+
+
+async def scip_references(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Find all references to a symbol across all indexed projects.
+
+    Args:
+        params: Dictionary containing:
+            - symbol: Symbol name to search for
+            - limit: Optional maximum number of results (default 100)
+            - exact: Optional boolean for exact match
+            - project: Optional project filter
+        user: Authenticated user (for permission checking)
+
+    Returns:
+        MCP-compliant response with reference results
+    """
+    from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
+
+    try:
+        symbol = params.get("symbol")
+        limit = params.get("limit", 100)
+        exact = params.get("exact", False)
+        project = params.get("project")
+
+        if not symbol:
+            return _mcp_response(
+                {"success": False, "error": "symbol parameter is required"}
+            )
+
+        scip_files = _find_scip_files()
+        all_results: List[QueryResult] = []
+
+        for scip_file in scip_files:
+            try:
+                engine = SCIPQueryEngine(scip_file)
+                results = engine.find_references(symbol, limit=limit, exact=exact)
+
+                if project:
+                    results = [r for r in results if project in r.project]
+
+                all_results.extend(results)
+
+                if len(all_results) >= limit:
+                    all_results = all_results[:limit]
+                    break
+            except Exception as e:
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                continue
+
+        # Convert QueryResult objects to dicts
+        results_dicts = [
+            {
+                "symbol": r.symbol,
+                "project": r.project,
+                "file_path": r.file_path,
+                "line": r.line,
+                "column": r.column,
+                "kind": r.kind,
+                "relationship": r.relationship,
+                "context": r.context,
+            }
+            for r in all_results
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "symbol": symbol,
+                "total_results": len(results_dicts),
+                "results": results_dicts,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in scip_references: {e}")
+        return _mcp_response({"success": False, "error": str(e), "results": []})
+
+
+async def scip_dependencies(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Get dependencies for a symbol across all indexed projects.
+
+    Args:
+        params: Dictionary containing:
+            - symbol: Symbol name to search for
+            - exact: Optional boolean for exact match
+            - project: Optional project filter
+        user: Authenticated user (for permission checking)
+
+    Returns:
+        MCP-compliant response with dependency results
+    """
+    from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
+
+    try:
+        symbol = params.get("symbol")
+        depth = params.get("depth", 1)
+        exact = params.get("exact", False)
+        project = params.get("project")
+
+        if not symbol:
+            return _mcp_response(
+                {"success": False, "error": "symbol parameter is required"}
+            )
+
+        scip_files = _find_scip_files()
+        all_results: List[QueryResult] = []
+
+        for scip_file in scip_files:
+            try:
+                engine = SCIPQueryEngine(scip_file)
+                results = engine.get_dependencies(symbol, depth=depth, exact=exact)
+
+                if project:
+                    results = [r for r in results if project in r.project]
+
+                all_results.extend(results)
+            except Exception as e:
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                continue
+
+        # Convert QueryResult objects to dicts
+        results_dicts = [
+            {
+                "symbol": r.symbol,
+                "project": r.project,
+                "file_path": r.file_path,
+                "line": r.line,
+                "column": r.column,
+                "kind": r.kind,
+                "relationship": r.relationship,
+                "context": r.context,
+            }
+            for r in all_results
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "symbol": symbol,
+                "total_results": len(results_dicts),
+                "results": results_dicts,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in scip_dependencies: {e}")
+        return _mcp_response({"success": False, "error": str(e), "results": []})
+
+
+async def scip_dependents(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Get dependents (symbols that depend on target symbol) across all indexed projects.
+
+    Args:
+        params: Dictionary containing:
+            - symbol: Symbol name to search for
+            - exact: Optional boolean for exact match
+            - project: Optional project filter
+        user: Authenticated user (for permission checking)
+
+    Returns:
+        MCP-compliant response with dependent results
+    """
+    from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
+
+    try:
+        symbol = params.get("symbol")
+        depth = params.get("depth", 1)
+        exact = params.get("exact", False)
+        project = params.get("project")
+
+        if not symbol:
+            return _mcp_response(
+                {"success": False, "error": "symbol parameter is required"}
+            )
+
+        scip_files = _find_scip_files()
+        all_results: List[QueryResult] = []
+
+        for scip_file in scip_files:
+            try:
+                engine = SCIPQueryEngine(scip_file)
+                results = engine.get_dependents(symbol, depth=depth, exact=exact)
+
+                if project:
+                    results = [r for r in results if project in r.project]
+
+                all_results.extend(results)
+            except Exception as e:
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                continue
+
+        # Convert QueryResult objects to dicts
+        results_dicts = [
+            {
+                "symbol": r.symbol,
+                "project": r.project,
+                "file_path": r.file_path,
+                "line": r.line,
+                "column": r.column,
+                "kind": r.kind,
+                "relationship": r.relationship,
+                "context": r.context,
+            }
+            for r in all_results
+        ]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "symbol": symbol,
+                "total_results": len(results_dicts),
+                "results": results_dicts,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in scip_dependents: {e}")
+        return _mcp_response({"success": False, "error": str(e), "results": []})
+
+
+async def scip_impact(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Analyze impact of changes to a symbol.
+
+    Args:
+        params: Dictionary containing:
+            - symbol: Symbol name to analyze
+            - depth: Optional traversal depth (default 3, max 10)
+            - project: Optional project filter
+        user: Authenticated user (for permission checking)
+
+    Returns:
+        MCP-compliant response with impact analysis results
+    """
+    from code_indexer.scip.query.composites import analyze_impact
+    from pathlib import Path
+
+    try:
+        symbol = params.get("symbol")
+        depth = params.get("depth", 3)
+        project = params.get("project")
+
+        if not symbol:
+            return _mcp_response(
+                {"success": False, "error": "symbol parameter is required"}
+            )
+
+        scip_dir = Path.cwd() / ".code-indexer" / "scip"
+        result = analyze_impact(symbol, scip_dir, depth=depth, project=project)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "target_symbol": result.target_symbol,
+                "depth_analyzed": result.depth_analyzed,
+                "total_affected": result.total_affected,
+                "truncated": result.truncated,
+                "affected_symbols": [
+                    {
+                        "symbol": s.symbol,
+                        "file_path": str(s.file_path),
+                        "line": s.line,
+                        "column": s.column,
+                        "depth": s.depth,
+                        "relationship": s.relationship,
+                        "chain": s.chain,
+                    }
+                    for s in result.affected_symbols
+                ],
+                "affected_files": [
+                    {
+                        "path": str(f.path),
+                        "project": f.project,
+                        "affected_symbol_count": f.affected_symbol_count,
+                        "min_depth": f.min_depth,
+                        "max_depth": f.max_depth,
+                    }
+                    for f in result.affected_files
+                ],
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in scip_impact: {e}")
+        return _mcp_response({"success": False, "error": str(e), "affected_symbols": [], "affected_files": []})
+
+
+async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Find call chains between two symbols.
+
+    Args:
+        params: Dictionary containing:
+            - from_symbol: Starting symbol
+            - to_symbol: Target symbol
+            - max_depth: Optional maximum chain length (default 10, max 20)
+            - project: Optional project filter
+        user: Authenticated user (for permission checking)
+
+    Returns:
+        MCP-compliant response with call chain results
+    """
+    from code_indexer.scip.query.composites import trace_call_chain
+    from pathlib import Path
+
+    try:
+        from_symbol = params.get("from_symbol")
+        to_symbol = params.get("to_symbol")
+        max_depth = params.get("max_depth", 10)
+        project = params.get("project")
+
+        if not from_symbol or not to_symbol:
+            return _mcp_response(
+                {"success": False, "error": "from_symbol and to_symbol parameters are required"}
+            )
+
+        scip_dir = Path.cwd() / ".code-indexer" / "scip"
+        result = trace_call_chain(from_symbol, to_symbol, scip_dir, max_depth=max_depth, project=project)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "from_symbol": result.from_symbol,
+                "to_symbol": result.to_symbol,
+                "total_chains_found": result.total_chains_found,
+                "truncated": result.truncated,
+                "max_depth_reached": result.max_depth_reached,
+                "chains": [
+                    {
+                        "length": chain.length,
+                        "path": [
+                            {
+                                "symbol": step.symbol,
+                                "file_path": str(step.file_path),
+                                "line": step.line,
+                                "column": step.column,
+                                "call_type": step.call_type,
+                            }
+                            for step in chain.path
+                        ],
+                    }
+                    for chain in result.chains
+                ],
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in scip_callchain: {e}")
+        return _mcp_response({"success": False, "error": str(e), "chains": []})
+
+
+async def scip_context(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Get smart context for a symbol.
+
+    Args:
+        params: Dictionary containing:
+            - symbol: Symbol name to analyze
+            - limit: Optional maximum files to return (default 20, max 100)
+            - min_score: Optional minimum relevance score (default 0.0, range 0.0-1.0)
+            - project: Optional project filter
+        user: Authenticated user (for permission checking)
+
+    Returns:
+        MCP-compliant response with smart context results
+    """
+    from code_indexer.scip.query.composites import get_smart_context
+    from pathlib import Path
+
+    try:
+        symbol = params.get("symbol")
+        limit = params.get("limit", 20)
+        min_score = params.get("min_score", 0.0)
+        project = params.get("project")
+
+        if not symbol:
+            return _mcp_response(
+                {"success": False, "error": "symbol parameter is required"}
+            )
+
+        scip_dir = Path.cwd() / ".code-indexer" / "scip"
+        result = get_smart_context(symbol, scip_dir, limit=limit, min_score=min_score, project=project)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "target_symbol": result.target_symbol,
+                "summary": result.summary,
+                "total_files": result.total_files,
+                "total_symbols": result.total_symbols,
+                "avg_relevance": result.avg_relevance,
+                "files": [
+                    {
+                        "path": str(f.path),
+                        "project": f.project,
+                        "relevance_score": f.relevance_score,
+                        "read_priority": f.read_priority,
+                        "symbols": [
+                            {
+                                "name": s.name,
+                                "kind": s.kind,
+                                "relationship": s.relationship,
+                                "line": s.line,
+                                "column": s.column,
+                                "relevance": s.relevance,
+                            }
+                            for s in f.symbols
+                        ],
+                    }
+                    for f in result.files
+                ],
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in scip_context: {e}")
+        return _mcp_response({"success": False, "error": str(e), "files": []})

@@ -4,7 +4,7 @@ SSH Keys REST API Router.
 Provides CRUD operations for SSH key management.
 """
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from pathlib import Path
@@ -12,8 +12,6 @@ import os
 
 from ..services.ssh_key_manager import (
     SSHKeyManager,
-    KeyMetadata,
-    KeyListResult,
     KeyNotFoundError,
     HostConflictError,
 )

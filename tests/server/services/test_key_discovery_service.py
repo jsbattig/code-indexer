@@ -1,12 +1,9 @@
 """Unit tests for KeyDiscoveryService."""
 
-import pytest
 from pathlib import Path
-import os
 
 from code_indexer.server.services.key_discovery_service import (
     KeyDiscoveryService,
-    KeyInfo,
 )
 
 

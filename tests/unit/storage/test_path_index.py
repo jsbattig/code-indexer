@@ -4,7 +4,6 @@ Tests the path-to-point_ids reverse index that prevents duplicate chunks
 when files are re-indexed. This addresses Story #540.
 """
 
-import pytest
 from pathlib import Path
 import tempfile
 import msgpack

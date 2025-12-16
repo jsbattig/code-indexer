@@ -162,6 +162,177 @@ cidx query "login" --time-range-all --author "john@example.com" --quiet
 
 **Use Cases**: Code archaeology, bug history, feature evolution tracking, author analysis
 
+### SCIP Code Intelligence (Precise Navigation)
+
+CIDX supports SCIP (Source Code Intelligence Protocol) for precise code navigation, cross-references, and dependency analysis. Unlike semantic search which finds similar code by meaning, SCIP provides exact symbol definitions, references, and relationships.
+
+#### Quick Start
+
+```bash
+# Generate SCIP indexes for your codebase
+cidx scip generate
+
+# Check generation status
+cidx scip status
+```
+
+**Supported Languages**: Java, Kotlin, TypeScript, JavaScript, Python
+**Storage**: `.code-indexer/scip/` (SQLite database for fast queries)
+
+#### Available Commands
+
+**1. Find Definition** - Locate where a symbol is defined
+```bash
+cidx scip definition "ClassName"
+cidx scip definition "method_name" --exact
+cidx scip definition "MyClass" --limit 5
+```
+
+**2. Find References** - Find all places where a symbol is used
+```bash
+cidx scip references "ClassName"
+cidx scip references "authenticate" --exact
+cidx scip references "User" --limit 20
+```
+
+**3. Find Dependencies** - Show what a symbol directly depends on
+```bash
+cidx scip dependencies "MyClass"
+cidx scip dependencies "process_data"
+```
+
+**4. Find Dependents** - Show what directly depends on a symbol
+```bash
+cidx scip dependents "BaseClass"
+cidx scip dependents "core_function"
+```
+
+**5. Impact Analysis** - Multi-hop analysis of change impact
+```bash
+cidx scip impact "UserModel"
+cidx scip impact "authenticate" --max-depth 3
+```
+
+**6. Call Chain** - Trace call chains through your code
+```bash
+cidx scip callchain "login_user"
+cidx scip callchain "process_payment" --max-depth 5
+```
+
+**7. Symbol Context** - Get documentation and context for symbols
+```bash
+cidx scip context "DatabaseConnection"
+cidx scip context "API" --limit 10
+```
+
+#### Output Format
+
+All SCIP commands use compact single-line output for token efficiency:
+
+```bash
+# Example output:
+module.path/ClassName#method() (src/module/file.py:42)
+services/AuthService#authenticate() (src/services/auth.py:156)
+models/User (src/models/user.py:12)
+```
+
+**Format**: `{module_path/SymbolName#method()} ({file_path}:{line})`
+
+**Benefits**:
+- 60-70% token reduction vs verbose output
+- LLM-friendly (faster processing, lower costs)
+- Human-readable module-qualified names
+- Easy to parse and navigate
+
+#### Query Parameters
+
+**Common Options (All Commands)**:
+- `--limit N` - Maximum results (default: 0 = unlimited)
+- `--exact` - Exact symbol match (no substring matching)
+
+**Impact Analysis Options**:
+- `--max-depth N` - Maximum traversal depth (default: 3)
+
+**Call Chain Options**:
+- `--max-depth N` - Maximum chain depth (default: 10)
+
+#### Performance
+
+**Query Speed** (DatabaseBackend):
+- Definition: <10ms
+- References: 50-200ms
+- Dependencies/Dependents: 100-500ms
+- Impact Analysis: 200-1000ms (depth-dependent)
+- Call Chain: 100-800ms (depth-dependent)
+
+**Storage Efficiency**:
+- SQLite database (30-50% smaller than raw .scip files)
+- Automatic .scip cleanup after database generation
+- Indexed lookups for fast queries
+
+#### Use Cases
+
+**Code Navigation**:
+```bash
+# Find where UserService is defined
+cidx scip definition "UserService"
+
+# Find all usages of authenticate method
+cidx scip references "authenticate"
+```
+
+**Refactoring Analysis**:
+```bash
+# See what depends on this class before refactoring
+cidx scip dependents "LegacyAuth"
+
+# Analyze impact of changing this function
+cidx scip impact "core_processor"
+```
+
+**Architecture Understanding**:
+```bash
+# What does this service depend on?
+cidx scip dependencies "PaymentService"
+
+# Trace execution flow
+cidx scip callchain "handle_request"
+```
+
+**Code Review**:
+```bash
+# Get context for unfamiliar symbol
+cidx scip context "ConfigManager"
+
+# Find all references to verify usage
+cidx scip references "deprecated_function"
+```
+
+#### Coverage Status
+
+**Available Across Interfaces**:
+- CLI: 7/7 commands (100%)
+- REST API: 7/7 endpoints (100%)
+- MCP Tools: 7/7 tools (100%)
+- Web UI: 4/7 commands (definition, references, dependencies, dependents)
+
+**Missing from Web UI**: impact, callchain, context (CLI/API/MCP only)
+
+#### Comparison: SCIP vs Semantic Search
+
+| Feature | SCIP | Semantic Search |
+|---------|------|-----------------|
+| Precision | Exact symbol matches | Similar code by meaning |
+| Speed | <200ms typical | ~20ms (HNSW) |
+| Use Case | Navigate existing code | Discover relevant code |
+| Language | Requires SCIP indexer | Any text-based language |
+| Relationships | Explicit (imports, calls) | Implicit (similarity) |
+| Cross-repo | Yes (with SCIP indexes) | Yes (with semantic indexes) |
+
+**When to Use**:
+- **SCIP**: Known symbol, need exact location/references/dependencies
+- **Semantic**: Conceptual search, find similar implementations, explore unknown code
+
 ### Performance
 
 - **HNSW indexing**: 300x faster queries (~20ms vs 6+ seconds)

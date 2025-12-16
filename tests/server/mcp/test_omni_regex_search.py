@@ -5,7 +5,7 @@ Tests polymorphic repository_alias parameter and routing to omni-regex search.
 """
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from code_indexer.server.mcp.handlers import handle_regex_search, _mcp_response
 from code_indexer.server.auth.user_manager import User, UserRole
 from datetime import datetime

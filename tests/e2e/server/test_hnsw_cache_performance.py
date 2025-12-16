@@ -17,18 +17,15 @@ This test addresses code-reviewer rejection finding #1:
 real HNSW indexes. Need real E2E test with actual 405MB HNSW index."
 """
 
-import os
 import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict
 
 import numpy as np
 import pytest
 
 from code_indexer.backends.filesystem_backend import FilesystemBackend
-from code_indexer.config import Config
 from code_indexer.server.cache import get_global_cache, reset_global_cache
 
 
@@ -303,7 +300,7 @@ class TestHNSWCachePerformance:
         speedup_ratio = cold_time_ms / warm_time_ms
 
         # Performance assertions
-        print(f"\n=== HNSW Cache Performance Results ===")
+        print("\n=== HNSW Cache Performance Results ===")
         print(f"Cold query (cache miss): {cold_time_ms:.2f}ms")
         print(f"Warm query (cache hit):  {warm_time_ms:.2f}ms")
         print(f"Speedup ratio:           {speedup_ratio:.1f}x")

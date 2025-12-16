@@ -50,6 +50,11 @@
                             {% if search_mode == 'temporal' %}checked{% endif %}>
                         <span>Temporal (Git History)</span>
                     </label>
+                    <label>
+                        <input type="radio" name="search_mode" value="scip"
+                            {% if search_mode == 'scip' %}checked{% endif %}>
+                        <span>SCIP (Code Intelligence)</span>
+                    </label>
                 </div>
             </fieldset>
 
@@ -160,6 +165,29 @@
                 </label>
             </fieldset>
 
+            <!-- SCIP Query Options (shown only when SCIP mode selected) -->
+            <fieldset id="scip-options-fieldset" class="scip-options-fieldset" style="{% if search_mode != 'scip' %}display: none;{% endif %}">
+                <legend>SCIP Query Options</legend>
+
+                <label for="scip_query_type">Query Type <span class="required">*</span></label>
+                <select id="scip_query_type" name="scip_query_type">
+                    <option value="definition" {% if scip_query_type == 'definition' or not scip_query_type %}selected{% endif %}>Definition - Find where symbol is defined</option>
+                    <option value="references" {% if scip_query_type == 'references' %}selected{% endif %}>References - Find all usages</option>
+                    <option value="dependencies" {% if scip_query_type == 'dependencies' %}selected{% endif %}>Dependencies - What does symbol use</option>
+                    <option value="dependents" {% if scip_query_type == 'dependents' %}selected{% endif %}>Dependents - Who uses symbol</option>
+                    <option value="impact" {% if scip_query_type == 'impact' %}selected{% endif %}>Impact - Recursive dependency analysis</option>
+                    <option value="callchain" {% if scip_query_type == 'callchain' %}selected{% endif %}>Call Chain - Trace execution flow</option>
+                    <option value="context" {% if scip_query_type == 'context' %}selected{% endif %}>Context - Show symbol with callers and callees</option>
+                </select>
+                <small class="field-hint">Query text will be treated as symbol name</small>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" name="scip_exact" value="true"
+                        {% if scip_exact %}checked{% endif %}>
+                    Exact match (no fuzzy symbol matching)
+                </label>
+            </fieldset>
+
             <!-- Advanced Options (Collapsible) -->
             <details class="advanced-options">
                 <summary>Show Advanced Options</summary>
@@ -257,10 +285,11 @@
 </section>
 
 <script>
-// Show/hide temporal and FTS options based on search mode
+// Show/hide temporal, FTS, and SCIP options based on search mode
 function updateSearchModeOptions() {
     const temporalFieldset = document.getElementById('temporal-options-fieldset');
     const ftsFieldset = document.getElementById('fts-options-fieldset');
+    const scipFieldset = document.getElementById('scip-options-fieldset');
     const selectedMode = document.querySelector('input[name="search_mode"]:checked');
 
     if (!selectedMode) return;
@@ -273,6 +302,11 @@ function updateSearchModeOptions() {
     // FTS options: for fts or hybrid modes
     if (ftsFieldset) {
         ftsFieldset.style.display = (selectedMode.value === 'fts' || selectedMode.value === 'hybrid') ? 'block' : 'none';
+    }
+
+    // SCIP options: only for scip mode
+    if (scipFieldset) {
+        scipFieldset.style.display = (selectedMode.value === 'scip') ? 'block' : 'none';
     }
 }
 

@@ -3072,3 +3072,526 @@ TOOL_REGISTRY["cidx_ssh_key_assign_host"] = {
         "required": ["success"],
     },
 }
+
+# =============================================================================
+# SCIP (Code Intelligence) Tools
+# =============================================================================
+
+TOOL_REGISTRY["scip_definition"] = {
+    "name": "scip_definition",
+    "description": (
+        "TL;DR: Find where a symbol is defined (class, function, method). Returns exact file location, line number, and symbol kind. "
+        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
+        "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration when you don't know the exact symbol name. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name and want no false positives. "
+        "WHEN TO USE: Finding where a class/function/method is defined. Locating the source of a symbol before reading its implementation. Understanding what a symbol is (class vs function vs method). First step before using scip_references, scip_dependencies, or scip_dependents. "
+        "WHEN NOT TO USE: Finding all usages of a symbol (use scip_references instead). Understanding what a symbol depends on (use scip_dependencies). Understanding what depends on a symbol (use scip_dependents). Impact analysis (use scip_impact). Tracing call paths (use scip_callchain). Getting curated file list for a symbol (use scip_context). "
+        "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
+        "RELATED TOOLS: scip_references (find all usages), scip_dependencies (what symbol depends on), scip_dependents (what depends on symbol), scip_context (get curated file list). "
+        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"exact\": false} returns [{\"symbol\": \"com.example.DatabaseManager\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/database/schema.py\", \"line\": 13, \"column\": 0, \"kind\": \"class\", \"relationship\": null, \"context\": null}]"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name to find definition for (e.g., 'UserService', 'authenticate', 'DatabaseManager')",
+            },
+            "exact": {
+                "type": "boolean",
+                "default": False,
+                "description": "Use exact matching instead of fuzzy substring matching. Default false for flexible exploration.",
+            },
+            "project": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Optional project filter to limit search to specific project",
+            },
+        },
+        "required": ["symbol"],
+    },
+    "required_permission": "query",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
+            "total_results": {"type": "integer", "description": "Total number of definitions found"},
+            "results": {
+                "type": "array",
+                "description": "List of definition locations",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier"},
+                        "project": {"type": "string", "description": "Project path"},
+                        "file_path": {"type": "string", "description": "File path relative to project root"},
+                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
+                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
+                        "kind": {"type": "string", "description": "Symbol kind (class, function, method, variable, etc.)"},
+                        "relationship": {"type": ["string", "null"], "description": "Relationship type (always null for definitions)"},
+                        "context": {"type": ["string", "null"], "description": "Additional context (always null for definitions)"},
+                    },
+                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "results"],
+    },
+}
+
+TOOL_REGISTRY["scip_references"] = {
+    "name": "scip_references",
+    "description": (
+        "TL;DR: Find all places where a symbol is used/referenced (imports, calls, instantiations). Returns file locations, line numbers, and usage context. "
+        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
+        "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration when you want to find all related usages. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name and want only its references. "
+        "WHEN TO USE: Finding all code that uses/imports/calls a symbol. Understanding how widespread a symbol's usage is. Identifying all callsites before refactoring. Finding examples of how a symbol is used in practice. "
+        "WHEN NOT TO USE: Finding where a symbol is defined (use scip_definition instead). Understanding what a symbol depends on (use scip_dependencies). Understanding what depends on a symbol (use scip_dependents - references show usage points, dependents show dependent symbols). Impact analysis (use scip_impact). Tracing call paths (use scip_callchain). Getting curated file list (use scip_context). "
+        "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
+        "RELATED TOOLS: scip_definition (find definition), scip_dependents (what symbols depend on target), scip_impact (recursive dependency analysis), scip_context (get curated file list). "
+        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"limit\": 100, \"exact\": false} returns [{\"symbol\": \"com.example.DatabaseManager\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 42, \"column\": 8, \"kind\": \"reference\", \"relationship\": \"import\", \"context\": \"from code_indexer.scip.database.schema import DatabaseManager\"}]"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name to find references for (e.g., 'UserService', 'authenticate', 'DatabaseManager')",
+            },
+            "limit": {
+                "type": "integer",
+                "default": 100,
+                "description": "Maximum number of references to return. Default 100.",
+            },
+            "exact": {
+                "type": "boolean",
+                "default": False,
+                "description": "Use exact matching instead of fuzzy substring matching. Default false for flexible exploration.",
+            },
+            "project": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Optional project filter to limit search to specific project",
+            },
+        },
+        "required": ["symbol"],
+    },
+    "required_permission": "query",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
+            "total_results": {"type": "integer", "description": "Total number of references found"},
+            "results": {
+                "type": "array",
+                "description": "List of reference locations",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier"},
+                        "project": {"type": "string", "description": "Project path"},
+                        "file_path": {"type": "string", "description": "File path relative to project root"},
+                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
+                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
+                        "kind": {"type": "string", "description": "Symbol kind (reference)"},
+                        "relationship": {"type": ["string", "null"], "description": "Relationship type (import, call, instantiation, etc.)"},
+                        "context": {"type": ["string", "null"], "description": "Code context where reference occurs"},
+                    },
+                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "results"],
+    },
+}
+
+TOOL_REGISTRY["scip_dependencies"] = {
+    "name": "scip_dependencies",
+    "description": (
+        "TL;DR: Find what a symbol depends on (imports, calls, uses). Returns symbols and files that the target symbol requires to function. "
+        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
+        "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name. "
+        "WHEN TO USE: Understanding what a symbol needs to work (its dependencies). Identifying imports and external dependencies. Finding all symbols a target symbol calls or uses. Understanding coupling and dependency relationships. Planning refactoring by understanding dependencies. "
+        "WHEN NOT TO USE: Finding what depends on a symbol (use scip_dependents instead - opposite direction). Finding all usages (use scip_references). Finding definitions (use scip_definition). Impact analysis (use scip_impact for recursive dependency tree). Tracing call paths (use scip_callchain). Getting curated file list (use scip_context). "
+        "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
+        "RELATED TOOLS: scip_dependents (opposite direction - what depends on symbol), scip_impact (recursive dependency analysis), scip_definition (find symbol definition), scip_context (get curated file list). "
+        "EXAMPLE: {\"symbol\": \"SCIPQueryEngine\", \"depth\": 1, \"exact\": false} returns [{\"symbol\": \"com.example.DatabaseManager\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 15, \"column\": 0, \"kind\": \"dependency\", \"relationship\": \"import\", \"context\": \"from code_indexer.scip.database.schema import DatabaseManager\"}]"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name to find dependencies for (e.g., 'UserService', 'authenticate', 'DatabaseManager')",
+            },
+            "depth": {
+                "type": "integer",
+                "default": 1,
+                "description": "Dependency traversal depth. Default 1 for direct dependencies only.",
+            },
+            "exact": {
+                "type": "boolean",
+                "default": False,
+                "description": "Use exact matching instead of fuzzy substring matching. Default false for flexible exploration.",
+            },
+            "project": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Optional project filter to limit search to specific project",
+            },
+        },
+        "required": ["symbol"],
+    },
+    "required_permission": "query",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
+            "total_results": {"type": "integer", "description": "Total number of dependencies found"},
+            "results": {
+                "type": "array",
+                "description": "List of dependency symbols",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier of dependency"},
+                        "project": {"type": "string", "description": "Project path"},
+                        "file_path": {"type": "string", "description": "File path relative to project root"},
+                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
+                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
+                        "kind": {"type": "string", "description": "Symbol kind (dependency)"},
+                        "relationship": {"type": ["string", "null"], "description": "Relationship type (import, call, use, etc.)"},
+                        "context": {"type": ["string", "null"], "description": "Code context where dependency occurs"},
+                    },
+                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "results"],
+    },
+}
+
+TOOL_REGISTRY["scip_dependents"] = {
+    "name": "scip_dependents",
+    "description": (
+        "TL;DR: Find what depends on a symbol (reverse dependencies). Returns symbols and files that require/use the target symbol. Opposite of scip_dependencies. "
+        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
+        "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name. "
+        "WHEN TO USE: Understanding impact of changing a symbol (what will break). Finding all code that relies on a symbol. Identifying coupling and understanding how widely a symbol is used. Planning refactoring by understanding dependent code. Understanding blast radius before modifying a symbol. "
+        "WHEN NOT TO USE: Finding what a symbol depends on (use scip_dependencies instead - opposite direction). Finding all usages (use scip_references for raw usage points). Finding definitions (use scip_definition). Full recursive impact analysis (use scip_impact for complete dependency tree). Tracing call paths (use scip_callchain). Getting curated file list (use scip_context). "
+        "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
+        "RELATED TOOLS: scip_dependencies (opposite direction - what symbol depends on), scip_impact (recursive dependency analysis), scip_references (raw usage points), scip_context (get curated file list). "
+        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"depth\": 1, \"exact\": false} returns [{\"symbol\": \"com.example.SCIPQueryEngine\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 15, \"column\": 0, \"kind\": \"dependent\", \"relationship\": \"uses\", \"context\": \"self.db = DatabaseManager()\"}]"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name to find dependents for (e.g., 'UserService', 'authenticate', 'DatabaseManager')",
+            },
+            "depth": {
+                "type": "integer",
+                "default": 1,
+                "description": "Dependent traversal depth. Default 1 for direct dependents only.",
+            },
+            "exact": {
+                "type": "boolean",
+                "default": False,
+                "description": "Use exact matching instead of fuzzy substring matching. Default false for flexible exploration.",
+            },
+            "project": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Optional project filter to limit search to specific project",
+            },
+        },
+        "required": ["symbol"],
+    },
+    "required_permission": "query",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
+            "total_results": {"type": "integer", "description": "Total number of dependents found"},
+            "results": {
+                "type": "array",
+                "description": "List of dependent symbols",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier of dependent"},
+                        "project": {"type": "string", "description": "Project path"},
+                        "file_path": {"type": "string", "description": "File path relative to project root"},
+                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
+                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
+                        "kind": {"type": "string", "description": "Symbol kind (dependent)"},
+                        "relationship": {"type": ["string", "null"], "description": "Relationship type (uses, calls, imports, etc.)"},
+                        "context": {"type": ["string", "null"], "description": "Code context where dependent uses target"},
+                    },
+                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "results"],
+    },
+}
+
+TOOL_REGISTRY["scip_impact"] = {
+    "name": "scip_impact",
+    "description": (
+        "TL;DR: Recursive impact analysis - find ALL symbols and files affected by changing a symbol. Returns complete dependency tree with depth tracking and file-level summaries. Use this for comprehensive change impact assessment. "
+        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
+        "DEPTH BEHAVIOR: Results grow linearly with depth (BFS traversal with cycle detection prevents exponential growth). depth=1 shows direct dependents, depth=2 adds dependents-of-dependents, depth=3 adds third-level dependents. Use depth=3 (default) for comprehensive analysis, depth=5+ for mission-critical changes requiring complete blast radius understanding. Higher depth increases query time but ensures complete impact visibility. "
+        "WHEN TO USE: Understanding full blast radius of changing a symbol. Planning refactoring with complete dependency tree visibility. Assessing risk before modifying critical code. Generating file lists for comprehensive testing. Understanding cascading dependencies across multiple levels. Finding all code that transitively depends on a symbol. "
+        "WHEN NOT TO USE: Finding direct dependencies only (use scip_dependencies for faster single-level query). Finding direct dependents only (use scip_dependents for faster single-level query). Simple usage point lookup (use scip_references). Finding definitions (use scip_definition). Tracing specific call paths (use scip_callchain). Getting prioritized file list for reading (use scip_context). "
+        "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
+        "RELATED TOOLS: scip_dependents (single-level dependents), scip_dependencies (single-level dependencies), scip_callchain (trace call paths), scip_context (get curated file list with relevance scoring). "
+        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"depth\": 3} returns {\"target_symbol\": \"com.example.DatabaseManager\", \"depth_analyzed\": 3, \"total_affected\": 47, \"affected_symbols\": [{\"symbol\": \"SCIPQueryEngine\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 15, \"column\": 0, \"depth\": 1, \"relationship\": \"uses\", \"chain\": [\"DatabaseManager\", \"SCIPQueryEngine\"]}], \"affected_files\": [{\"path\": \"src/code_indexer/scip/query/primitives.py\", \"project\": \"code-indexer\", \"affected_symbol_count\": 3, \"min_depth\": 1, \"max_depth\": 2}]}"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name to analyze impact for (e.g., 'UserService', 'authenticate', 'DatabaseManager')",
+            },
+            "depth": {
+                "type": "integer",
+                "default": 3,
+                "description": "Recursive traversal depth for impact analysis. Default 3. Max 10. Higher depth = more complete analysis but slower query.",
+            },
+            "project": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Optional project filter to limit search to specific project",
+            },
+        },
+        "required": ["symbol"],
+    },
+    "required_permission": "query",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "target_symbol": {"type": "string", "description": "Full SCIP symbol identifier analyzed"},
+            "depth_analyzed": {"type": "integer", "description": "Actual depth analyzed"},
+            "total_affected": {"type": "integer", "description": "Total number of affected symbols"},
+            "truncated": {"type": "boolean", "description": "Whether results were truncated due to size limits"},
+            "affected_symbols": {
+                "type": "array",
+                "description": "List of all symbols affected by changing target symbol",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier"},
+                        "file_path": {"type": "string", "description": "File path relative to project root"},
+                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
+                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
+                        "depth": {"type": "integer", "description": "Depth level in dependency tree"},
+                        "relationship": {"type": "string", "description": "Relationship type (uses, calls, imports, etc.)"},
+                        "chain": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Dependency chain from target to this symbol",
+                        },
+                    },
+                    "required": ["symbol", "file_path", "line", "column", "depth", "relationship", "chain"],
+                },
+            },
+            "affected_files": {
+                "type": "array",
+                "description": "File-level summary of impact",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path relative to project root"},
+                        "project": {"type": "string", "description": "Project path"},
+                        "affected_symbol_count": {"type": "integer", "description": "Number of affected symbols in file"},
+                        "min_depth": {"type": "integer", "description": "Minimum depth of affected symbols"},
+                        "max_depth": {"type": "integer", "description": "Maximum depth of affected symbols"},
+                    },
+                    "required": ["path", "project", "affected_symbol_count", "min_depth", "max_depth"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "affected_symbols", "affected_files"],
+    },
+}
+
+TOOL_REGISTRY["scip_callchain"] = {
+    "name": "scip_callchain",
+    "description": (
+        "TL;DR: Find call chains/paths between two symbols. Returns all possible call paths showing how from_symbol can reach to_symbol. Use this for tracing execution flow and understanding call relationships. "
+        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
+        "DEPTH BEHAVIOR: Results grow linearly with depth (BFS traversal with cycle detection prevents exponential growth). max_depth=5 searches 5 levels deep for call paths. Higher max_depth finds longer chains but increases query time. Start with default max_depth=10, increase to 20 if no paths found and symbols are distantly connected. "
+        "WHEN TO USE: Understanding how one symbol calls/reaches another. Tracing execution flow between components. Finding indirect call relationships. Debugging call stack issues. Understanding coupling between distant symbols. Verifying expected call paths exist. "
+        "WHEN NOT TO USE: Finding all usages (use scip_references). Impact analysis (use scip_impact). Finding dependencies (use scip_dependencies). Finding dependents (use scip_dependents). Getting curated file list (use scip_context). Finding definitions (use scip_definition). "
+        "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
+        "RELATED TOOLS: scip_impact (full dependency tree), scip_dependencies (what symbol depends on), scip_dependents (what depends on symbol), scip_context (get curated file list). "
+        "EXAMPLE: {\"from_symbol\": \"handle_request\", \"to_symbol\": \"DatabaseManager\", \"max_depth\": 10} returns {\"from_symbol\": \"handle_request\", \"to_symbol\": \"DatabaseManager\", \"total_chains_found\": 2, \"chains\": [{\"length\": 3, \"path\": [{\"symbol\": \"handle_request\", \"file_path\": \"src/api/handler.py\", \"line\": 10, \"column\": 0, \"call_type\": \"call\"}, {\"symbol\": \"UserService.authenticate\", \"file_path\": \"src/services/user.py\", \"line\": 25, \"column\": 4, \"call_type\": \"call\"}, {\"symbol\": \"DatabaseManager.query\", \"file_path\": \"src/database/manager.py\", \"line\": 50, \"column\": 8, \"call_type\": \"call\"}]}]}"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "from_symbol": {
+                "type": "string",
+                "description": "Starting symbol (e.g., 'handle_request', 'Controller.process')",
+            },
+            "to_symbol": {
+                "type": "string",
+                "description": "Target symbol to reach (e.g., 'DatabaseManager', 'authenticate')",
+            },
+            "max_depth": {
+                "type": "integer",
+                "default": 10,
+                "description": "Maximum chain length to search. Default 10. Max 20. Higher values find longer chains but slower query.",
+            },
+            "project": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Optional project filter to limit search to specific project",
+            },
+        },
+        "required": ["from_symbol", "to_symbol"],
+    },
+    "required_permission": "query",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "from_symbol": {"type": "string", "description": "Starting symbol searched"},
+            "to_symbol": {"type": "string", "description": "Target symbol searched"},
+            "total_chains_found": {"type": "integer", "description": "Total number of call chains found"},
+            "truncated": {"type": "boolean", "description": "Whether results were truncated due to size limits"},
+            "max_depth_reached": {"type": "boolean", "description": "Whether search hit max_depth limit"},
+            "chains": {
+                "type": "array",
+                "description": "List of call chains from source to target",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "length": {"type": "integer", "description": "Number of steps in chain"},
+                        "path": {
+                            "type": "array",
+                            "description": "Sequence of call steps from source to target",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "symbol": {"type": "string", "description": "Symbol at this step"},
+                                    "file_path": {"type": "string", "description": "File path relative to project root"},
+                                    "line": {"type": "integer", "description": "Line number (1-indexed)"},
+                                    "column": {"type": "integer", "description": "Column number (0-indexed)"},
+                                    "call_type": {"type": "string", "description": "Type of call (call, import, instantiation, etc.)"},
+                                },
+                                "required": ["symbol", "file_path", "line", "column", "call_type"],
+                            },
+                        },
+                    },
+                    "required": ["length", "path"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "chains"],
+    },
+}
+
+TOOL_REGISTRY["scip_context"] = {
+    "name": "scip_context",
+    "description": (
+        "TL;DR: Get smart, curated file list for understanding a symbol. Returns prioritized files with relevance scoring - files containing definition, direct dependencies/dependents, and related symbols. Perfect for 'what files should I read to understand X?' Use this before reading code. "
+        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
+        "WHEN TO USE: Getting curated list of files to read for understanding a symbol. Prioritized file list before code review. Understanding symbol context without reading entire codebase. Building mental model of symbol's ecosystem. Finding related code for refactoring. Efficient context gathering for code analysis. "
+        "WHEN NOT TO USE: Finding all usages (use scip_references). Impact analysis (use scip_impact). Finding dependencies (use scip_dependencies). Finding dependents (use scip_dependents). Tracing call paths (use scip_callchain). Finding definitions (use scip_definition). "
+        "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
+        "RELATED TOOLS: scip_definition (find definition first), scip_impact (full dependency tree), scip_dependencies (what symbol depends on), scip_dependents (what depends on symbol). "
+        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"limit\": 20, \"min_score\": 0.0} returns {\"target_symbol\": \"com.example.DatabaseManager\", \"summary\": \"Read these 3 file(s) - 1 HIGH priority, 2 MEDIUM priority\", \"total_files\": 3, \"total_symbols\": 8, \"avg_relevance\": 0.75, \"files\": [{\"path\": \"src/code_indexer/scip/database/schema.py\", \"project\": \"code-indexer\", \"relevance_score\": 1.0, \"read_priority\": 1, \"symbols\": [{\"name\": \"DatabaseManager\", \"kind\": \"class\", \"relationship\": \"definition\", \"line\": 13, \"column\": 0, \"relevance\": 1.0}]}]}"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name to get context for (e.g., 'UserService', 'authenticate', 'DatabaseManager')",
+            },
+            "limit": {
+                "type": "integer",
+                "default": 20,
+                "description": "Maximum number of files to return. Default 20. Max 100.",
+            },
+            "min_score": {
+                "type": "number",
+                "default": 0.0,
+                "description": "Minimum relevance score threshold (0.0-1.0). Default 0.0 for all relevant files.",
+            },
+            "project": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Optional project filter to limit search to specific project",
+            },
+        },
+        "required": ["symbol"],
+    },
+    "required_permission": "query",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "target_symbol": {"type": "string", "description": "Full SCIP symbol identifier analyzed"},
+            "summary": {"type": "string", "description": "Human-readable summary of results"},
+            "total_files": {"type": "integer", "description": "Total number of files returned"},
+            "total_symbols": {"type": "integer", "description": "Total number of symbols across all files"},
+            "avg_relevance": {"type": "number", "description": "Average relevance score across all files"},
+            "files": {
+                "type": "array",
+                "description": "Prioritized list of files to read, sorted by relevance",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path relative to project root"},
+                        "project": {"type": "string", "description": "Project path"},
+                        "relevance_score": {
+                            "type": "number",
+                            "description": "Relevance score (0.0-1.0) - higher is more relevant",
+                        },
+                        "read_priority": {
+                            "type": "integer",
+                            "description": "Read priority (1=HIGH, 2=MEDIUM, 3=LOW) - lower number means read first",
+                        },
+                        "symbols": {
+                            "type": "array",
+                            "description": "Symbols in file related to target symbol",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Symbol name"},
+                                    "kind": {"type": "string", "description": "Symbol kind (class, function, method, etc.)"},
+                                    "relationship": {
+                                        "type": "string",
+                                        "description": "Relationship to target (definition, dependency, dependent, reference)",
+                                    },
+                                    "line": {"type": "integer", "description": "Line number (1-indexed)"},
+                                    "column": {"type": "integer", "description": "Column number (0-indexed)"},
+                                    "relevance": {"type": "number", "description": "Symbol relevance score (0.0-1.0)"},
+                                },
+                                "required": ["name", "kind", "relationship", "line", "column", "relevance"],
+                            },
+                        },
+                    },
+                    "required": ["path", "project", "relevance_score", "read_priority", "symbols"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "files"],
+    },
+}

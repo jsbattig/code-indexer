@@ -1,8 +1,7 @@
 """Unit tests for SCIP project discovery."""
 
-import pytest
 from pathlib import Path
-from code_indexer.scip.discovery import ProjectDiscovery, DiscoveredProject
+from code_indexer.scip.discovery import ProjectDiscovery
 
 
 class TestProjectDiscovery:
@@ -14,11 +13,17 @@ class TestProjectDiscovery:
         (tmp_path / "backend" / "pom.xml").parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / "backend" / "pom.xml").write_text("<project></project>")
 
-        (tmp_path / "frontend" / "package.json").parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "frontend" / "package.json").parent.mkdir(
+            parents=True, exist_ok=True
+        )
         (tmp_path / "frontend" / "package.json").write_text('{"name": "frontend"}')
 
-        (tmp_path / "python-lib" / "pyproject.toml").parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / "python-lib" / "pyproject.toml").write_text('[tool.poetry]\nname = "python-lib"')
+        (tmp_path / "python-lib" / "pyproject.toml").parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        (tmp_path / "python-lib" / "pyproject.toml").write_text(
+            '[tool.poetry]\nname = "python-lib"'
+        )
 
         # Act: Discover projects
         discovery = ProjectDiscovery(tmp_path)
@@ -48,19 +53,25 @@ class TestProjectDiscovery:
     def test_discover_nested_projects(self, tmp_path):
         """Test discovering nested projects (monorepo scenario)."""
         # Arrange: Create nested project structure
-        (tmp_path / "services" / "api" / "pom.xml").parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "services" / "api" / "pom.xml").parent.mkdir(
+            parents=True, exist_ok=True
+        )
         (tmp_path / "services" / "api" / "pom.xml").write_text("<project></project>")
-        
-        (tmp_path / "services" / "worker" / "pom.xml").parent.mkdir(parents=True, exist_ok=True)
+
+        (tmp_path / "services" / "worker" / "pom.xml").parent.mkdir(
+            parents=True, exist_ok=True
+        )
         (tmp_path / "services" / "worker" / "pom.xml").write_text("<project></project>")
-        
-        (tmp_path / "frontend" / "package.json").parent.mkdir(parents=True, exist_ok=True)
+
+        (tmp_path / "frontend" / "package.json").parent.mkdir(
+            parents=True, exist_ok=True
+        )
         (tmp_path / "frontend" / "package.json").write_text('{"name": "frontend"}')
-        
+
         # Act: Discover projects
         discovery = ProjectDiscovery(tmp_path)
         projects = discovery.discover()
-        
+
         # Assert: All nested projects discovered
         assert len(projects) == 3
         project_paths = {p.relative_path for p in projects}
@@ -71,24 +82,34 @@ class TestProjectDiscovery:
     def test_discover_gradle_projects(self, tmp_path):
         """Test discovering Gradle-based Java/Kotlin projects."""
         # Arrange: Create Gradle projects
-        (tmp_path / "java-service" / "build.gradle").parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "java-service" / "build.gradle").parent.mkdir(
+            parents=True, exist_ok=True
+        )
         (tmp_path / "java-service" / "build.gradle").write_text("// Gradle build")
-        
-        (tmp_path / "kotlin-service" / "build.gradle.kts").parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / "kotlin-service" / "build.gradle.kts").write_text("// Kotlin DSL Gradle")
-        
+
+        (tmp_path / "kotlin-service" / "build.gradle.kts").parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        (tmp_path / "kotlin-service" / "build.gradle.kts").write_text(
+            "// Kotlin DSL Gradle"
+        )
+
         # Act: Discover projects
         discovery = ProjectDiscovery(tmp_path)
         projects = discovery.discover()
-        
+
         # Assert: Gradle projects discovered with correct language
         assert len(projects) == 2
-        
-        java_service = next(p for p in projects if p.relative_path == Path("java-service"))
+
+        java_service = next(
+            p for p in projects if p.relative_path == Path("java-service")
+        )
         assert java_service.language == "java"
         assert java_service.build_system == "gradle"
-        
-        kotlin_service = next(p for p in projects if p.relative_path == Path("kotlin-service"))
+
+        kotlin_service = next(
+            p for p in projects if p.relative_path == Path("kotlin-service")
+        )
         assert kotlin_service.language == "kotlin"
         assert kotlin_service.build_system == "gradle"
 
@@ -96,12 +117,14 @@ class TestProjectDiscovery:
         """Test discovering Python projects with setup.py."""
         # Arrange: Create setup.py project
         (tmp_path / "python-pkg" / "setup.py").parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / "python-pkg" / "setup.py").write_text("from setuptools import setup")
-        
+        (tmp_path / "python-pkg" / "setup.py").write_text(
+            "from setuptools import setup"
+        )
+
         # Act: Discover projects
         discovery = ProjectDiscovery(tmp_path)
         projects = discovery.discover()
-        
+
         # Assert: setuptools project discovered
         assert len(projects) == 1
         python_pkg = projects[0]
@@ -112,10 +135,10 @@ class TestProjectDiscovery:
     def test_discover_empty_repo(self, tmp_path):
         """Test discovering projects in empty repository."""
         # Arrange: Empty directory
-        
+
         # Act: Discover projects
         discovery = ProjectDiscovery(tmp_path)
         projects = discovery.discover()
-        
+
         # Assert: No projects found
         assert len(projects) == 0

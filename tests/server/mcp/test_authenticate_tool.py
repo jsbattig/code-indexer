@@ -13,7 +13,6 @@ def test_app(tmp_path, monkeypatch):
 
     from code_indexer.server.app import create_app
     from code_indexer.server.auth.user_manager import UserManager
-    from code_indexer.server.auth.api_key_manager import ApiKeyManager
     from code_indexer.server.auth import dependencies
     import code_indexer.server.app as app_module
 

@@ -23,7 +23,6 @@ from src.code_indexer.server.repositories.golden_repo_manager import (
     GitOperationError,
 )
 from src.code_indexer.server.repositories.background_jobs import BackgroundJobManager
-from src.code_indexer.server.utils.config_manager import ServerResourceConfig
 
 
 class TestGoldenRepoManager:

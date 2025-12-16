@@ -9,6 +9,7 @@ from typing import Dict, Optional
 
 class OverallStatus(Enum):
     """Overall status of SCIP generation."""
+
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
@@ -19,6 +20,7 @@ class OverallStatus(Enum):
 @dataclass
 class ProjectStatus:
     """Status of SCIP generation for a single project."""
+
     status: OverallStatus
     language: str
     build_system: str
@@ -34,20 +36,21 @@ class ProjectStatus:
 @dataclass
 class GenerationStatus:
     """Overall status of SCIP generation for all projects."""
+
     overall_status: OverallStatus
     total_projects: int
     successful_projects: int
     failed_projects: int
     projects: Dict[str, ProjectStatus]
-    
+
     def is_limbo(self) -> bool:
         """Check if in limbo state (partial success)."""
         return self.overall_status == OverallStatus.LIMBO
-    
+
     def is_success(self) -> bool:
         """Check if all projects succeeded."""
         return self.overall_status == OverallStatus.SUCCESS
-    
+
     def is_failed(self) -> bool:
         """Check if all projects failed."""
         return self.overall_status == OverallStatus.FAILED
@@ -55,27 +58,27 @@ class GenerationStatus:
 
 class StatusTracker:
     """Tracks and persists SCIP generation status."""
-    
+
     def __init__(self, scip_dir: Path):
         """
         Initialize status tracker.
-        
+
         Args:
             scip_dir: Directory containing SCIP indexes (e.g., .code-indexer/scip/)
         """
         self.scip_dir = Path(scip_dir)
         self.status_file = self.scip_dir / "status.json"
-    
+
     def save(self, status: GenerationStatus) -> None:
         """
         Save generation status to disk.
-        
+
         Args:
             status: GenerationStatus to persist
         """
         # Ensure directory exists
         self.scip_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Convert to dict for JSON serialization
         status_dict = {
             "overall_status": status.overall_status.value,
@@ -96,17 +99,17 @@ class StatusTracker:
                     "stderr": project_status.stderr,
                 }
                 for project_path, project_status in status.projects.items()
-            }
+            },
         }
-        
+
         # Write to file
-        with open(self.status_file, 'w') as f:
+        with open(self.status_file, "w") as f:
             json.dump(status_dict, f, indent=2)
-    
+
     def load(self) -> GenerationStatus:
         """
         Load generation status from disk.
-        
+
         Returns:
             GenerationStatus loaded from disk, or default pending status if not found
         """
@@ -116,12 +119,12 @@ class StatusTracker:
                 total_projects=0,
                 successful_projects=0,
                 failed_projects=0,
-                projects={}
+                projects={},
             )
-        
-        with open(self.status_file, 'r') as f:
+
+        with open(self.status_file, "r") as f:
             data = json.load(f)
-        
+
         # Convert back to dataclasses
         projects = {
             project_path: ProjectStatus(
@@ -138,11 +141,11 @@ class StatusTracker:
             )
             for project_path, project_data in data["projects"].items()
         }
-        
+
         return GenerationStatus(
             overall_status=OverallStatus(data["overall_status"]),
             total_projects=data["total_projects"],
             successful_projects=data["successful_projects"],
             failed_projects=data["failed_projects"],
-            projects=projects
+            projects=projects,
         )

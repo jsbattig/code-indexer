@@ -7,10 +7,8 @@ This ensures MCP/REST API parity with CLI for temporal search responses.
 """
 
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

@@ -2,15 +2,12 @@
 
 import pytest
 from pathlib import Path
-import tempfile
-import os
 
 from code_indexer.server.services.ssh_config_manager import (
     SSHConfigManager,
     ParsedConfig,
     CorruptedConfigError,
     HostEntry,
-    ConflictInfo,
 )
 
 

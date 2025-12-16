@@ -15,7 +15,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from code_indexer.server.repositories.golden_repo_manager import GoldenRepoManager
 from code_indexer.server.repositories.background_jobs import BackgroundJobManager

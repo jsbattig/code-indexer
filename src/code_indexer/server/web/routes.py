@@ -7,7 +7,7 @@ Provides admin web interface routes for CIDX server administration.
 import logging
 import secrets
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from fastapi import APIRouter, Request, Response, Form, HTTPException, status
@@ -781,6 +781,7 @@ def _get_golden_repos_list():
             repo["has_semantic"] = False
             repo["has_fts"] = False
             repo["has_temporal"] = False
+            repo["has_scip"] = False
 
             if index_path:
                 index_base = Path(index_path) / ".code-indexer"
@@ -813,6 +814,14 @@ def _get_golden_repos_list():
                         and (temporal_dir / "hnsw_index.bin").exists()
                     ):
                         repo["has_temporal"] = True
+
+                    # Check SCIP index (.code-indexer/scip/ with .scip files)
+                    scip_dir = index_base / "scip"
+                    if scip_dir.exists():
+                        # Check for any .scip files in scip directory or subdirectories
+                        scip_files = list(scip_dir.glob("**/*.scip"))
+                        if scip_files:
+                            repo["has_scip"] = True
 
         return repos
     except Exception as e:
@@ -1801,6 +1810,7 @@ def _get_all_activated_repos_for_query() -> list:
                     "username": "global",
                     "is_global": True,
                     "repo_name": global_repo.get("repo_name", ""),
+                    "path": global_repo.get("index_path"),
                 }
             )
     except Exception as e:
@@ -1836,6 +1846,8 @@ def _create_query_page_response(
     case_sensitive: bool = False,
     fuzzy: bool = False,
     regex: bool = False,
+    scip_query_type: str = "definition",
+    scip_exact: bool = False,
 ) -> HTMLResponse:
     """Create query page response with all necessary context."""
     csrf_token = generate_csrf_token()
@@ -1870,6 +1882,8 @@ def _create_query_page_response(
             "case_sensitive": case_sensitive,
             "fuzzy": fuzzy,
             "regex": regex,
+            "scip_query_type": scip_query_type,
+            "scip_exact": scip_exact,
         },
     )
 
@@ -1907,6 +1921,8 @@ async def query_submit(
     case_sensitive: bool = Form(False),
     fuzzy: bool = Form(False),
     regex: bool = Form(False),
+    scip_query_type: str = Form("definition"),
+    scip_exact: bool = Form(False),
 ):
     """Process query form submission."""
     session = _require_admin_session(request)
@@ -1935,6 +1951,8 @@ async def query_submit(
             case_sensitive=case_sensitive,
             fuzzy=fuzzy,
             regex=regex,
+            scip_query_type=scip_query_type,
+            scip_exact=scip_exact,
         )
 
     # Validate required fields
@@ -1957,6 +1975,8 @@ async def query_submit(
             case_sensitive=case_sensitive,
             fuzzy=fuzzy,
             regex=regex,
+            scip_query_type=scip_query_type,
+            scip_exact=scip_exact,
         )
 
     if not repository:
@@ -1978,6 +1998,8 @@ async def query_submit(
             case_sensitive=case_sensitive,
             fuzzy=fuzzy,
             regex=regex,
+            scip_query_type=scip_query_type,
+            scip_exact=scip_exact,
         )
 
     # Add to query history
@@ -2002,14 +2024,165 @@ async def query_submit(
     error_message = None
 
     try:
-        query_manager = _get_semantic_query_manager()
-        if not query_manager:
-            error_message = "Query service not available"
-        else:
+        # Handle SCIP query mode
+        if search_mode == "scip":
+            from code_indexer.scip.query.primitives import SCIPQueryEngine
+            import glob
+
             # Find the username for this repository
-            # Repository format is "user_alias (username)"
             repo_parts = repository.split(" (")
             user_alias = repo_parts[0] if repo_parts else repository
+
+            # Get the repository from all available repos
+            all_repos = _get_all_activated_repos_for_query()
+            target_repo = None
+            for repo in all_repos:
+                if repo.get("user_alias") == user_alias:
+                    target_repo = repo
+                    break
+
+            if not target_repo:
+                error_message = f"Repository '{user_alias}' not found"
+            else:
+                # Determine repository path
+                repo_path = target_repo.get("path")
+
+                # For global repos, resolve path from GlobalRegistry
+                if not repo_path and target_repo.get("is_global"):
+                    try:
+                        from code_indexer.global_repos.global_registry import GlobalRegistry
+                        server_data_dir = os.environ.get(
+                            "CIDX_SERVER_DATA_DIR",
+                            os.path.expanduser("~/.cidx-server"),
+                        )
+                        golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
+                        registry = GlobalRegistry(str(golden_repos_dir))
+                        global_repo_meta = registry.get_global_repo(user_alias)
+                        if global_repo_meta:
+                            repo_path = global_repo_meta.get("index_path")
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve global repo path for '{user_alias}': {e}")
+
+                if not repo_path:
+                    error_message = f"Repository '{user_alias}' path not found"
+                else:
+                    # Find SCIP index files
+                    scip_pattern = str(Path(repo_path) / ".code-indexer" / "scip" / "**" / "*.scip")
+                    scip_files = glob.glob(scip_pattern, recursive=True)
+
+                    if not scip_files:
+                        error_message = f"No SCIP index found for repository '{user_alias}'. Run 'cidx scip index' first."
+                    else:
+                        try:
+                            # Execute query based on type
+                            query_results = []
+                            if scip_query_type == "impact":
+                                from code_indexer.scip.query.composites import analyze_impact
+                                from code_indexer.scip.query.primitives import QueryResult
+                                scip_dir = Path(repo_path) / ".code-indexer" / "scip"
+                                # Use depth=2 (lower than CLI default of 3) to balance coverage vs Web UI response time
+                                impact_result = analyze_impact(
+                                    query_text.strip(),
+                                    scip_dir,
+                                    depth=2,
+                                    project=str(repo_path)
+                                )
+                                # Convert affected_symbols to QueryResult format
+                                for affected in impact_result.affected_symbols:
+                                    query_results.append(QueryResult(
+                                        symbol=affected.symbol,
+                                        project=str(repo_path),
+                                        file_path=str(affected.file_path),
+                                        line=affected.line,
+                                        column=affected.column,
+                                        kind="impact",
+                                        relationship=affected.relationship,
+                                        context=None,
+                                    ))
+                            elif scip_query_type == "callchain":
+                                from code_indexer.scip.query.primitives import QueryResult
+                                parts = query_text.strip().split(maxsplit=1)
+                                if len(parts) != 2:
+                                    raise ValueError("Call chain requires two symbols: 'from_symbol to_symbol'")
+                                scip_file = Path(scip_files[0])
+                                engine = SCIPQueryEngine(scip_file)
+                                chains = engine.trace_call_chain(parts[0], parts[1], max_depth=5)
+                                for chain in chains:
+                                    query_results.append(QueryResult(
+                                        symbol=" -> ".join(chain.path),
+                                        project=str(repo_path),
+                                        file_path="(call chain)",
+                                        line=0,
+                                        column=0,
+                                        kind="callchain",
+                                        relationship=f"length={chain.length}",
+                                        context=None,
+                                    ))
+                            elif scip_query_type == "context":
+                                from code_indexer.scip.query.composites import get_smart_context
+                                from code_indexer.scip.query.primitives import QueryResult
+                                scip_dir = Path(repo_path) / ".code-indexer" / "scip"
+                                context_result = get_smart_context(
+                                    query_text.strip(),
+                                    scip_dir,
+                                    limit=limit,
+                                    min_score=float(min_score) if min_score else 0.0,
+                                    project=str(repo_path)
+                                )
+                                for ctx_file in context_result.files:
+                                    query_results.append(QueryResult(
+                                        symbol=query_text.strip(),
+                                        project=str(repo_path),
+                                        file_path=str(ctx_file.path),
+                                        line=0,
+                                        column=0,
+                                        kind="context",
+                                        relationship=f"score={ctx_file.relevance_score:.2f}, symbols={len(ctx_file.symbols)}",
+                                        context=None,
+                                    ))
+                            else:
+                                # For definition/references/dependencies/dependents, use engine
+                                scip_file = Path(scip_files[0])
+                                engine = SCIPQueryEngine(scip_file)
+
+                                if scip_query_type == "definition":
+                                    query_results = engine.find_definition(query_text.strip(), exact=scip_exact)
+                                elif scip_query_type == "references":
+                                    query_results = engine.find_references(query_text.strip(), limit=limit, exact=scip_exact)
+                                elif scip_query_type == "dependencies":
+                                    query_results = engine.get_dependencies(query_text.strip(), exact=scip_exact)
+                                elif scip_query_type == "dependents":
+                                    query_results = engine.get_dependents(query_text.strip(), exact=scip_exact)
+
+                            # Format results for template
+                            for result in query_results:
+                                results.append({
+                                    "file_path": result.file_path,
+                                    "line_numbers": str(result.line),
+                                    "content": f"{result.kind}: {result.symbol}",
+                                    "score": 1.0,  # SCIP results don't have similarity scores
+                                    "language": _detect_language_from_path(result.file_path),
+                                    "repository_alias": user_alias,
+                                    "scip_symbol": result.symbol,
+                                    "scip_kind": result.kind,
+                                })
+                        except FileNotFoundError as e:
+                            logger.error("SCIP query failed - file not found: %s", e, exc_info=True)
+                            error_message = f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`"
+                        except Exception as e:
+                            logger.error("SCIP query execution failed: %s", e, exc_info=True)
+                            error_message = f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`"
+
+        else:
+            # Handle semantic/FTS/temporal queries
+            query_manager = _get_semantic_query_manager()
+            if not query_manager:
+                error_message = "Query service not available"
+            else:
+                # Find the username for this repository
+                # Repository format is "user_alias (username)"
+                repo_parts = repository.split(" (")
+                user_alias = repo_parts[0] if repo_parts else repository
 
             # Get the repository from all available repos (including global)
             all_repos = _get_all_activated_repos_for_query()
@@ -2024,7 +2197,6 @@ async def query_submit(
             elif target_repo.get("is_global"):
                 # Handle global repository query
                 import os
-                from pathlib import Path
                 from code_indexer.global_repos.alias_manager import AliasManager
                 from ..services.search_service import (
                     SemanticSearchService,
@@ -2138,6 +2310,8 @@ async def query_submit(
         case_sensitive=case_sensitive,
         fuzzy=fuzzy,
         regex=regex,
+        scip_query_type=scip_query_type,
+        scip_exact=scip_exact,
     )
 
 
@@ -2181,6 +2355,111 @@ def _get_semantic_query_manager():
         return None
 
 
+def _execute_scip_query(
+    target_repo: dict,
+    user_alias: str,
+    query_text: str,
+    scip_query_type: str,
+    scip_exact: bool,
+    limit: int,
+    min_score: str,
+) -> tuple[list, Optional[str]]:
+    """
+    Execute SCIP query for repository. Supports all 7 SCIP query types.
+
+    Returns tuple of (results_list, error_message).
+    """
+    from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
+    import glob
+
+    results = []
+    repo_path = target_repo.get("path")
+
+    # For global repos, resolve path from GlobalRegistry
+    if not repo_path and target_repo.get("is_global"):
+        try:
+            from code_indexer.global_repos.global_registry import GlobalRegistry
+            import os
+            server_data_dir = os.environ.get(
+                "CIDX_SERVER_DATA_DIR",
+                os.path.expanduser("~/.cidx-server"),
+            )
+            golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
+            registry = GlobalRegistry(str(golden_repos_dir))
+            global_repo_meta = registry.get_global_repo(user_alias)
+            if global_repo_meta:
+                repo_path = global_repo_meta.get("index_path")
+        except Exception as e:
+            logger.warning(f"Failed to resolve global repo path for '{user_alias}': {e}")
+
+    if not repo_path:
+        return results, f"Repository '{user_alias}' path not found"
+
+    scip_pattern = str(Path(repo_path) / ".code-indexer" / "scip" / "**" / "*.scip")
+    scip_files = glob.glob(scip_pattern, recursive=True)
+    if not scip_files:
+        return results, f"No SCIP index found for repository '{user_alias}'. Run 'cidx scip index' first."
+
+    try:
+        query_results = []
+        scip_dir = Path(repo_path) / ".code-indexer" / "scip"
+
+        if scip_query_type == "impact":
+            from code_indexer.scip.query.composites import analyze_impact
+            res = analyze_impact(query_text.strip(), scip_dir, depth=2, project=str(repo_path))
+            query_results = [QueryResult(symbol=a.symbol, project=str(repo_path), file_path=str(a.file_path),
+                           line=a.line, column=a.column, kind="impact", relationship=a.relationship, context=None)
+                           for a in res.affected_symbols]
+        elif scip_query_type == "callchain":
+            parts = query_text.strip().split(maxsplit=1)
+            if len(parts) != 2:
+                raise ValueError("Call chain requires two symbols: 'from_symbol to_symbol'")
+            engine = SCIPQueryEngine(Path(scip_files[0]))
+            chains = engine.trace_call_chain(parts[0], parts[1], max_depth=5)
+            query_results = [QueryResult(symbol=" -> ".join(c.path), project=str(repo_path), file_path="(call chain)",
+                           line=0, column=0, kind="callchain", relationship=f"length={c.length}", context=None)
+                           for c in chains]
+        elif scip_query_type == "context":
+            from code_indexer.scip.query.composites import get_smart_context
+            res = get_smart_context(query_text.strip(), scip_dir, limit=limit,
+                                   min_score=float(min_score) if min_score else 0.0, project=str(repo_path))
+            query_results = [QueryResult(symbol=query_text.strip(), project=str(repo_path), file_path=str(f.path),
+                           line=0, column=0, kind="context",
+                           relationship=f"score={f.relevance_score:.2f}, symbols={len(f.symbols)}", context=None)
+                           for f in res.files]
+        else:
+            engine = SCIPQueryEngine(Path(scip_files[0]))
+            if scip_query_type == "definition":
+                query_results = engine.find_definition(query_text.strip(), exact=scip_exact)
+            elif scip_query_type == "references":
+                query_results = engine.find_references(query_text.strip(), limit=limit, exact=scip_exact)
+            elif scip_query_type == "dependencies":
+                query_results = engine.get_dependencies(query_text.strip(), exact=scip_exact)
+            elif scip_query_type == "dependents":
+                query_results = engine.get_dependents(query_text.strip(), exact=scip_exact)
+
+        # Format results for template
+        for result in query_results:
+            results.append({
+                "file_path": result.file_path,
+                "line_numbers": str(result.line),
+                "content": f"{result.kind}: {result.symbol}",
+                "score": 1.0,  # SCIP results don't have similarity scores
+                "language": _detect_language_from_path(result.file_path),
+                "repository_alias": user_alias,
+                "scip_symbol": result.symbol,
+                "scip_kind": result.kind,
+            })
+    except FileNotFoundError as e:
+        logger.error("SCIP query failed - file not found: %s", e, exc_info=True)
+        return results, f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`"
+    except Exception as e:
+        logger.error("SCIP query execution failed: %s", e, exc_info=True)
+        return results, f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`"
+
+    return results, None
+
+
 @web_router.post("/partials/query-results", response_class=HTMLResponse)
 async def query_results_partial_post(
     request: Request,
@@ -2199,6 +2478,8 @@ async def query_results_partial_post(
     case_sensitive: bool = Form(False),
     fuzzy: bool = Form(False),
     regex: bool = Form(False),
+    scip_query_type: str = Form("definition"),
+    scip_exact: bool = Form(False),
 ):
     """
     Execute query and return results partial via htmx.
@@ -2286,10 +2567,17 @@ async def query_results_partial_post(
 
             if not target_repo:
                 error_message = f"Repository '{user_alias}' not found"
+            elif search_mode == "scip":
+                # Execute SCIP query using helper function
+                scip_results, scip_error = _execute_scip_query(
+                    target_repo, user_alias, query_text, scip_query_type, scip_exact, limit, min_score
+                )
+                results.extend(scip_results)
+                if scip_error:
+                    error_message = scip_error
             elif target_repo.get("is_global"):
                 # Handle global repository query
                 import os
-                from pathlib import Path
                 from code_indexer.global_repos.alias_manager import AliasManager
                 from ..services.search_service import (
                     SemanticSearchService,
@@ -2777,7 +3065,6 @@ async def reset_config(
 ):
     """Reset configuration to defaults."""
     from ..services.config_service import get_config_service
-    from ..utils.config_manager import ServerConfigManager
 
     session = _require_admin_session(request)
     if not session:

@@ -4,7 +4,6 @@ Tests the integration of PathIndex into FilesystemVectorStore for duplicate prev
 Story #540: Fix duplicate chunks bug.
 """
 
-import pytest
 import tempfile
 import numpy as np
 from pathlib import Path

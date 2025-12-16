@@ -4,7 +4,6 @@ Tests for MCP tools.py schema definitions.
 Validates that tool schemas are correctly defined and accept expected input types.
 """
 
-import pytest
 from code_indexer.server.mcp.tools import TOOL_REGISTRY
 
 

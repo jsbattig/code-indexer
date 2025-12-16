@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Dict, Tuple, Optional, Callable
+from typing import Dict, Tuple, Callable
 
 
 class TokenBucket:

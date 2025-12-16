@@ -15,20 +15,16 @@ Tests verify:
 
 import json
 import os
-import tempfile
 import threading
 import time
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
-import numpy as np
 import pytest
 
 from code_indexer.server.cache.hnsw_index_cache import (
     HNSWIndexCache,
     HNSWIndexCacheEntry,
     HNSWIndexCacheConfig,
-    HNSWIndexCacheStats,
 )
 
 

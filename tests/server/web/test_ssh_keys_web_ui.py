@@ -1,8 +1,6 @@
 """Tests for SSH Keys Web UI (Scenario 23)."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 
 class TestSSHKeysWebUI:

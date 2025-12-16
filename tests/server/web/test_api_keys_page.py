@@ -1,7 +1,6 @@
 """Integration tests for API Keys web UI page."""
 
 from typing import Dict, Any
-from fastapi.testclient import TestClient
 
 from .conftest import WebTestInfrastructure
 

@@ -18,11 +18,10 @@ import json
 import logging
 import os
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Lock, RLock
+from threading import RLock
 from typing import Any, Callable, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,6 @@ These tests focus on the web UI routes which use session authentication.
 
 from typing import Dict, Any
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.server.web.conftest import WebTestInfrastructure

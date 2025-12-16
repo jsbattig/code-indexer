@@ -7,7 +7,6 @@ Following TDD: These tests are written FIRST and will fail until implementation 
 
 import json
 import tempfile
-import pytest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 

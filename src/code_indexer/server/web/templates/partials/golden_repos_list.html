@@ -35,7 +35,8 @@
                 {% if repo.has_semantic %}<span class="index-badge semantic" title="Semantic search available">Semantic</span>{% endif %}
                 {% if repo.has_fts %}<span class="index-badge fts" title="Full-text search available">FTS</span>{% endif %}
                 {% if repo.has_temporal %}<span class="index-badge temporal" title="Git history search available">Temporal</span>{% endif %}
-                {% if not repo.has_semantic and not repo.has_fts and not repo.has_temporal %}<span class="no-indexes">None</span>{% endif %}
+                {% if repo.has_scip %}<span class="index-badge scip" title="SCIP code intelligence available">SCIP</span>{% endif %}
+                {% if not repo.has_semantic and not repo.has_fts and not repo.has_temporal and not repo.has_scip %}<span class="no-indexes">None</span>{% endif %}
             </td>
             <td class="repo-url" title="{{ repo.repo_url }}">{{ repo.repo_url | truncate(40) }}</td>
             <td class="status-cell" style="white-space: nowrap;">
@@ -94,11 +95,13 @@
                             <label>Available Indexes:</label>
                             <span>
                                 {% if repo.has_semantic %}Semantic{% endif %}
-                                {% if repo.has_semantic and (repo.has_fts or repo.has_temporal) %}, {% endif %}
+                                {% if repo.has_semantic and (repo.has_fts or repo.has_temporal or repo.has_scip) %}, {% endif %}
                                 {% if repo.has_fts %}FTS{% endif %}
-                                {% if repo.has_fts and repo.has_temporal %}, {% endif %}
+                                {% if repo.has_fts and (repo.has_temporal or repo.has_scip) %}, {% endif %}
                                 {% if repo.has_temporal %}Temporal{% endif %}
-                                {% if not repo.has_semantic and not repo.has_fts and not repo.has_temporal %}None{% endif %}
+                                {% if repo.has_temporal and repo.has_scip %}, {% endif %}
+                                {% if repo.has_scip %}SCIP{% endif %}
+                                {% if not repo.has_semantic and not repo.has_fts and not repo.has_temporal and not repo.has_scip %}None{% endif %}
                             </span>
                         </div>
                         <div class="detail-item">
@@ -170,6 +173,10 @@
 .index-badge.temporal {
     background-color: #fff3e0;
     color: #e65100;
+}
+.index-badge.scip {
+    background-color: #e8f5e9;
+    color: #2e7d32;
 }
 .no-indexes {
     color: #999;

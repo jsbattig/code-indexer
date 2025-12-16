@@ -7,7 +7,6 @@ These tests follow TDD methodology - tests are written FIRST before implementati
 All tests use real components following MESSI Rule #1: No mocks.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
 from .conftest import WebTestInfrastructure

@@ -1,13 +1,10 @@
 """Unit tests for MigrationOrchestrator service."""
 
-import pytest
-from pathlib import Path
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from code_indexer.server.services.migration_orchestrator import (
     MigrationOrchestrator,
-    MigrationResult,
 )
 
 

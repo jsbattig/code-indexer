@@ -18,9 +18,7 @@ properly formatted with the correct user_alias field.
 Following TDD methodology: Write failing tests first, then implement fix.
 """
 
-import json
 import logging
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch

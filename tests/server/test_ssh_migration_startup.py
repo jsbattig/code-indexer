@@ -1,10 +1,7 @@
 """Tests for SSH key migration at server startup (Scenario 12)."""
 
-import pytest
 from pathlib import Path
 import json
-import os
-from unittest.mock import patch, MagicMock
 
 
 class TestSSHMigrationStartup:
@@ -230,7 +227,6 @@ class TestServerStartupIntegration:
 
     def test_app_contains_ssh_migration_startup_code(self):
         """Verify app.py contains the SSH migration startup code."""
-        from pathlib import Path
         
         app_path = Path(__file__).parent.parent.parent / "src" / "code_indexer" / "server" / "app.py"
         app_content = app_path.read_text()

@@ -56,6 +56,8 @@ dependencies = [
     "sse-starlette>=1.6.0",
     "itsdangerous>=2.1.0",
     "jinja2>=3.1.0",
+    "msgpack>=1.0.0",
+    "pysqlite3-binary>=0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -135,7 +137,7 @@ ignore_missing_imports = true
 no_site_packages = true
 exclude = [
     "tests/fixtures/cidx-test-repo/.*",
-    # Temporary exclusions for obsolete test files - need to be reviewed/updated  
+    # Temporary exclusions for obsolete test files - need to be reviewed/updated
     "tests/unit/services/test_granular_state_callback_system.py",
     "tests/unit/progress/test_fix_validation_12_threads.py",
     "tests/unit/services/test_clean_file_chunking_manager.py", 

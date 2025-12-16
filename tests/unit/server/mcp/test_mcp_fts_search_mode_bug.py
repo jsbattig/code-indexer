@@ -17,8 +17,7 @@ Root Cause:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 from code_indexer.server.mcp.handlers import search_code
 from code_indexer.server.auth.user_manager import User, UserRole
 
