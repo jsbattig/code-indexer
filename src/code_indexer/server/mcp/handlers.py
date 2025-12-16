@@ -20,6 +20,15 @@ from pathlib import Path
 from code_indexer.server.auth.user_manager import User, UserRole
 from code_indexer.global_repos.global_registry import GlobalRegistry
 from code_indexer.server import app as app_module
+from code_indexer.server.services.ssh_key_manager import (
+    SSHKeyManager,
+    KeyNotFoundError,
+    HostConflictError,
+)
+from code_indexer.server.services.ssh_key_generator import (
+    InvalidKeyNameError,
+    KeyAlreadyExistsError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2347,8 +2356,6 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
         repo_path = Path(repo_identifier)
         if _is_git_repo(repo_path):
             return str(repo_path)
-        # Try adding -global suffix
-        repository_alias = f"{repo_identifier}-global"
 
     # Look up in global registry
     registry = GlobalRegistry(golden_repos_dir)
@@ -3030,16 +3037,6 @@ HANDLER_REGISTRY["authenticate"] = handle_authenticate
 
 
 # SSH Key Management Handlers (Story #572)
-from ..services.ssh_key_manager import (
-    SSHKeyManager,
-    KeyNotFoundError,
-    HostConflictError,
-)
-from ..services.ssh_key_generator import (
-    InvalidKeyNameError,
-    KeyAlreadyExistsError,
-)
-
 # SSH Key Manager singleton
 _ssh_key_manager: SSHKeyManager = None
 
@@ -3303,12 +3300,46 @@ HANDLER_REGISTRY["cidx_ssh_key_assign_host"] = handle_ssh_key_assign_host
 # SCIP Call Graph Query Handlers
 
 
+def _get_golden_repos_scip_dir() -> Optional[Path]:
+    """Get golden repos directory for SCIP file discovery.
+
+    Composite query functions (analyze_impact, trace_call_chain, get_smart_context)
+    expect a directory path and will glob for **/*.scip files within it.
+
+    For non-composite handlers (scip_definition, scip_references, etc.),
+    they will need to glob the returned directory themselves.
+
+    Returns:
+        Path to golden repos directory, or None if not configured/doesn't exist
+    """
+    try:
+        golden_repos_dir = _get_golden_repos_dir()
+    except RuntimeError:
+        return None
+
+    golden_repos_path = Path(golden_repos_dir)
+    return golden_repos_path if golden_repos_path.exists() else None
+
+
 def _find_scip_files() -> List[Path]:
-    """Find all .scip files in .code-indexer/scip/ directory."""
-    scip_dir = Path.cwd() / ".code-indexer" / "scip"
-    if not scip_dir.exists():
+    """Find all .scip files across all golden repositories.
+
+    Returns:
+        List of Path objects pointing to .scip files, or empty list if none found
+    """
+    golden_repos_path = _get_golden_repos_scip_dir()
+    if not golden_repos_path:
         return []
-    return list(scip_dir.glob("**/*.scip"))
+
+    scip_files = []
+    for repo_dir in golden_repos_path.iterdir():
+        if not repo_dir.is_dir():
+            continue
+        scip_dir = repo_dir / ".code-indexer" / "scip"
+        if scip_dir.exists():
+            scip_files.extend(scip_dir.glob("**/*.scip"))
+
+    return scip_files
 
 
 async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -3337,6 +3368,16 @@ async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
         scip_files = _find_scip_files()
+
+        if not scip_files:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "No SCIP indexes found. Generate indexes with 'cidx scip generate' or ensure golden repos have SCIP indexes.",
+                    "results": [],
+                }
+            )
+
         all_results: List[QueryResult] = []
 
         for scip_file in scip_files:
@@ -3408,6 +3449,16 @@ async def scip_references(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
         scip_files = _find_scip_files()
+
+        if not scip_files:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "No SCIP indexes found. Generate indexes with 'cidx scip generate' or ensure golden repos have SCIP indexes.",
+                    "results": [],
+                }
+            )
+
         all_results: List[QueryResult] = []
 
         for scip_file in scip_files:
@@ -3482,6 +3533,16 @@ async def scip_dependencies(params: Dict[str, Any], user: User) -> Dict[str, Any
             )
 
         scip_files = _find_scip_files()
+
+        if not scip_files:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "No SCIP indexes found. Generate indexes with 'cidx scip generate' or ensure golden repos have SCIP indexes.",
+                    "results": [],
+                }
+            )
+
         all_results: List[QueryResult] = []
 
         for scip_file in scip_files:
@@ -3552,6 +3613,16 @@ async def scip_dependents(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
         scip_files = _find_scip_files()
+
+        if not scip_files:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "No SCIP indexes found. Generate indexes with 'cidx scip generate' or ensure golden repos have SCIP indexes.",
+                    "results": [],
+                }
+            )
+
         all_results: List[QueryResult] = []
 
         for scip_file in scip_files:
@@ -3609,7 +3680,6 @@ async def scip_impact(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         MCP-compliant response with impact analysis results
     """
     from code_indexer.scip.query.composites import analyze_impact
-    from pathlib import Path
 
     try:
         symbol = params.get("symbol")
@@ -3621,8 +3691,18 @@ async def scip_impact(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 {"success": False, "error": "symbol parameter is required"}
             )
 
-        scip_dir = Path.cwd() / ".code-indexer" / "scip"
-        result = analyze_impact(symbol, scip_dir, depth=depth, project=project)
+        golden_repos_dir = _get_golden_repos_scip_dir()
+
+        if not golden_repos_dir:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "No SCIP indexes found. Generate indexes with 'cidx scip generate' or ensure golden repos have SCIP indexes.",
+                    "results": [],
+                }
+            )
+
+        result = analyze_impact(symbol, golden_repos_dir, depth=depth, project=project)
 
         return _mcp_response(
             {
@@ -3675,7 +3755,6 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         MCP-compliant response with call chain results
     """
     from code_indexer.scip.query.composites import trace_call_chain
-    from pathlib import Path
 
     try:
         from_symbol = params.get("from_symbol")
@@ -3688,8 +3767,18 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 {"success": False, "error": "from_symbol and to_symbol parameters are required"}
             )
 
-        scip_dir = Path.cwd() / ".code-indexer" / "scip"
-        result = trace_call_chain(from_symbol, to_symbol, scip_dir, max_depth=max_depth, project=project)
+        golden_repos_dir = _get_golden_repos_scip_dir()
+
+        if not golden_repos_dir:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "No SCIP indexes found. Generate indexes with 'cidx scip generate' or ensure golden repos have SCIP indexes.",
+                    "chains": [],
+                }
+            )
+
+        result = trace_call_chain(from_symbol, to_symbol, golden_repos_dir, max_depth=max_depth, project=project)
 
         return _mcp_response(
             {
@@ -3737,7 +3826,6 @@ async def scip_context(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         MCP-compliant response with smart context results
     """
     from code_indexer.scip.query.composites import get_smart_context
-    from pathlib import Path
 
     try:
         symbol = params.get("symbol")
@@ -3750,8 +3838,18 @@ async def scip_context(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 {"success": False, "error": "symbol parameter is required"}
             )
 
-        scip_dir = Path.cwd() / ".code-indexer" / "scip"
-        result = get_smart_context(symbol, scip_dir, limit=limit, min_score=min_score, project=project)
+        golden_repos_dir = _get_golden_repos_scip_dir()
+
+        if not golden_repos_dir:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "No SCIP indexes found. Generate indexes with 'cidx scip generate' or ensure golden repos have SCIP indexes.",
+                    "files": [],
+                }
+            )
+
+        result = get_smart_context(symbol, golden_repos_dir, limit=limit, min_score=min_score, project=project)
 
         return _mcp_response(
             {

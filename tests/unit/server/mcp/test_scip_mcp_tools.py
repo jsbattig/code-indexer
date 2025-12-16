@@ -60,7 +60,9 @@ class TestSCIPDefinitionTool:
             mock_engine.find_definition.return_value = [mock_result]
             MockEngine.return_value = mock_engine
 
-            with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            with patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 response = await scip_definition(params, mock_user)
@@ -107,7 +109,9 @@ class TestSCIPReferencesTool:
             mock_engine.find_references.return_value = [mock_ref]
             MockEngine.return_value = mock_engine
 
-            with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            with patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 response = await scip_references(params, mock_user)
@@ -146,7 +150,9 @@ class TestSCIPDependenciesTool:
             mock_engine.get_dependencies.return_value = [mock_dep]
             MockEngine.return_value = mock_engine
 
-            with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            with patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 response = await scip_dependencies(params, mock_user)
@@ -193,7 +199,9 @@ class TestSCIPDependentsTool:
             mock_engine.get_dependents.return_value = [mock_dependent]
             MockEngine.return_value = mock_engine
 
-            with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            with patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 response = await scip_dependents(params, mock_user)
@@ -219,7 +227,11 @@ class TestSCIPImpactTool:
     async def test_scip_impact_returns_mcp_response(self, mock_user, tmp_path):
         """Should return MCP-compliant response with impact analysis results."""
         from code_indexer.server.mcp.handlers import scip_impact
-        from code_indexer.scip.query.composites import ImpactAnalysisResult, AffectedSymbol, AffectedFile
+        from code_indexer.scip.query.composites import (
+            ImpactAnalysisResult,
+            AffectedSymbol,
+            AffectedFile,
+        )
         from pathlib import Path
 
         mock_impact_result = ImpactAnalysisResult(
@@ -234,7 +246,7 @@ class TestSCIPImpactTool:
                     column=5,
                     depth=1,
                     relationship="call",
-                    chain=["com.example.UserService", "com.example.AuthHandler"]
+                    chain=["com.example.UserService", "com.example.AuthHandler"],
                 )
             ],
             affected_files=[
@@ -243,17 +255,21 @@ class TestSCIPImpactTool:
                     project="project1",
                     affected_symbol_count=1,
                     min_depth=1,
-                    max_depth=1
+                    max_depth=1,
                 )
             ],
             truncated=False,
-            total_affected=1
+            total_affected=1,
         )
 
         params = {"symbol": "UserService", "depth": 3}
 
-        with patch("code_indexer.scip.query.composites.analyze_impact") as mock_analyze:
+        with (
+            patch("code_indexer.scip.query.composites.analyze_impact") as mock_analyze,
+            patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find,
+        ):
             mock_analyze.return_value = mock_impact_result
+            mock_find.return_value = [Path("/fake/path/index.scip")]
 
             response = await scip_impact(params, mock_user)
 
@@ -279,7 +295,11 @@ class TestSCIPCallChainTool:
     async def test_scip_callchain_returns_mcp_response(self, mock_user):
         """Should return MCP-compliant response with call chain results."""
         from code_indexer.server.mcp.handlers import scip_callchain
-        from code_indexer.scip.query.composites import CallChainResult, CallChain, CallStep
+        from code_indexer.scip.query.composites import (
+            CallChainResult,
+            CallChain,
+            CallStep,
+        )
         from pathlib import Path
 
         mock_result = CallChainResult(
@@ -293,21 +313,25 @@ class TestSCIPCallChainTool:
                             file_path=Path("src/service.py"),
                             line=10,
                             column=5,
-                            call_type="call"
+                            call_type="call",
                         )
                     ],
-                    length=1
+                    length=1,
                 )
             ],
             total_chains_found=1,
             truncated=False,
-            max_depth_reached=False
+            max_depth_reached=False,
         )
 
         params = {"from_symbol": "Controller", "to_symbol": "Database"}
 
-        with patch("code_indexer.scip.query.composites.trace_call_chain") as mock_trace:
+        with (
+            patch("code_indexer.scip.query.composites.trace_call_chain") as mock_trace,
+            patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find,
+        ):
             mock_trace.return_value = mock_result
+            mock_find.return_value = [Path("/fake/path/index.scip")]
 
             response = await scip_callchain(params, mock_user)
 
@@ -326,7 +350,11 @@ class TestSCIPContextTool:
     async def test_scip_context_returns_mcp_response(self, mock_user):
         """Should return MCP-compliant response with smart context results."""
         from code_indexer.server.mcp.handlers import scip_context
-        from code_indexer.scip.query.composites import SmartContextResult, ContextFile, ContextSymbol
+        from code_indexer.scip.query.composites import (
+            SmartContextResult,
+            ContextFile,
+            ContextSymbol,
+        )
         from pathlib import Path
 
         mock_result = SmartContextResult(
@@ -344,21 +372,27 @@ class TestSCIPContextTool:
                             relationship="definition",
                             line=10,
                             column=0,
-                            relevance=1.0
+                            relevance=1.0,
                         )
                     ],
-                    read_priority=1
+                    read_priority=1,
                 )
             ],
             total_files=1,
             total_symbols=1,
-            avg_relevance=0.9
+            avg_relevance=0.9,
         )
 
         params = {"symbol": "UserService"}
 
-        with patch("code_indexer.scip.query.composites.get_smart_context") as mock_context:
+        with (
+            patch(
+                "code_indexer.scip.query.composites.get_smart_context"
+            ) as mock_context,
+            patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find,
+        ):
             mock_context.return_value = mock_result
+            mock_find.return_value = [Path("/fake/path/index.scip")]
 
             response = await scip_context(params, mock_user)
 
