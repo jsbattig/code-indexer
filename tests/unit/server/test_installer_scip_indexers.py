@@ -1,0 +1,241 @@
+"""
+Unit tests for SCIP indexers installation in ServerInstaller.
+
+Tests the automatic SCIP indexers installation feature that ensures
+scip-python and scip-typescript are available without manual npm commands.
+"""
+
+import subprocess
+from unittest.mock import Mock, patch
+
+import pytest
+
+from code_indexer.server.installer import ServerInstaller
+
+
+class TestIsScipIndexerInstalled:
+    """Tests for _is_scip_indexer_installed method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_returns_true_when_scip_python_installed(self, installer):
+        """Test returns True when scip-python --version succeeds."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = installer._is_scip_indexer_installed("scip-python")
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["scip-python", "--version"], capture_output=True, text=True, timeout=10
+        )
+
+    def test_returns_true_when_scip_typescript_installed(self, installer):
+        """Test returns True when scip-typescript --version succeeds."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = installer._is_scip_indexer_installed("scip-typescript")
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["scip-typescript", "--version"], capture_output=True, text=True, timeout=10
+        )
+
+    def test_returns_false_when_indexer_not_found(self, installer):
+        """Test returns False when indexer command not found."""
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            result = installer._is_scip_indexer_installed("scip-python")
+
+        assert result is False
+
+    def test_returns_false_when_indexer_returns_nonzero(self, installer):
+        """Test returns False when indexer returns non-zero exit code."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = installer._is_scip_indexer_installed("scip-python")
+
+        assert result is False
+
+    def test_returns_false_on_timeout(self, installer):
+        """Test returns False when command times out."""
+        with patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired("scip-python", 10)
+        ):
+            result = installer._is_scip_indexer_installed("scip-python")
+
+        assert result is False
+
+
+class TestInstallScipIndexers:
+    """Tests for install_scip_indexers method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_skips_installation_when_both_already_installed(self, installer):
+        """Test skips npm install when both indexers already present."""
+        with patch.object(
+            installer, "_is_scip_indexer_installed", return_value=True
+        ) as mock_check:
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch("subprocess.run") as mock_run:
+                    result = installer.install_scip_indexers()
+
+        assert result is True
+        # Should check both indexers but not run npm install
+        assert mock_check.call_count == 2
+        mock_run.assert_not_called()
+
+    def test_skips_installation_when_npm_not_available(self, installer):
+        """Test skips installation and logs warning when npm not found."""
+        with patch.object(installer, "_is_npm_available", return_value=False):
+            result = installer.install_scip_indexers()
+
+        assert result is False
+
+    def test_installs_both_indexers_when_not_installed(self, installer):
+        """Test runs npm install for both indexers when not present."""
+        mock_npm_result = Mock()
+        mock_npm_result.returncode = 0
+
+        # First check returns False (not installed), after install returns True
+        check_results = [False, True, False, True]  # Two indexers, each checked twice
+
+        with patch.object(
+            installer, "_is_scip_indexer_installed", side_effect=check_results
+        ):
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_npm_result) as mock_run:
+                    result = installer.install_scip_indexers()
+
+        assert result is True
+        assert mock_run.call_count == 2
+        mock_run.assert_any_call(
+            ["npm", "install", "-g", "@sourcegraph/scip-python"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        mock_run.assert_any_call(
+            ["npm", "install", "-g", "@sourcegraph/scip-typescript"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    def test_installs_only_missing_indexer(self, installer):
+        """Test installs only the indexer that is missing."""
+        mock_npm_result = Mock()
+        mock_npm_result.returncode = 0
+
+        # scip-python already installed, scip-typescript needs install
+        check_results = [True, False, True]  # python(yes), typescript(no), typescript(yes after install)
+
+        with patch.object(
+            installer, "_is_scip_indexer_installed", side_effect=check_results
+        ):
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_npm_result) as mock_run:
+                    result = installer.install_scip_indexers()
+
+        assert result is True
+        # Should only install scip-typescript
+        mock_run.assert_called_once_with(
+            ["npm", "install", "-g", "@sourcegraph/scip-typescript"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    def test_returns_false_when_npm_install_fails(self, installer):
+        """Test returns False when npm install returns non-zero."""
+        mock_npm_result = Mock()
+        mock_npm_result.returncode = 1
+        mock_npm_result.stderr = "npm ERR! code EACCES"
+
+        with patch.object(installer, "_is_scip_indexer_installed", return_value=False):
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_npm_result):
+                    result = installer.install_scip_indexers()
+
+        assert result is False
+
+    def test_returns_false_when_verification_fails(self, installer):
+        """Test returns False when post-install verification fails."""
+        mock_npm_result = Mock()
+        mock_npm_result.returncode = 0
+
+        # Both checks return False (verification fails for first indexer)
+        with patch.object(installer, "_is_scip_indexer_installed", return_value=False):
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_npm_result):
+                    result = installer.install_scip_indexers()
+
+        assert result is False
+
+    def test_handles_npm_timeout(self, installer):
+        """Test returns False when npm install times out."""
+        with patch.object(installer, "_is_scip_indexer_installed", return_value=False):
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch(
+                    "subprocess.run",
+                    side_effect=subprocess.TimeoutExpired("npm", 180),
+                ):
+                    result = installer.install_scip_indexers()
+
+        assert result is False
+
+    def test_handles_generic_exception(self, installer):
+        """Test returns False when npm install raises unexpected exception."""
+        with patch.object(installer, "_is_scip_indexer_installed", return_value=False):
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch(
+                    "subprocess.run",
+                    side_effect=RuntimeError("unexpected error"),
+                ):
+                    result = installer.install_scip_indexers()
+
+        assert result is False
+
+    def test_continues_installation_after_one_failure(self, installer):
+        """Test continues installing second indexer even if first fails."""
+        mock_npm_result_fail = Mock()
+        mock_npm_result_fail.returncode = 1
+        mock_npm_result_fail.stderr = "failed"
+
+        mock_npm_result_success = Mock()
+        mock_npm_result_success.returncode = 0
+
+        # Both not installed initially
+        check_results = [False, False, True]  # python(no), typescript(no), typescript(yes after install)
+
+        with patch.object(
+            installer, "_is_scip_indexer_installed", side_effect=check_results
+        ):
+            with patch.object(installer, "_is_npm_available", return_value=True):
+                with patch(
+                    "subprocess.run",
+                    side_effect=[mock_npm_result_fail, mock_npm_result_success],
+                ) as mock_run:
+                    result = installer.install_scip_indexers()
+
+        # Should return False because not all succeeded
+        assert result is False
+        # But should have attempted both
+        assert mock_run.call_count == 2

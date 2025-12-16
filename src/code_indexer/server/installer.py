@@ -265,6 +265,9 @@ WantedBy=multi-user.target
             # Try to install Claude CLI (non-fatal if fails)
             self.install_claude_cli()
 
+            # Try to install SCIP indexers (non-fatal if fails)
+            self.install_scip_indexers()
+
             # Seed initial admin user
             self.seed_initial_admin_user()
 
@@ -399,3 +402,88 @@ WantedBy=multi-user.target
         except Exception as e:
             logger.error(f"Claude CLI installation failed: {e}")
             return False
+
+    def _is_scip_indexer_installed(self, indexer_name: str) -> bool:
+        """
+        Check if a SCIP indexer command exists.
+
+        Args:
+            indexer_name: Name of the indexer command (e.g., "scip-python", "scip-typescript")
+
+        Returns:
+            True if the indexer is installed and responds to --version
+        """
+        try:
+            result = subprocess.run(
+                [indexer_name, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def install_scip_indexers(self) -> bool:
+        """
+        Install SCIP indexers for all supported languages.
+
+        Installs:
+        - @sourcegraph/scip-python for Python code
+        - @sourcegraph/scip-typescript for TypeScript/JavaScript
+
+        Returns:
+            True if all indexers are available after this method
+            (either already installed or successfully installed),
+            False if installation failed or npm not available.
+        """
+        indexers = {
+            "scip-python": "@sourcegraph/scip-python",
+            "scip-typescript": "@sourcegraph/scip-typescript",
+        }
+
+        # Check if npm available
+        if not self._is_npm_available():
+            logger.warning("npm not found - SCIP indexers installation skipped")
+            logger.info("Install manually:")
+            for package in indexers.values():
+                logger.info(f"  npm install -g {package}")
+            return False
+
+        all_installed = True
+        for indexer_cmd, npm_package in indexers.items():
+            # Check if already installed (idempotent)
+            if self._is_scip_indexer_installed(indexer_cmd):
+                logger.info(f"{indexer_cmd} already installed")
+                continue
+
+            # Install via npm
+            try:
+                logger.info(f"Installing {indexer_cmd} via npm...")
+                result = subprocess.run(
+                    ["npm", "install", "-g", npm_package],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,  # 3 minute timeout for npm install
+                )
+
+                if result.returncode != 0:
+                    logger.error(f"{indexer_cmd} installation failed: {result.stderr}")
+                    all_installed = False
+                    continue
+
+                # Verify installation succeeded
+                if self._is_scip_indexer_installed(indexer_cmd):
+                    logger.info(f"{indexer_cmd} installed successfully")
+                else:
+                    logger.error(f"{indexer_cmd} installation failed: verification failed")
+                    all_installed = False
+
+            except subprocess.TimeoutExpired:
+                logger.error(f"{indexer_cmd} installation failed: timeout")
+                all_installed = False
+            except Exception as e:
+                logger.error(f"{indexer_cmd} installation failed: {e}")
+                all_installed = False
+
+        return all_installed
