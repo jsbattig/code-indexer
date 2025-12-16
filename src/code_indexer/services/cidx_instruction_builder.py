@@ -43,9 +43,15 @@ class CidxInstructionBuilder:
 
     def _build_core_introduction(self) -> str:
         """Build the core CIDX introduction."""
-        return """**ABSOLUTE REQUIREMENT**: ALWAYS use `cidx query` FIRST before any grep/find/search operations when exploring code by purpose or functionality.
+        return """**ABSOLUTE REQUIREMENT**: ALWAYS use CIDX tools FIRST before any grep/find/search operations.
 
-### Mandatory CIDX-First Workflow
+CIDX provides 4 major capabilities:
+1. Semantic Search (cidx query) - AI-powered code search
+2. SCIP Code Intelligence (cidx scip) - Code navigation (definitions, references, call chains)
+3. Full-Text Search (cidx query --fts) - Exact string matching with regex support
+4. Temporal Search (cidx query --time-range-all) - Git history search
+
+### 1. Semantic Search (Primary Tool)
 **STEP 1 - ALWAYS**: Start with semantic search using cidx
 ```bash
 cidx query "authentication function" --quiet
@@ -55,20 +61,66 @@ cidx query "authentication system login" --limit 10
 cidx query "caching engine documentation" --language md
 ```
 
-**STEP 2 - ONLY IF NEEDED**: Use traditional tools for exact string matches or when cidx fails
+**Mandatory Use Cases**:
+- Finding functions/classes by purpose: "user authentication", "data validation"
+- Locating implementation patterns: "async database queries", "error handling"
+- Discovering related code: "similar to login function", "authentication middleware"
 
-### CIDX Mandatory Use Cases - NO EXCEPTIONS
-- **ABSOLUTELY REQUIRED** when user asks to "explore [functionality]" - use cidx IMMEDIATELY
-- **ABSOLUTELY REQUIRED** for finding functions/classes by purpose: "user authentication", "data validation"
-- **ABSOLUTELY REQUIRED** for locating implementation patterns: "async database queries", "error handling"
-- **ABSOLUTELY REQUIRED** for discovering related code: "similar to login function", "authentication middleware"
+### 2. SCIP Code Intelligence (Code Navigation)
+**Use for precise code navigation** (requires: cidx scip generate first)
+```bash
+cidx scip definition "UserService.findById"          # Find where symbol is defined
+cidx scip references "UserService.findById"         # Find all usages
+cidx scip dependencies "UserService"                # What does this depend on?
+cidx scip dependents "UserRepository"               # What depends on this?
+cidx scip callchain "UserController.getUser" "UserRepository.findById" --depth 5
+cidx scip impact "UserService.findById" --depth 3   # Analyze impact of changes
+cidx scip context "UserService"                     # Get full context
+```
+
+**When to use SCIP**:
+- Navigate from function call to definition
+- Find all references to a class/method
+- Trace call chains across interfaces
+- Analyze impact of code changes
+- Understand dependencies between modules
+
+### 3. Full-Text Search (Exact Matching)
+**Use for exact strings, identifiers, or regex patterns**
+```bash
+cidx query "def authenticate" --fts --quiet         # Exact string match
+cidx query "test_.*_auth" --fts --regex --quiet    # Regex pattern
+cidx query "TODO" --fts --case-sensitive --quiet    # Case-sensitive
+cidx query "athenticate" --fts --fuzzy --quiet     # Typo tolerance
+cidx query "login" --fts --semantic --quiet         # Hybrid (both FTS + semantic)
+```
+
+**When to use FTS**:
+- Searching for exact variable/function names
+- Finding TODO comments or specific text
+- Regex pattern matching (10-50x faster than grep)
+- Typo debugging with fuzzy matching
+
+### 4. Temporal Search (Git History)
+**Search across commit history** (requires: cidx index --index-commits first)
+```bash
+cidx query "JWT authentication" --time-range-all --quiet
+cidx query "database bug" --time-range-all --chunk-type commit_message
+cidx query "refactor auth" --time-range 2024-01-01..2024-12-31 --quiet
+cidx query "security fix" --time-range-all --author "dev@company.com"
+```
+
+**When to use Temporal**:
+- Find when a feature was added
+- Search commit messages for bug fixes
+- Track code evolution over time
+- Find changes by specific author
 
 ### Traditional Tools - LIMITED EXCEPTIONS ONLY
-- Exact literal string matches needed (specific variable names, exact text)
 - Simple file listing operations (ls, find by filename)
-- When cidx index unavailable or corrupted (fallback only)
+- When CIDX index unavailable (fallback only)
 
-**VIOLATION CONSEQUENCE**: Using grep/find BEFORE attempting cidx for semantic searches violates the semantic-first mandate."""
+**VIOLATION CONSEQUENCE**: Using grep/find BEFORE attempting CIDX violates the semantic-first mandate."""
 
     def _build_help_output(self) -> str:
         """Build the complete CIDX help output section."""

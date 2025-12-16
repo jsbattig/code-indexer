@@ -6421,6 +6421,70 @@ def _status_impl(ctx):
                                     "FTS Index: ❌ Not created (use --fts flag)"
                                 )
 
+                            # SCIP (Code Intelligence) index check
+                            scip_dir = config_manager.config_path.parent / "scip"
+                            if scip_dir.exists() and scip_dir.is_dir():
+                                # Check for SCIP database files
+                                scip_db_files = list(scip_dir.glob("*.scip.db"))
+
+                                if scip_db_files:
+                                    # Calculate total size once (used in all branches)
+                                    total_size = sum(
+                                        db_file.stat().st_size
+                                        for db_file in scip_db_files
+                                    )
+                                    size_mb = total_size / (1024 * 1024)
+
+                                    # Fallback message for when status.json unavailable or unparseable
+                                    fallback_msg = f"SCIP Index: ✅ {size_mb:.1f} MB ({len(scip_db_files)} databases)"
+
+                                    # Try to get detailed status from status.json
+                                    status_file = scip_dir / "status.json"
+
+                                    if status_file.exists():
+                                        try:
+                                            import json
+                                            with open(status_file) as f:
+                                                scip_status_data = json.load(f)
+
+                                            overall_status = scip_status_data.get("overall_status", "unknown")
+                                            total_projects = scip_status_data.get("total_projects", 0)
+                                            successful = scip_status_data.get("successful_projects", 0)
+                                            failed = scip_status_data.get("failed_projects", 0)
+
+                                            # Status emoji based on overall status
+                                            if overall_status == "success":
+                                                status_emoji = "✅"
+                                                status_text = f"{successful}/{total_projects} projects"
+                                            elif overall_status == "limbo":
+                                                status_emoji = "⚠️"
+                                                status_text = f"{successful}/{total_projects} projects ({failed} failed)"
+                                            elif overall_status == "failed":
+                                                status_emoji = "❌"
+                                                status_text = "Generation failed"
+                                            else:
+                                                status_emoji = "📊"
+                                                status_text = f"{len(scip_db_files)} databases"
+
+                                            index_files_status.append(
+                                                f"SCIP Index: {status_emoji} {size_mb:.1f} MB ({status_text})"
+                                            )
+                                        except Exception as e:
+                                            logger.debug(f"Failed to parse SCIP status.json: {e}")
+                                            # Fallback to basic display
+                                            index_files_status.append(fallback_msg)
+                                    else:
+                                        # No status.json, use basic display
+                                        index_files_status.append(fallback_msg)
+                                else:
+                                    index_files_status.append(
+                                        "SCIP Index: ❌ Not created (use: cidx scip generate)"
+                                    )
+                            else:
+                                index_files_status.append(
+                                    "SCIP Index: ❌ Not created (use: cidx scip generate)"
+                                )
+
                             # Track missing components for recovery guidance
                             has_projection_matrix = proj_matrix.exists()
                             has_hnsw_index = hnsw_index.exists()

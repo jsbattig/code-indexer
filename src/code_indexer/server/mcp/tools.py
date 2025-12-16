@@ -3080,7 +3080,7 @@ TOOL_REGISTRY["cidx_ssh_key_assign_host"] = {
 TOOL_REGISTRY["scip_definition"] = {
     "name": "scip_definition",
     "description": (
-        "TL;DR: Find where a symbol is defined (class, function, method). Returns exact file location, line number, and symbol kind. "
+        "TL;DR: [SCIP Code Intelligence] Find where a symbol is defined (class, function, method). Returns exact file location, line number, and symbol kind. "
         "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
         "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration when you don't know the exact symbol name. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name and want no false positives. "
         "WHEN TO USE: Finding where a class/function/method is defined. Locating the source of a symbol before reading its implementation. Understanding what a symbol is (class vs function vs method). First step before using scip_references, scip_dependencies, or scip_dependents. "
@@ -3143,7 +3143,7 @@ TOOL_REGISTRY["scip_definition"] = {
 TOOL_REGISTRY["scip_references"] = {
     "name": "scip_references",
     "description": (
-        "TL;DR: Find all places where a symbol is used/referenced (imports, calls, instantiations). Returns file locations, line numbers, and usage context. "
+        "TL;DR: [SCIP Code Intelligence] Find all places where a symbol is used/referenced (imports, calls, instantiations). Returns file locations, line numbers, and usage context. "
         "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
         "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration when you want to find all related usages. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name and want only its references. "
         "WHEN TO USE: Finding all code that uses/imports/calls a symbol. Understanding how widespread a symbol's usage is. Identifying all callsites before refactoring. Finding examples of how a symbol is used in practice. "
@@ -3211,7 +3211,7 @@ TOOL_REGISTRY["scip_references"] = {
 TOOL_REGISTRY["scip_dependencies"] = {
     "name": "scip_dependencies",
     "description": (
-        "TL;DR: Find what a symbol depends on (imports, calls, uses). Returns symbols and files that the target symbol requires to function. "
+        "TL;DR: [SCIP Code Intelligence] Find what a symbol depends on (imports, calls, uses). Returns symbols and files that the target symbol requires to function. "
         "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
         "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name. "
         "WHEN TO USE: Understanding what a symbol needs to work (its dependencies). Identifying imports and external dependencies. Finding all symbols a target symbol calls or uses. Understanding coupling and dependency relationships. Planning refactoring by understanding dependencies. "
@@ -3279,7 +3279,7 @@ TOOL_REGISTRY["scip_dependencies"] = {
 TOOL_REGISTRY["scip_dependents"] = {
     "name": "scip_dependents",
     "description": (
-        "TL;DR: Find what depends on a symbol (reverse dependencies). Returns symbols and files that require/use the target symbol. Opposite of scip_dependencies. "
+        "TL;DR: [SCIP Code Intelligence] Find what depends on a symbol (reverse dependencies). Returns symbols and files that require/use the target symbol. Opposite of scip_dependencies. "
         "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default - 'User' matches 'UserService', 'UserManager', etc. For exact matching, use exact=true. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
         "FUZZY VS EXACT MATCHING: Fuzzy (default, exact=false) uses substring matching - 'User' matches 'UserService', 'UserManager', 'UserRepository'. Fast and flexible, best for exploration. Exact (exact=true) uses precise matching - 'UserService' only matches 'UserService'. Slower but guaranteed accuracy, best when you know the exact symbol name. "
         "WHEN TO USE: Understanding impact of changing a symbol (what will break). Finding all code that relies on a symbol. Identifying coupling and understanding how widely a symbol is used. Planning refactoring by understanding dependent code. Understanding blast radius before modifying a symbol. "
@@ -3347,7 +3347,7 @@ TOOL_REGISTRY["scip_dependents"] = {
 TOOL_REGISTRY["scip_impact"] = {
     "name": "scip_impact",
     "description": (
-        "TL;DR: Recursive impact analysis - find ALL symbols and files affected by changing a symbol. Returns complete dependency tree with depth tracking and file-level summaries. Use this for comprehensive change impact assessment. "
+        "TL;DR: [SCIP Code Intelligence] Recursive impact analysis - find ALL symbols and files affected by changing a symbol. Returns complete dependency tree with depth tracking and file-level summaries. Use this for comprehensive change impact assessment. "
         "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
         "DEPTH BEHAVIOR: Results grow linearly with depth (BFS traversal with cycle detection prevents exponential growth). depth=1 shows direct dependents, depth=2 adds dependents-of-dependents, depth=3 adds third-level dependents. Use depth=3 (default) for comprehensive analysis, depth=5+ for mission-critical changes requiring complete blast radius understanding. Higher depth increases query time but ensures complete impact visibility. "
         "WHEN TO USE: Understanding full blast radius of changing a symbol. Planning refactoring with complete dependency tree visibility. Assessing risk before modifying critical code. Generating file lists for comprehensive testing. Understanding cascading dependencies across multiple levels. Finding all code that transitively depends on a symbol. "
@@ -3430,7 +3430,7 @@ TOOL_REGISTRY["scip_impact"] = {
 TOOL_REGISTRY["scip_callchain"] = {
     "name": "scip_callchain",
     "description": (
-        "TL;DR: Find call chains/paths between two symbols. Returns all possible call paths showing how from_symbol can reach to_symbol. Use this for tracing execution flow and understanding call relationships. "
+        "TL;DR: [SCIP Code Intelligence] Find call chains/paths between two symbols. Returns all possible call paths showing how from_symbol can reach to_symbol. Use this for tracing execution flow and understanding call relationships. "
         "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
         "DEPTH BEHAVIOR: Results grow linearly with depth (BFS traversal with cycle detection prevents exponential growth). max_depth=5 searches 5 levels deep for call paths. Higher max_depth finds longer chains but increases query time. Start with default max_depth=10, increase to 20 if no paths found and symbols are distantly connected. "
         "WHEN TO USE: Understanding how one symbol calls/reaches another. Tracing execution flow between components. Finding indirect call relationships. Debugging call stack issues. Understanding coupling between distant symbols. Verifying expected call paths exist. "
@@ -3508,7 +3508,7 @@ TOOL_REGISTRY["scip_callchain"] = {
 TOOL_REGISTRY["scip_context"] = {
     "name": "scip_context",
     "description": (
-        "TL;DR: Get smart, curated file list for understanding a symbol. Returns prioritized files with relevance scoring - files containing definition, direct dependencies/dependents, and related symbols. Perfect for 'what files should I read to understand X?' Use this before reading code. "
+        "TL;DR: [SCIP Code Intelligence] Get smart, curated file list for understanding a symbol. Returns prioritized files with relevance scoring - files containing definition, direct dependencies/dependents, and related symbols. Perfect for 'what files should I read to understand X?' Use this before reading code. "
         "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
         "WHEN TO USE: Getting curated list of files to read for understanding a symbol. Prioritized file list before code review. Understanding symbol context without reading entire codebase. Building mental model of symbol's ecosystem. Finding related code for refactoring. Efficient context gathering for code analysis. "
         "WHEN NOT TO USE: Finding all usages (use scip_references). Impact analysis (use scip_impact). Finding dependencies (use scip_dependencies). Finding dependents (use scip_dependents). Tracing call paths (use scip_callchain). Finding definitions (use scip_definition). "
