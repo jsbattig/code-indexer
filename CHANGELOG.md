@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.6.0] - 2025-12-16
+
+### Added
+
+#### Backend Index Addition Service
+
+**Feature**: Implemented `GoldenRepoManager.add_index_to_golden_repo()` method that enables incremental addition of index types to existing golden repositories without full repository rebuilds.
+
+**Supported Index Types**:
+- `semantic_fts`: Semantic search and full-text search indexes
+- `temporal`: Git history temporal indexes with configurable options
+- `scip`: SCIP code intelligence indexes
+
+**Key Capabilities**:
+- Asynchronous background job execution with BackgroundJobManager integration
+- Idempotent validation prevents duplicate index creation
+- Comprehensive stdout/stderr capture for debugging
+- 5-minute timeout protection on all subprocess calls
+- Temporal indexing defaults to `--time-range-all` for complete history
+- Improved index detection validates actual index files, not just directories
+
+**Usage**:
+```python
+job_id = manager.add_index_to_golden_repo(
+    alias="my-repo",
+    index_type="temporal",
+    submitter_username="admin"
+)
+```
+
+**Foundation**: This backend service provides the core capability for REST API, CLI, MCP, and Web UI interfaces to add indexes incrementally.
+
 ## [8.5.0] - 2025-12-14
 
 ### Changed

@@ -434,6 +434,36 @@ class GoldenRepoInfo(BaseModel):
     created_at: str
 
 
+class AddIndexRequest(BaseModel):
+    """Request model for adding index to golden repository."""
+
+    index_type: str = Field(
+        ..., description="Index type: semantic_fts, temporal, or scip"
+    )
+
+
+class AddIndexResponse(BaseModel):
+    """Response model for add index operation."""
+
+    job_id: str
+    status: str
+
+
+class IndexInfo(BaseModel):
+    """Model for index presence information."""
+
+    present: bool
+    last_updated: Optional[str] = None
+    size_bytes: Optional[int] = None
+
+
+class IndexStatusResponse(BaseModel):
+    """Response model for index status query."""
+
+    alias: str
+    indexes: Dict[str, IndexInfo]
+
+
 class JobResponse(BaseModel):
     """Response model for background job operations."""
 
@@ -3101,6 +3131,115 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to submit refresh job: {str(e)}",
             )
+
+    @app.post(
+        "/api/admin/golden-repos/{alias}/indexes",
+        response_model=AddIndexResponse,
+        status_code=202,
+    )
+    async def add_golden_repo_index(
+        alias: str,
+        request: AddIndexRequest,
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
+    ):
+        """
+        Add an index type to a golden repository (admin only) - async operation.
+
+        Args:
+            alias: Alias of the golden repository
+            request: AddIndexRequest with index_type
+            current_user: Current authenticated admin user
+
+        Returns:
+            AddIndexResponse with job_id and status
+
+        Raises:
+            HTTPException 404: If golden repository not found
+            HTTPException 400: If invalid index_type
+            HTTPException 409: If index already exists
+            HTTPException 500: If job submission fails
+        """
+        # AC4: Validate index_type at endpoint level to return 400
+        valid_index_types = ["semantic_fts", "temporal", "scip"]
+        if request.index_type not in valid_index_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid index_type: {request.index_type}. Must be one of: {', '.join(valid_index_types)}",
+            )
+
+        try:
+            # Call golden_repo_manager.add_index_to_golden_repo
+            job_id = golden_repo_manager.add_index_to_golden_repo(
+                alias=alias,
+                index_type=request.index_type,
+                submitter_username=current_user.username,
+            )
+
+            # Build response with Location header
+            response = AddIndexResponse(job_id=job_id, status="pending")
+
+            # Add Location header to response
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                content=response.model_dump(),
+                status_code=202,
+                headers={"Location": f"/api/jobs/{job_id}"},
+            )
+
+        except ValueError as e:
+            error_msg = str(e)
+            # Determine if it's 404 (not found) or 409 (conflict) or 400 (invalid)
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            elif "already exists" in error_msg.lower():
+                raise HTTPException(status_code=409, detail=error_msg)
+            elif "invalid index_type" in error_msg.lower():
+                raise HTTPException(status_code=400, detail=error_msg)
+            else:
+                raise HTTPException(status_code=400, detail=error_msg)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to submit job: {str(e)}",
+            )
+
+    @app.get(
+        "/api/admin/golden-repos/{alias}/indexes",
+        response_model=IndexStatusResponse,
+    )
+    async def get_golden_repo_index_status(
+        alias: str,
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
+    ):
+        """
+        Get index status for a golden repository (admin only).
+
+        Args:
+            alias: Alias of the golden repository
+            current_user: Current authenticated admin user
+
+        Returns:
+            IndexStatusResponse with alias and index presence information
+
+        Raises:
+            HTTPException 404: If golden repository not found
+        """
+        # Check if golden repo exists
+        if alias not in golden_repo_manager.golden_repos:
+            raise HTTPException(
+                status_code=404, detail=f"Golden repository '{alias}' not found"
+            )
+
+        golden_repo = golden_repo_manager.golden_repos[alias]
+
+        # Query index presence for all three types
+        indexes = {}
+        for index_type in ["semantic_fts", "temporal", "scip"]:
+            present = golden_repo_manager._index_exists(golden_repo, index_type)
+            indexes[index_type] = IndexInfo(present=present)
+
+        return IndexStatusResponse(alias=alias, indexes=indexes)
 
     @app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
     async def get_job_status(
