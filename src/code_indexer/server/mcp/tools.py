@@ -3109,7 +3109,7 @@ TOOL_REGISTRY["scip_definition"] = {
         },
         "required": ["symbol"],
     },
-    "required_permission": "query",
+    "required_permission": "query_repos",
     "outputSchema": {
         "type": "object",
         "properties": {
@@ -3177,7 +3177,7 @@ TOOL_REGISTRY["scip_references"] = {
         },
         "required": ["symbol"],
     },
-    "required_permission": "query",
+    "required_permission": "query_repos",
     "outputSchema": {
         "type": "object",
         "properties": {
@@ -3245,7 +3245,7 @@ TOOL_REGISTRY["scip_dependencies"] = {
         },
         "required": ["symbol"],
     },
-    "required_permission": "query",
+    "required_permission": "query_repos",
     "outputSchema": {
         "type": "object",
         "properties": {
@@ -3313,7 +3313,7 @@ TOOL_REGISTRY["scip_dependents"] = {
         },
         "required": ["symbol"],
     },
-    "required_permission": "query",
+    "required_permission": "query_repos",
     "outputSchema": {
         "type": "object",
         "properties": {
@@ -3376,7 +3376,7 @@ TOOL_REGISTRY["scip_impact"] = {
         },
         "required": ["symbol"],
     },
-    "required_permission": "query",
+    "required_permission": "query_repos",
     "outputSchema": {
         "type": "object",
         "properties": {
@@ -3463,7 +3463,7 @@ TOOL_REGISTRY["scip_callchain"] = {
         },
         "required": ["from_symbol", "to_symbol"],
     },
-    "required_permission": "query",
+    "required_permission": "query_repos",
     "outputSchema": {
         "type": "object",
         "properties": {
@@ -3541,7 +3541,7 @@ TOOL_REGISTRY["scip_context"] = {
         },
         "required": ["symbol"],
     },
-    "required_permission": "query",
+    "required_permission": "query_repos",
     "outputSchema": {
         "type": "object",
         "properties": {
