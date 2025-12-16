@@ -3701,3 +3701,82 @@ async def scip_context(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"Error in scip_context: {e}")
         return _mcp_response({"success": False, "error": str(e), "files": []})
+
+
+async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Generate quick reference documentation for available MCP tools.
+    
+    Args:
+        params: {"category": str|null} - Optional category filter
+        user: Authenticated user
+        
+    Returns:
+        Dictionary with tool summaries filtered by category and user permissions
+    """
+    try:
+        from .tools import TOOL_REGISTRY
+        
+        category_filter = params.get("category")
+        
+        # Category mapping for tool names
+        categories = {
+            "search": ["search_code", "omni_search_code", "list_global_repos", "global_repo_status", "regex_search"],
+            "scip": ["scip_definition", "scip_references", "scip_dependencies", "scip_dependents", "scip_impact", "scip_callchain", "scip_context"],
+            "git": ["git_log", "git_show_commit", "git_search_commits", "git_search_diffs", "git_diff", "git_list_branches", "git_list_tags"],
+            "directory": ["browse_directory", "directory_tree", "get_file_content"],
+            "repo_management": ["activate_global_repo", "deactivate_global_repo", "add_golden_repo", "remove_golden_repo", "refresh_golden_repo"],
+            "user_management": ["create_user", "delete_user", "list_users", "update_user_role"],
+        }
+        
+        # Collect tools user has permission for
+        tools_summary = []
+        
+        for tool_name, tool_def in TOOL_REGISTRY.items():
+            # Check permission
+            required_permission = tool_def.get("required_permission", "query_repos")
+            if not user.has_permission(required_permission):
+                continue
+                
+            # Determine category
+            tool_category = "other"
+            for cat, tool_list in categories.items():
+                if tool_name in tool_list:
+                    tool_category = cat
+                    break
+                    
+            # Apply category filter
+            if category_filter and tool_category != category_filter:
+                continue
+                
+            # Extract TL;DR from description
+            description = tool_def.get("description", "")
+            tldr = description.split("TL;DR:")[1].split("\n")[0].strip() if "TL;DR:" in description else description[:200]
+            
+            tools_summary.append({
+                "name": tool_name,
+                "category": tool_category,
+                "summary": tldr,
+                "required_permission": required_permission,
+            })
+        
+        return {
+            "success": True,
+            "total_tools": len(tools_summary),
+            "category_filter": category_filter,
+            "tools": tools_summary,
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error in quick_reference: {e}")
+        return {
+            "success": False,
+            "total_tools": 0,
+            "category_filter": category_filter,
+            "tools": [],
+            "error": str(e),
+        }
+
+
+# Register the quick_reference handler
+HANDLER_REGISTRY["quick_reference"] = quick_reference

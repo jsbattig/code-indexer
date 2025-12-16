@@ -3595,3 +3595,54 @@ TOOL_REGISTRY["scip_context"] = {
         "required": ["success", "files"],
     },
 }
+# =============================================================================
+# Documentation & Help Tools
+# =============================================================================
+
+TOOL_REGISTRY["quick_reference"] = {
+    "name": "quick_reference",
+    "description": (
+        "TL;DR: Get quick reference documentation for CIDX MCP tools. Returns concise summaries of available tools with their purposes and when to use them. "
+        "USE CASES: (1) Discover what tools are available, (2) Understand tool purposes before using them, (3) Find the right tool for a specific task, (4) Filter tools by category (search, scip, git, directory, user management). "
+        "CATEGORIES: search (semantic/FTS code search), scip (code intelligence - definitions, references, dependencies, call chains), git (repository exploration, commit history, diffs), directory (browse files and folders), repo_management (activate/deactivate repos), user_management (create/delete users, manage roles). "
+        "OUTPUT: Returns tool names with TL;DR descriptions extracted from full tool definitions. Use category filter to narrow results. "
+        "EXAMPLE: {\"category\": \"scip\"} returns all 7 SCIP tools with their TL;DR summaries. {\"category\": null} returns all 49 tools."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": ["string", "null"],
+                "enum": ["search", "scip", "git", "directory", "repo_management", "user_management", None],
+                "default": None,
+                "description": "Optional category filter. null/omitted returns all tools. Options: search, scip, git, directory, repo_management, user_management.",
+            },
+        },
+        "required": [],
+    },
+    "required_permission": "query_repos",
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+            "total_tools": {"type": "integer", "description": "Total number of tools returned"},
+            "category_filter": {"type": ["string", "null"], "description": "Category filter applied (null if showing all)"},
+            "tools": {
+                "type": "array",
+                "description": "List of tool summaries",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Tool name"},
+                        "category": {"type": "string", "description": "Tool category"},
+                        "summary": {"type": "string", "description": "TL;DR summary from tool description"},
+                        "required_permission": {"type": "string", "description": "Permission required to use this tool"},
+                    },
+                    "required": ["name", "category", "summary", "required_permission"],
+                },
+            },
+            "error": {"type": "string", "description": "Error message if operation failed"},
+        },
+        "required": ["success", "total_tools", "tools"],
+    },
+}
