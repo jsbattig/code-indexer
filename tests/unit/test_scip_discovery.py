@@ -132,6 +132,26 @@ class TestProjectDiscovery:
         assert python_pkg.build_system == "setuptools"
         assert python_pkg.relative_path == Path("python-pkg")
 
+    def test_discover_python_requirements_txt(self, tmp_path):
+        """Test discovering Python projects with only requirements.txt."""
+        # Arrange: Create Python web app with requirements.txt (no setup.py/pyproject.toml)
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True, exist_ok=True)
+        (backend_dir / "requirements.txt").write_text("flask==2.0.1\nfastapi==0.68.0")
+        (backend_dir / "main.py").write_text("print('hello')")
+
+        # Act: Discover projects
+        discovery = ProjectDiscovery(tmp_path)
+        projects = discovery.discover()
+
+        # Assert: requirements.txt project discovered
+        assert len(projects) == 1
+        backend = projects[0]
+        assert backend.language == "python"
+        assert backend.build_system == "pip"
+        assert backend.relative_path == Path("backend")
+        assert backend.build_file == Path("backend/requirements.txt")
+
     def test_discover_empty_repo(self, tmp_path):
         """Test discovering projects in empty repository."""
         # Arrange: Empty directory
@@ -142,3 +162,23 @@ class TestProjectDiscovery:
 
         # Assert: No projects found
         assert len(projects) == 0
+
+    def test_discover_python_with_multiple_build_files(self, tmp_path):
+        """Test discovering Python project with multiple build files uses priority."""
+        # Arrange: Create Python project with all three build files
+        python_dir = tmp_path / "python-pkg"
+        python_dir.mkdir(parents=True, exist_ok=True)
+        (python_dir / "pyproject.toml").write_text('[tool.poetry]\nname = "python-pkg"')
+        (python_dir / "setup.py").write_text("from setuptools import setup")
+        (python_dir / "requirements.txt").write_text("flask==2.0.1")
+
+        # Act: Discover projects
+        discovery = ProjectDiscovery(tmp_path)
+        projects = discovery.discover()
+
+        # Assert: Only ONE project discovered using highest priority build file
+        assert len(projects) == 1
+        python_pkg = projects[0]
+        assert python_pkg.language == "python"
+        assert python_pkg.build_system == "poetry"
+        assert python_pkg.build_file == Path("python-pkg/pyproject.toml")
