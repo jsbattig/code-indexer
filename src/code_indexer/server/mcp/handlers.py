@@ -1766,7 +1766,9 @@ async def handle_set_global_config(args: Dict[str, Any], user: User) -> Dict[str
         return _mcp_response({"success": False, "error": str(e)})
 
 
-async def handle_add_golden_repo_index(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def handle_add_golden_repo_index(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """Handler for add_golden_repo_index tool (Story #596 AC1, AC3, AC4, AC5)."""
     alias = args.get("alias")
     index_type = args.get("index_type")
@@ -1792,16 +1794,16 @@ async def handle_add_golden_repo_index(args: Dict[str, Any], user: User) -> Dict
 
         # Call backend method to submit background job
         job_id = golden_repo_manager.add_index_to_golden_repo(
-            alias=alias,
-            index_type=index_type,
-            submitter_username=user.username
+            alias=alias, index_type=index_type, submitter_username=user.username
         )
 
-        return _mcp_response({
-            "success": True,
-            "job_id": job_id,
-            "message": f"Index type '{index_type}' is being added to golden repo '{alias}'. Use get_job_statistics to track progress."
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Index type '{index_type}' is being added to golden repo '{alias}'. Use get_job_statistics to track progress.",
+            }
+        )
 
     except ValueError as e:
         # AC4: Unknown alias, AC3: Invalid type, AC5: Already exists
@@ -1813,7 +1815,9 @@ async def handle_add_golden_repo_index(args: Dict[str, Any], user: User) -> Dict
         )
 
 
-async def handle_get_golden_repo_indexes(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def handle_get_golden_repo_indexes(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """Handler for get_golden_repo_indexes tool (Story #596 AC2, AC4)."""
     alias = args.get("alias")
 
@@ -1834,10 +1838,7 @@ async def handle_get_golden_repo_indexes(args: Dict[str, Any], user: User) -> Di
         # Get index status from backend
         status = golden_repo_manager.get_golden_repo_indexes(alias)
 
-        return _mcp_response({
-            "success": True,
-            **status
-        })
+        return _mcp_response({"success": True, **status})
 
     except ValueError as e:
         # AC4: Unknown alias
@@ -3753,7 +3754,14 @@ async def scip_impact(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
     except Exception as e:
         logger.exception(f"Error in scip_impact: {e}")
-        return _mcp_response({"success": False, "error": str(e), "affected_symbols": [], "affected_files": []})
+        return _mcp_response(
+            {
+                "success": False,
+                "error": str(e),
+                "affected_symbols": [],
+                "affected_files": [],
+            }
+        )
 
 
 async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -3772,7 +3780,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         MCP-compliant response with call chain results
     """
     from code_indexer.scip.query.primitives import SCIPQueryEngine
-    from code_indexer.scip.query.composites import CallChain
+    from code_indexer.scip.query.backends import CallChain
 
     try:
         from_symbol = params.get("from_symbol")
@@ -3789,7 +3797,10 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         if not from_symbol or not to_symbol:
             return _mcp_response(
-                {"success": False, "error": "from_symbol and to_symbol parameters are required"}
+                {
+                    "success": False,
+                    "error": "from_symbol and to_symbol parameters are required",
+                }
             )
 
         scip_files = _find_scip_files(repository_alias=repository_alias)
@@ -3810,7 +3821,9 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         for scip_file in scip_files:
             try:
                 engine = SCIPQueryEngine(scip_file)
-                chains = engine.backend.trace_call_chain(from_symbol, to_symbol, max_depth=max_depth, limit=100)
+                chains = engine.backend.trace_call_chain(
+                    from_symbol, to_symbol, max_depth=max_depth, limit=100
+                )
                 all_chains.extend(chains)
 
                 # Check if any chain reached max depth
@@ -3823,21 +3836,19 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 continue
 
         # Deduplicate chains by converting to set of path tuples
+        # Note: chain.path is List[str] (from backends.CallChain), not List[CallStep]
         unique_chains_map = {}
         for chain in all_chains:
-            # Create key from symbol names in path
-            path_key = tuple(step.symbol for step in chain.path)
+            # Create key from symbol names (path is already List[str])
+            path_key = tuple(chain.path)
             if path_key not in unique_chains_map:
                 unique_chains_map[path_key] = chain
 
         unique_chains = list(unique_chains_map.values())
 
-        # Filter by project if specified
-        if project:
-            unique_chains = [
-                chain for chain in unique_chains
-                if any(project in str(step.file_path) for step in chain.path)
-            ]
+        # Note: Project filtering not supported because backends.CallChain.path
+        # contains only symbol names (List[str]), not file paths.
+        # To enable project filtering, would need to query symbol locations separately.
 
         # Sort by length (shortest first)
         unique_chains.sort(key=lambda c: c.length)
@@ -3858,16 +3869,8 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 "chains": [
                     {
                         "length": chain.length,
-                        "path": [
-                            {
-                                "symbol": step.symbol,
-                                "file_path": str(step.file_path),
-                                "line": step.line,
-                                "column": step.column,
-                                "call_type": step.call_type,
-                            }
-                            for step in chain.path
-                        ],
+                        "path": chain.path,  # List[str] of symbol names
+                        "has_cycle": chain.has_cycle,
                     }
                     for chain in returned_chains
                 ],
@@ -3916,7 +3919,9 @@ async def scip_context(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 }
             )
 
-        result = get_smart_context(symbol, golden_repos_dir, limit=limit, min_score=min_score, project=project)
+        result = get_smart_context(
+            symbol, golden_repos_dir, limit=limit, min_score=min_score, project=project
+        )
 
         return _mcp_response(
             {
@@ -3956,67 +3961,106 @@ async def scip_context(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """
     Generate quick reference documentation for available MCP tools.
-    
+
     Args:
         params: {"category": str|null} - Optional category filter
         user: Authenticated user
-        
+
     Returns:
         Dictionary with tool summaries filtered by category and user permissions
     """
     try:
         from .tools import TOOL_REGISTRY
-        
+
         category_filter = params.get("category")
-        
+
         # Category mapping for tool names
         categories = {
-            "search": ["search_code", "omni_search_code", "list_global_repos", "global_repo_status", "regex_search"],
-            "scip": ["scip_definition", "scip_references", "scip_dependencies", "scip_dependents", "scip_impact", "scip_callchain", "scip_context"],
-            "git": ["git_log", "git_show_commit", "git_search_commits", "git_search_diffs", "git_diff", "git_list_branches", "git_list_tags"],
+            "search": [
+                "search_code",
+                "omni_search_code",
+                "list_global_repos",
+                "global_repo_status",
+                "regex_search",
+            ],
+            "scip": [
+                "scip_definition",
+                "scip_references",
+                "scip_dependencies",
+                "scip_dependents",
+                "scip_impact",
+                "scip_callchain",
+                "scip_context",
+            ],
+            "git": [
+                "git_log",
+                "git_show_commit",
+                "git_search_commits",
+                "git_search_diffs",
+                "git_diff",
+                "git_list_branches",
+                "git_list_tags",
+            ],
             "directory": ["browse_directory", "directory_tree", "get_file_content"],
-            "repo_management": ["activate_global_repo", "deactivate_global_repo", "add_golden_repo", "remove_golden_repo", "refresh_golden_repo"],
-            "user_management": ["create_user", "delete_user", "list_users", "update_user_role"],
+            "repo_management": [
+                "activate_global_repo",
+                "deactivate_global_repo",
+                "add_golden_repo",
+                "remove_golden_repo",
+                "refresh_golden_repo",
+            ],
+            "user_management": [
+                "create_user",
+                "delete_user",
+                "list_users",
+                "update_user_role",
+            ],
         }
-        
+
         # Collect tools user has permission for
         tools_summary = []
-        
+
         for tool_name, tool_def in TOOL_REGISTRY.items():
             # Check permission
             required_permission = tool_def.get("required_permission", "query_repos")
             if not user.has_permission(required_permission):
                 continue
-                
+
             # Determine category
             tool_category = "other"
             for cat, tool_list in categories.items():
                 if tool_name in tool_list:
                     tool_category = cat
                     break
-                    
+
             # Apply category filter
             if category_filter and tool_category != category_filter:
                 continue
-                
+
             # Extract TL;DR from description
             description = tool_def.get("description", "")
-            tldr = description.split("TL;DR:")[1].split("\n")[0].strip() if "TL;DR:" in description else description[:200]
-            
-            tools_summary.append({
-                "name": tool_name,
-                "category": tool_category,
-                "summary": tldr,
-                "required_permission": required_permission,
-            })
-        
+            tldr = (
+                description.split("TL;DR:")[1].split("\n")[0].strip()
+                if "TL;DR:" in description
+                else description[:200]
+            )
+
+            tools_summary.append(
+                {
+                    "name": tool_name,
+                    "category": tool_category,
+                    "summary": tldr,
+                    "required_permission": required_permission,
+                }
+            )
+
         return {
             "success": True,
             "total_tools": len(tools_summary),
             "category_filter": category_filter,
             "tools": tools_summary,
         }
-        
+
     except Exception as e:
         logger.exception(f"Error in quick_reference: {e}")
         return {
