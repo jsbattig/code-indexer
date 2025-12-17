@@ -3763,7 +3763,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         params: Dictionary containing:
             - from_symbol: Starting symbol
             - to_symbol: Target symbol
-            - max_depth: Optional maximum chain length (default 10, max 20)
+            - max_depth: Optional maximum chain length (default 10, max 10)
             - project: Optional project filter
         user: Authenticated user (for permission checking)
 
@@ -3777,6 +3777,12 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         to_symbol = params.get("to_symbol")
         max_depth = params.get("max_depth", 10)
         project = params.get("project")
+
+        # Validate and clamp max_depth to safe range
+        if max_depth < 1:
+            max_depth = 1
+        elif max_depth > 10:
+            max_depth = 10
 
         if not from_symbol or not to_symbol:
             return _mcp_response(

@@ -159,7 +159,6 @@ class TestExcludeIncludeFilters:
         This test verifies PathLib's match() method correctly handles glob patterns.
         """
         from code_indexer.scip.query.composites import _bfs_traverse_dependents
-        from code_indexer.scip.query.primitives import QueryResult
         from unittest.mock import MagicMock, patch
 
         # Create mock SCIP directory
@@ -288,6 +287,70 @@ class TestMatchesGlobPatternHelper:
         assert _matches_glob_pattern("test.py", "**[") is False  # Malformed bracket
 
 
+class TestTraceCallChain:
+    """Tests for trace_call_chain() functionality."""
+
+    def test_trace_call_chains_skips_empty_database_file(self, tmp_path, caplog):
+        """Should skip empty database files without warnings."""
+        import logging
+        from code_indexer.scip.query.composites import trace_call_chain
+
+        # Create directory with empty .scip.db file
+        scip_dir = tmp_path / "scip"
+        scip_dir.mkdir()
+        empty_db = scip_dir / "empty.scip.db"
+        empty_db.touch()  # Create empty file (0 bytes)
+
+        # Enable logging to capture warnings
+        caplog.set_level(logging.WARNING)
+
+        # Should not raise exception or log warnings
+        result = trace_call_chain(
+            from_symbol="some_func",
+            to_symbol="another_func",
+            scip_dir=scip_dir,
+            max_depth=5
+        )
+
+        # Result should be empty (no chains found)
+        assert result.total_chains_found == 0
+
+        # No warnings should be logged for empty files
+        warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
+        assert not any("empty.scip.db" in msg for msg in warning_messages), \
+            f"Should not warn about empty database files, but got: {warning_messages}"
+
+    def test_trace_call_chains_logs_warning_for_invalid_database(self, tmp_path, caplog):
+        """Should catch exception and log warning for invalid but non-empty database files."""
+        import logging
+        from code_indexer.scip.query.composites import trace_call_chain
+
+        # Create directory with invalid .scip.db file
+        scip_dir = tmp_path / "scip"
+        scip_dir.mkdir()
+        invalid_db = scip_dir / "invalid.scip.db"
+        invalid_db.write_text("This is not a valid SQLite database")
+
+        # Enable logging to capture warnings
+        caplog.set_level(logging.WARNING)
+
+        # Should not raise exception
+        result = trace_call_chain(
+            from_symbol="some_func",
+            to_symbol="another_func",
+            scip_dir=scip_dir,
+            max_depth=5
+        )
+
+        # Result should be empty (no chains found)
+        assert result.total_chains_found == 0
+
+        # Warning should be logged for invalid database
+        warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
+        assert any("invalid.scip.db" in msg for msg in warning_messages), \
+            f"Should warn about invalid database file, but got: {warning_messages}"
+
+
 class TestGetSmartContext:
     """Tests for get_smart_context() functionality."""
 
@@ -316,3 +379,50 @@ class TestGetSmartContext:
         )
 
         assert len(result.files) <= 5
+
+
+class TestTraceCallChainMaxDepthValidation:
+    """Tests for trace_call_chain() max_depth validation and clamping."""
+
+    def test_max_call_chain_depth_constant_matches_backend_limit(self):
+        """Should verify MAX_CALL_CHAIN_DEPTH equals backend's max_depth limit.
+
+        Bug: MAX_CALL_CHAIN_DEPTH=20 but database/queries.py validates max_depth <= 10.
+        This mismatch causes ValueError when max_depth is between 10 and 20.
+
+        Fix: MAX_CALL_CHAIN_DEPTH should equal 10 to match backend validation.
+        """
+        from code_indexer.scip.query.composites import MAX_CALL_CHAIN_DEPTH
+
+        # Backend (database/queries.py lines 174, 285) validates: 1 <= max_depth <= 10
+        BACKEND_MAX_DEPTH = 10
+
+        assert MAX_CALL_CHAIN_DEPTH == BACKEND_MAX_DEPTH, (
+            f"MAX_CALL_CHAIN_DEPTH ({MAX_CALL_CHAIN_DEPTH}) must match backend limit ({BACKEND_MAX_DEPTH}). "
+            f"Mismatch causes ValueError when max_depth > {BACKEND_MAX_DEPTH}."
+        )
+
+    def test_trace_call_chain_clamps_max_depth_to_10(self, scip_dir):
+        """Should clamp max_depth to 10 when value exceeds limit (e.g., 15).
+
+        Bug: MAX_CALL_CHAIN_DEPTH=20 in composites.py, but database/queries.py
+        validates max_depth <= 10. When user passes max_depth=15:
+        - composites.py clamps to min(15, 20) = 15
+        - database/queries.py raises ValueError: "Max depth must be between 1 and 10"
+
+        Fix: Change MAX_CALL_CHAIN_DEPTH from 20 to 10 to align with backend.
+        """
+        from code_indexer.scip.query.composites import trace_call_chain
+
+        # This should NOT raise ValueError - should clamp to 10 internally
+        # Currently FAILS because MAX_CALL_CHAIN_DEPTH=20 allows 15 through,
+        # then database layer rejects it
+        result = trace_call_chain(
+            from_symbol="some_func",
+            to_symbol="another_func",
+            scip_dir=scip_dir,
+            max_depth=15  # Exceeds backend limit of 10
+        )
+
+        # Should succeed (no exception) and return valid result
+        assert result is not None

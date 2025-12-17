@@ -462,6 +462,67 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 assert list(Path(scip_dir_arg).glob("**/*.scip.db"))
 
     @pytest.mark.asyncio
+    async def test_scip_callchain_clamps_max_depth_to_10(
+        self, tmp_path: Path
+    ) -> None:
+        """Verify scip_callchain clamps max_depth to 10 when user passes value > 10.
+
+        Bug: User passes max_depth=15 via MCP, handler passes it unclamped to
+        composites.trace_call_chain(), which was clamping to MAX_CALL_CHAIN_DEPTH=20,
+        then database layer raises ValueError because it only accepts max_depth <= 10.
+
+        Fix: Handler should validate/clamp max_depth to [1, 10] range before calling
+        composites layer to provide early validation and clearer error handling.
+        """
+        from code_indexer.server.mcp.handlers import scip_callchain
+
+        # Create golden repos structure with SCIP files
+        golden_repos_dir = tmp_path / "golden-repos"
+        repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
+        repo1_scip.mkdir(parents=True)
+        (repo1_scip / "index.scip.db").write_text("mock")
+
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_get_golden:
+            mock_get_golden.return_value = str(golden_repos_dir)
+
+            with patch(
+                "code_indexer.scip.query.composites.trace_call_chain"
+            ) as mock_trace:
+                # Mock successful result
+                from code_indexer.scip.query.composites import CallChainResult
+
+                mock_result = CallChainResult(
+                    from_symbol="func1",
+                    to_symbol="func2",
+                    total_chains_found=0,
+                    truncated=False,
+                    max_depth_reached=False,
+                    chains=[],
+                )
+                mock_trace.return_value = mock_result
+
+                # Execute with max_depth=15 (exceeds limit)
+                mock_user = MagicMock()
+                result = await scip_callchain(
+                    {"from_symbol": "func1", "to_symbol": "func2", "max_depth": 15},
+                    mock_user
+                )
+
+                # Should succeed (no exception)
+                content = result.get("content", [])
+                assert len(content) > 0
+                data = json.loads(content[0]["text"])
+                assert data["success"] is True
+
+                # Verify trace_call_chain was called with clamped max_depth <= 10
+                assert mock_trace.called
+                call_args = mock_trace.call_args
+                max_depth_arg = call_args[1].get("max_depth")  # Keyword arg
+                assert max_depth_arg <= 10, f"Expected max_depth <= 10, got {max_depth_arg}"
+
+    @pytest.mark.asyncio
     async def test_scip_context_uses_golden_repos_directory(
         self, tmp_path: Path
     ) -> None:

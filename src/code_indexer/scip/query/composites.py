@@ -12,7 +12,7 @@ from .backends import CallChain as BackendCallChain
 logger = logging.getLogger(__name__)
 
 MAX_TRAVERSAL_DEPTH = 10
-MAX_CALL_CHAIN_DEPTH = 20
+MAX_CALL_CHAIN_DEPTH = 10
 MAX_CALL_CHAINS_RETURNED = 100
 
 
@@ -549,7 +549,7 @@ def trace_call_chain(
         from_symbol: Starting symbol name
         to_symbol: Target symbol name
         scip_dir: Directory containing SCIP indexes
-        max_depth: Maximum chain length (default 10, max 20)
+        max_depth: Maximum chain length (default 10, max 10)
         project: Optional project filter
 
     Returns:
@@ -558,11 +558,16 @@ def trace_call_chain(
     # Validate and clamp max_depth to allowed range
     max_depth = min(max(1, max_depth), MAX_CALL_CHAIN_DEPTH)
 
-    scip_files = list(scip_dir.glob("**/*.scip"))
+    # Look for .scip.db files (protobuf .scip files are deleted after conversion)
+    scip_files = list(scip_dir.glob("**/*.scip.db"))
     all_chains: List[CallChain] = []
     max_depth_reached = False
 
     for scip_file in scip_files:
+        # Skip empty database files (size == 0)
+        if scip_file.stat().st_size == 0:
+            continue
+
         try:
             engine = SCIPQueryEngine(scip_file)
 

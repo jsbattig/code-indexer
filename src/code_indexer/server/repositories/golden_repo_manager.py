@@ -1579,9 +1579,43 @@ class GoldenRepoManager:
             return False
 
         elif index_type == "scip":
-            # AC3: scip requires .code-indexer/scip/ directory
+            # AC3: scip requires .code-indexer/scip/ directory with valid .scip.db files containing data
             scip_dir = repo_dir / ".code-indexer" / "scip"
-            return scip_dir.exists()
+            if not scip_dir.exists():
+                return False
+
+            # Find all .scip.db files
+            scip_db_files = list(scip_dir.glob("**/*.scip.db"))
+            if not scip_db_files:
+                return False
+
+            # Validate at least one .scip.db file has data
+            try:
+                import sqlite3
+            except ImportError:
+                try:
+                    from pysqlite3 import dbapi2 as sqlite3
+                except ImportError:
+                    # If sqlite3 not available, fall back to file size check
+                    return any(f.stat().st_size > 0 for f in scip_db_files)
+
+            # Check if any database has symbols
+            for db_file in scip_db_files:
+                if db_file.stat().st_size == 0:
+                    continue
+                try:
+                    conn = sqlite3.connect(str(db_file))
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM symbols")
+                    count = cursor.fetchone()[0]
+                    conn.close()
+                    if count > 0:
+                        return True
+                except Exception:
+                    # Database corruption or schema issue - treat as not existing
+                    continue
+
+            return False
 
         return False
 

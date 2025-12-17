@@ -183,27 +183,45 @@ class SCIPQueryEngine:
         Requires .scip.db database file to exist. Use DatabaseBackend exclusively.
 
         Args:
-            scip_file: Path to .scip file
+            scip_file: Path to .scip file OR .scip.db file
 
         Raises:
             FileNotFoundError: If .scip.db database file does not exist
         """
-        self.scip_file = scip_file
-        self.loader = SCIPLoader()
-        self.index = self.loader.load(scip_file)
+        # Handle both .scip and .scip.db paths
+        scip_file_str = str(scip_file)
+        if scip_file_str.endswith('.db'):
+            # Already .scip.db path - strip .db to get .scip path
+            self.scip_file = Path(scip_file_str.removesuffix('.db'))
+            self.db_path = scip_file
+        else:
+            # .scip path provided
+            self.scip_file = scip_file
+            self.db_path = Path(scip_file_str + ".db")
 
-        # Database backend is required
-        self.db_path = Path(str(scip_file) + ".db")
-
+        # Verify database exists
         if not self.db_path.exists():
             raise FileNotFoundError(
                 f"Database file {self.db_path} not found. "
                 f"Run 'cidx scip generate' to create the database."
             )
 
+        # Load protobuf index only if .scip file exists (it's deleted after conversion to save space)
+        self.loader = SCIPLoader()
+        if self.scip_file.exists():
+            self.index = self.loader.load(self.scip_file)
+            project_root = self.index.metadata.project_root
+        else:
+            # .scip file was deleted - derive project root from db path
+            # Path structure: .../repo/.code-indexer/scip/[subproject/]index.scip.db
+            self.index = None
+            scip_dir = self.db_path.parent
+            # Navigate up: scip/ -> .code-indexer/ -> repo/
+            project_root = str(scip_dir.parent.parent)
+
         from .backends import DatabaseBackend
         self.backend = DatabaseBackend(
-            self.db_path, project_root=self.index.metadata.project_root, scip_file=scip_file
+            self.db_path, project_root=project_root, scip_file=self.scip_file if self.scip_file.exists() else None
         )
         self.db_conn = self.backend.conn
 

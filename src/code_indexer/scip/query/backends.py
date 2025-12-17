@@ -170,13 +170,6 @@ class DatabaseBackend(SCIPBackend):
             )
             results.append(result)
 
-        # For simple name queries, if we found class definitions,
-        # filter out method/attribute definitions to reduce noise
-        if "#" not in symbol and "(" not in symbol:
-            has_class_definitions = any(r.symbol.endswith("#") for r in results)
-            if has_class_definitions:
-                results = [r for r in results if r.symbol.endswith("#")]
-
         return results
 
     def find_references(
@@ -385,6 +378,54 @@ class DatabaseBackend(SCIPBackend):
         # If no methods found, return class ID as fallback
         return method_ids if method_ids else [symbol_id]
 
+    def _expand_method_to_scopes(self, symbol_id: int) -> List[int]:
+        """
+        Expand METHOD symbol to include all internal scopes (parameters, locals).
+
+        Call graph stores relationships at a very granular level - from PARAMETERS
+        and LOCAL VARIABLES inside methods, not from the methods themselves.
+        For example, the method CustomChain#chat(). (ID 381) doesn't appear as a
+        caller in call_graph, but CustomChain#chat().(attempt) (ID 385) does.
+
+        This function expands a method ID to include all its internal scopes so
+        call chain analysis can find the actual call relationships.
+
+        Args:
+            symbol_id: Symbol ID to potentially expand
+
+        Returns:
+            List of symbol IDs (method itself + all internal scopes)
+        """
+        cursor = self.conn.cursor()
+
+        # Get symbol name
+        cursor.execute("SELECT name FROM symbols WHERE id = ?", (symbol_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            return [symbol_id]
+
+        symbol_name = row[0]
+
+        # Check if this is a method (ends with ().)
+        if not symbol_name.endswith("()."):
+            return [symbol_id]
+
+        # Find all internal scopes: symbol_name + (scope_name)
+        # Example: CustomChain#chat(). expands to:
+        #   - CustomChain#chat().(self)
+        #   - CustomChain#chat().(query)
+        #   - CustomChain#chat().(attempt)
+        cursor.execute("""
+            SELECT id FROM symbols
+            WHERE name LIKE ? || '%'
+        """, (symbol_name,))
+
+        scope_ids = [r[0] for r in cursor.fetchall()]
+
+        # Return method ID + all internal scope IDs
+        return scope_ids if scope_ids else [symbol_id]
+
     def trace_call_chain(
         self, from_symbol: str, to_symbol: str, max_depth: int = 5, limit: int = 100
     ) -> List[CallChain]:
@@ -415,6 +456,12 @@ class DatabaseBackend(SCIPBackend):
             if not from_ids:
                 from_ids = [from_id]
 
+            # Further expand methods to internal scopes (parameters, locals) where actual calls happen
+            expanded_from_ids = []
+            for fid in from_ids:
+                expanded_from_ids.extend(self._expand_method_to_scopes(fid))
+            from_ids = expanded_from_ids if expanded_from_ids else from_ids
+
             for to_def in to_defs:
                 cursor.execute("SELECT id FROM symbols WHERE name = ?", (to_def.symbol,))
                 to_row = cursor.fetchone()
@@ -428,6 +475,12 @@ class DatabaseBackend(SCIPBackend):
                 # Defensive check: expansion should never return empty, but guard against it
                 if not to_ids:
                     to_ids = [to_id]
+
+                # Further expand methods to internal scopes
+                expanded_to_ids = []
+                for tid in to_ids:
+                    expanded_to_ids.extend(self._expand_method_to_scopes(tid))
+                to_ids = expanded_to_ids if expanded_to_ids else to_ids
 
                 # Query call chains for all from/to method combinations
                 for from_method_id in from_ids:
