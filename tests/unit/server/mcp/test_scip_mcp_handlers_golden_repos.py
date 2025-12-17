@@ -25,9 +25,9 @@ class TestFindScipFilesGoldenRepos:
         repo1_scip.mkdir(parents=True)
         repo2_scip.mkdir(parents=True)
 
-        # Create mock .scip files
-        scip_file1 = repo1_scip / "index.scip"
-        scip_file2 = repo2_scip / "index.scip"
+        # Create mock .scip.db files (new format)
+        scip_file1 = repo1_scip / "index.scip.db"
+        scip_file2 = repo2_scip / "index.scip.db"
         scip_file1.write_text("mock scip data 1")
         scip_file2.write_text("mock scip data 2")
 
@@ -40,7 +40,7 @@ class TestFindScipFilesGoldenRepos:
             # Execute
             scip_files = _find_scip_files()
 
-            # Verify: Should find both .scip files from golden repos
+            # Verify: Should find both .scip.db files from golden repos
             assert len(scip_files) == 2
             scip_file_paths = {str(f) for f in scip_files}
             assert str(scip_file1) in scip_file_paths
@@ -83,16 +83,16 @@ class TestFindScipFilesGoldenRepos:
             assert scip_files == []
 
     def test_find_scip_files_handles_nested_scip_files(self, tmp_path: Path) -> None:
-        """Verify _find_scip_files() finds nested .scip files using glob(**/*.scip)."""
+        """Verify _find_scip_files() finds nested .scip.db files using glob(**/*.scip.db)."""
         # Setup: Create nested structure
         golden_repos_dir = tmp_path / "golden-repos"
         repo_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
         nested_dir = repo_scip / "subdir"
         nested_dir.mkdir(parents=True)
 
-        # Create .scip files at different levels
-        scip_file1 = repo_scip / "index.scip"
-        scip_file2 = nested_dir / "nested.scip"
+        # Create .scip.db files at different levels
+        scip_file1 = repo_scip / "index.scip.db"
+        scip_file2 = nested_dir / "nested.scip.db"
         scip_file1.write_text("mock scip data 1")
         scip_file2.write_text("mock scip data 2")
 
@@ -123,7 +123,7 @@ class TestFindScipFilesGoldenRepos:
         # Create a valid repo directory
         repo_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
         repo_scip.mkdir(parents=True)
-        scip_file = repo_scip / "index.scip"
+        scip_file = repo_scip / "index.scip.db"
         scip_file.write_text("mock scip data")
 
         # Mock _get_golden_repos_dir
@@ -135,9 +135,40 @@ class TestFindScipFilesGoldenRepos:
             # Execute
             scip_files = _find_scip_files()
 
-            # Verify: Should only find the one valid .scip file
+            # Verify: Should only find the one valid .scip.db file
             assert len(scip_files) == 1
             assert str(scip_files[0]) == str(scip_file)
+
+    def test_find_scip_files_filters_by_repository_alias(
+        self, tmp_path: Path
+    ) -> None:
+        """Verify _find_scip_files(repository_alias) only returns SCIP files from specified repo."""
+        # Setup: Create mock golden repos structure with multiple repos
+        golden_repos_dir = tmp_path / "golden-repos"
+        repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
+        repo2_scip = golden_repos_dir / "repo2" / ".code-indexer" / "scip"
+        repo1_scip.mkdir(parents=True)
+        repo2_scip.mkdir(parents=True)
+
+        # Create mock .scip.db files (new format)
+        scip_file1 = repo1_scip / "index.scip.db"
+        scip_file2 = repo2_scip / "index.scip.db"
+        scip_file1.write_text("mock scip data 1")
+        scip_file2.write_text("mock scip data 2")
+
+        # Mock _get_golden_repos_dir to return our test directory
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_get_golden:
+            mock_get_golden.return_value = str(golden_repos_dir)
+
+            # Execute: Query with repository_alias="repo1"
+            scip_files = _find_scip_files(repository_alias="repo1")
+
+            # Verify: Should only find repo1's .scip.db file, not repo2's
+            assert len(scip_files) == 1
+            assert str(scip_files[0]) == str(scip_file1)
+            assert str(scip_file2) not in [str(f) for f in scip_files]
 
 
 class TestScipHandlersErrorHandling:
@@ -168,6 +199,20 @@ class TestScipHandlersErrorHandling:
             assert "cidx scip generate" in data["error"]
 
     @pytest.mark.asyncio
+    async def test_scip_definition_uses_repository_alias(self) -> None:
+        """Verify scip_definition passes repository_alias parameter to _find_scip_files()."""
+        from code_indexer.server.mcp.handlers import scip_definition
+
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            mock_find.return_value = []
+            mock_user = MagicMock()
+            params = {"symbol": "some_function", "repository_alias": "test-repo"}
+            result = await scip_definition(params, mock_user)
+
+            # Verify _find_scip_files was called with repository_alias
+            mock_find.assert_called_once_with(repository_alias="test-repo")
+
+    @pytest.mark.asyncio
     async def test_scip_references_returns_error_when_no_indexes(self) -> None:
         """Verify scip_references returns error when _find_scip_files() returns empty."""
         from code_indexer.server.mcp.handlers import scip_references
@@ -183,6 +228,20 @@ class TestScipHandlersErrorHandling:
             data = json.loads(content[0]["text"])
             assert data["success"] is False
             assert "No SCIP indexes found" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_scip_references_uses_repository_alias(self) -> None:
+        """Verify scip_references passes repository_alias parameter to _find_scip_files()."""
+        from code_indexer.server.mcp.handlers import scip_references
+
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            mock_find.return_value = []
+            mock_user = MagicMock()
+            params = {"symbol": "some_function", "repository_alias": "test-repo"}
+            result = await scip_references(params, mock_user)
+
+            # Verify _find_scip_files was called with repository_alias
+            mock_find.assert_called_once_with(repository_alias="test-repo")
 
     @pytest.mark.asyncio
     async def test_scip_dependencies_returns_error_when_no_indexes(self) -> None:
@@ -202,6 +261,20 @@ class TestScipHandlersErrorHandling:
             assert "No SCIP indexes found" in data["error"]
 
     @pytest.mark.asyncio
+    async def test_scip_dependencies_uses_repository_alias(self) -> None:
+        """Verify scip_dependencies passes repository_alias parameter to _find_scip_files()."""
+        from code_indexer.server.mcp.handlers import scip_dependencies
+
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            mock_find.return_value = []
+            mock_user = MagicMock()
+            params = {"symbol": "some_function", "repository_alias": "test-repo"}
+            result = await scip_dependencies(params, mock_user)
+
+            # Verify _find_scip_files was called with repository_alias
+            mock_find.assert_called_once_with(repository_alias="test-repo")
+
+    @pytest.mark.asyncio
     async def test_scip_dependents_returns_error_when_no_indexes(self) -> None:
         """Verify scip_dependents returns error when _find_scip_files() returns empty."""
         from code_indexer.server.mcp.handlers import scip_dependents
@@ -217,6 +290,20 @@ class TestScipHandlersErrorHandling:
             data = json.loads(content[0]["text"])
             assert data["success"] is False
             assert "No SCIP indexes found" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_scip_dependents_uses_repository_alias(self) -> None:
+        """Verify scip_dependents passes repository_alias parameter to _find_scip_files()."""
+        from code_indexer.server.mcp.handlers import scip_dependents
+
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            mock_find.return_value = []
+            mock_user = MagicMock()
+            params = {"symbol": "some_function", "repository_alias": "test-repo"}
+            result = await scip_dependents(params, mock_user)
+
+            # Verify _find_scip_files was called with repository_alias
+            mock_find.assert_called_once_with(repository_alias="test-repo")
 
     @pytest.mark.asyncio
     async def test_scip_impact_returns_error_when_no_indexes(self) -> None:
@@ -282,7 +369,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
         golden_repos_dir = tmp_path / "golden-repos"
         repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
         repo1_scip.mkdir(parents=True)
-        (repo1_scip / "index.scip").write_text("mock")
+        (repo1_scip / "index.scip.db").write_text("mock")
 
         with patch(
             "code_indexer.server.mcp.handlers._get_golden_repos_dir"
@@ -320,7 +407,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 # Should be golden repos directory
                 assert Path(scip_dir_arg) == golden_repos_dir
                 # Should contain SCIP files
-                assert list(Path(scip_dir_arg).glob("**/*.scip"))
+                assert list(Path(scip_dir_arg).glob("**/*.scip.db"))
 
     @pytest.mark.asyncio
     async def test_scip_callchain_uses_golden_repos_directory(
@@ -333,7 +420,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
         golden_repos_dir = tmp_path / "golden-repos"
         repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
         repo1_scip.mkdir(parents=True)
-        (repo1_scip / "index.scip").write_text("mock")
+        (repo1_scip / "index.scip.db").write_text("mock")
 
         with patch(
             "code_indexer.server.mcp.handlers._get_golden_repos_dir"
@@ -372,7 +459,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 # Should be golden repos directory
                 assert Path(scip_dir_arg) == golden_repos_dir
                 # Should contain SCIP files
-                assert list(Path(scip_dir_arg).glob("**/*.scip"))
+                assert list(Path(scip_dir_arg).glob("**/*.scip.db"))
 
     @pytest.mark.asyncio
     async def test_scip_context_uses_golden_repos_directory(
@@ -385,7 +472,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
         golden_repos_dir = tmp_path / "golden-repos"
         repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
         repo1_scip.mkdir(parents=True)
-        (repo1_scip / "index.scip").write_text("mock")
+        (repo1_scip / "index.scip.db").write_text("mock")
 
         with patch(
             "code_indexer.server.mcp.handlers._get_golden_repos_dir"
@@ -422,7 +509,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 # Should be golden repos directory
                 assert Path(scip_dir_arg) == golden_repos_dir
                 # Should contain SCIP files
-                assert list(Path(scip_dir_arg).glob("**/*.scip"))
+                assert list(Path(scip_dir_arg).glob("**/*.scip.db"))
 
 
 class TestScipHandlerRegistration:

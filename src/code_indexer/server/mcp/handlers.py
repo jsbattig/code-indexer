@@ -3321,11 +3321,14 @@ def _get_golden_repos_scip_dir() -> Optional[Path]:
     return golden_repos_path if golden_repos_path.exists() else None
 
 
-def _find_scip_files() -> List[Path]:
-    """Find all .scip files across all golden repositories.
+def _find_scip_files(repository_alias: str = None) -> List[Path]:
+    """Find all .scip.db files across golden repositories.
+
+    Args:
+        repository_alias: Optional repository name to filter results
 
     Returns:
-        List of Path objects pointing to .scip files, or empty list if none found
+        List of Path objects pointing to .scip.db files, or empty list if none found
     """
     golden_repos_path = _get_golden_repos_scip_dir()
     if not golden_repos_path:
@@ -3335,9 +3338,14 @@ def _find_scip_files() -> List[Path]:
     for repo_dir in golden_repos_path.iterdir():
         if not repo_dir.is_dir():
             continue
+
+        # Filter by repository_alias if provided
+        if repository_alias and repo_dir.name != repository_alias:
+            continue
+
         scip_dir = repo_dir / ".code-indexer" / "scip"
         if scip_dir.exists():
-            scip_files.extend(scip_dir.glob("**/*.scip"))
+            scip_files.extend(scip_dir.glob("**/*.scip.db"))
 
     return scip_files
 
@@ -3350,6 +3358,7 @@ async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             - symbol: Symbol name to search for
             - exact: Optional boolean for exact match
             - project: Optional project filter
+            - repository_alias: Optional repository name to filter SCIP indexes
         user: Authenticated user (for permission checking)
 
     Returns:
@@ -3361,13 +3370,14 @@ async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         symbol = params.get("symbol")
         exact = params.get("exact", False)
         project = params.get("project")
+        repository_alias = params.get("repository_alias")
 
         if not symbol:
             return _mcp_response(
                 {"success": False, "error": "symbol parameter is required"}
             )
 
-        scip_files = _find_scip_files()
+        scip_files = _find_scip_files(repository_alias=repository_alias)
 
         if not scip_files:
             return _mcp_response(
@@ -3430,6 +3440,7 @@ async def scip_references(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             - limit: Optional maximum number of results (default 100)
             - exact: Optional boolean for exact match
             - project: Optional project filter
+            - repository_alias: Optional repository name to filter SCIP indexes
         user: Authenticated user (for permission checking)
 
     Returns:
@@ -3442,13 +3453,14 @@ async def scip_references(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         limit = params.get("limit", 100)
         exact = params.get("exact", False)
         project = params.get("project")
+        repository_alias = params.get("repository_alias")
 
         if not symbol:
             return _mcp_response(
                 {"success": False, "error": "symbol parameter is required"}
             )
 
-        scip_files = _find_scip_files()
+        scip_files = _find_scip_files(repository_alias=repository_alias)
 
         if not scip_files:
             return _mcp_response(
@@ -3514,6 +3526,7 @@ async def scip_dependencies(params: Dict[str, Any], user: User) -> Dict[str, Any
             - symbol: Symbol name to search for
             - exact: Optional boolean for exact match
             - project: Optional project filter
+            - repository_alias: Optional repository name to filter SCIP indexes
         user: Authenticated user (for permission checking)
 
     Returns:
@@ -3526,13 +3539,14 @@ async def scip_dependencies(params: Dict[str, Any], user: User) -> Dict[str, Any
         depth = params.get("depth", 1)
         exact = params.get("exact", False)
         project = params.get("project")
+        repository_alias = params.get("repository_alias")
 
         if not symbol:
             return _mcp_response(
                 {"success": False, "error": "symbol parameter is required"}
             )
 
-        scip_files = _find_scip_files()
+        scip_files = _find_scip_files(repository_alias=repository_alias)
 
         if not scip_files:
             return _mcp_response(
@@ -3594,6 +3608,7 @@ async def scip_dependents(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             - symbol: Symbol name to search for
             - exact: Optional boolean for exact match
             - project: Optional project filter
+            - repository_alias: Optional repository name to filter SCIP indexes
         user: Authenticated user (for permission checking)
 
     Returns:
@@ -3606,13 +3621,14 @@ async def scip_dependents(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         depth = params.get("depth", 1)
         exact = params.get("exact", False)
         project = params.get("project")
+        repository_alias = params.get("repository_alias")
 
         if not symbol:
             return _mcp_response(
                 {"success": False, "error": "symbol parameter is required"}
             )
 
-        scip_files = _find_scip_files()
+        scip_files = _find_scip_files(repository_alias=repository_alias)
 
         if not scip_files:
             return _mcp_response(
