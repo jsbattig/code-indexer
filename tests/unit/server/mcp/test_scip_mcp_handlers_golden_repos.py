@@ -340,6 +340,20 @@ class TestScipHandlersErrorHandling:
             assert "No SCIP indexes found" in data["error"]
 
     @pytest.mark.asyncio
+    async def test_scip_callchain_uses_repository_alias(self) -> None:
+        """Verify scip_callchain passes repository_alias parameter to _find_scip_files()."""
+        from code_indexer.server.mcp.handlers import scip_callchain
+
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
+            mock_find.return_value = []
+            mock_user = MagicMock()
+            params = {"from_symbol": "func1", "to_symbol": "func2", "repository_alias": "test-repo"}
+            result = await scip_callchain(params, mock_user)
+
+            # Verify _find_scip_files was called with repository_alias
+            mock_find.assert_called_once_with(repository_alias="test-repo")
+
+    @pytest.mark.asyncio
     async def test_scip_context_returns_error_when_no_indexes(self) -> None:
         """Verify scip_context returns error when _find_scip_files() returns empty."""
         from code_indexer.server.mcp.handlers import scip_context
@@ -413,35 +427,30 @@ class TestScipCompositeHandlersGoldenReposDirectory:
     async def test_scip_callchain_uses_golden_repos_directory(
         self, tmp_path: Path
     ) -> None:
-        """Verify scip_callchain passes golden repos directory to trace_call_chain()."""
+        """Verify scip_callchain uses _find_scip_files pattern to search golden repos."""
         from code_indexer.server.mcp.handlers import scip_callchain
 
         # Create golden repos structure with SCIP files
         golden_repos_dir = tmp_path / "golden-repos"
         repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
         repo1_scip.mkdir(parents=True)
-        (repo1_scip / "index.scip.db").write_text("mock")
+        scip_file = repo1_scip / "index.scip.db"
 
         with patch(
-            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
-        ) as mock_get_golden:
-            mock_get_golden.return_value = str(golden_repos_dir)
+            "code_indexer.server.mcp.handlers._find_scip_files"
+        ) as mock_find:
+            # Mock _find_scip_files to return our test file
+            mock_find.return_value = [scip_file]
 
             with patch(
-                "code_indexer.scip.query.composites.trace_call_chain"
-            ) as mock_trace:
-                # Mock successful result
-                from code_indexer.scip.query.composites import CallChainResult
-
-                mock_result = CallChainResult(
-                    from_symbol="func1",
-                    to_symbol="func2",
-                    total_chains_found=0,
-                    truncated=False,
-                    max_depth_reached=False,
-                    chains=[],
-                )
-                mock_trace.return_value = mock_result
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class:
+                # Mock SCIPQueryEngine and backend
+                mock_engine = MagicMock()
+                mock_backend = MagicMock()
+                mock_backend.trace_call_chain.return_value = []  # Empty chains
+                mock_engine.backend = mock_backend
+                mock_engine_class.return_value = mock_engine
 
                 # Execute
                 mock_user = MagicMock()
@@ -449,17 +458,16 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                     {"from_symbol": "func1", "to_symbol": "func2"}, mock_user
                 )
 
-                # Verify trace_call_chain was called with golden_repos_dir
-                assert mock_trace.called
-                call_args = mock_trace.call_args
-                scip_dir_arg = call_args[0][2]  # Third positional arg
+                # Verify _find_scip_files was called (searches golden repos)
+                assert mock_find.called
+                mock_find.assert_called_once_with(repository_alias=None)
 
-                # Should NOT be Path.cwd()
-                assert str(scip_dir_arg) != str(Path.cwd() / ".code-indexer" / "scip")
-                # Should be golden repos directory
-                assert Path(scip_dir_arg) == golden_repos_dir
-                # Should contain SCIP files
-                assert list(Path(scip_dir_arg).glob("**/*.scip.db"))
+                # Verify SCIPQueryEngine was created with SCIP file from golden repos
+                assert mock_engine_class.called
+                mock_engine_class.assert_called_once_with(scip_file)
+
+                # Verify backend.trace_call_chain was called
+                assert mock_backend.trace_call_chain.called
 
     @pytest.mark.asyncio
     async def test_scip_callchain_clamps_max_depth_to_10(
@@ -468,11 +476,10 @@ class TestScipCompositeHandlersGoldenReposDirectory:
         """Verify scip_callchain clamps max_depth to 10 when user passes value > 10.
 
         Bug: User passes max_depth=15 via MCP, handler passes it unclamped to
-        composites.trace_call_chain(), which was clamping to MAX_CALL_CHAIN_DEPTH=20,
-        then database layer raises ValueError because it only accepts max_depth <= 10.
+        backend.trace_call_chain(), which raises ValueError because it only accepts max_depth <= 10.
 
         Fix: Handler should validate/clamp max_depth to [1, 10] range before calling
-        composites layer to provide early validation and clearer error handling.
+        backend to provide early validation and clearer error handling.
         """
         from code_indexer.server.mcp.handlers import scip_callchain
 
@@ -480,28 +487,23 @@ class TestScipCompositeHandlersGoldenReposDirectory:
         golden_repos_dir = tmp_path / "golden-repos"
         repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
         repo1_scip.mkdir(parents=True)
-        (repo1_scip / "index.scip.db").write_text("mock")
+        scip_file = repo1_scip / "index.scip.db"
 
         with patch(
-            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
-        ) as mock_get_golden:
-            mock_get_golden.return_value = str(golden_repos_dir)
+            "code_indexer.server.mcp.handlers._find_scip_files"
+        ) as mock_find:
+            # Mock _find_scip_files to return our test file
+            mock_find.return_value = [scip_file]
 
             with patch(
-                "code_indexer.scip.query.composites.trace_call_chain"
-            ) as mock_trace:
-                # Mock successful result
-                from code_indexer.scip.query.composites import CallChainResult
-
-                mock_result = CallChainResult(
-                    from_symbol="func1",
-                    to_symbol="func2",
-                    total_chains_found=0,
-                    truncated=False,
-                    max_depth_reached=False,
-                    chains=[],
-                )
-                mock_trace.return_value = mock_result
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class:
+                # Mock SCIPQueryEngine and backend
+                mock_engine = MagicMock()
+                mock_backend = MagicMock()
+                mock_backend.trace_call_chain.return_value = []  # Empty chains
+                mock_engine.backend = mock_backend
+                mock_engine_class.return_value = mock_engine
 
                 # Execute with max_depth=15 (exceeds limit)
                 mock_user = MagicMock()
@@ -516,9 +518,9 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 data = json.loads(content[0]["text"])
                 assert data["success"] is True
 
-                # Verify trace_call_chain was called with clamped max_depth <= 10
-                assert mock_trace.called
-                call_args = mock_trace.call_args
+                # Verify backend.trace_call_chain was called with clamped max_depth <= 10
+                assert mock_backend.trace_call_chain.called
+                call_args = mock_backend.trace_call_chain.call_args
                 max_depth_arg = call_args[1].get("max_depth")  # Keyword arg
                 assert max_depth_arg <= 10, f"Expected max_depth <= 10, got {max_depth_arg}"
 

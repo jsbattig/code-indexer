@@ -3765,18 +3765,21 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             - to_symbol: Target symbol
             - max_depth: Optional maximum chain length (default 10, max 10)
             - project: Optional project filter
+            - repository_alias: Optional repository name to filter SCIP indexes
         user: Authenticated user (for permission checking)
 
     Returns:
         MCP-compliant response with call chain results
     """
-    from code_indexer.scip.query.composites import trace_call_chain
+    from code_indexer.scip.query.primitives import SCIPQueryEngine
+    from code_indexer.scip.query.composites import CallChain
 
     try:
         from_symbol = params.get("from_symbol")
         to_symbol = params.get("to_symbol")
         max_depth = params.get("max_depth", 10)
         project = params.get("project")
+        repository_alias = params.get("repository_alias")
 
         # Validate and clamp max_depth to safe range
         if max_depth < 1:
@@ -3789,9 +3792,9 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 {"success": False, "error": "from_symbol and to_symbol parameters are required"}
             )
 
-        golden_repos_dir = _get_golden_repos_scip_dir()
+        scip_files = _find_scip_files(repository_alias=repository_alias)
 
-        if not golden_repos_dir:
+        if not scip_files:
             return _mcp_response(
                 {
                     "success": False,
@@ -3800,16 +3803,58 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 }
             )
 
-        result = trace_call_chain(from_symbol, to_symbol, golden_repos_dir, max_depth=max_depth, project=project)
+        # Collect chains from all SCIP files
+        all_chains: List[CallChain] = []
+        max_depth_reached = False
+
+        for scip_file in scip_files:
+            try:
+                engine = SCIPQueryEngine(scip_file)
+                chains = engine.backend.trace_call_chain(from_symbol, to_symbol, max_depth=max_depth, limit=100)
+                all_chains.extend(chains)
+
+                # Check if any chain reached max depth
+                for chain in chains:
+                    if chain.length >= max_depth:
+                        max_depth_reached = True
+
+            except Exception as e:
+                logger.warning(f"Failed to trace call chain in {scip_file}: {e}")
+                continue
+
+        # Deduplicate chains by converting to set of path tuples
+        unique_chains_map = {}
+        for chain in all_chains:
+            # Create key from symbol names in path
+            path_key = tuple(step.symbol for step in chain.path)
+            if path_key not in unique_chains_map:
+                unique_chains_map[path_key] = chain
+
+        unique_chains = list(unique_chains_map.values())
+
+        # Filter by project if specified
+        if project:
+            unique_chains = [
+                chain for chain in unique_chains
+                if any(project in str(step.file_path) for step in chain.path)
+            ]
+
+        # Sort by length (shortest first)
+        unique_chains.sort(key=lambda c: c.length)
+
+        # Limit to maximum return size (100 chains)
+        MAX_CALL_CHAINS_RETURNED = 100
+        truncated = len(unique_chains) > MAX_CALL_CHAINS_RETURNED
+        returned_chains = unique_chains[:MAX_CALL_CHAINS_RETURNED]
 
         return _mcp_response(
             {
                 "success": True,
-                "from_symbol": result.from_symbol,
-                "to_symbol": result.to_symbol,
-                "total_chains_found": result.total_chains_found,
-                "truncated": result.truncated,
-                "max_depth_reached": result.max_depth_reached,
+                "from_symbol": from_symbol,
+                "to_symbol": to_symbol,
+                "total_chains_found": len(unique_chains),
+                "truncated": truncated,
+                "max_depth_reached": max_depth_reached,
                 "chains": [
                     {
                         "length": chain.length,
@@ -3824,7 +3869,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                             for step in chain.path
                         ],
                     }
-                    for chain in result.chains
+                    for chain in returned_chains
                 ],
             }
         )
