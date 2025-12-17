@@ -1565,7 +1565,7 @@ async def get_job_details(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 {"success": False, "error": "Missing required parameter: job_id"}
             )
 
-        job = app_module.background_job_manager.get_job(job_id, user.username)
+        job = app_module.background_job_manager.get_job(job_id)
         if not job:
             return _mcp_response(
                 {

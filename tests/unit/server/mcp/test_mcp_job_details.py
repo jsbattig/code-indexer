@@ -64,7 +64,7 @@ class TestGetJobDetailsTool:
 
         # Mock background_job_manager.get_job to return None
         class MockJobManager:
-            def get_job(self, job_id, username):
+            def get_job(self, job_id):
                 return None
 
         monkeypatch.setattr(app_module, "background_job_manager", MockJobManager())
@@ -86,7 +86,7 @@ class TestGetJobDetailsTool:
 
         # Mock background_job_manager.get_job to return job with error
         class MockJobManager:
-            def get_job(self, job_id, username):
+            def get_job(self, job_id):
                 return {
                     "job_id": job_id,
                     "operation_type": "add_golden_repo",
@@ -97,7 +97,7 @@ class TestGetJobDetailsTool:
                     "progress": 0,
                     "result": None,
                     "error": "Git clone failed with code 128: fatal: Remote branch main not found in upstream origin",
-                    "username": username,
+                    "username": "testuser",
                 }
 
         monkeypatch.setattr(app_module, "background_job_manager", MockJobManager())
