@@ -10,6 +10,7 @@ from rich.console import Console
 from .disabled_commands import require_mode
 
 console = Console()
+error_console = Console(stderr=True)
 
 
 def _extract_short_symbol_name(full_symbol: str) -> str:
@@ -219,16 +220,16 @@ def scip_generate(ctx, project: Optional[str], skip_verify: bool):
                             verify_result = verifier.verify()
 
                             if not verify_result.passed:
-                                console.print(
+                                error_console.print(
                                     f"    ✗ Verification FAILED: {verify_result.total_errors} error(s)",
                                     style="red",
                                 )
                                 for error in verify_result.errors[
                                     :3
                                 ]:  # Show first 3 errors
-                                    console.print(f"      - {error}", style="red dim")
+                                    error_console.print(f"      - {error}", style="red dim")
                                 if verify_result.total_errors > 3:
-                                    console.print(
+                                    error_console.print(
                                         f"      ... and {verify_result.total_errors - 3} more errors",
                                         style="red dim",
                                     )
@@ -246,13 +247,13 @@ def scip_generate(ctx, project: Optional[str], skip_verify: bool):
                                         "    ✓ Cleaned up source .scip file", style="dim"
                                     )
                         except Exception as e:
-                            console.print(f"    ✗ Verification error: {e}", style="red")
+                            error_console.print(f"    ✗ Verification error: {e}", style="red")
                             verification_failed = True
 
         # Fail if verification failed
         if verification_failed:
-            console.print()
-            console.print(
+            error_console.print()
+            error_console.print(
                 "Generation failed due to verification errors", style="red bold"
             )
             sys.exit(1)
