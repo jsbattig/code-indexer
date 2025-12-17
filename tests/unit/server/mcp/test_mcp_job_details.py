@@ -62,9 +62,9 @@ class TestGetJobDetailsTool:
         from code_indexer.server.auth.user_manager import User, UserRole
         import code_indexer.server.app as app_module
 
-        # Mock background_job_manager.get_job to return None
+        # Mock background_job_manager.get_job_status to return None
         class MockJobManager:
-            def get_job(self, job_id):
+            def get_job_status(self, job_id, username):
                 return None
 
         monkeypatch.setattr(app_module, "background_job_manager", MockJobManager())
@@ -84,9 +84,9 @@ class TestGetJobDetailsTool:
         from code_indexer.server.auth.user_manager import User, UserRole
         import code_indexer.server.app as app_module
 
-        # Mock background_job_manager.get_job to return job with error
+        # Mock background_job_manager.get_job_status to return job with error
         class MockJobManager:
-            def get_job(self, job_id):
+            def get_job_status(self, job_id, username):
                 return {
                     "job_id": job_id,
                     "operation_type": "add_golden_repo",
