@@ -98,6 +98,9 @@ class SCIPDatabaseVerifier:
         """
         Verify symbol count and sample content.
 
+        Counts both explicit symbols from protobuf AND external symbols that
+        builder auto-generates for references not in the symbol list.
+
         Args:
             errors: List to append error messages to
 
@@ -106,7 +109,23 @@ class SCIPDatabaseVerifier:
         """
         # Parse symbols from protobuf
         protobuf_symbols = self._parse_protobuf_symbols()
-        expected_count = len(protobuf_symbols)
+
+        # Parse occurrences to find external symbols (not in protobuf symbol list)
+        protobuf_occurrences = self._parse_protobuf_occurrences()
+
+        # Build set of symbol names from protobuf
+        protobuf_symbol_names = {sym.symbol for sym in protobuf_symbols}
+
+        # Find unique symbol names in occurrences that are NOT in protobuf symbol list
+        # These are external symbols that builder will auto-generate
+        external_symbol_names = set()
+        for occ in protobuf_occurrences:
+            symbol_name = occ['symbol']
+            if symbol_name not in protobuf_symbol_names:
+                external_symbol_names.add(symbol_name)
+
+        # Expected count = protobuf symbols + auto-generated external symbols
+        expected_count = len(protobuf_symbols) + len(external_symbol_names)
 
         # Count symbols in database
         with sqlite3.connect(self.db_path) as conn:

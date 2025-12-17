@@ -138,6 +138,89 @@ class TestSymbolVerification:
         assert 90 <= result.symbols_sampled <= 100
 
 
+    def test_verify_symbols_with_external_references(self, tmp_path: Path):
+        """
+        Test symbol count verification when builder creates external symbols.
+
+        Given a SCIP protobuf with 2 symbols in symbol list
+        And occurrences that reference 3 external symbols not in symbol list
+        When building database (builder auto-generates external symbols)
+        And verifying symbols
+        Then verification passes
+        And symbol_count matches (2 + 3 = 5 total symbols)
+
+        This tests the fix for flask-large SCIP verification failure where
+        builder creates placeholder symbols for external library/stdlib references.
+        """
+        # Create SCIP protobuf with 2 symbols
+        index = scip_pb2.Index()
+
+        # Symbol 1: Local function
+        symbol1 = index.external_symbols.add()
+        symbol1.symbol = "test.py::my_function()."
+        symbol1.display_name = "my_function"
+        symbol1.kind = scip_pb2.SymbolInformation.Method
+
+        # Symbol 2: Local class
+        symbol2 = index.external_symbols.add()
+        symbol2.symbol = "test.py::MyClass#"
+        symbol2.display_name = "MyClass"
+        symbol2.kind = scip_pb2.SymbolInformation.Class
+
+        # Add document with occurrences
+        doc = index.documents.add()
+        doc.relative_path = "test.py"
+        doc.language = "Python"
+
+        # Occurrence 1: Definition of my_function
+        occ1 = doc.occurrences.add()
+        occ1.symbol = "test.py::my_function()."
+        occ1.range.extend([10, 0, 10, 11])
+        occ1.symbol_roles = ROLE_DEFINITION
+
+        # Occurrence 2: Call to external stdlib function (json.dumps)
+        # NOT in symbol list - builder will create external symbol
+        occ2 = doc.occurrences.add()
+        occ2.symbol = "python 3.9 json#dumps()."
+        occ2.range.extend([12, 4, 12, 9])
+        occ2.symbol_roles = ROLE_READ_ACCESS
+
+        # Occurrence 3: Call to external stdlib function (requests.get)
+        # NOT in symbol list - builder will create external symbol
+        occ3 = doc.occurrences.add()
+        occ3.symbol = "python 3.9 requests#get()."
+        occ3.range.extend([13, 4, 13, 7])
+        occ3.symbol_roles = ROLE_READ_ACCESS
+
+        # Occurrence 4: Reference to external library class (flask.Flask)
+        # NOT in symbol list - builder will create external symbol
+        occ4 = doc.occurrences.add()
+        occ4.symbol = "python 3.9 flask#Flask#"
+        occ4.range.extend([14, 10, 14, 15])
+        occ4.symbol_roles = ROLE_READ_ACCESS
+
+        scip_file = tmp_path / "test.scip"
+        with open(scip_file, "wb") as f:
+            f.write(index.SerializeToString())
+
+        # Build database (builder will create 3 external symbols)
+        manager = DatabaseManager(scip_file)
+        manager.create_schema()
+        builder = SCIPDatabaseBuilder()
+        stats = builder.build(scip_file, manager.db_path)
+
+        # Database should have 5 symbols: 2 from protobuf + 3 external
+        assert stats["symbol_count"] == 5
+
+        # Verify (should pass with correct external symbol counting)
+        verifier = SCIPDatabaseVerifier(manager.db_path, scip_file)
+        result = verifier.verify()
+
+        assert result.passed is True
+        assert result.symbol_count_match is True
+        assert result.total_errors == 0
+
+
 class TestOccurrenceVerification:
     """Test occurrence count and content verification (AC2)."""
 
