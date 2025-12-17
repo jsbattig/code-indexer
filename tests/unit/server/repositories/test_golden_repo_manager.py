@@ -811,9 +811,14 @@ class TestGoldenRepoManager:
                 assert cwd == test_repo.clone_path
                 assert result["success"] is True
 
-    def test_background_worker_timeout_handling(self, golden_repo_manager):
-        """Test that all subprocess calls include timeout parameter (CRITICAL ISSUE #6)."""
-        # Test semantic_fts
+    def test_background_worker_no_timeout_for_long_operations(self, golden_repo_manager):
+        """Test that subprocess calls do NOT include timeout parameter for long-running operations.
+
+        Background jobs should run without timeout limits:
+        - semantic_fts indexing: 10-30 minutes for medium repos
+        - temporal indexing: 30-60 minutes for large repos
+        - SCIP generation: can take HOURS for large repos
+        """
         test_repo = GoldenRepo(
             alias="test-repo",
             repo_url="https://github.com/test/repo.git",
@@ -837,15 +842,18 @@ class TestGoldenRepoManager:
                 call_args = golden_repo_manager.background_job_manager.submit_job.call_args
                 background_worker = call_args[1]["func"]
 
-                # Execute and verify timeout parameter
+                # Execute and verify NO timeout parameter
                 with patch("subprocess.run") as mock_run:
                     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
                     background_worker()
 
-                    # Verify timeout=300 was passed
+                    # Verify timeout parameter is NOT present or is None
                     call_kwargs = mock_run.call_args[1]
-                    assert "timeout" in call_kwargs, f"Missing timeout for {index_type}"
-                    assert call_kwargs["timeout"] == 300, f"Wrong timeout for {index_type}"
+                    timeout_value = call_kwargs.get("timeout")
+                    assert timeout_value is None, (
+                        f"timeout should be None for {index_type}, but was {timeout_value}. "
+                        f"Background jobs should run without timeout limits."
+                    )
 
     def test_background_worker_captures_stdout_stderr(self, golden_repo_manager):
         """Test that background worker captures and returns stdout/stderr (CRITICAL ISSUE #3)."""

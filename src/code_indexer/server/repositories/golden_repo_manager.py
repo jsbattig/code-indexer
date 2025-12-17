@@ -1462,7 +1462,6 @@ class GoldenRepoManager:
                         cwd=repo_path,
                         capture_output=True,
                         text=True,
-                        timeout=300,
                     )
                     captured_stdout = result.stdout
                     captured_stderr = result.stderr
@@ -1496,7 +1495,6 @@ class GoldenRepoManager:
                         cwd=repo_path,
                         capture_output=True,
                         text=True,
-                        timeout=300,
                     )
                     captured_stdout = result.stdout
                     captured_stderr = result.stderr
@@ -1513,7 +1511,6 @@ class GoldenRepoManager:
                         cwd=repo_path,
                         capture_output=True,
                         text=True,
-                        timeout=300,
                     )
                     captured_stdout = result.stdout
                     captured_stderr = result.stderr
