@@ -84,6 +84,7 @@ Thumbs.db
 **/.code-indexer
 docker-compose.yml           # Generated Docker Compose files
 *.log
+*.scip.db                    # Generated SCIP database test artifacts
 
 # Ollama models and data (large binary files)
 ollama-models/
