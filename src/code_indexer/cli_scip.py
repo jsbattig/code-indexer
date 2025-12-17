@@ -240,9 +240,8 @@ def scip_generate(ctx, project: Optional[str], skip_verify: bool):
                                 )
                                 # Cleanup: Delete .scip file after successful verification
                                 # .scip file is only needed for ETL, not for queries
-                                from code_indexer.scip.database.schema import DatabaseManager
-                                db_manager = DatabaseManager(scip_file)
-                                if db_manager.delete_source_scip_file():
+                                if scip_file.exists():
+                                    scip_file.unlink()
                                     console.print(
                                         "    ✓ Cleaned up source .scip file", style="dim"
                                     )

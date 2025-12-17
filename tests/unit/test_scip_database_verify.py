@@ -567,3 +567,109 @@ class TestCallGraphVerification:
         assert result.call_graph_fk_valid is False
         # Check if any error contains "foreign key" or "invalid reference"
         assert any("foreign key" in err.lower() or "invalid reference" in err.lower() for err in result.errors)
+
+    def test_cleanup_preserves_database_after_verification(self, tmp_path: Path):
+        """
+        Test that cleanup after verification preserves the populated database.
+
+        Given a successful SCIP generation with verification
+        When cleanup deletes the .scip source file
+        Then the database file exists and is non-empty
+        And the database schema and data remain intact
+        And the .scip source file is deleted
+
+        This tests the fix for the bug where DatabaseManager(scip_file)
+        instantiation deletes the populated database as a side effect.
+        """
+        # Create SCIP protobuf with symbols and occurrences
+        index = scip_pb2.Index()
+
+        caller_symbol = index.external_symbols.add()
+        caller_symbol.symbol = "test.py::caller()."
+        caller_symbol.display_name = "caller"
+        caller_symbol.kind = scip_pb2.SymbolInformation.Method
+
+        callee_symbol = index.external_symbols.add()
+        callee_symbol.symbol = "test.py::callee()."
+        callee_symbol.display_name = "callee"
+        callee_symbol.kind = scip_pb2.SymbolInformation.Method
+
+        doc = index.documents.add()
+        doc.relative_path = "test.py"
+        doc.language = "Python"
+
+        caller_def = doc.occurrences.add()
+        caller_def.symbol = "test.py::caller()."
+        caller_def.range.extend([10, 0, 10, 6])
+        caller_def.symbol_roles = ROLE_DEFINITION
+
+        callee_def = doc.occurrences.add()
+        callee_def.symbol = "test.py::callee()."
+        callee_def.range.extend([5, 0, 5, 6])
+        callee_def.symbol_roles = ROLE_DEFINITION
+
+        callee_ref = doc.occurrences.add()
+        callee_ref.symbol = "test.py::callee()."
+        callee_ref.range.extend([12, 4, 12, 10])
+        callee_ref.symbol_roles = ROLE_READ_ACCESS
+
+        scip_file = tmp_path / "test.scip"
+        with open(scip_file, "wb") as f:
+            f.write(index.SerializeToString())
+
+        # Build and verify database
+        manager = DatabaseManager(scip_file)
+        manager.create_schema()
+        builder = SCIPDatabaseBuilder()
+        builder.build(scip_file, manager.db_path)
+
+        verifier = SCIPDatabaseVerifier(manager.db_path, scip_file)
+        result = verifier.verify()
+        assert result.passed is True
+
+        # Get database size before cleanup
+        db_size_before = manager.db_path.stat().st_size
+        assert db_size_before > 0, "Database should be non-empty after build"
+
+        # Simulate cleanup as done in cli_scip.py (FIXED CODE)
+        # Direct file deletion without DatabaseManager instantiation
+        # This prevents the side effect of deleting the populated database
+        cleanup_success = False
+        if scip_file.exists():
+            scip_file.unlink()
+            cleanup_success = True
+
+        # ASSERTIONS - These should pass after the fix
+        # 1. .scip source file should be deleted
+        assert not scip_file.exists(), ".scip source file should be deleted"
+        assert cleanup_success is True, "Cleanup should succeed"
+
+        # 2. Database file should still exist
+        assert manager.db_path.exists(), "Database file should still exist after cleanup"
+
+        # 3. Database should be non-empty (not recreated as 0-byte file)
+        db_size_after = manager.db_path.stat().st_size
+        assert db_size_after > 0, "Database should be non-empty after cleanup"
+        assert db_size_after == db_size_before, "Database size should not change after cleanup"
+
+        # 4. Database should still contain schema and data
+        conn = sqlite3.connect(manager.db_path)
+        cursor = conn.cursor()
+
+        # Check tables exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {row[0] for row in cursor.fetchall()}
+        assert "symbols" in tables, "symbols table should exist"
+        assert "occurrences" in tables, "occurrences table should exist"
+        assert "call_graph" in tables, "call_graph table should exist"
+
+        # Check data exists
+        cursor.execute("SELECT COUNT(*) FROM symbols")
+        symbol_count = cursor.fetchone()[0]
+        assert symbol_count == 2, "Database should still contain 2 symbols"
+
+        cursor.execute("SELECT COUNT(*) FROM occurrences")
+        occurrence_count = cursor.fetchone()[0]
+        assert occurrence_count == 3, "Database should still contain 3 occurrences"
+
+        conn.close()

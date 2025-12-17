@@ -245,7 +245,11 @@ class TestServerAddIndexCommand:
             mock_client.get_job_status = AsyncMock(
                 side_effect=[
                     {"job_id": "test-job-fail-123", "status": "pending", "progress": 0},
-                    {"job_id": "test-job-fail-123", "status": "running", "progress": 50},
+                    {
+                        "job_id": "test-job-fail-123",
+                        "status": "running",
+                        "progress": 50,
+                    },
                     {
                         "job_id": "test-job-fail-123",
                         "status": "failed",
@@ -262,7 +266,10 @@ class TestServerAddIndexCommand:
 
             assert result.exit_code == 1
             assert "failed" in result.output.lower()
-            assert "Git clone failed" in result.output or "repository not accessible" in result.output
+            assert (
+                "Git clone failed" in result.output
+                or "repository not accessible" in result.output
+            )
 
     def test_add_index_with_wait_handles_timeout(self):
         """Test AC2: --wait respects timeout parameter."""
@@ -304,7 +311,15 @@ class TestServerAddIndexCommand:
             # Use a very short timeout (1 second) to make test fast
             result = self.runner.invoke(
                 cli,
-                ["server", "add-index", "my-repo", "temporal", "--wait", "--timeout", "1"],
+                [
+                    "server",
+                    "add-index",
+                    "my-repo",
+                    "temporal",
+                    "--wait",
+                    "--timeout",
+                    "1",
+                ],
             )
 
             assert result.exit_code == 2
@@ -349,7 +364,9 @@ class TestServerAddIndexCommand:
             )
 
             assert result.exit_code == 1
-            assert "invalid" in result.output.lower() or "error" in result.output.lower()
+            assert (
+                "invalid" in result.output.lower() or "error" in result.output.lower()
+            )
 
     def test_add_index_command_not_authenticated(self):
         """Test AC7: Command requires authentication."""
@@ -367,7 +384,10 @@ class TestServerAddIndexCommand:
             )
 
             assert result.exit_code == 1
-            assert "not authenticated" in result.output.lower() or "login" in result.output.lower()
+            assert (
+                "not authenticated" in result.output.lower()
+                or "login" in result.output.lower()
+            )
 
 
 class TestServerListIndexesCommand:
