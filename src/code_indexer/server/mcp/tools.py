@@ -1804,6 +1804,81 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "required": ["success"],
         },
     },
+    "get_job_details": {
+        "name": "get_job_details",
+        "description": "Get detailed status information for a specific background job, including current state, progress, error messages, and completion status. Use the job_id returned from operations like add_golden_repo_index to track job progress.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "description": "The unique identifier of the job to query (UUID format)",
+                }
+            },
+            "required": ["job_id"],
+        },
+        "required_permission": "query_repos",
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean",
+                    "description": "Whether the operation succeeded",
+                },
+                "job": {
+                    "type": "object",
+                    "description": "Job details including status, timestamps, progress, and error information",
+                    "properties": {
+                        "job_id": {
+                            "type": "string",
+                            "description": "Unique job identifier (UUID)",
+                        },
+                        "operation_type": {
+                            "type": "string",
+                            "description": "Type of operation (e.g., add_golden_repo, remove_golden_repo)",
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "Current job status (pending, running, completed, failed, cancelled)",
+                        },
+                        "created_at": {
+                            "type": "string",
+                            "description": "ISO 8601 timestamp when job was created",
+                        },
+                        "started_at": {
+                            "type": ["string", "null"],
+                            "description": "ISO 8601 timestamp when job started (null if not started)",
+                        },
+                        "completed_at": {
+                            "type": ["string", "null"],
+                            "description": "ISO 8601 timestamp when job completed (null if not completed)",
+                        },
+                        "progress": {
+                            "type": "integer",
+                            "description": "Job progress percentage (0-100)",
+                        },
+                        "result": {
+                            "type": ["object", "null"],
+                            "description": "Job result data (null if not completed or failed)",
+                        },
+                        "error": {
+                            "type": ["string", "null"],
+                            "description": "Error message if job failed (null if no error)",
+                        },
+                        "username": {
+                            "type": "string",
+                            "description": "Username of the user who submitted the job",
+                        },
+                    },
+                },
+                "error": {
+                    "type": "string",
+                    "description": "Error message if operation failed",
+                },
+            },
+            "required": ["success"],
+        },
+    },
 }
 
 
@@ -3192,7 +3267,7 @@ TOOL_REGISTRY["scip_definition"] = {
         "WHEN NOT TO USE: Finding all usages of a symbol (use scip_references instead). Understanding what a symbol depends on (use scip_dependencies). Understanding what depends on a symbol (use scip_dependents). Impact analysis (use scip_impact). Tracing call paths (use scip_callchain). Getting curated file list for a symbol (use scip_context). "
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_references (find all usages), scip_dependencies (what symbol depends on), scip_dependents (what depends on symbol), scip_context (get curated file list). "
-        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"exact\": false} returns [{\"symbol\": \"com.example.DatabaseManager\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/database/schema.py\", \"line\": 13, \"column\": 0, \"kind\": \"class\", \"relationship\": null, \"context\": null}]"
+        'EXAMPLE: {"symbol": "DatabaseManager", "exact": false} returns [{"symbol": "com.example.DatabaseManager", "project": "code-indexer", "file_path": "src/code_indexer/scip/database/schema.py", "line": 13, "column": 0, "kind": "class", "relationship": null, "context": null}]'
     ),
     "inputSchema": {
         "type": "object",
@@ -3218,28 +3293,68 @@ TOOL_REGISTRY["scip_definition"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
-            "total_results": {"type": "integer", "description": "Total number of definitions found"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name that was searched for",
+            },
+            "total_results": {
+                "type": "integer",
+                "description": "Total number of definitions found",
+            },
             "results": {
                 "type": "array",
                 "description": "List of definition locations",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Full SCIP symbol identifier",
+                        },
                         "project": {"type": "string", "description": "Project path"},
-                        "file_path": {"type": "string", "description": "File path relative to project root"},
-                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
-                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
-                        "kind": {"type": "string", "description": "Symbol kind (class, function, method, variable, etc.)"},
-                        "relationship": {"type": ["string", "null"], "description": "Relationship type (always null for definitions)"},
-                        "context": {"type": ["string", "null"], "description": "Additional context (always null for definitions)"},
+                        "file_path": {
+                            "type": "string",
+                            "description": "File path relative to project root",
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": "Line number (1-indexed)",
+                        },
+                        "column": {
+                            "type": "integer",
+                            "description": "Column number (0-indexed)",
+                        },
+                        "kind": {
+                            "type": "string",
+                            "description": "Symbol kind (class, function, method, variable, etc.)",
+                        },
+                        "relationship": {
+                            "type": ["string", "null"],
+                            "description": "Relationship type (always null for definitions)",
+                        },
+                        "context": {
+                            "type": ["string", "null"],
+                            "description": "Additional context (always null for definitions)",
+                        },
                     },
-                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                    "required": [
+                        "symbol",
+                        "project",
+                        "file_path",
+                        "line",
+                        "column",
+                        "kind",
+                    ],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "results"],
     },
@@ -3255,7 +3370,7 @@ TOOL_REGISTRY["scip_references"] = {
         "WHEN NOT TO USE: Finding where a symbol is defined (use scip_definition instead). Understanding what a symbol depends on (use scip_dependencies). Understanding what depends on a symbol (use scip_dependents - references show usage points, dependents show dependent symbols). Impact analysis (use scip_impact). Tracing call paths (use scip_callchain). Getting curated file list (use scip_context). "
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_definition (find definition), scip_dependents (what symbols depend on target), scip_impact (recursive dependency analysis), scip_context (get curated file list). "
-        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"limit\": 100, \"exact\": false} returns [{\"symbol\": \"com.example.DatabaseManager\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 42, \"column\": 8, \"kind\": \"reference\", \"relationship\": \"import\", \"context\": \"from code_indexer.scip.database.schema import DatabaseManager\"}]"
+        'EXAMPLE: {"symbol": "DatabaseManager", "limit": 100, "exact": false} returns [{"symbol": "com.example.DatabaseManager", "project": "code-indexer", "file_path": "src/code_indexer/scip/query/primitives.py", "line": 42, "column": 8, "kind": "reference", "relationship": "import", "context": "from code_indexer.scip.database.schema import DatabaseManager"}]'
     ),
     "inputSchema": {
         "type": "object",
@@ -3286,28 +3401,68 @@ TOOL_REGISTRY["scip_references"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
-            "total_results": {"type": "integer", "description": "Total number of references found"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name that was searched for",
+            },
+            "total_results": {
+                "type": "integer",
+                "description": "Total number of references found",
+            },
             "results": {
                 "type": "array",
                 "description": "List of reference locations",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Full SCIP symbol identifier",
+                        },
                         "project": {"type": "string", "description": "Project path"},
-                        "file_path": {"type": "string", "description": "File path relative to project root"},
-                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
-                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
-                        "kind": {"type": "string", "description": "Symbol kind (reference)"},
-                        "relationship": {"type": ["string", "null"], "description": "Relationship type (import, call, instantiation, etc.)"},
-                        "context": {"type": ["string", "null"], "description": "Code context where reference occurs"},
+                        "file_path": {
+                            "type": "string",
+                            "description": "File path relative to project root",
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": "Line number (1-indexed)",
+                        },
+                        "column": {
+                            "type": "integer",
+                            "description": "Column number (0-indexed)",
+                        },
+                        "kind": {
+                            "type": "string",
+                            "description": "Symbol kind (reference)",
+                        },
+                        "relationship": {
+                            "type": ["string", "null"],
+                            "description": "Relationship type (import, call, instantiation, etc.)",
+                        },
+                        "context": {
+                            "type": ["string", "null"],
+                            "description": "Code context where reference occurs",
+                        },
                     },
-                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                    "required": [
+                        "symbol",
+                        "project",
+                        "file_path",
+                        "line",
+                        "column",
+                        "kind",
+                    ],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "results"],
     },
@@ -3323,7 +3478,7 @@ TOOL_REGISTRY["scip_dependencies"] = {
         "WHEN NOT TO USE: Finding what depends on a symbol (use scip_dependents instead - opposite direction). Finding all usages (use scip_references). Finding definitions (use scip_definition). Impact analysis (use scip_impact for recursive dependency tree). Tracing call paths (use scip_callchain). Getting curated file list (use scip_context). "
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_dependents (opposite direction - what depends on symbol), scip_impact (recursive dependency analysis), scip_definition (find symbol definition), scip_context (get curated file list). "
-        "EXAMPLE: {\"symbol\": \"SCIPQueryEngine\", \"depth\": 1, \"exact\": false} returns [{\"symbol\": \"com.example.DatabaseManager\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 15, \"column\": 0, \"kind\": \"dependency\", \"relationship\": \"import\", \"context\": \"from code_indexer.scip.database.schema import DatabaseManager\"}]"
+        'EXAMPLE: {"symbol": "SCIPQueryEngine", "depth": 1, "exact": false} returns [{"symbol": "com.example.DatabaseManager", "project": "code-indexer", "file_path": "src/code_indexer/scip/query/primitives.py", "line": 15, "column": 0, "kind": "dependency", "relationship": "import", "context": "from code_indexer.scip.database.schema import DatabaseManager"}]'
     ),
     "inputSchema": {
         "type": "object",
@@ -3354,28 +3509,68 @@ TOOL_REGISTRY["scip_dependencies"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
-            "total_results": {"type": "integer", "description": "Total number of dependencies found"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name that was searched for",
+            },
+            "total_results": {
+                "type": "integer",
+                "description": "Total number of dependencies found",
+            },
             "results": {
                 "type": "array",
                 "description": "List of dependency symbols",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier of dependency"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Full SCIP symbol identifier of dependency",
+                        },
                         "project": {"type": "string", "description": "Project path"},
-                        "file_path": {"type": "string", "description": "File path relative to project root"},
-                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
-                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
-                        "kind": {"type": "string", "description": "Symbol kind (dependency)"},
-                        "relationship": {"type": ["string", "null"], "description": "Relationship type (import, call, use, etc.)"},
-                        "context": {"type": ["string", "null"], "description": "Code context where dependency occurs"},
+                        "file_path": {
+                            "type": "string",
+                            "description": "File path relative to project root",
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": "Line number (1-indexed)",
+                        },
+                        "column": {
+                            "type": "integer",
+                            "description": "Column number (0-indexed)",
+                        },
+                        "kind": {
+                            "type": "string",
+                            "description": "Symbol kind (dependency)",
+                        },
+                        "relationship": {
+                            "type": ["string", "null"],
+                            "description": "Relationship type (import, call, use, etc.)",
+                        },
+                        "context": {
+                            "type": ["string", "null"],
+                            "description": "Code context where dependency occurs",
+                        },
                     },
-                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                    "required": [
+                        "symbol",
+                        "project",
+                        "file_path",
+                        "line",
+                        "column",
+                        "kind",
+                    ],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "results"],
     },
@@ -3391,7 +3586,7 @@ TOOL_REGISTRY["scip_dependents"] = {
         "WHEN NOT TO USE: Finding what a symbol depends on (use scip_dependencies instead - opposite direction). Finding all usages (use scip_references for raw usage points). Finding definitions (use scip_definition). Full recursive impact analysis (use scip_impact for complete dependency tree). Tracing call paths (use scip_callchain). Getting curated file list (use scip_context). "
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_dependencies (opposite direction - what symbol depends on), scip_impact (recursive dependency analysis), scip_references (raw usage points), scip_context (get curated file list). "
-        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"depth\": 1, \"exact\": false} returns [{\"symbol\": \"com.example.SCIPQueryEngine\", \"project\": \"code-indexer\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 15, \"column\": 0, \"kind\": \"dependent\", \"relationship\": \"uses\", \"context\": \"self.db = DatabaseManager()\"}]"
+        'EXAMPLE: {"symbol": "DatabaseManager", "depth": 1, "exact": false} returns [{"symbol": "com.example.SCIPQueryEngine", "project": "code-indexer", "file_path": "src/code_indexer/scip/query/primitives.py", "line": 15, "column": 0, "kind": "dependent", "relationship": "uses", "context": "self.db = DatabaseManager()"}]'
     ),
     "inputSchema": {
         "type": "object",
@@ -3422,28 +3617,68 @@ TOOL_REGISTRY["scip_dependents"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "symbol": {"type": "string", "description": "Symbol name that was searched for"},
-            "total_results": {"type": "integer", "description": "Total number of dependents found"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name that was searched for",
+            },
+            "total_results": {
+                "type": "integer",
+                "description": "Total number of dependents found",
+            },
             "results": {
                 "type": "array",
                 "description": "List of dependent symbols",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier of dependent"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Full SCIP symbol identifier of dependent",
+                        },
                         "project": {"type": "string", "description": "Project path"},
-                        "file_path": {"type": "string", "description": "File path relative to project root"},
-                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
-                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
-                        "kind": {"type": "string", "description": "Symbol kind (dependent)"},
-                        "relationship": {"type": ["string", "null"], "description": "Relationship type (uses, calls, imports, etc.)"},
-                        "context": {"type": ["string", "null"], "description": "Code context where dependent uses target"},
+                        "file_path": {
+                            "type": "string",
+                            "description": "File path relative to project root",
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": "Line number (1-indexed)",
+                        },
+                        "column": {
+                            "type": "integer",
+                            "description": "Column number (0-indexed)",
+                        },
+                        "kind": {
+                            "type": "string",
+                            "description": "Symbol kind (dependent)",
+                        },
+                        "relationship": {
+                            "type": ["string", "null"],
+                            "description": "Relationship type (uses, calls, imports, etc.)",
+                        },
+                        "context": {
+                            "type": ["string", "null"],
+                            "description": "Code context where dependent uses target",
+                        },
                     },
-                    "required": ["symbol", "project", "file_path", "line", "column", "kind"],
+                    "required": [
+                        "symbol",
+                        "project",
+                        "file_path",
+                        "line",
+                        "column",
+                        "kind",
+                    ],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "results"],
     },
@@ -3459,7 +3694,7 @@ TOOL_REGISTRY["scip_impact"] = {
         "WHEN NOT TO USE: Finding direct dependencies only (use scip_dependencies for faster single-level query). Finding direct dependents only (use scip_dependents for faster single-level query). Simple usage point lookup (use scip_references). Finding definitions (use scip_definition). Tracing specific call paths (use scip_callchain). Getting prioritized file list for reading (use scip_context). "
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_dependents (single-level dependents), scip_dependencies (single-level dependencies), scip_callchain (trace call paths), scip_context (get curated file list with relevance scoring). "
-        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"depth\": 3} returns {\"target_symbol\": \"com.example.DatabaseManager\", \"depth_analyzed\": 3, \"total_affected\": 47, \"affected_symbols\": [{\"symbol\": \"SCIPQueryEngine\", \"file_path\": \"src/code_indexer/scip/query/primitives.py\", \"line\": 15, \"column\": 0, \"depth\": 1, \"relationship\": \"uses\", \"chain\": [\"DatabaseManager\", \"SCIPQueryEngine\"]}], \"affected_files\": [{\"path\": \"src/code_indexer/scip/query/primitives.py\", \"project\": \"code-indexer\", \"affected_symbol_count\": 3, \"min_depth\": 1, \"max_depth\": 2}]}"
+        'EXAMPLE: {"symbol": "DatabaseManager", "depth": 3} returns {"target_symbol": "com.example.DatabaseManager", "depth_analyzed": 3, "total_affected": 47, "affected_symbols": [{"symbol": "SCIPQueryEngine", "file_path": "src/code_indexer/scip/query/primitives.py", "line": 15, "column": 0, "depth": 1, "relationship": "uses", "chain": ["DatabaseManager", "SCIPQueryEngine"]}], "affected_files": [{"path": "src/code_indexer/scip/query/primitives.py", "project": "code-indexer", "affected_symbol_count": 3, "min_depth": 1, "max_depth": 2}]}'
     ),
     "inputSchema": {
         "type": "object",
@@ -3485,30 +3720,71 @@ TOOL_REGISTRY["scip_impact"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "target_symbol": {"type": "string", "description": "Full SCIP symbol identifier analyzed"},
-            "depth_analyzed": {"type": "integer", "description": "Actual depth analyzed"},
-            "total_affected": {"type": "integer", "description": "Total number of affected symbols"},
-            "truncated": {"type": "boolean", "description": "Whether results were truncated due to size limits"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "target_symbol": {
+                "type": "string",
+                "description": "Full SCIP symbol identifier analyzed",
+            },
+            "depth_analyzed": {
+                "type": "integer",
+                "description": "Actual depth analyzed",
+            },
+            "total_affected": {
+                "type": "integer",
+                "description": "Total number of affected symbols",
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "Whether results were truncated due to size limits",
+            },
             "affected_symbols": {
                 "type": "array",
                 "description": "List of all symbols affected by changing target symbol",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Full SCIP symbol identifier"},
-                        "file_path": {"type": "string", "description": "File path relative to project root"},
-                        "line": {"type": "integer", "description": "Line number (1-indexed)"},
-                        "column": {"type": "integer", "description": "Column number (0-indexed)"},
-                        "depth": {"type": "integer", "description": "Depth level in dependency tree"},
-                        "relationship": {"type": "string", "description": "Relationship type (uses, calls, imports, etc.)"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Full SCIP symbol identifier",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "File path relative to project root",
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": "Line number (1-indexed)",
+                        },
+                        "column": {
+                            "type": "integer",
+                            "description": "Column number (0-indexed)",
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Depth level in dependency tree",
+                        },
+                        "relationship": {
+                            "type": "string",
+                            "description": "Relationship type (uses, calls, imports, etc.)",
+                        },
                         "chain": {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "Dependency chain from target to this symbol",
                         },
                     },
-                    "required": ["symbol", "file_path", "line", "column", "depth", "relationship", "chain"],
+                    "required": [
+                        "symbol",
+                        "file_path",
+                        "line",
+                        "column",
+                        "depth",
+                        "relationship",
+                        "chain",
+                    ],
                 },
             },
             "affected_files": {
@@ -3517,16 +3793,37 @@ TOOL_REGISTRY["scip_impact"] = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "File path relative to project root"},
+                        "path": {
+                            "type": "string",
+                            "description": "File path relative to project root",
+                        },
                         "project": {"type": "string", "description": "Project path"},
-                        "affected_symbol_count": {"type": "integer", "description": "Number of affected symbols in file"},
-                        "min_depth": {"type": "integer", "description": "Minimum depth of affected symbols"},
-                        "max_depth": {"type": "integer", "description": "Maximum depth of affected symbols"},
+                        "affected_symbol_count": {
+                            "type": "integer",
+                            "description": "Number of affected symbols in file",
+                        },
+                        "min_depth": {
+                            "type": "integer",
+                            "description": "Minimum depth of affected symbols",
+                        },
+                        "max_depth": {
+                            "type": "integer",
+                            "description": "Maximum depth of affected symbols",
+                        },
                     },
-                    "required": ["path", "project", "affected_symbol_count", "min_depth", "max_depth"],
+                    "required": [
+                        "path",
+                        "project",
+                        "affected_symbol_count",
+                        "min_depth",
+                        "max_depth",
+                    ],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "affected_symbols", "affected_files"],
     },
@@ -3542,7 +3839,7 @@ TOOL_REGISTRY["scip_callchain"] = {
         "WHEN NOT TO USE: Finding all usages (use scip_references). Impact analysis (use scip_impact). Finding dependencies (use scip_dependencies). Finding dependents (use scip_dependents). Getting curated file list (use scip_context). Finding definitions (use scip_definition). "
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_impact (full dependency tree), scip_dependencies (what symbol depends on), scip_dependents (what depends on symbol), scip_context (get curated file list). "
-        "EXAMPLE: {\"from_symbol\": \"handle_request\", \"to_symbol\": \"DatabaseManager\", \"max_depth\": 10} returns {\"from_symbol\": \"handle_request\", \"to_symbol\": \"DatabaseManager\", \"total_chains_found\": 2, \"chains\": [{\"length\": 3, \"path\": [{\"symbol\": \"handle_request\", \"file_path\": \"src/api/handler.py\", \"line\": 10, \"column\": 0, \"call_type\": \"call\"}, {\"symbol\": \"UserService.authenticate\", \"file_path\": \"src/services/user.py\", \"line\": 25, \"column\": 4, \"call_type\": \"call\"}, {\"symbol\": \"DatabaseManager.query\", \"file_path\": \"src/database/manager.py\", \"line\": 50, \"column\": 8, \"call_type\": \"call\"}]}]}"
+        'EXAMPLE: {"from_symbol": "handle_request", "to_symbol": "DatabaseManager", "max_depth": 10} returns {"from_symbol": "handle_request", "to_symbol": "DatabaseManager", "total_chains_found": 2, "chains": [{"length": 3, "path": [{"symbol": "handle_request", "file_path": "src/api/handler.py", "line": 10, "column": 0, "call_type": "call"}, {"symbol": "UserService.authenticate", "file_path": "src/services/user.py", "line": 25, "column": 4, "call_type": "call"}, {"symbol": "DatabaseManager.query", "file_path": "src/database/manager.py", "line": 50, "column": 8, "call_type": "call"}]}]}'
     ),
     "inputSchema": {
         "type": "object",
@@ -3572,39 +3869,81 @@ TOOL_REGISTRY["scip_callchain"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "from_symbol": {"type": "string", "description": "Starting symbol searched"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "from_symbol": {
+                "type": "string",
+                "description": "Starting symbol searched",
+            },
             "to_symbol": {"type": "string", "description": "Target symbol searched"},
-            "total_chains_found": {"type": "integer", "description": "Total number of call chains found"},
-            "truncated": {"type": "boolean", "description": "Whether results were truncated due to size limits"},
-            "max_depth_reached": {"type": "boolean", "description": "Whether search hit max_depth limit"},
+            "total_chains_found": {
+                "type": "integer",
+                "description": "Total number of call chains found",
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "Whether results were truncated due to size limits",
+            },
+            "max_depth_reached": {
+                "type": "boolean",
+                "description": "Whether search hit max_depth limit",
+            },
             "chains": {
                 "type": "array",
                 "description": "List of call chains from source to target",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "length": {"type": "integer", "description": "Number of steps in chain"},
+                        "length": {
+                            "type": "integer",
+                            "description": "Number of steps in chain",
+                        },
                         "path": {
                             "type": "array",
                             "description": "Sequence of call steps from source to target",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "symbol": {"type": "string", "description": "Symbol at this step"},
-                                    "file_path": {"type": "string", "description": "File path relative to project root"},
-                                    "line": {"type": "integer", "description": "Line number (1-indexed)"},
-                                    "column": {"type": "integer", "description": "Column number (0-indexed)"},
-                                    "call_type": {"type": "string", "description": "Type of call (call, import, instantiation, etc.)"},
+                                    "symbol": {
+                                        "type": "string",
+                                        "description": "Symbol at this step",
+                                    },
+                                    "file_path": {
+                                        "type": "string",
+                                        "description": "File path relative to project root",
+                                    },
+                                    "line": {
+                                        "type": "integer",
+                                        "description": "Line number (1-indexed)",
+                                    },
+                                    "column": {
+                                        "type": "integer",
+                                        "description": "Column number (0-indexed)",
+                                    },
+                                    "call_type": {
+                                        "type": "string",
+                                        "description": "Type of call (call, import, instantiation, etc.)",
+                                    },
                                 },
-                                "required": ["symbol", "file_path", "line", "column", "call_type"],
+                                "required": [
+                                    "symbol",
+                                    "file_path",
+                                    "line",
+                                    "column",
+                                    "call_type",
+                                ],
                             },
                         },
                     },
                     "required": ["length", "path"],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "chains"],
     },
@@ -3619,7 +3958,7 @@ TOOL_REGISTRY["scip_context"] = {
         "WHEN NOT TO USE: Finding all usages (use scip_references). Impact analysis (use scip_impact). Finding dependencies (use scip_dependencies). Finding dependents (use scip_dependents). Tracing call paths (use scip_callchain). Finding definitions (use scip_definition). "
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_definition (find definition first), scip_impact (full dependency tree), scip_dependencies (what symbol depends on), scip_dependents (what depends on symbol). "
-        "EXAMPLE: {\"symbol\": \"DatabaseManager\", \"limit\": 20, \"min_score\": 0.0} returns {\"target_symbol\": \"com.example.DatabaseManager\", \"summary\": \"Read these 3 file(s) - 1 HIGH priority, 2 MEDIUM priority\", \"total_files\": 3, \"total_symbols\": 8, \"avg_relevance\": 0.75, \"files\": [{\"path\": \"src/code_indexer/scip/database/schema.py\", \"project\": \"code-indexer\", \"relevance_score\": 1.0, \"read_priority\": 1, \"symbols\": [{\"name\": \"DatabaseManager\", \"kind\": \"class\", \"relationship\": \"definition\", \"line\": 13, \"column\": 0, \"relevance\": 1.0}]}]}"
+        'EXAMPLE: {"symbol": "DatabaseManager", "limit": 20, "min_score": 0.0} returns {"target_symbol": "com.example.DatabaseManager", "summary": "Read these 3 file(s) - 1 HIGH priority, 2 MEDIUM priority", "total_files": 3, "total_symbols": 8, "avg_relevance": 0.75, "files": [{"path": "src/code_indexer/scip/database/schema.py", "project": "code-indexer", "relevance_score": 1.0, "read_priority": 1, "symbols": [{"name": "DatabaseManager", "kind": "class", "relationship": "definition", "line": 13, "column": 0, "relevance": 1.0}]}]}'
     ),
     "inputSchema": {
         "type": "object",
@@ -3650,19 +3989,40 @@ TOOL_REGISTRY["scip_context"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "target_symbol": {"type": "string", "description": "Full SCIP symbol identifier analyzed"},
-            "summary": {"type": "string", "description": "Human-readable summary of results"},
-            "total_files": {"type": "integer", "description": "Total number of files returned"},
-            "total_symbols": {"type": "integer", "description": "Total number of symbols across all files"},
-            "avg_relevance": {"type": "number", "description": "Average relevance score across all files"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "target_symbol": {
+                "type": "string",
+                "description": "Full SCIP symbol identifier analyzed",
+            },
+            "summary": {
+                "type": "string",
+                "description": "Human-readable summary of results",
+            },
+            "total_files": {
+                "type": "integer",
+                "description": "Total number of files returned",
+            },
+            "total_symbols": {
+                "type": "integer",
+                "description": "Total number of symbols across all files",
+            },
+            "avg_relevance": {
+                "type": "number",
+                "description": "Average relevance score across all files",
+            },
             "files": {
                 "type": "array",
                 "description": "Prioritized list of files to read, sorted by relevance",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "File path relative to project root"},
+                        "path": {
+                            "type": "string",
+                            "description": "File path relative to project root",
+                        },
                         "project": {"type": "string", "description": "Project path"},
                         "relevance_score": {
                             "type": "number",
@@ -3678,24 +4038,55 @@ TOOL_REGISTRY["scip_context"] = {
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {"type": "string", "description": "Symbol name"},
-                                    "kind": {"type": "string", "description": "Symbol kind (class, function, method, etc.)"},
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Symbol name",
+                                    },
+                                    "kind": {
+                                        "type": "string",
+                                        "description": "Symbol kind (class, function, method, etc.)",
+                                    },
                                     "relationship": {
                                         "type": "string",
                                         "description": "Relationship to target (definition, dependency, dependent, reference)",
                                     },
-                                    "line": {"type": "integer", "description": "Line number (1-indexed)"},
-                                    "column": {"type": "integer", "description": "Column number (0-indexed)"},
-                                    "relevance": {"type": "number", "description": "Symbol relevance score (0.0-1.0)"},
+                                    "line": {
+                                        "type": "integer",
+                                        "description": "Line number (1-indexed)",
+                                    },
+                                    "column": {
+                                        "type": "integer",
+                                        "description": "Column number (0-indexed)",
+                                    },
+                                    "relevance": {
+                                        "type": "number",
+                                        "description": "Symbol relevance score (0.0-1.0)",
+                                    },
                                 },
-                                "required": ["name", "kind", "relationship", "line", "column", "relevance"],
+                                "required": [
+                                    "name",
+                                    "kind",
+                                    "relationship",
+                                    "line",
+                                    "column",
+                                    "relevance",
+                                ],
                             },
                         },
                     },
-                    "required": ["path", "project", "relevance_score", "read_priority", "symbols"],
+                    "required": [
+                        "path",
+                        "project",
+                        "relevance_score",
+                        "read_priority",
+                        "symbols",
+                    ],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "files"],
     },
@@ -3711,14 +4102,22 @@ TOOL_REGISTRY["cidx_quick_reference"] = {
         "USE CASES: (1) Discover what tools are available, (2) Understand tool purposes before using them, (3) Find the right tool for a specific task, (4) Filter tools by category (search, scip, git, directory, user management). "
         "CATEGORIES: search (semantic/FTS code search), scip (code intelligence - definitions, references, dependencies, call chains), git (repository exploration, commit history, diffs), directory (browse files and folders), repo_management (activate/deactivate repos), user_management (create/delete users, manage roles). "
         "OUTPUT: Returns tool names with TL;DR descriptions extracted from full tool definitions. Use category filter to narrow results. "
-        "EXAMPLE: {\"category\": \"scip\"} returns all 7 SCIP tools with their TL;DR summaries. {\"category\": null} returns all 49 tools."
+        'EXAMPLE: {"category": "scip"} returns all 7 SCIP tools with their TL;DR summaries. {"category": null} returns all 49 tools.'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "category": {
                 "type": ["string", "null"],
-                "enum": ["search", "scip", "git", "directory", "repo_management", "user_management", None],
+                "enum": [
+                    "search",
+                    "scip",
+                    "git",
+                    "directory",
+                    "repo_management",
+                    "user_management",
+                    None,
+                ],
                 "default": None,
                 "description": "Optional category filter. null/omitted returns all tools. Options: search, scip, git, directory, repo_management, user_management.",
             },
@@ -3729,9 +4128,18 @@ TOOL_REGISTRY["cidx_quick_reference"] = {
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {"type": "boolean", "description": "Whether the operation succeeded"},
-            "total_tools": {"type": "integer", "description": "Total number of tools returned"},
-            "category_filter": {"type": ["string", "null"], "description": "Category filter applied (null if showing all)"},
+            "success": {
+                "type": "boolean",
+                "description": "Whether the operation succeeded",
+            },
+            "total_tools": {
+                "type": "integer",
+                "description": "Total number of tools returned",
+            },
+            "category_filter": {
+                "type": ["string", "null"],
+                "description": "Category filter applied (null if showing all)",
+            },
             "tools": {
                 "type": "array",
                 "description": "List of tool summaries",
@@ -3740,13 +4148,22 @@ TOOL_REGISTRY["cidx_quick_reference"] = {
                     "properties": {
                         "name": {"type": "string", "description": "Tool name"},
                         "category": {"type": "string", "description": "Tool category"},
-                        "summary": {"type": "string", "description": "TL;DR summary from tool description"},
-                        "required_permission": {"type": "string", "description": "Permission required to use this tool"},
+                        "summary": {
+                            "type": "string",
+                            "description": "TL;DR summary from tool description",
+                        },
+                        "required_permission": {
+                            "type": "string",
+                            "description": "Permission required to use this tool",
+                        },
                     },
                     "required": ["name", "category", "summary", "required_permission"],
                 },
             },
-            "error": {"type": "string", "description": "Error message if operation failed"},
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
         },
         "required": ["success", "total_tools", "tools"],
     },
