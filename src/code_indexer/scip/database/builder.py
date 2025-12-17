@@ -55,6 +55,17 @@ class SCIPDatabaseBuilder:
         Returns:
             Dictionary with counts: symbol_count, document_count, occurrence_count, call_graph_count
         """
+        # Ensure parent directory exists
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create schema first, bypassing DatabaseManager.__init__ to avoid
+        # its side effect of deleting existing databases.
+        # Note: create_schema() only requires db_path attribute.
+        from .schema import DatabaseManager
+        temp_manager = DatabaseManager.__new__(DatabaseManager)
+        temp_manager.db_path = db_path
+        temp_manager.create_schema()
+
         conn = sqlite3.connect(db_path)
 
         try:

@@ -15,6 +15,65 @@ from code_indexer.scip.database.schema import DatabaseManager
 from code_indexer.scip.protobuf import scip_pb2
 
 
+class TestSchemaCreation:
+    """Test database schema creation during build process."""
+
+    def test_build_creates_schema_before_inserting(self, tmp_path: Path):
+        """
+        Test that build() creates database schema before inserting data.
+
+        CRITICAL BUG: build() tries to insert into symbols table at line 71
+        without calling create_schema() first, causing:
+        sqlite3.OperationalError: no such table: symbols
+
+        Given a minimal SCIP protobuf file
+        When calling build() on empty database
+        Then schema should be created automatically before data insertion
+        And no sqlite3.OperationalError should occur
+        """
+        # Create minimal SCIP protobuf with one symbol
+        index = scip_pb2.Index()
+
+        symbol_info = index.external_symbols.add()
+        symbol_info.symbol = "test.py::TestClass#"
+        symbol_info.display_name = "TestClass"
+        symbol_info.kind = scip_pb2.SymbolInformation.Class
+
+        scip_file = tmp_path / "test.scip"
+        with open(scip_file, "wb") as f:
+            f.write(index.SerializeToString())
+
+        # Build database WITHOUT manually creating schema
+        db_path = tmp_path / "test.scip.db"
+        builder = SCIPDatabaseBuilder()
+
+        # This should NOT raise sqlite3.OperationalError
+        # build() should create schema internally
+        result = builder.build(scip_file, db_path)
+
+        # Verify build succeeded
+        assert result["symbol_count"] == 1
+
+        # Verify tables exist
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Check symbols table exists and has data
+        cursor.execute("SELECT COUNT(*) FROM symbols")
+        count = cursor.fetchone()[0]
+        assert count == 1
+
+        # Check other required tables exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {row[0] for row in cursor.fetchall()}
+        assert "symbols" in tables
+        assert "documents" in tables
+        assert "occurrences" in tables
+        assert "call_graph" in tables
+
+        conn.close()
+
+
 class TestSymbolExtraction:
     """Test symbol extraction from SCIP protobuf."""
 
