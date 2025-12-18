@@ -2446,6 +2446,7 @@ class TestTraceCallChainV2BidirectionalBFS:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_trace_call_chain_v2_cycle_detection(self):
         """
         Verify cycles are detected and avoided in bidirectional BFS.
@@ -2481,6 +2482,7 @@ class TestTraceCallChainV2BidirectionalBFS:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_trace_call_chain_v2_no_path_exists(self):
         """
         Verify empty result when no path exists between symbols.
@@ -2524,6 +2526,7 @@ class TestTraceCallChainV2BidirectionalBFS:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_trace_call_chain_v2_backward_reachability_pruning(self):
         """
         Verify backward-reachable set is much smaller than forward exploration.
