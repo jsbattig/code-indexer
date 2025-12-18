@@ -40,6 +40,7 @@ class TestServerAddIndexCommand:
             mock_client.add_index_to_golden_repo = AsyncMock(
                 return_value={"job_id": "test-job-123", "status": "pending"}
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = self.runner.invoke(
@@ -79,6 +80,7 @@ class TestServerAddIndexCommand:
                     "Golden repository 'non-existent' not found", 404
                 )
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = self.runner.invoke(
@@ -115,6 +117,7 @@ class TestServerAddIndexCommand:
             mock_client.add_index_to_golden_repo = AsyncMock(
                 return_value={"job_id": "test-job-456", "status": "pending"}
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = self.runner.invoke(
@@ -162,6 +165,7 @@ class TestServerAddIndexCommand:
                     {"job_id": "test-job-789", "status": "completed", "progress": 100},
                 ]
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = self.runner.invoke(
@@ -204,6 +208,7 @@ class TestServerAddIndexCommand:
                     "Index type 'semantic_fts' already exists for 'my-repo'", 409
                 )
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = self.runner.invoke(
@@ -306,6 +311,7 @@ class TestServerAddIndexCommand:
                     "progress": 50,
                 }
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             # Use a very short timeout (1 second) to make test fast
@@ -356,6 +362,7 @@ class TestServerAddIndexCommand:
                     400,
                 )
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             # Note: click.Choice validates at CLI level, but we test API error handling too
@@ -430,6 +437,7 @@ class TestServerListIndexesCommand:
                     },
                 }
             )
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = self.runner.invoke(cli, ["server", "list-indexes", "my-repo"])
