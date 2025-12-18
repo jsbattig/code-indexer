@@ -522,6 +522,7 @@ class TestFindDefinition:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_find_definition_performance_benchmark(self, tmp_path: Path):
         """
         PERFORMANCE TEST: Definition lookup must complete in <5ms (AC1 target).
@@ -661,6 +662,7 @@ class TestFindReferences:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_find_references_performance_benchmark(self, tmp_path: Path):
         """
         PERFORMANCE TEST: Reference search must complete in <10ms (AC2 target).
@@ -703,6 +705,7 @@ class TestFindReferences:
 class TestGetDependencies:
     """Test get_dependencies() SQL-based dependency query (Story #601 AC1)."""
 
+    @pytest.mark.slow
     def test_get_dependencies_depth_1_performance_benchmark(self, tmp_path: Path):
         """
         PERFORMANCE TEST: Depth=1 dependency query must complete in <20ms (AC1 target).
@@ -742,6 +745,7 @@ class TestGetDependencies:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_get_dependencies_depth_2_performance_benchmark(self, tmp_path: Path):
         """
         PERFORMANCE TEST: Depth=2 dependency query must complete in <50ms (AC1 target).
@@ -943,6 +947,7 @@ class TestGetDependencies:
 class TestGetDependents:
     """Test get_dependents() SQL-based dependent query (Story #601 AC2)."""
 
+    @pytest.mark.slow
     def test_get_dependents_depth_1_performance_benchmark(self, tmp_path: Path):
         """
         PERFORMANCE TEST: Depth=1 dependent query must complete in <20ms (AC2 target).
@@ -982,6 +987,7 @@ class TestGetDependents:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_get_dependents_depth_2_performance_benchmark(self, tmp_path: Path):
         """
         PERFORMANCE TEST: Depth=2 dependent query must complete in <50ms (AC2 target).
@@ -1582,6 +1588,7 @@ class TestAnalyzeImpact:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_analyze_impact_performance_benchmark(self, tmp_path: Path):
         """
         PERFORMANCE TEST: Impact analysis must complete in <200ms for depth=3 (AC1).
