@@ -3832,11 +3832,37 @@ TOOL_REGISTRY["scip_impact"] = {
 TOOL_REGISTRY["scip_callchain"] = {
     "name": "scip_callchain",
     "description": (
-        "TL;DR: [SCIP Code Intelligence] Find call chains/paths between two symbols. Returns all possible call paths showing how from_symbol can reach to_symbol. Use this for tracing execution flow and understanding call relationships. "
-        "SYMBOL FORMAT: Pass simple names like 'UserService', 'authenticate', 'DatabaseManager'. SCIP will match fuzzy by default. Full SCIP format like 'scip-python python code-indexer abc123 `module`/ClassName#method().' is handled internally - you only provide the readable part. "
-        "DEPTH BEHAVIOR: Results grow linearly with depth (BFS traversal with cycle detection prevents exponential growth). max_depth=5 searches 5 levels deep for call paths. Higher max_depth finds longer chains but increases query time. Start with default max_depth=10, increase to 20 if no paths found and symbols are distantly connected. "
-        "WHEN TO USE: Understanding how one symbol calls/reaches another. Tracing execution flow between components. Finding indirect call relationships. Debugging call stack issues. Understanding coupling between distant symbols. Verifying expected call paths exist. "
-        "WHEN NOT TO USE: Finding all usages (use scip_references). Impact analysis (use scip_impact). Finding dependencies (use scip_dependencies). Finding dependents (use scip_dependents). Getting curated file list (use scip_context). Finding definitions (use scip_definition). "
+        "TL;DR: [SCIP Code Intelligence] Trace all execution paths from entry point (from_symbol) to target function (to_symbol). "
+        "\n\n"
+        "SUPPORTED SYMBOL FORMATS:\n"
+        '- Simple names: "chat", "invoke", "CustomChain", "BaseClient"\n'
+        '- Class#method: "CustomChain#chat", "BaseClient#invoke"\n'
+        "- Full SCIP identifiers: \"scip-python python . hash `module`/Class#method().\"\n"
+        "\n\n"
+        "USAGE EXAMPLES:\n"
+        '- Method to method: from_symbol="chat", to_symbol="invoke"\n'
+        '- Class to class: from_symbol="CustomChain", to_symbol="BaseClient"\n'
+        '- Within class: from_symbol="CustomChain#chat", to_symbol="CustomChain#_generate_sql"\n'
+        "\n\n"
+        "KNOWN LIMITATIONS:\n"
+        "- May not capture FastAPI endpoint decorators (@app.post, @app.get)\n"
+        "- Factory functions may not show call chains to instantiated methods\n"
+        "- Cross-repository search: omit repository_alias to search all repositories\n"
+        "\n\n"
+        "RESPONSE INCLUDES:\n"
+        "- path: List of symbol names in execution order\n"
+        "- length: Number of hops in the chain\n"
+        "- has_cycle: Boolean indicating if path contains cycles\n"
+        "- diagnostic: Helpful message when no chains found\n"
+        "- scip_files_searched: Number of SCIP indexes searched\n"
+        "- repository_filter: Which repository was searched\n"
+        "\n\n"
+        "TIPS FOR BEST RESULTS:\n"
+        "- Start with simple class or method names\n"
+        "- Use repository_alias to limit search scope\n"
+        "- Increase max_depth if chains seem incomplete (max: 10)\n"
+        "- Check diagnostic message if 0 chains found\n"
+        "\n\n"
         "REQUIRES: SCIP indexes must be generated via 'cidx scip generate' before querying. Check .code-indexer/scip/ directory for .scip files. "
         "RELATED TOOLS: scip_impact (full dependency tree), scip_dependencies (what symbol depends on), scip_dependents (what depends on symbol), scip_context (get curated file list). "
         'EXAMPLE: {"from_symbol": "handle_request", "to_symbol": "DatabaseManager", "max_depth": 10} returns {"from_symbol": "handle_request", "to_symbol": "DatabaseManager", "total_chains_found": 2, "chains": [{"length": 3, "path": [{"symbol": "handle_request", "file_path": "src/api/handler.py", "line": 10, "column": 0, "call_type": "call"}, {"symbol": "UserService.authenticate", "file_path": "src/services/user.py", "line": 25, "column": 4, "call_type": "call"}, {"symbol": "DatabaseManager.query", "file_path": "src/database/manager.py", "line": 50, "column": 8, "call_type": "call"}]}]}'

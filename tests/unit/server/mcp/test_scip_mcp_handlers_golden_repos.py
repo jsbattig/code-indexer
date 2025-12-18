@@ -575,6 +575,127 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 assert list(Path(scip_dir_arg).glob("**/*.scip.db"))
 
 
+class TestScipCallchainSymbolValidation:
+    """Tests for scip_callchain symbol format validation."""
+
+    @pytest.mark.asyncio
+    async def test_scip_callchain_validates_empty_from_symbol(self) -> None:
+        """Verify scip_callchain returns error when from_symbol is empty."""
+        from code_indexer.server.mcp.handlers import scip_callchain
+
+        mock_user = MagicMock()
+        params = {"from_symbol": "", "to_symbol": "valid_symbol"}
+        result = await scip_callchain(params, mock_user)
+
+        content = result.get("content", [])
+        assert len(content) > 0
+        data = json.loads(content[0]["text"])
+        assert data["success"] is False
+        assert "from_symbol" in data["error"].lower()
+        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_scip_callchain_validates_empty_to_symbol(self) -> None:
+        """Verify scip_callchain returns error when to_symbol is empty."""
+        from code_indexer.server.mcp.handlers import scip_callchain
+
+        mock_user = MagicMock()
+        params = {"from_symbol": "valid_symbol", "to_symbol": ""}
+        result = await scip_callchain(params, mock_user)
+
+        content = result.get("content", [])
+        assert len(content) > 0
+        data = json.loads(content[0]["text"])
+        assert data["success"] is False
+        assert "to_symbol" in data["error"].lower()
+        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_scip_callchain_validates_whitespace_from_symbol(self) -> None:
+        """Verify scip_callchain returns error when from_symbol is only whitespace."""
+        from code_indexer.server.mcp.handlers import scip_callchain
+
+        mock_user = MagicMock()
+        params = {"from_symbol": "   ", "to_symbol": "valid_symbol"}
+        result = await scip_callchain(params, mock_user)
+
+        content = result.get("content", [])
+        assert len(content) > 0
+        data = json.loads(content[0]["text"])
+        assert data["success"] is False
+        assert "from_symbol" in data["error"].lower()
+        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_scip_callchain_validates_whitespace_to_symbol(self) -> None:
+        """Verify scip_callchain returns error when to_symbol is only whitespace."""
+        from code_indexer.server.mcp.handlers import scip_callchain
+
+        mock_user = MagicMock()
+        params = {"from_symbol": "valid_symbol", "to_symbol": "   "}
+        result = await scip_callchain(params, mock_user)
+
+        content = result.get("content", [])
+        assert len(content) > 0
+        data = json.loads(content[0]["text"])
+        assert data["success"] is False
+        assert "to_symbol" in data["error"].lower()
+        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+
+
+class TestScipCallchainEnhancedResponse:
+    """Tests for enhanced scip_callchain response format with diagnostics."""
+
+    @pytest.mark.asyncio
+    async def test_scip_callchain_includes_diagnostic_when_no_chains_found(
+        self, tmp_path: Path
+    ) -> None:
+        """Verify scip_callchain includes diagnostic message when 0 chains found."""
+        from code_indexer.server.mcp.handlers import scip_callchain
+
+        # Create golden repos structure with SCIP files
+        golden_repos_dir = tmp_path / "golden-repos"
+        repo1_scip = golden_repos_dir / "repo1" / ".code-indexer" / "scip"
+        repo1_scip.mkdir(parents=True)
+        scip_file = repo1_scip / "index.scip.db"
+
+        with patch(
+            "code_indexer.server.mcp.handlers._find_scip_files"
+        ) as mock_find:
+            mock_find.return_value = [scip_file]
+
+            with patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class:
+                # Mock SCIPQueryEngine to return empty chains
+                mock_engine = MagicMock()
+                mock_backend = MagicMock()
+                mock_backend.trace_call_chain.return_value = []
+                mock_engine.backend = mock_backend
+                mock_engine_class.return_value = mock_engine
+
+                # Execute
+                mock_user = MagicMock()
+                result = await scip_callchain(
+                    {"from_symbol": "func1", "to_symbol": "func2"}, mock_user
+                )
+
+                # Verify response includes diagnostic information
+                content = result.get("content", [])
+                assert len(content) > 0
+                data = json.loads(content[0]["text"])
+                assert data["success"] is True
+                assert data["total_chains_found"] == 0
+                assert "scip_files_searched" in data
+                assert data["scip_files_searched"] >= 0
+                assert "repository_filter" in data
+                assert "diagnostic" in data
+                assert data["diagnostic"] is not None
+                assert "No call chains found" in data["diagnostic"]
+                assert "func1" in data["diagnostic"]
+                assert "func2" in data["diagnostic"]
+
+
 class TestScipHandlerRegistration:
     """Tests for SCIP handler registration in HANDLER_REGISTRY."""
 

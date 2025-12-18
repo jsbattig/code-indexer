@@ -249,6 +249,22 @@ def _has_wildcard(pattern: str) -> bool:
     return any(c in pattern for c in WILDCARD_CHARS)
 
 
+def _validate_symbol_format(symbol: str, param_name: str) -> Optional[str]:
+    """Validate symbol format for call chain queries.
+
+    Args:
+        symbol: The symbol string to validate
+        param_name: Parameter name for error messages (e.g., "from_symbol", "to_symbol")
+
+    Returns:
+        None if valid, error message string if invalid
+    """
+    if not symbol or not symbol.strip():
+        return f"{param_name} cannot be empty"
+
+    return None
+
+
 def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
     """Expand wildcard patterns to matching repository aliases.
 
@@ -3786,22 +3802,38 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         from_symbol = params.get("from_symbol")
         to_symbol = params.get("to_symbol")
         max_depth = params.get("max_depth", 10)
-        project = params.get("project")
         repository_alias = params.get("repository_alias")
+
+        # Validate symbol formats
+        from_symbol_error = _validate_symbol_format(from_symbol, "from_symbol")
+        if from_symbol_error:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": f"Invalid parameters: {from_symbol_error}",
+                    "from_symbol": from_symbol,
+                    "to_symbol": to_symbol,
+                    "chains": []
+                }
+            )
+
+        to_symbol_error = _validate_symbol_format(to_symbol, "to_symbol")
+        if to_symbol_error:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": f"Invalid parameters: {to_symbol_error}",
+                    "from_symbol": from_symbol,
+                    "to_symbol": to_symbol,
+                    "chains": []
+                }
+            )
 
         # Validate and clamp max_depth to safe range
         if max_depth < 1:
             max_depth = 1
         elif max_depth > 10:
             max_depth = 10
-
-        if not from_symbol or not to_symbol:
-            return _mcp_response(
-                {
-                    "success": False,
-                    "error": "from_symbol and to_symbol parameters are required",
-                }
-            )
 
         scip_files = _find_scip_files(repository_alias=repository_alias)
 
@@ -3858,6 +3890,15 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         truncated = len(unique_chains) > MAX_CALL_CHAINS_RETURNED
         returned_chains = unique_chains[:MAX_CALL_CHAINS_RETURNED]
 
+        # Generate diagnostic message if no chains found
+        diagnostic = None
+        if len(unique_chains) == 0:
+            diagnostic = f"No call chains found from '{from_symbol}' to '{to_symbol}'. "
+            if not scip_files:
+                diagnostic += "No SCIP indexes found for the specified repository."
+            else:
+                diagnostic += "Verify symbol names exist in the codebase. Try using simple class or method names."
+
         return _mcp_response(
             {
                 "success": True,
@@ -3866,6 +3907,8 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 "total_chains_found": len(unique_chains),
                 "truncated": truncated,
                 "max_depth_reached": max_depth_reached,
+                "scip_files_searched": len(scip_files),
+                "repository_filter": repository_alias if repository_alias else "all",
                 "chains": [
                     {
                         "length": chain.length,
@@ -3874,6 +3917,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                     }
                     for chain in returned_chains
                 ],
+                "diagnostic": diagnostic,
             }
         )
     except Exception as e:
