@@ -226,21 +226,36 @@ class DatabaseBackend(SCIPBackend):
 
             symbol_id = row[0]
 
-            # Query database for dependencies
-            db_results = db_get_dependencies(self.conn, symbol_id, depth=depth, scip_file=self.scip_file)
+            # Expand class to methods if querying a class
+            # Classes don't have direct entries in call_graph - only methods do
+            symbol_ids_to_query = [symbol_id]
+            if defn.symbol.endswith("#"):  # Class symbol
+                method_ids = self._expand_class_to_methods(symbol_id)
+                if method_ids:
+                    symbol_ids_to_query = method_ids
 
-            # Convert database results to QueryResult objects
-            for db_row in db_results:
-                result = QueryResult(
-                    symbol=db_row["symbol_name"],
-                    project=self.project_root,
-                    file_path=db_row["file_path"],
-                    line=db_row["line"],
-                    column=db_row["column"],
-                    kind="dependency",
-                    relationship=db_row.get("relationship"),
-                )
-                results.append(result)
+            # Query database for dependencies for all symbol IDs
+            seen_symbols = set()  # Deduplicate results
+            for sid in symbol_ids_to_query:
+                db_results = db_get_dependencies(self.conn, sid, depth=depth, scip_file=self.scip_file)
+
+                # Convert database results to QueryResult objects
+                for db_row in db_results:
+                    # Deduplicate by symbol name
+                    if db_row["symbol_name"] in seen_symbols:
+                        continue
+                    seen_symbols.add(db_row["symbol_name"])
+
+                    result = QueryResult(
+                        symbol=db_row["symbol_name"],
+                        project=self.project_root,
+                        file_path=db_row["file_path"],
+                        line=db_row["line"],
+                        column=db_row["column"],
+                        kind="dependency",
+                        relationship=db_row.get("relationship"),
+                    )
+                    results.append(result)
 
         return results
 
@@ -366,18 +381,25 @@ class DatabaseBackend(SCIPBackend):
 
         kind, symbol_name = row
 
-        if kind not in ('Class', 'Interface'):
+        # Check if this is a class/interface
+        # kind may be NULL in some SCIP indexes (e.g., Python)
+        # Fall back to symbol naming: classes end with "#" (e.g., "Foo#")
+        is_class = (kind in ('Class', 'Interface')) or (kind is None and symbol_name.endswith('#'))
+
+        if not is_class:
             # Not a class/interface, return as-is
             return [symbol_id]
 
         # Expand to all nested methods
         # SCIP uses hierarchical naming: com/example/Foo# for class, com/example/Foo#method(). for methods
         # Pattern: symbol_name ends with '#', methods are symbol_name + method_name
+        # Note: kind field may be NULL in some SCIP indexes (e.g., Python), so we filter by
+        # symbol naming convention: methods end with "()" or "()."
         cursor.execute("""
             SELECT id FROM symbols
             WHERE name LIKE ? || '%'
             AND name != ?
-            AND kind IN ('Method', 'AbstractMethod', 'Function', 'Constructor')
+            AND (name LIKE '%()' OR name LIKE '%().')
         """, (symbol_name, symbol_name))
 
         method_ids = [r[0] for r in cursor.fetchall()]

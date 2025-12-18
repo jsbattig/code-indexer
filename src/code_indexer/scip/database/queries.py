@@ -53,56 +53,82 @@ def find_definition(
     safe_symbol_name = symbol_name.replace('"', '""')
 
     if exact:
-        # Use FTS5 for fast symbol name lookup combined with LIKE for exact suffix matching
-        # FTS5 MATCH query returns matching symbol IDs instantly
-        # LIKE filters to exact symbol definitions based on format:
-        #   - Class: /ClassName# (exact)
-        #   - Method: /ClassName#method(). or /ClassName#method() (allow both formats)
-        #   - Attribute: /ClassName#attr.
-        query = """
-            SELECT
-                s.name as symbol_name,
-                d.relative_path as file_path,
-                o.start_line as line,
-                o.start_char as column,
-                s.kind as kind,
-                o.role as role
-            FROM symbols_fts fts
-            JOIN symbols s ON fts.rowid = s.id
-            JOIN occurrences o ON o.symbol_id = s.id
-            JOIN documents d ON o.document_id = d.id
-            WHERE fts.name MATCH ?
-                AND s.name LIKE ?
-                AND (o.role & 1) = 1
-            ORDER BY d.relative_path, o.start_line
-        """
+        # Check if this is a full SCIP symbol path (starts with language prefix)
+        # Full SCIP symbols start with: "python ", "java ", "typescript ", etc.
+        is_full_scip_symbol = any(
+            symbol_name.startswith(prefix)
+            for prefix in ['python ', 'java ', 'typescript ', 'go ', 'rust ', 'cpp ', 'csharp ', 'ruby ']
+        )
 
-        # Determine SCIP format based on symbol_name
-        if '#' in symbol_name:
-            # Method or attribute query: ClassName#method or ClassName#attr
-            # SCIP format: .../ClassName#method(). or .../ClassName#attr.
-            # Handle both ClassName#method and ClassName#method() input formats
-            if symbol_name.endswith('()'):
-                # User provided ClassName#method() format
-                base = symbol_name[:-2]  # Remove ()
-            else:
-                # User provided ClassName#method format
-                base = symbol_name
-
-            # FTS5 pattern for fast filtering
-            fts_pattern = f'"/{safe_symbol_name}"'
-            # LIKE pattern matches method/attribute format
-            # Match both /ClassName#method(). and /ClassName#method().X patterns
-            like_pattern = f'%/{base}()%'
+        if is_full_scip_symbol:
+            # Use direct equality match for full SCIP symbols
+            query = """
+                SELECT
+                    s.name as symbol_name,
+                    d.relative_path as file_path,
+                    o.start_line as line,
+                    o.start_char as column,
+                    s.kind as kind,
+                    o.role as role
+                FROM symbols s
+                JOIN occurrences o ON o.symbol_id = s.id
+                JOIN documents d ON o.document_id = d.id
+                WHERE s.name = ?
+                    AND (o.role & 1) = 1
+                ORDER BY d.relative_path, o.start_line
+            """
+            cursor.execute(query, (symbol_name,))
         else:
-            # Class query: ClassName
-            # SCIP format: .../ClassName# (exact, no method/attribute suffix)
-            # FTS5 MATCH pattern for fast filtering
-            fts_pattern = f'"/{safe_symbol_name}#"'
-            # LIKE pattern for exact suffix match (class definition only)
-            like_pattern = f'%/{symbol_name}#'
+            # Use FTS5 for fast symbol name lookup combined with LIKE for exact suffix matching
+            # FTS5 MATCH query returns matching symbol IDs instantly
+            # LIKE filters to exact symbol definitions based on format:
+            #   - Class: /ClassName# (exact)
+            #   - Method: /ClassName#method(). or /ClassName#method() (allow both formats)
+            #   - Attribute: /ClassName#attr.
+            query = """
+                SELECT
+                    s.name as symbol_name,
+                    d.relative_path as file_path,
+                    o.start_line as line,
+                    o.start_char as column,
+                    s.kind as kind,
+                    o.role as role
+                FROM symbols_fts fts
+                JOIN symbols s ON fts.rowid = s.id
+                JOIN occurrences o ON o.symbol_id = s.id
+                JOIN documents d ON o.document_id = d.id
+                WHERE fts.name MATCH ?
+                    AND s.name LIKE ?
+                    AND (o.role & 1) = 1
+                ORDER BY d.relative_path, o.start_line
+            """
 
-        cursor.execute(query, (fts_pattern, like_pattern))
+            # Determine SCIP format based on symbol_name
+            if '#' in symbol_name:
+                # Method or attribute query: ClassName#method or ClassName#attr
+                # SCIP format: .../ClassName#method(). or .../ClassName#attr.
+                # Handle both ClassName#method and ClassName#method() input formats
+                if symbol_name.endswith('()'):
+                    # User provided ClassName#method() format
+                    base = symbol_name[:-2]  # Remove ()
+                else:
+                    # User provided ClassName#method format
+                    base = symbol_name
+
+                # FTS5 pattern for fast filtering
+                fts_pattern = f'"/{safe_symbol_name}"'
+                # LIKE pattern matches method/attribute format
+                # Match both /ClassName#method(). and /ClassName#method().X patterns
+                like_pattern = f'%/{base}()%'
+            else:
+                # Class query: ClassName
+                # SCIP format: .../ClassName# (exact, no method/attribute suffix)
+                # FTS5 MATCH pattern for fast filtering
+                fts_pattern = f'"/{safe_symbol_name}#"'
+                # LIKE pattern for exact suffix match (class definition only)
+                like_pattern = f'%/{symbol_name}#'
+
+            cursor.execute(query, (fts_pattern, like_pattern))
     else:
         # Fall back to LIKE for substring matching (acceptable for pattern queries)
         # FTS5 MATCH doesn't support true substring matching (requires token boundaries)
@@ -160,8 +186,8 @@ def trace_call_chain_v2(
 
     Args:
         conn: SQLite database connection
-        from_symbol_id: Entry point symbol ID
-        to_symbol_id: Target function symbol ID
+        from_symbol_id: Entry point symbol ID (class or method)
+        to_symbol_id: Target function symbol ID (class or method)
         max_depth: Maximum path length (1-10)
         limit: Maximum number of paths to return
 
@@ -170,18 +196,64 @@ def trace_call_chain_v2(
             - path: List of symbol names in execution order
             - length: Number of hops
             - has_cycle: Boolean indicating cycle presence
+
+    Note:
+        If from_symbol_id or to_symbol_id refers to a class (symbol ending with #),
+        the function automatically expands to include all methods of that class.
+        This ensures call chains are found even when class IDs are provided,
+        since call_graph entries are at the method level.
     """
     if max_depth < 1 or max_depth > 10:
         raise ValueError(f"Max depth must be between 1 and 10, got {max_depth}")
 
     cursor = conn.cursor()
 
-    # Bidirectional BFS with backward pruning
+    # Class expansion using CTEs: If from_symbol_id/to_symbol_id is a class,
+    # materialize ALL method IDs in a CTE, then use those as starting/ending points.
+    #
+    # This approach:
+    # 1. Checks if symbol is a class (ends with #, no parentheses)
+    # 2. If yes, creates a CTE with class ID + all method IDs
+    # 3. Uses that CTE as the source/target set for BFS
+    #
+    # Performance: Materializes method IDs once in CTE, then BFS operates on that set.
+    # Much faster than N*M nested loops or EXISTS subqueries.
+
     query = """
         WITH RECURSIVE
-        -- Phase 1: Backward reachability from target
+        -- Phase 0a: Expand source symbol (class -> class + methods)
+        source_symbols(symbol_id) AS (
+            SELECT ? AS symbol_id  -- Always include the source ID itself
+            UNION
+            SELECT s.id
+            FROM symbols s, symbols s_src
+            WHERE s_src.id = ?
+              -- Check if source is a class (ends with #, no parentheses)
+              AND s_src.name LIKE '%#'
+              AND s_src.name NOT LIKE '%()%'
+              -- If it's a class, find all methods (name starts with class name, contains ())
+              AND s.name LIKE s_src.name || '%'
+              AND s.name LIKE '%()%'
+        ),
+
+        -- Phase 0b: Expand target symbol (class -> class + methods)
+        target_symbols(symbol_id) AS (
+            SELECT ? AS symbol_id  -- Always include the target ID itself
+            UNION
+            SELECT s.id
+            FROM symbols s, symbols s_tgt
+            WHERE s_tgt.id = ?
+              -- Check if target is a class (ends with #, no parentheses)
+              AND s_tgt.name LIKE '%#'
+              AND s_tgt.name NOT LIKE '%()%'
+              -- If it's a class, find all methods (name starts with class name, contains ())
+              AND s.name LIKE s_tgt.name || '%'
+              AND s.name LIKE '%()%'
+        ),
+
+        -- Phase 1: Backward reachability from ALL target symbols
         backward_reachable(symbol_id, depth) AS (
-            SELECT ?, 0
+            SELECT symbol_id, 0 FROM target_symbols
             UNION
             SELECT DISTINCT cg.caller_symbol_id, br.depth + 1
             FROM backward_reachable br
@@ -189,15 +261,16 @@ def trace_call_chain_v2(
             WHERE br.depth < ?
         ),
 
-        -- Phase 2: Forward BFS with pruning
+        -- Phase 2: Forward BFS from ALL source symbols with pruning
         forward_paths(symbol_id, path_ids, path_symbols, depth, has_cycle) AS (
-            -- Base: source symbol
+            -- Base: all source symbols
             SELECT
-                ?,
-                CAST(? AS TEXT),
-                (SELECT name FROM symbols WHERE id = ?),
+                ss.symbol_id,
+                CAST(ss.symbol_id AS TEXT),
+                (SELECT name FROM symbols WHERE id = ss.symbol_id),
                 0,
                 0
+            FROM source_symbols ss
 
             UNION
 
@@ -220,15 +293,15 @@ def trace_call_chain_v2(
               AND cg.callee_symbol_id IN (SELECT symbol_id FROM backward_reachable)
         )
 
-        -- Phase 3: Extract paths
-        SELECT path_symbols, path_ids, depth, has_cycle
-        FROM forward_paths
-        WHERE symbol_id = ?
+        -- Phase 3: Extract paths that reached ANY target symbol
+        SELECT DISTINCT path_symbols, path_ids, depth, has_cycle
+        FROM forward_paths fp
+        WHERE fp.symbol_id IN (SELECT symbol_id FROM target_symbols)
         ORDER BY depth
     """
 
     # Build parameter list
-    params = [to_symbol_id, max_depth, from_symbol_id, from_symbol_id, from_symbol_id, max_depth, to_symbol_id]
+    params = [from_symbol_id, from_symbol_id, to_symbol_id, to_symbol_id, max_depth, max_depth]
 
     # Conditionally add LIMIT clause (limit=0 means unlimited)
     if limit > 0:

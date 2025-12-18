@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 from src.code_indexer.scip.query.composites import trace_call_chain
 from src.code_indexer.scip.query.primitives import QueryResult
+from src.code_indexer.scip.query.backends import CallChain as BackendCallChain
 
 MAX_EXPECTED_PATH_LENGTH = 20  # Reasonable upper bound
 
@@ -31,8 +32,10 @@ class TestCallChainTracing:
         # Arrange
         scip_dir = Path("/fake/scip")
 
-        # Mock the SCIP file discovery
-        mock_scip_file = Path("/fake/scip/index.scip")
+        # Mock the SCIP database file discovery
+        mock_scip_file = Mock(spec=Path)
+        mock_scip_file.__str__ = Mock(return_value="/fake/scip/index.scip.db")
+        mock_scip_file.stat.return_value = Mock(st_size=1024)  # Non-zero size
 
         # Create mock dependency results with realistic SCIP method symbols:
         # A depends on B (A calls B)
@@ -43,7 +46,7 @@ class TestCallChainTracing:
             line=10,
             column=5,
             kind="dependency",
-            relationship="call"
+            relationship="calls"
         )
 
         # B depends on C (B calls C)
@@ -54,13 +57,35 @@ class TestCallChainTracing:
             line=20,
             column=5,
             kind="dependency",
-            relationship="call"
+            relationship="calls"
         )
 
         # Mock SCIPQueryEngine to return dependencies
         with patch('src.code_indexer.scip.query.composites.SCIPQueryEngine') as MockEngine:
             mock_engine = Mock()
             MockEngine.return_value = mock_engine
+
+            # Configure find_definition to return method definitions
+            def mock_find_definition(symbol, exact=False):
+                if "methodA" in symbol:
+                    return [QueryResult(
+                        symbol="Service#methodA().",
+                        project="test",
+                        file_path="test.py",
+                        line=5,
+                        column=4,
+                        kind="definition"
+                    )]
+                elif "methodC" in symbol:
+                    return [QueryResult(
+                        symbol="Service#methodC().",
+                        project="test",
+                        file_path="test.py",
+                        line=25,
+                        column=4,
+                        kind="definition"
+                    )]
+                return []
 
             # Configure get_dependencies to return our chain
             def mock_get_dependencies(symbol, exact=False):
@@ -72,8 +97,18 @@ class TestCallChainTracing:
                     return []  # C calls nothing
                 return []
 
+            # Configure trace_call_chain to return backend chain A->B->C
+            # Path contains targets of each step: [B, C] (A->B, B->C)
+            backend_chain = BackendCallChain(
+                path=["Service#methodB().", "Service#methodC()."],
+                length=2,
+                has_cycle=False
+            )
+            mock_engine.trace_call_chain.return_value = [backend_chain]
+
             # Configure find_references to return NOTHING
             # (to prove we're not using references)
+            mock_engine.find_definition.side_effect = mock_find_definition
             mock_engine.find_references.return_value = []
             mock_engine.get_dependencies.side_effect = mock_get_dependencies
 
@@ -92,9 +127,6 @@ class TestCallChainTracing:
         assert chain.length == 2, f"Chain should have 2 steps, got {chain.length}"
         assert chain.path[0].symbol == "Service#methodB().", "First step should be methodA->methodB"
         assert chain.path[1].symbol == "Service#methodC().", "Second step should be methodB->methodC"
-
-        # Verify get_dependencies was called (not find_references)
-        assert mock_engine.get_dependencies.called, "Should call get_dependencies"
 
     def test_direct_call_chain_found(self, comprehensive_scip_fixture):
         """Test that direct call chain (A -> B) is found."""

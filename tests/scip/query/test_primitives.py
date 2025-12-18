@@ -120,7 +120,7 @@ class TestGetDependencies:
         assert len(logger_deps) >= 1
         result = logger_deps[0]
         assert result.kind == "dependency"
-        assert result.relationship in ["call", "import", "reference"]
+        assert result.relationship in ["calls", "import", "reference"]
 
     def test_get_dependencies_depth_1_direct_only(self, query_engine):
         """Should return only direct dependencies with depth=1."""
@@ -160,7 +160,7 @@ class TestGetDependents:
         assert len(auth_dependents) >= 1
         result = auth_dependents[0]
         assert result.kind == "dependent"
-        assert result.relationship in ["call", "import", "reference"]
+        assert result.relationship in ["calls", "import", "reference"]
 
     def test_get_dependents_depth_1_direct_only(self, query_engine):
         """Should return only direct dependents with depth=1."""

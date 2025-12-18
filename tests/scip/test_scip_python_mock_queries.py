@@ -29,15 +29,15 @@ from code_indexer.scip.query.primitives import SCIPQueryEngine
 def scip_python_mock_path():
     """Path to scip-python-mock test fixture."""
     fixture_path = Path(__file__).parent.parent.parent / "test-fixtures" / "scip-python-mock"
-    scip_file = fixture_path / ".code-indexer" / "scip" / "index.scip"
+    scip_db = fixture_path / ".code-indexer" / "scip" / "index.scip.db"
 
-    if not scip_file.exists():
+    if not scip_db.exists():
         pytest.skip(
-            f"SCIP python-mock fixture not found at {scip_file}. "
+            f"SCIP python-mock database not found at {scip_db}. "
             "Run: cd test-fixtures/scip-python-mock && cidx scip generate"
         )
 
-    return scip_file
+    return scip_db
 
 
 @pytest.fixture

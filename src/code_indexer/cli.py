@@ -9541,6 +9541,7 @@ def server_add_index(
             while True:
                 # Check timeout
                 if time.time() - start_time > timeout:
+                    run_async(admin_client.close())
                     console.print(
                         "❌ Error: Timeout waiting for job completion", style="red"
                     )
@@ -9556,6 +9557,7 @@ def server_add_index(
                             f"✅ Index '{index_type}' added to '{alias}' successfully",
                             style="green",
                         )
+                    run_async(admin_client.close())
                     sys.exit(0)
 
                 if status == "failed":
@@ -9563,6 +9565,7 @@ def server_add_index(
                     console.print(
                         f"❌ Error: Index addition failed: {error}", style="red"
                     )
+                    run_async(admin_client.close())
                     sys.exit(1)
 
                 # Display progress if not quiet
@@ -9576,9 +9579,13 @@ def server_add_index(
             # No --wait flag, just output job_id
             if quiet:
                 console.print(job_id)
+            run_async(admin_client.close())
             sys.exit(0)
 
     except Exception as e:
+        # Ensure cleanup on error
+        if "admin_client" in locals():
+            run_async(admin_client.close())
         console.print(f"❌ Error: {str(e)}", style="red")
         sys.exit(1)
 
@@ -9642,9 +9649,13 @@ def server_list_indexes(ctx, alias: str, json_output: bool):
                 console.print(f"  {index_type:15} {status}", style=style)
             console.print()
 
+        run_async(admin_client.close())
         sys.exit(0)
 
     except Exception as e:
+        # Ensure cleanup on error
+        if "admin_client" in locals():
+            run_async(admin_client.close())
         console.print(f"❌ Error: {str(e)}", style="red")
         sys.exit(1)
 
