@@ -644,6 +644,7 @@ class TestGetDependents:
 class TestTraceCallChain:
     """Tests for trace_call_chain() method."""
 
+    @pytest.mark.slow
     def test_trace_call_chain_finds_non_call_relationships(self, real_query_engine):
         """Verify trace_call_chain uses hybrid queries (ALL symbols).
 
@@ -663,6 +664,7 @@ class TestTraceCallChain:
         path_str = ' -> '.join(chains[0].path)
         assert 'DaemonService' in path_str or 'FileFinder' in path_str, f"Expected symbols in path: {path_str}"
 
+    @pytest.mark.slow
     def test_trace_call_chain_performance(self, real_query_engine):
         """Verify trace_call_chain completes in <15 seconds.
 

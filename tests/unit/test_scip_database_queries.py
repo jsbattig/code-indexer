@@ -1347,6 +1347,7 @@ class TestQueryEngineIntegration:
         assert all(r.kind == "reference" for r in results)
         assert all(r.symbol == "scip-python python test abc123 `src.test`/foo()." for r in results)
 
+    @pytest.mark.slow
     def test_query_engine_trace_call_chain_integration(self, tmp_path: Path):
         """
         Test that SCIPQueryEngine exposes trace_call_chain() method (Story #604 AC5).
@@ -2256,6 +2257,7 @@ class TestTraceCallChainV2BidirectionalBFS:
     by computing backward-reachable set from target, then pruning forward search.
     """
 
+    @pytest.mark.slow
     def test_trace_call_chain_v2_with_limit_zero_returns_all_chains(self):
         """
         BUG TEST: limit=0 should return ALL call chains, not 0 chains.
@@ -2311,6 +2313,7 @@ class TestTraceCallChainV2BidirectionalBFS:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_trace_call_chain_v2_finds_all_paths_correctness(self):
         """
         Verify bidirectional BFS finds all valid paths between DaemonService and _is_text_file.
@@ -2357,6 +2360,7 @@ class TestTraceCallChainV2BidirectionalBFS:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_trace_call_chain_v2_performance_under_2_seconds(self):
         """
         Verify query completes in <2 seconds with bidirectional BFS optimization.
@@ -2395,6 +2399,7 @@ class TestTraceCallChainV2BidirectionalBFS:
         finally:
             conn.close()
 
+    @pytest.mark.slow
     def test_trace_call_chain_v2_shortest_path_ordering(self):
         """
         Verify paths are returned in shortest-first order.
@@ -2881,6 +2886,7 @@ class TestDependenciesHybridClassLevelBug:
             db_path.unlink(missing_ok=True)
             scip_file.unlink(missing_ok=True)
 
+    @pytest.mark.slow
     def test_expand_class_to_methods_helper(self):
         """
         Test _expand_class_to_methods helper function.
