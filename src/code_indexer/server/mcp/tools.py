@@ -1890,14 +1890,21 @@ def filter_tools_by_role(user: User) -> List[Dict[str, Any]]:
         user: Authenticated user with role information
 
     Returns:
-        List of tool definitions available to the user
+        List of MCP-compliant tool definitions (name, description, inputSchema only)
     """
     filtered_tools = []
 
     for tool_name, tool_def in TOOL_REGISTRY.items():
         required_permission = tool_def["required_permission"]
         if user.has_permission(required_permission):
-            filtered_tools.append(tool_def)
+            # Only include MCP-valid fields (name, description, inputSchema)
+            # Filter out internal fields (required_permission, outputSchema)
+            mcp_tool = {
+                "name": tool_def["name"],
+                "description": tool_def["description"],
+                "inputSchema": tool_def["inputSchema"],
+            }
+            filtered_tools.append(mcp_tool)
 
     return filtered_tools
 
