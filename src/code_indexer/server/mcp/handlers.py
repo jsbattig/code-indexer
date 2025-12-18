@@ -4098,22 +4098,22 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 }
             )
 
-        return {
+        return _mcp_response({
             "success": True,
             "total_tools": len(tools_summary),
             "category_filter": category_filter,
             "tools": tools_summary,
-        }
+        })
 
     except Exception as e:
         logger.exception(f"Error in quick_reference: {e}")
-        return {
+        return _mcp_response({
             "success": False,
             "total_tools": 0,
             "category_filter": category_filter,
             "tools": [],
             "error": str(e),
-        }
+        })
 
 
 # Register the quick_reference handler
