@@ -1,5 +1,6 @@
 """Unit tests for SCIP database query operations (Story #607)."""
 
+import pytest
 import tempfile
 import time
 from pathlib import Path
