@@ -170,6 +170,13 @@ class DatabaseBackend(SCIPBackend):
             )
             results.append(result)
 
+        # For simple name queries (without "#" or "("), if we found class definitions,
+        # filter out method/attribute definitions to reduce noise
+        if "#" not in symbol and "(" not in symbol:
+            has_class_definitions = any(r.symbol.endswith("#") for r in results)
+            if has_class_definitions:
+                results = [r for r in results if r.symbol.endswith("#")]
+
         return results
 
     def find_references(
@@ -375,8 +382,9 @@ class DatabaseBackend(SCIPBackend):
 
         method_ids = [r[0] for r in cursor.fetchall()]
 
-        # If no methods found, return class ID as fallback
-        return method_ids if method_ids else [symbol_id]
+        # Return method IDs only, never include the class ID itself
+        # If no methods found, return empty list (not [symbol_id])
+        return method_ids
 
     def _expand_method_to_scopes(self, symbol_id: int) -> List[int]:
         """
@@ -452,9 +460,9 @@ class DatabaseBackend(SCIPBackend):
             # Expand CLASS/INTERFACE to methods (call_graph only has method entries)
             from_ids = self._expand_class_to_methods(from_id)
 
-            # Defensive check: expansion should never return empty, but guard against it
+            # Skip if class has no methods (empty expansion means no call_graph entries exist)
             if not from_ids:
-                from_ids = [from_id]
+                continue
 
             # Further expand methods to internal scopes (parameters, locals) where actual calls happen
             expanded_from_ids = []
@@ -472,9 +480,9 @@ class DatabaseBackend(SCIPBackend):
                 # Expand CLASS/INTERFACE to methods
                 to_ids = self._expand_class_to_methods(to_id)
 
-                # Defensive check: expansion should never return empty, but guard against it
+                # Skip if class has no methods (empty expansion means no call_graph entries exist)
                 if not to_ids:
-                    to_ids = [to_id]
+                    continue
 
                 # Further expand methods to internal scopes
                 expanded_to_ids = []
@@ -485,6 +493,11 @@ class DatabaseBackend(SCIPBackend):
                 # Query call chains for all from/to method combinations
                 for from_method_id in from_ids:
                     for to_method_id in to_ids:
+                        # Skip self-loops (from == to) - these create trivial zero-length paths
+                        # that pollute results when fuzzy matching returns multiple symbols
+                        if from_method_id == to_method_id:
+                            continue
+
                         db_results = db_trace_call_chain(
                             self.conn, from_method_id, to_method_id, max_depth=max_depth, limit=limit, scip_file=self.scip_file
                         )

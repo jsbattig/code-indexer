@@ -244,7 +244,7 @@ def trace_call_chain_v2(
 
         results.append({
             'path': path_symbols,
-            'length': len(path_symbols),
+            'length': depth,  # Number of hops/edges, not nodes
             'has_cycle': bool(has_cycle)
         })
 
@@ -371,9 +371,10 @@ def trace_call_chain(
             # Check if reached target (fuzzy match on simple name)
             if dep_simple_name == to_simple_name or to_simple_name in dep_simple_name:
                 # Found a chain!
+                full_path = path + [dep_simple_name]
                 chains.append({
-                    'path': path + [dep_simple_name],
-                    'length': len(path),
+                    'path': full_path,
+                    'length': len(full_path) - 1,  # Number of hops/edges, not nodes
                     'has_cycle': False
                 })
                 continue
