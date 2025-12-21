@@ -224,7 +224,7 @@ class TestSymbolReferencesQuery:
             to_id, _ = symbols[1]
 
             # Call trace_call_chain_v2
-            results = queries.trace_call_chain_v2(
+            results, _ = queries.trace_call_chain_v2(
                 conn,
                 from_symbol_id=from_id,
                 to_symbol_id=to_id,

@@ -36,13 +36,13 @@ class TestTeachAiClaude:
         claude_md_path = tmp_path / "CLAUDE.md"
         assert claude_md_path.exists(), "CLAUDE.md was not created"
 
-        # Content should match template
+        # Content should match awareness template (not full instructions)
         content = claude_md_path.read_text()
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in content
+        assert "## SEMANTIC SEARCH - Use the cidx skill" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "**Decision Rule**:" in content
+        assert "Use the cidx skill" in content  # Claude-specific marker
+        assert "Read ~/.claude/skills/cidx/SKILL.md" in content  # Skills reference
         assert "--limit N" in content
-        assert "**Examples**:" in content
         assert "cidx query" in content
         assert "--quiet" in content
 
@@ -75,9 +75,11 @@ class TestTeachAiClaude:
         claude_md_path = tmp_path / "CLAUDE.md"
         content = claude_md_path.read_text()
 
-        # Template-specific markers that prove content comes from template
+        # Template-specific markers that prove content comes from awareness template
         assert "CIDX FIRST" in content
         assert "cidx query" in content
+        assert "Use the cidx skill" in content  # Claude-specific awareness marker
+        assert "Read ~/.claude/skills/cidx/SKILL.md" in content  # Skills reference
         # If content exists, it came from template file (not hardcoded in Python)
 
     def test_preview_instruction_content(self, tmp_path):
@@ -97,9 +99,52 @@ class TestTeachAiClaude:
 
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
-        # Output should contain template content
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in result.stdout
+        # Output should contain awareness content
+        assert "Use the cidx skill" in result.stdout  # Claude awareness marker
         assert "CIDX FIRST" in result.stdout
+        # Output should list skills files
+        assert "Skills Files" in result.stdout or "SKILL.md" in result.stdout
+
+        # No CLAUDE.md file should be created
+        claude_md_path = tmp_path / "CLAUDE.md"
+        assert not claude_md_path.exists(), "CLAUDE.md was created in show-only mode"
+
+    def test_preview_instruction_content_verbose(self, tmp_path):
+        """
+        Scenario: Preview instruction content with verbose flag
+        Given I want to see full file contents before installation
+        When I run "cidx teach-ai --claude --show-only --verbose"
+        Then the full content of all template files is displayed
+        And awareness content is shown
+        And skills files content is shown
+        And no files are written to the file system
+        """
+        result = subprocess.run(
+            ["cidx", "teach-ai", "--claude", "--show-only", "--verbose"],
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Output should contain awareness content
+        assert "Use the cidx skill" in result.stdout
+        assert "CIDX FIRST" in result.stdout
+
+        # Output should contain SKILL.md content markers
+        assert "SKILL.md" in result.stdout
+
+        # Output should contain reference file content markers
+        # (check for content that appears in the reference files)
+        assert (
+            "semantic" in result.stdout.lower()
+            or "scip" in result.stdout.lower()
+            or "temporal" in result.stdout.lower()
+        ), "Reference file content not displayed"
+
+        # Verbose should show more content than non-verbose
+        # (This is implied by the presence of actual file content)
 
         # No CLAUDE.md file should be created
         claude_md_path = tmp_path / "CLAUDE.md"
@@ -177,3 +222,37 @@ class TestTeachAiClaude:
         assert (
             "no such command" in output.lower() or "unknown command" in output.lower()
         )
+
+    def test_skills_only_installation(self, tmp_path):
+        """
+        Scenario: Skills-only installation without awareness files
+        Given I want to install skills without modifying awareness files
+        When I run "cidx teach-ai --skills-only"
+        Then ~/.claude/skills/cidx/ directory is created
+        And SKILL.md exists in skills directory
+        And reference/scip-intelligence.md exists
+        And no awareness files (CLAUDE.md) are created
+        """
+        from pathlib import Path
+
+        # Run command
+        result = subprocess.run(
+            ["cidx", "teach-ai", "--skills-only"],
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+        )
+
+        # Command should succeed
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Skills directory should be created
+        skills_dir = Path.home() / ".claude" / "skills" / "cidx"
+        assert skills_dir.exists(), "Skills directory was not created"
+        assert (skills_dir / "SKILL.md").exists(), "SKILL.md not found"
+        assert (
+            skills_dir / "reference" / "scip-intelligence.md"
+        ).exists(), "scip-intelligence.md not found"
+
+        # No awareness files should be created in project
+        assert not (tmp_path / "CLAUDE.md").exists(), "CLAUDE.md should not be created"

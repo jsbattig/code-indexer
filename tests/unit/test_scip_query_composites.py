@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from code_indexer.scip.query.composites import (
     analyze_impact,
@@ -16,7 +16,9 @@ from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
 @pytest.fixture
 def scip_fixture_path():
     """Path to comprehensive SCIP test fixture."""
-    return Path(__file__).parent.parent / "scip" / "fixtures" / "comprehensive_index.scip"
+    return (
+        Path(__file__).parent.parent / "scip" / "fixtures" / "comprehensive_index.scip"
+    )
 
 
 @pytest.fixture
@@ -41,12 +43,8 @@ class TestAnalyzeImpactPerformance:
             instantiation_count["count"] += 1
             return original_init(self, *args, **kwargs)
 
-        with patch.object(SCIPQueryEngine, '__init__', counting_init):
-            analyze_impact(
-                symbol="some_symbol",
-                scip_dir=scip_dir,
-                depth=2
-            )
+        with patch.object(SCIPQueryEngine, "__init__", counting_init):
+            analyze_impact(symbol="some_symbol", scip_dir=scip_dir, depth=2)
 
             scip_files = list(scip_dir.glob("**/*.scip"))
             num_scip_files = len(scip_files)
@@ -75,13 +73,158 @@ class TestAnalyzeImpactPerformance:
 class TestAnalyzeImpactFunctionality:
     """Tests for analyze_impact() correctness."""
 
+    def test_get_dependents_returns_depth_information(self, scip_fixture_path):
+        """Should verify get_dependents() returns depth field for transitive queries.
+
+        Bug: SQL CTE in _get_dependents_hybrid computes depth (td.depth) but
+        doesn't include it in result dictionaries. This causes _bfs_traverse_dependents
+        to manually traverse when database already did the work.
+
+        Fix: Include depth in returned QueryResult objects.
+        """
+        from code_indexer.scip.query.primitives import SCIPQueryEngine
+
+        # Use real engine with test fixture
+        engine = SCIPQueryEngine(scip_fixture_path)
+
+        # Query for transitive dependents (depth > 1)
+        results = engine.get_dependents("Logger", depth=3, exact=False)
+
+        # Should return results with depth information
+        assert len(results) > 0, "Should find dependents in test fixture"
+
+        # Every QueryResult should have depth field
+        for result in results:
+            assert hasattr(
+                result, "depth"
+            ), f"QueryResult must have 'depth' field. Found fields: {result.__dict__.keys()}"
+            assert isinstance(
+                result.depth, int
+            ), f"depth must be integer, got {type(result.depth)}"
+            assert (
+                1 <= result.depth <= 3
+            ), f"depth should be between 1 and 3, got {result.depth}"
+
+    def test_bfs_traverse_single_database_call(self, scip_fixture_path):
+        """Should verify _bfs_traverse_dependents calls get_dependents only ONCE.
+
+        Performance bug: Original implementation called get_dependents for each symbol in BFS queue,
+        causing O(n²) database calls. Since database CTE already returns all transitive dependents,
+        we should call it once and process results.
+
+        Fix: Call get_dependents once with full depth, process all returned results.
+        """
+        from code_indexer.scip.query.composites import _bfs_traverse_dependents
+        from code_indexer.scip.query.primitives import SCIPQueryEngine
+        from unittest.mock import patch
+
+        scip_dir = scip_fixture_path.parent
+
+        # Track get_dependents calls
+        call_count = {"count": 0}
+        original_get_dependents = SCIPQueryEngine.get_dependents
+
+        def counting_get_dependents(self, *args, **kwargs):
+            call_count["count"] += 1
+            return original_get_dependents(self, *args, **kwargs)
+
+        with patch.object(SCIPQueryEngine, "get_dependents", counting_get_dependents):
+            result = _bfs_traverse_dependents(
+                symbol="Logger",
+                scip_dir=scip_dir,
+                depth=3,
+                project=None,
+                exclude=None,
+                include=None,
+                kind=None,
+            )
+
+        # Should call get_dependents at most ONCE per SCIP file
+        # NOT once per symbol in BFS queue (which would be >> num_scip_files)
+        scip_files = list(scip_dir.glob("**/*.scip"))
+        num_scip_files = len(scip_files)
+
+        # With refactored implementation: <= num_scip_files (one per valid SCIP file)
+        # Old BFS implementation would make calls >> num_scip_files (one per symbol in queue)
+        assert call_count["count"] <= num_scip_files, (
+            f"Expected at most {num_scip_files} calls to get_dependents (one per SCIP file), "
+            f"but got {call_count['count']}. This indicates redundant BFS traversal."
+        )
+
+        # Verify we actually made some calls and got results
+        assert call_count["count"] > 0, "Should have queried at least one SCIP file"
+        assert len(result) > 0, "Should find dependents"
+
+    def test_bfs_traverse_passes_depth_to_engine(self, scip_dir):
+        """Should pass depth parameter to engine.get_dependents() to leverage database optimization.
+
+        Performance bug: _bfs_traverse_dependents() calls engine.get_dependents(symbol, exact=False)
+        without depth parameter, defaulting to depth=1. This bypasses the database's optimized
+        transitive query (depth=3 takes 0.1s) and forces Python BFS loop (136 seconds).
+
+        Fix: Pass depth parameter to get_dependents() to use database's CTE-based traversal.
+        """
+        from code_indexer.scip.query.composites import _bfs_traverse_dependents
+        from unittest.mock import MagicMock, patch
+
+        # Create mock SCIP directory
+        mock_scip_dir = Path("/fake/scip")
+
+        # Mock SCIPQueryEngine to capture get_dependents calls
+        mock_engine = MagicMock()
+        mock_engine.get_dependents.return_value = []  # Empty results for simplicity
+
+        with patch(
+            "code_indexer.scip.query.composites.SCIPQueryEngine"
+        ) as mock_engine_class:
+            mock_engine_class.return_value = mock_engine
+
+            # Mock glob to return fake SCIP file
+            with patch.object(Path, "glob") as mock_glob:
+                mock_glob.return_value = [Path("/fake/scip/index.scip")]
+
+                # Call _bfs_traverse_dependents with depth=3
+                _bfs_traverse_dependents(
+                    symbol="target_symbol",
+                    scip_dir=mock_scip_dir,
+                    depth=3,
+                    project=None,
+                    exclude=None,
+                    include=None,
+                    kind=None,
+                )
+
+        # Verify engine.get_dependents was called with depth=3
+        mock_engine.get_dependents.assert_called()
+
+        # Extract the actual call and verify depth parameter
+        calls = mock_engine.get_dependents.call_args_list
+        assert len(calls) > 0, "engine.get_dependents should have been called"
+
+        # Check first call (for the initial symbol)
+        first_call = calls[0]
+        _, kwargs = first_call
+
+        # CRITICAL: depth parameter should be passed to leverage database optimization
+        assert "depth" in kwargs or len(first_call[0]) >= 2, (
+            "engine.get_dependents must receive depth parameter to use optimized database query. "
+            "Current implementation calls get_dependents(symbol, exact=False) with default depth=1, "
+            "bypassing database's transitive query optimization."
+        )
+
+        if "depth" in kwargs:
+            assert (
+                kwargs["depth"] == 3
+            ), f"Expected depth=3, got depth={kwargs['depth']}"
+        elif len(first_call[0]) >= 2:
+            # Positional argument (symbol, depth, exact)
+            assert (
+                first_call[0][1] == 3
+            ), f"Expected depth=3, got depth={first_call[0][1]}"
+
     def test_returns_impact_analysis_result(self, scip_dir):
         """Should return ImpactAnalysisResult with expected structure."""
-        result = analyze_impact(
-            symbol="some_function",
-            scip_dir=scip_dir,
-            depth=2
-        )
+        result = analyze_impact(symbol="some_function", scip_dir=scip_dir, depth=2)
 
         assert isinstance(result, ImpactAnalysisResult)
         assert result.target_symbol == "some_function"
@@ -93,11 +236,7 @@ class TestAnalyzeImpactFunctionality:
 
     def test_respects_max_depth(self, scip_dir):
         """Should not analyze beyond specified depth."""
-        result = analyze_impact(
-            symbol="some_function",
-            scip_dir=scip_dir,
-            depth=2
-        )
+        result = analyze_impact(symbol="some_function", scip_dir=scip_dir, depth=2)
 
         # All affected symbols should have depth <= specified depth
         for symbol in result.affected_symbols:
@@ -124,11 +263,7 @@ class TestAnalyzeImpactFunctionality:
 
         # Get dependents via analyze_impact (what 'cidx scip impact' uses)
         scip_dir = scip_fixture_path.parent
-        impact_result = analyze_impact(
-            symbol=symbol,
-            scip_dir=scip_dir,
-            depth=depth
-        )
+        impact_result = analyze_impact(symbol=symbol, scip_dir=scip_dir, depth=depth)
 
         # Impact should return AT LEAST the same number of results as direct query
         # (may return more due to BFS traversal collecting additional metadata)
@@ -174,7 +309,7 @@ class TestExcludeIncludeFilters:
                 file_path="tests/unit/test_foo.py",  # Should be excluded by */tests/*
                 line=10,
                 column=5,
-                relationship="call"
+                relationship="call",
             ),
             QueryResult(
                 symbol="ProductionClass#prod_func().",
@@ -183,7 +318,7 @@ class TestExcludeIncludeFilters:
                 file_path="src/main.py",  # Should NOT be excluded
                 line=20,
                 column=10,
-                relationship="call"
+                relationship="call",
             ),
             QueryResult(
                 symbol="IntegrationTest#another_test().",
@@ -192,18 +327,20 @@ class TestExcludeIncludeFilters:
                 file_path="tests/integration/test_bar.py",  # Should be excluded
                 line=30,
                 column=15,
-                relationship="call"
+                relationship="call",
             ),
         ]
 
         # Mock the SCIPQueryEngine
-        with patch('code_indexer.scip.query.composites.SCIPQueryEngine') as mock_engine_class:
+        with patch(
+            "code_indexer.scip.query.composites.SCIPQueryEngine"
+        ) as mock_engine_class:
             mock_engine = MagicMock()
             mock_engine.get_dependents.return_value = mock_dependents
             mock_engine_class.return_value = mock_engine
 
             # Mock glob to return fake SCIP file
-            with patch.object(Path, 'glob') as mock_glob:
+            with patch.object(Path, "glob") as mock_glob:
                 mock_glob.return_value = [Path("/fake/scip/index.scip")]
 
                 # Call _bfs_traverse_dependents with exclude pattern
@@ -214,21 +351,24 @@ class TestExcludeIncludeFilters:
                     project=None,
                     exclude="*/tests/*",  # This pattern should exclude test files
                     include=None,
-                    kind=None
+                    kind=None,
                 )
 
         # Verify test files were excluded
         result_paths = [str(s.file_path) for s in result]
 
         # These test paths should NOT be in results (excluded by */tests/*)
-        assert "tests/unit/test_foo.py" not in result_paths, \
-            "Pattern '*/tests/*' should exclude 'tests/unit/test_foo.py'"
-        assert "tests/integration/test_bar.py" not in result_paths, \
-            "Pattern '*/tests/*' should exclude 'tests/integration/test_bar.py'"
+        assert (
+            "tests/unit/test_foo.py" not in result_paths
+        ), "Pattern '*/tests/*' should exclude 'tests/unit/test_foo.py'"
+        assert (
+            "tests/integration/test_bar.py" not in result_paths
+        ), "Pattern '*/tests/*' should exclude 'tests/integration/test_bar.py'"
 
         # This production path SHOULD be in results (not excluded)
-        assert "src/main.py" in result_paths, \
-            "Pattern '*/tests/*' should NOT exclude 'src/main.py'"
+        assert (
+            "src/main.py" in result_paths
+        ), "Pattern '*/tests/*' should NOT exclude 'src/main.py'"
 
 
 class TestMatchesGlobPatternHelper:
@@ -309,18 +449,23 @@ class TestTraceCallChain:
             from_symbol="some_func",
             to_symbol="another_func",
             scip_dir=scip_dir,
-            max_depth=5
+            max_depth=5,
         )
 
         # Result should be empty (no chains found)
         assert result.total_chains_found == 0
 
         # No warnings should be logged for empty files
-        warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
-        assert not any("empty.scip.db" in msg for msg in warning_messages), \
-            f"Should not warn about empty database files, but got: {warning_messages}"
+        warning_messages = [
+            rec.message for rec in caplog.records if rec.levelname == "WARNING"
+        ]
+        assert not any(
+            "empty.scip.db" in msg for msg in warning_messages
+        ), f"Should not warn about empty database files, but got: {warning_messages}"
 
-    def test_trace_call_chains_logs_warning_for_invalid_database(self, tmp_path, caplog):
+    def test_trace_call_chains_logs_warning_for_invalid_database(
+        self, tmp_path, caplog
+    ):
         """Should catch exception and log warning for invalid but non-empty database files."""
         import logging
         from code_indexer.scip.query.composites import trace_call_chain
@@ -339,16 +484,19 @@ class TestTraceCallChain:
             from_symbol="some_func",
             to_symbol="another_func",
             scip_dir=scip_dir,
-            max_depth=5
+            max_depth=5,
         )
 
         # Result should be empty (no chains found)
         assert result.total_chains_found == 0
 
         # Warning should be logged for invalid database
-        warning_messages = [rec.message for rec in caplog.records if rec.levelname == "WARNING"]
-        assert any("invalid.scip.db" in msg for msg in warning_messages), \
-            f"Should warn about invalid database file, but got: {warning_messages}"
+        warning_messages = [
+            rec.message for rec in caplog.records if rec.levelname == "WARNING"
+        ]
+        assert any(
+            "invalid.scip.db" in msg for msg in warning_messages
+        ), f"Should warn about invalid database file, but got: {warning_messages}"
 
 
 class TestGetSmartContext:
@@ -356,11 +504,7 @@ class TestGetSmartContext:
 
     def test_returns_smart_context_result(self, scip_dir):
         """Should return SmartContextResult with expected structure."""
-        result = get_smart_context(
-            symbol="some_function",
-            scip_dir=scip_dir,
-            limit=10
-        )
+        result = get_smart_context(symbol="some_function", scip_dir=scip_dir, limit=10)
 
         assert isinstance(result, SmartContextResult)
         assert result.target_symbol == "some_function"
@@ -372,13 +516,76 @@ class TestGetSmartContext:
 
     def test_respects_limit(self, scip_dir):
         """Should not return more files than specified limit."""
-        result = get_smart_context(
-            symbol="some_function",
-            scip_dir=scip_dir,
-            limit=5
-        )
+        result = get_smart_context(symbol="some_function", scip_dir=scip_dir, limit=5)
 
         assert len(result.files) <= 5
+
+    def test_limit_zero_means_unlimited(self, scip_dir):
+        """Should treat limit=0 as unlimited, not as 'return 0 files'.
+
+        Bug: When limit=0 (CLI default for unlimited), the code was doing
+        context_files[:0] which returns an empty list.
+
+        Fix: limit=0 should skip the slicing and return all files.
+        """
+        # Create mock query results simulating 3 files found
+        mock_definitions = [
+            QueryResult(
+                symbol="fn",
+                project="test",
+                file_path="src/m1.py",
+                line=10,
+                column=0,
+                kind="function",
+            ),
+            QueryResult(
+                symbol="fn",
+                project="test",
+                file_path="src/m2.py",
+                line=20,
+                column=0,
+                kind="function",
+            ),
+            QueryResult(
+                symbol="fn",
+                project="test",
+                file_path="src/m3.py",
+                line=30,
+                column=0,
+                kind="function",
+            ),
+        ]
+
+        mock_engine = MagicMock()
+        mock_engine.find_definition.return_value = mock_definitions
+        mock_engine.find_references.return_value = []
+        mock_impact = MagicMock(affected_symbols=[])
+
+        # Use side_effect to return fresh iterator each call
+        def fresh_glob(*args):
+            return iter([Path("fake.scip")])
+
+        with (
+            patch.object(Path, "glob", side_effect=fresh_glob),
+            patch(
+                "code_indexer.scip.query.composites.SCIPQueryEngine",
+                return_value=mock_engine,
+            ),
+            patch(
+                "code_indexer.scip.query.composites.analyze_impact",
+                return_value=mock_impact,
+            ),
+        ):
+
+            result_zero = get_smart_context(symbol="fn", scip_dir=scip_dir, limit=0)
+            result_high = get_smart_context(symbol="fn", scip_dir=scip_dir, limit=1000)
+
+        # limit=0 should return all 3 files, not 0
+        assert result_zero.total_files == 3, (
+            f"limit=0 should return all 3 files, got {result_zero.total_files}. "
+            f"Bug: context_files[:0] returns empty list."
+        )
+        assert result_zero.total_files == result_high.total_files
 
 
 class TestTraceCallChainMaxDepthValidation:
@@ -421,7 +628,7 @@ class TestTraceCallChainMaxDepthValidation:
             from_symbol="some_func",
             to_symbol="another_func",
             scip_dir=scip_dir,
-            max_depth=15  # Exceeds backend limit of 10
+            max_depth=15,  # Exceeds backend limit of 10
         )
 
         # Should succeed (no exception) and return valid result

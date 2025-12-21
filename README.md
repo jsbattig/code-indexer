@@ -258,12 +258,40 @@ models/User (src/models/user.py:12)
 
 #### Performance
 
-**Query Speed** (DatabaseBackend):
-- Definition: <10ms
-- References: 50-200ms
-- Dependencies/Dependents: 100-500ms
-- Impact Analysis: 200-1000ms (depth-dependent)
-- Call Chain: 100-800ms (depth-dependent)
+**Query Speed** (DatabaseBackend with SQL Recursive CTEs):
+- Definition: <0.5s (FTS5-optimized symbol lookup)
+- References: <1s (indexed symbol lookups)
+- Dependencies: <1s at depth=3 (SQL CTE vs 23-77s Python recursion)
+- Dependents: <1s at depth=3 (SQL CTE vs 23-77s Python recursion)
+- Call Chain: <5s at depth=3 (bidirectional BFS with SQL CTEs)
+- Impact Analysis: <2s at depth=3 (multi-hop graph traversal)
+- Context: <2s (symbol documentation and file context)
+
+**Architecture**:
+- SQL Recursive CTEs replace Python recursion (O(1) query complexity)
+- FTS5 full-text search indexes for fast symbol name lookups
+- Bidirectional BFS for efficient call chain tracing
+- Database indexes on call_graph and symbol_references tables
+
+**Query Limits** (to ensure consistent <2s response times):
+
+| Limit | Value | What It Means |
+|-------|-------|---------------|
+| **Max Depth** | 3 | Transitive queries follow at most 3 "hops" of relationships |
+| **Max Nodes** | 3,000 | BFS exploration stops after visiting 3,000 symbols |
+
+*Understanding Depth*: When you query "what depends on ClassA?":
+- Depth 1: Direct dependents (files that import/use ClassA directly)
+- Depth 2: Dependents of dependents (files using files that use ClassA)
+- Depth 3: Third-level dependents (the ripple effect continues)
+
+For most refactoring decisions, depth=3 captures the meaningful impact. Deeper
+traversals rarely add actionable information but exponentially increase query time.
+
+*Understanding Node Limit*: In large codebases, a heavily-used utility class might
+have thousands of transitive dependents. The 3,000 node limit ensures queries
+complete quickly. If you hit this limit, the results still include the most
+directly-connected symbols (closest relationships first).
 
 **Storage Efficiency**:
 - SQLite database (30-50% smaller than raw .scip files)

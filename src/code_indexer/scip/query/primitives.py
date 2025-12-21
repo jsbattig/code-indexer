@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from .loader import SCIPLoader
 
@@ -22,6 +22,7 @@ class QueryResult:
     kind: str  # "definition", "reference", "dependency", "dependent"
     relationship: Optional[str] = None  # "call", "import", "extends", etc.
     context: Optional[str] = None  # Source line snippet
+    depth: Optional[int] = None  # Depth level for transitive queries
 
 
 def _is_definition(symbol_roles: int) -> bool:
@@ -107,7 +108,9 @@ def _matches_symbol(occurrence_symbol: str, target_symbol: str, exact: bool) -> 
                 parts = normalized_occurrence.split("#")
                 if len(parts) == 2:
                     # Check both class name and member name
-                    return normalized_target == parts[0] or normalized_target == parts[1]
+                    return (
+                        normalized_target == parts[0] or normalized_target == parts[1]
+                    )
                 return normalized_target == parts[0]
             else:
                 # Both are simple names
@@ -190,9 +193,9 @@ class SCIPQueryEngine:
         """
         # Handle both .scip and .scip.db paths
         scip_file_str = str(scip_file)
-        if scip_file_str.endswith('.db'):
+        if scip_file_str.endswith(".db"):
             # Already .scip.db path - strip .db to get .scip path
-            self.scip_file = Path(scip_file_str.removesuffix('.db'))
+            self.scip_file = Path(scip_file_str.removesuffix(".db"))
             self.db_path = scip_file
         else:
             # .scip path provided
@@ -220,8 +223,11 @@ class SCIPQueryEngine:
             project_root = str(scip_dir.parent.parent)
 
         from .backends import DatabaseBackend
+
         self.backend = DatabaseBackend(
-            self.db_path, project_root=project_root, scip_file=self.scip_file if self.scip_file.exists() else None
+            self.db_path,
+            project_root=project_root,
+            scip_file=self.scip_file if self.scip_file.exists() else None,
         )
         self.db_conn = self.backend.conn
 
@@ -319,11 +325,7 @@ class SCIPQueryEngine:
         return self.backend.analyze_impact(symbol, depth=depth)
 
     def trace_call_chain(
-        self,
-        from_symbol: str,
-        to_symbol: str,
-        max_depth: int = 5,
-        limit: int = 100
+        self, from_symbol: str, to_symbol: str, max_depth: int = 5, limit: int = 100
     ) -> List["CallChain"]:
         """
         Trace all call chains from entry point to target function.

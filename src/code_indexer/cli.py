@@ -5808,6 +5808,16 @@ def query(
     is_flag=True,
     help="Preview instruction content without writing files",
 )
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Show full skills file contents in preview mode (requires --show-only)",
+)
+@click.option(
+    "--skills-only",
+    is_flag=True,
+    help="Install only skills to ~/.claude/skills/cidx/ without awareness injection",
+)
 def teach_ai(
     platform_claude: bool,
     platform_codex: bool,
@@ -5818,6 +5828,8 @@ def teach_ai(
     scope_project: bool,
     scope_global: bool,
     show_only: bool,
+    verbose: bool,
+    skills_only: bool,
 ):
     """Generate AI platform instructions for semantic code search.
 
@@ -5852,9 +5864,28 @@ def teach_ai(
       --global      Install globally (~/.claude/CLAUDE.md)
       --show-only   Preview without writing files
     """
+    from code_indexer.teach_ai_templates import install_skills, load_awareness_template
+
     console = Console()
 
-    # Validate platform flag (exactly one required)
+    # Handle --skills-only mode (no platform/scope required)
+    if skills_only:
+        # Install skills to ~/.claude/skills/cidx/
+        skills_dir = Path.home() / ".claude" / "skills" / "cidx"
+        try:
+            installed_files = install_skills(str(skills_dir))
+            console.print(
+                f"✅ Skills installed to ~/.claude/skills/cidx/", style="green"
+            )
+            console.print(f"   Installed {len(installed_files)} files:", style="dim")
+            for file in sorted(installed_files):
+                console.print(f"     • {file}", style="dim")
+        except Exception as e:
+            console.print(f"❌ Failed to install skills: {e}", style="red")
+            sys.exit(1)
+        return
+
+    # Validate platform flag (exactly one required for non-skills-only mode)
     platforms = [
         platform_claude,
         platform_codex,
@@ -5906,35 +5937,39 @@ def teach_ai(
         console.print("❌ Internal error: No platform selected", style="red")
         sys.exit(1)
 
-    # Load template content
+    # Load awareness template content
     try:
-        # Find template file relative to this CLI module
-        cli_dir = Path(__file__).parent
-        project_root = cli_dir.parent.parent
-        template_path = (
-            project_root / "prompts" / "ai_instructions" / "cidx_instructions.md"
-        )
-
-        if not template_path.exists():
-            console.print(
-                f"❌ Template not found: {template_path}",
-                style="red",
-            )
-            console.print(
-                "   Expected template at: prompts/ai_instructions/cidx_instructions.md"
-            )
-            sys.exit(1)
-
-        template_content = template_path.read_text()
-
+        awareness_content = load_awareness_template(platform_name)
     except Exception as e:
-        console.print(f"❌ Failed to load template: {e}", style="red")
+        console.print(f"❌ Failed to load awareness template: {e}", style="red")
         sys.exit(1)
 
     # Handle --show-only mode
     if show_only:
-        console.print(f"📄 {platform_name.title()} Platform Instructions:\n")
-        console.print(template_content)
+        console.print(f"📄 {platform_name.title()} Awareness Content:\n")
+        console.print(awareness_content)
+        console.print("\n" + "=" * 80 + "\n")
+        console.print("📦 Skills Files:\n")
+
+        # List skills files
+        cli_dir = Path(__file__).parent
+        project_root = cli_dir.parent.parent
+        skills_source = project_root / "prompts" / "ai_instructions" / "skills" / "cidx"
+
+        for skill_file in sorted(skills_source.rglob("*")):
+            if skill_file.is_file():
+                relative_path = skill_file.relative_to(skills_source)
+                console.print(f"  • {relative_path}", style="dim")
+
+                # Show full content if --verbose
+                if verbose:
+                    console.print(f"\n    Content of {relative_path}:")
+                    console.print("    " + "-" * 76)
+                    content = skill_file.read_text()
+                    for line in content.split("\n"):
+                        console.print(f"    {line}")
+                    console.print("    " + "-" * 76 + "\n")
+
         return
 
     # Platform-specific validation: Gemini and Junie only support project-level
@@ -6027,6 +6062,19 @@ def teach_ai(
             target_path = platform_dir / f"{platform_name.upper()}.md"
             scope_desc = f"~/.{platform_name}/"
 
+    # Two-tier update: Install skills + Update awareness
+    # Step 1: Install skills to ~/.claude/skills/cidx/
+    skills_dir = Path.home() / ".claude" / "skills" / "cidx"
+    try:
+        installed_files = install_skills(str(skills_dir))
+        console.print(
+            f"   📦 Skills installed ({len(installed_files)} files)", style="dim"
+        )
+    except Exception as e:
+        console.print(f"❌ Failed to install skills: {e}", style="red")
+        sys.exit(1)
+
+    # Step 2: Update awareness file
     # Smart update: preserve existing content and update only CIDX section
     if target_path.exists():
         # File exists - use Claude CLI to intelligently merge content
@@ -6042,7 +6090,7 @@ EXISTING FILE CONTENT:
 {existing_content}
 
 NEW CIDX SECTION TO ADD/UPDATE:
-{template_content}
+{awareness_content}
 
 INSTRUCTIONS:
 1. If the file already has a CIDX/semantic search section (look for headers like "SEMANTIC SEARCH", "CIDX SEMANTIC SEARCH", etc.), UPDATE that section with the new content
@@ -6105,14 +6153,17 @@ OUTPUT THE COMPLETE MERGED FILE (raw content only, no markdown wrappers):"""
             console.print(f"❌ Failed to update instruction file: {e}", style="red")
             sys.exit(1)
     else:
-        # New file - create with template content
+        # New file - create with awareness content
         try:
-            target_path.write_text(template_content)
+            target_path.write_text(awareness_content)
             console.print(
                 f"✅ {platform_name.title()} instructions installed to {scope_desc}",
                 style="green",
             )
-            console.print(f"   File: {target_path}", style="dim")
+            console.print(f"   Awareness file: {target_path}", style="dim")
+            console.print(
+                f"   Skills directory: ~/.claude/skills/cidx/", style="dim"
+            )
         except Exception as e:
             console.print(f"❌ Failed to write instruction file: {e}", style="red")
             sys.exit(1)

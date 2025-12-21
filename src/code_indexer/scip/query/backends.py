@@ -16,6 +16,7 @@ from .primitives import QueryResult
 @dataclass
 class ImpactResult:
     """Result of impact analysis query."""
+
     file_path: str
     symbol_count: int
     symbols: List[str]
@@ -24,8 +25,9 @@ class ImpactResult:
 @dataclass
 class CallChain:
     """Result of call chain tracing query."""
+
     path: List[str]  # Symbol names in execution order
-    length: int      # Number of hops in chain
+    length: int  # Number of hops in chain
     has_cycle: bool  # True if path contains cycle
 
 
@@ -133,7 +135,9 @@ class SCIPBackend(ABC):
 class DatabaseBackend(SCIPBackend):
     """SQLite database backend for SCIP queries."""
 
-    def __init__(self, db_path: Path, project_root: str = "", scip_file: Optional[Path] = None):
+    def __init__(
+        self, db_path: Path, project_root: str = "", scip_file: Optional[Path] = None
+    ):
         """
         Initialize database backend.
 
@@ -146,6 +150,40 @@ class DatabaseBackend(SCIPBackend):
         self.conn = sqlite3.connect(db_path)
         self.project_root = project_root
         self.scip_file = scip_file
+
+        # Run migration to ensure indexes exist (Story #609)
+        self._ensure_migration_complete()
+
+    def _ensure_migration_complete(self) -> None:
+        """
+        Ensure SCIP database indexes exist, with fast-path version check.
+
+        Version tracking prevents redundant index creation checks on every query.
+        Migration is idempotent, so safe to run multiple times if version tracking fails.
+
+        Performance:
+        - Fast path (version >= 2): <1ms (version check only)
+        - Migration path (version < 2): ~100-500ms (create 5 indexes)
+        """
+        from ..database.migration import (
+            ensure_indexes_created,
+            get_scip_db_version,
+            update_scip_db_version,
+        )
+
+        # Determine config path (Story #609)
+        # Convert project_root to Path for local use only
+        project_root_path = Path(self.project_root) if self.project_root else Path.cwd()
+        config_path = project_root_path / ".code-indexer" / "config.json"
+
+        # Fast path: Skip migration if version >= 2
+        current_version = get_scip_db_version(config_path)
+        if current_version >= 2:
+            return  # Already migrated
+
+        # Migration path: Create indexes and update version
+        ensure_indexes_created(self.conn)
+        update_scip_db_version(config_path, 2)
 
     def find_definition(self, symbol: str, exact: bool = False) -> List[QueryResult]:
         """Find definition locations using database queries."""
@@ -226,36 +264,30 @@ class DatabaseBackend(SCIPBackend):
 
             symbol_id = row[0]
 
-            # Expand class to methods if querying a class
-            # Classes don't have direct entries in call_graph - only methods do
-            symbol_ids_to_query = [symbol_id]
-            if defn.symbol.endswith("#"):  # Class symbol
-                method_ids = self._expand_class_to_methods(symbol_id)
-                if method_ids:
-                    symbol_ids_to_query = method_ids
+            # SQL CTE handles class→method expansion via target_and_nested
+            db_results = db_get_dependencies(
+                self.conn, symbol_id, depth=depth, scip_file=self.scip_file
+            )
 
-            # Query database for dependencies for all symbol IDs
-            seen_symbols = set()  # Deduplicate results
-            for sid in symbol_ids_to_query:
-                db_results = db_get_dependencies(self.conn, sid, depth=depth, scip_file=self.scip_file)
+            # Convert database results to QueryResult objects
+            seen_symbols = set()  # Deduplicate across all definitions
+            for db_row in db_results:
+                # Deduplicate by symbol name
+                if db_row["symbol_name"] in seen_symbols:
+                    continue
+                seen_symbols.add(db_row["symbol_name"])
 
-                # Convert database results to QueryResult objects
-                for db_row in db_results:
-                    # Deduplicate by symbol name
-                    if db_row["symbol_name"] in seen_symbols:
-                        continue
-                    seen_symbols.add(db_row["symbol_name"])
-
-                    result = QueryResult(
-                        symbol=db_row["symbol_name"],
-                        project=self.project_root,
-                        file_path=db_row["file_path"],
-                        line=db_row["line"],
-                        column=db_row["column"],
-                        kind="dependency",
-                        relationship=db_row.get("relationship"),
-                    )
-                    results.append(result)
+                result = QueryResult(
+                    symbol=db_row["symbol_name"],
+                    project=self.project_root,
+                    file_path=db_row["file_path"],
+                    line=db_row["line"],
+                    column=db_row["column"],
+                    kind="dependency",
+                    relationship=db_row.get("relationship"),
+                    depth=db_row.get("depth"),
+                )
+                results.append(result)
 
         return results
 
@@ -283,7 +315,9 @@ class DatabaseBackend(SCIPBackend):
             symbol_id = row[0]
 
             # Query database for dependents
-            db_results = db_get_dependents(self.conn, symbol_id, depth=depth, scip_file=self.scip_file)
+            db_results = db_get_dependents(
+                self.conn, symbol_id, depth=depth, scip_file=self.scip_file
+            )
 
             # Convert database results to QueryResult objects
             for db_row in db_results:
@@ -295,6 +329,7 @@ class DatabaseBackend(SCIPBackend):
                     column=db_row["column"],
                     kind="dependent",
                     relationship=db_row.get("relationship"),
+                    depth=db_row.get("depth"),
                 )
                 results.append(result)
 
@@ -324,15 +359,19 @@ class DatabaseBackend(SCIPBackend):
                 continue
 
             symbol_id = row[0]
-            db_results = db_analyze_impact(self.conn, symbol_id, depth=depth, scip_file=self.scip_file)
+            db_results = db_analyze_impact(
+                self.conn, symbol_id, depth=depth, scip_file=self.scip_file
+            )
 
             # Convert to ImpactResult objects
             for db_row in db_results:
-                all_impact_results.append(ImpactResult(
-                    file_path=db_row['file_path'],
-                    symbol_count=db_row['symbol_count'],
-                    symbols=db_row['symbols']
-                ))
+                all_impact_results.append(
+                    ImpactResult(
+                        file_path=db_row["file_path"],
+                        symbol_count=db_row["symbol_count"],
+                        symbols=db_row["symbols"],
+                    )
+                )
 
         # Merge results from multiple definitions
         # Group by file_path and deduplicate symbols
@@ -342,9 +381,13 @@ class DatabaseBackend(SCIPBackend):
                 # Extend symbols list
                 merged[result.file_path].symbols.extend(result.symbols)
                 # Deduplicate symbols using set
-                merged[result.file_path].symbols = list(set(merged[result.file_path].symbols))
+                merged[result.file_path].symbols = list(
+                    set(merged[result.file_path].symbols)
+                )
                 # Recalculate symbol_count after deduplication
-                merged[result.file_path].symbol_count = len(merged[result.file_path].symbols)
+                merged[result.file_path].symbol_count = len(
+                    merged[result.file_path].symbols
+                )
             else:
                 # Ensure initial result also has deduplicated symbols
                 result.symbols = list(set(result.symbols))
@@ -384,7 +427,9 @@ class DatabaseBackend(SCIPBackend):
         # Check if this is a class/interface
         # kind may be NULL in some SCIP indexes (e.g., Python)
         # Fall back to symbol naming: classes end with "#" (e.g., "Foo#")
-        is_class = (kind in ('Class', 'Interface')) or (kind is None and symbol_name.endswith('#'))
+        is_class = (kind in ("Class", "Interface")) or (
+            kind is None and symbol_name.endswith("#")
+        )
 
         if not is_class:
             # Not a class/interface, return as-is
@@ -395,12 +440,15 @@ class DatabaseBackend(SCIPBackend):
         # Pattern: symbol_name ends with '#', methods are symbol_name + method_name
         # Note: kind field may be NULL in some SCIP indexes (e.g., Python), so we filter by
         # symbol naming convention: methods end with "()" or "()."
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id FROM symbols
             WHERE name LIKE ? || '%'
             AND name != ?
             AND (name LIKE '%()' OR name LIKE '%().')
-        """, (symbol_name, symbol_name))
+        """,
+            (symbol_name, symbol_name),
+        )
 
         method_ids = [r[0] for r in cursor.fetchall()]
 
@@ -446,10 +494,13 @@ class DatabaseBackend(SCIPBackend):
         #   - CustomChain#chat().(self)
         #   - CustomChain#chat().(query)
         #   - CustomChain#chat().(attempt)
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id FROM symbols
             WHERE name LIKE ? || '%'
-        """, (symbol_name,))
+        """,
+            (symbol_name,),
+        )
 
         scope_ids = [r[0] for r in cursor.fetchall()]
 
@@ -460,7 +511,7 @@ class DatabaseBackend(SCIPBackend):
         self, from_symbol: str, to_symbol: str, max_depth: int = 5, limit: int = 100
     ) -> List[CallChain]:
         """Trace call chains from entry point to target using database."""
-        from ..database.queries import trace_call_chain as db_trace_call_chain
+        from ..database.queries import trace_call_chain_v2_batched
 
         # Find symbol IDs for from/to symbols (use fuzzy matching for user queries)
         from_defs = self.find_definition(from_symbol, exact=False)
@@ -470,8 +521,9 @@ class DatabaseBackend(SCIPBackend):
             return []
 
         cursor = self.conn.cursor()
-        all_chains = []
 
+        # Phase 1: Collect ALL from_ids (no queries yet)
+        all_from_ids = set()
         for from_def in from_defs:
             cursor.execute("SELECT id FROM symbols WHERE name = ?", (from_def.symbol,))
             from_row = cursor.fetchone()
@@ -492,45 +544,67 @@ class DatabaseBackend(SCIPBackend):
                 expanded_from_ids.extend(self._expand_method_to_scopes(fid))
             from_ids = expanded_from_ids if expanded_from_ids else from_ids
 
-            for to_def in to_defs:
-                cursor.execute("SELECT id FROM symbols WHERE name = ?", (to_def.symbol,))
-                to_row = cursor.fetchone()
-                if not to_row:
-                    continue
-                to_id = to_row[0]
+            # Collect all IDs (no queries)
+            all_from_ids.update(from_ids)
 
-                # Expand CLASS/INTERFACE to methods
-                to_ids = self._expand_class_to_methods(to_id)
+        # Phase 2: Collect ALL to_ids (no queries yet)
+        all_to_ids = set()
+        for to_def in to_defs:
+            cursor.execute("SELECT id FROM symbols WHERE name = ?", (to_def.symbol,))
+            to_row = cursor.fetchone()
+            if not to_row:
+                continue
+            to_id = to_row[0]
 
-                # Skip if class has no methods (empty expansion means no call_graph entries exist)
-                if not to_ids:
-                    continue
+            # Expand CLASS/INTERFACE to methods
+            to_ids = self._expand_class_to_methods(to_id)
 
-                # Further expand methods to internal scopes
-                expanded_to_ids = []
-                for tid in to_ids:
-                    expanded_to_ids.extend(self._expand_method_to_scopes(tid))
-                to_ids = expanded_to_ids if expanded_to_ids else to_ids
+            # Skip if class has no methods (empty expansion means no call_graph entries exist)
+            if not to_ids:
+                continue
 
-                # Query call chains for all from/to method combinations
-                for from_method_id in from_ids:
-                    for to_method_id in to_ids:
-                        # Skip self-loops (from == to) - these create trivial zero-length paths
-                        # that pollute results when fuzzy matching returns multiple symbols
-                        if from_method_id == to_method_id:
-                            continue
+            # Further expand methods to internal scopes
+            expanded_to_ids = []
+            for tid in to_ids:
+                expanded_to_ids.extend(self._expand_method_to_scopes(tid))
+            to_ids = expanded_to_ids if expanded_to_ids else to_ids
 
-                        db_results = db_trace_call_chain(
-                            self.conn, from_method_id, to_method_id, max_depth=max_depth, limit=limit, scip_file=self.scip_file
-                        )
+            # Collect all IDs (no queries)
+            all_to_ids.update(to_ids)
 
-                        # Convert to CallChain objects
-                        for db_row in db_results:
-                            all_chains.append(CallChain(
-                                path=db_row['path'],
-                                length=db_row['length'],
-                                has_cycle=db_row['has_cycle']
-                            ))
+        # Remove self-loops from IDs (prevent trivial zero-length paths)
+        all_from_ids = all_from_ids - all_to_ids.intersection(all_from_ids)
+
+        # Early return if no IDs collected
+        if not all_from_ids or not all_to_ids:
+            return []
+
+        # Phase 3: ONE batched query with all IDs (Story #610)
+        db_results, error_msg = trace_call_chain_v2_batched(
+            self.conn,
+            from_symbol_ids=list(all_from_ids),
+            to_symbol_ids=list(all_to_ids),
+            max_depth=max_depth,
+            limit=limit,
+        )
+
+        if error_msg:
+            # Log timeout/error but continue with partial results
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"trace_call_chain batched query: {error_msg}")
+
+        # Convert to CallChain objects
+        all_chains = []
+        for db_row in db_results:
+            all_chains.append(
+                CallChain(
+                    path=db_row["path"],
+                    length=db_row["length"],
+                    has_cycle=db_row["has_cycle"],
+                )
+            )
 
         # Deduplicate and sort
         seen = set()

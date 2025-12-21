@@ -36,13 +36,13 @@ class TestTeachAiCodex:
         codex_md_path = tmp_path / "CODEX.md"
         assert codex_md_path.exists(), "CODEX.md was not created"
 
-        # Content should match template
+        # Content should match generic awareness template
         content = codex_md_path.read_text()
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in content
+        assert "## SEMANTIC SEARCH" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "**Decision Rule**:" in content
+        assert "Read ~/.claude/skills/cidx/SKILL.md" in content  # Generic template marker
         assert "--limit N" in content
-        assert "**Examples**:" in content
+        assert "When to use CIDX" in content
         assert "cidx query" in content
         assert "--quiet" in content
 
@@ -69,7 +69,7 @@ class TestTeachAiCodex:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Output should contain template content
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in result.stdout
+        assert "## SEMANTIC SEARCH" in result.stdout
         assert "CIDX FIRST" in result.stdout
 
         # No CODEX.md file should be created
@@ -109,9 +109,9 @@ class TestTeachAiGemini:
 
         # Content should match template
         content = styleguide_path.read_text()
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in content
+        assert "## SEMANTIC SEARCH" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "**Decision Rule**:" in content
+        assert "Read ~/.claude/skills/cidx/SKILL.md" in content  # Generic template marker
         assert "--limit N" in content
         assert "**Examples**:" in content
         assert "cidx query" in content
@@ -159,7 +159,7 @@ class TestTeachAiGemini:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Output should contain template content
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in result.stdout
+        assert "## SEMANTIC SEARCH" in result.stdout
         assert "CIDX FIRST" in result.stdout
 
         # No .gemini directory should be created
@@ -198,9 +198,9 @@ class TestTeachAiOpenCode:
 
         # Content should match template
         content = agents_md_path.read_text()
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in content
+        assert "## SEMANTIC SEARCH" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "**Decision Rule**:" in content
+        assert "Read ~/.claude/skills/cidx/SKILL.md" in content
         assert "--limit N" in content
         assert "**Examples**:" in content
         assert "cidx query" in content
@@ -224,7 +224,7 @@ class TestTeachAiOpenCode:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Output should contain template content
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in result.stdout
+        assert "## SEMANTIC SEARCH" in result.stdout
         assert "CIDX FIRST" in result.stdout
 
         # No AGENTS.md file should be created
@@ -264,9 +264,9 @@ class TestTeachAiQ:
 
         # Content should match template
         content = cidx_md_path.read_text()
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in content
+        assert "## SEMANTIC SEARCH" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "**Decision Rule**:" in content
+        assert "Read ~/.claude/skills/cidx/SKILL.md" in content
         assert "--limit N" in content
         assert "**Examples**:" in content
         assert "cidx query" in content
@@ -290,7 +290,7 @@ class TestTeachAiQ:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Output should contain template content
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in result.stdout
+        assert "## SEMANTIC SEARCH" in result.stdout
         assert "CIDX FIRST" in result.stdout
 
         # No .amazonq directory should be created
@@ -330,9 +330,9 @@ class TestTeachAiJunie:
 
         # Content should match template
         content = guidelines_path.read_text()
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in content
+        assert "## SEMANTIC SEARCH" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "**Decision Rule**:" in content
+        assert "Read ~/.claude/skills/cidx/SKILL.md" in content
         assert "--limit N" in content
         assert "**Examples**:" in content
         assert "cidx query" in content
@@ -380,7 +380,7 @@ class TestTeachAiJunie:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Output should contain template content
-        assert "## SEMANTIC SEARCH - MANDATORY FIRST ACTION" in result.stdout
+        assert "## SEMANTIC SEARCH" in result.stdout
         assert "CIDX FIRST" in result.stdout
 
         # No .junie directory should be created

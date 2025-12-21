@@ -169,3 +169,79 @@ class TestDatabaseBackend:
                 assert isinstance(chain.length, int)
                 assert chain.length >= 1
                 assert isinstance(chain.has_cycle, bool)
+
+    def test_get_dependencies_performance_no_redundant_expansion(self):
+        """
+        Test that get_dependencies completes in <1 second for class symbols.
+
+        Validates that SQL CTE handles class-to-method expansion instead of
+        Python code making N separate SQL calls (Story #611 performance fix).
+
+        Given a class symbol with many methods (e.g., SmartIndexer with ~30 methods)
+        When get_dependencies is called with depth=3
+        Then it should complete in <1 second (not 4+ seconds from redundant expansion)
+        """
+        import time
+        from code_indexer.scip.query.backends import DatabaseBackend
+
+        # Get project root dynamically
+        project_root = Path(__file__).resolve().parent.parent.parent
+        db_path = project_root / ".code-indexer/scip/index.scip.db"
+        scip_file = project_root / ".code-indexer/scip/code-indexer.scip"
+
+        if not db_path.exists():
+            pytest.skip(f"Database not found: {db_path}")
+        if not scip_file.exists():
+            pytest.skip(f"SCIP file not found: {scip_file}")
+
+        backend = DatabaseBackend(db_path, project_root=str(project_root), scip_file=scip_file)
+
+        # Query SmartIndexer class (ends with #, has ~30 methods)
+        start = time.time()
+        results = backend.get_dependencies("SmartIndexer", depth=3, exact=False)
+        elapsed = time.time() - start
+
+        # Performance assertion: Should complete in <1 second
+        # Before fix: 4.3s (37 separate SQL calls)
+        # After fix: <1s (1 SQL call with CTE expansion)
+        assert elapsed < 1.0, f"get_dependencies took {elapsed:.3f}s, expected <1.0s"
+
+        # Sanity check: Should find some dependencies
+        assert isinstance(results, list)
+
+    def test_get_dependents_performance_no_redundant_expansion(self):
+        """
+        Test that get_dependents completes in <1 second for class symbols.
+
+        Validates that SQL CTE handles class-to-method expansion instead of
+        Python code making N separate SQL calls (Story #611 performance fix).
+
+        Given a class symbol with many methods
+        When get_dependents is called with depth=3
+        Then it should complete in <1 second
+        """
+        import time
+        from code_indexer.scip.query.backends import DatabaseBackend
+
+        # Get project root dynamically
+        project_root = Path(__file__).resolve().parent.parent.parent
+        db_path = project_root / ".code-indexer/scip/index.scip.db"
+        scip_file = project_root / ".code-indexer/scip/code-indexer.scip"
+
+        if not db_path.exists():
+            pytest.skip(f"Database not found: {db_path}")
+        if not scip_file.exists():
+            pytest.skip(f"SCIP file not found: {scip_file}")
+
+        backend = DatabaseBackend(db_path, project_root=str(project_root), scip_file=scip_file)
+
+        # Query FileFinder class (should have methods)
+        start = time.time()
+        results = backend.get_dependents("FileFinder", depth=3, exact=False)
+        elapsed = time.time() - start
+
+        # Performance assertion: Should complete in <1 second
+        assert elapsed < 1.0, f"get_dependents took {elapsed:.3f}s, expected <1.0s"
+
+        # Sanity check: Should find some dependents
+        assert isinstance(results, list)

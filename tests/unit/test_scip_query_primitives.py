@@ -644,7 +644,6 @@ class TestGetDependents:
 class TestTraceCallChain:
     """Tests for trace_call_chain() method."""
 
-    @pytest.mark.slow
     def test_trace_call_chain_finds_non_call_relationships(self, real_query_engine):
         """Verify trace_call_chain uses hybrid queries (ALL symbols).
 
@@ -664,7 +663,7 @@ class TestTraceCallChain:
         path_str = ' -> '.join(chains[0].path)
         assert 'DaemonService' in path_str or 'FileFinder' in path_str, f"Expected symbols in path: {path_str}"
 
-    @pytest.mark.slow
+    @pytest.mark.slow  # Inherently slow due to O(n²) algorithm in backend (not index issue)
     def test_trace_call_chain_performance(self, real_query_engine):
         """Verify trace_call_chain completes in <15 seconds.
 
@@ -746,7 +745,7 @@ class TestSymbolReferencesIntegrity:
         import time
 
         start = time.perf_counter()
-        chains = trace_call_chain_v2(
+        chains, _ = trace_call_chain_v2(
             real_query_engine.db_conn,
             daemon_service_symbol_id,
             target_symbol_id,

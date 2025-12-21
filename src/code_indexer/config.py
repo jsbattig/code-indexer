@@ -303,6 +303,24 @@ class GlobalRefreshConfig(BaseModel):
     )
 
 
+class SCIPDatabaseConfig(BaseModel):
+    """Configuration for SCIP database schema versioning."""
+
+    version: Optional[int] = Field(
+        default=None,
+        description="SCIP database schema version (None = needs migration, 2 = current)",
+    )
+
+
+class SCIPConfig(BaseModel):
+    """Configuration for SCIP (Source Code Intelligence Protocol) integration."""
+
+    db: Optional[SCIPDatabaseConfig] = Field(
+        default=None,
+        description="SCIP database configuration",
+    )
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -453,6 +471,12 @@ class Config(BaseModel):
     global_refresh: GlobalRefreshConfig = Field(
         default_factory=GlobalRefreshConfig,
         description="Global repository refresh configuration",
+    )
+
+    # SCIP configuration
+    scip: Optional[SCIPConfig] = Field(
+        default=None,
+        description="SCIP (Source Code Intelligence Protocol) configuration",
     )
 
     @field_validator("codebase_dir", mode="before")
