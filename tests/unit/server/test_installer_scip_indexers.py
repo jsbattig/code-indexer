@@ -90,17 +90,26 @@ class TestInstallScipIndexers:
 
     def test_skips_installation_when_both_already_installed(self, installer):
         """Test skips npm install when both indexers already present."""
+        # Mock scip-dotnet check returning success (already installed)
+        mock_scip_dotnet_check = Mock()
+        mock_scip_dotnet_check.returncode = 0
+
         with patch.object(
             installer, "_is_scip_indexer_installed", return_value=True
         ) as mock_check:
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch("subprocess.run") as mock_run:
+                with patch(
+                    "subprocess.run", return_value=mock_scip_dotnet_check
+                ) as mock_run:
                     result = installer.install_scip_indexers()
 
         assert result is True
-        # Should check both indexers but not run npm install
+        # Should check both npm indexers but not run npm install
         assert mock_check.call_count == 2
-        mock_run.assert_not_called()
+        # Should only check scip-dotnet (which is already installed)
+        mock_run.assert_called_once_with(
+            ["scip-dotnet", "--version"], capture_output=True, text=True, timeout=10
+        )
 
     def test_skips_installation_when_npm_not_available(self, installer):
         """Test skips installation and logs warning when npm not found."""
@@ -114,6 +123,10 @@ class TestInstallScipIndexers:
         mock_npm_result = Mock()
         mock_npm_result.returncode = 0
 
+        # Mock scip-dotnet check returning success (already installed)
+        mock_scip_dotnet_check = Mock()
+        mock_scip_dotnet_check.returncode = 0
+
         # First check returns False (not installed), after install returns True
         check_results = [False, True, False, True]  # Two indexers, each checked twice
 
@@ -121,11 +134,18 @@ class TestInstallScipIndexers:
             installer, "_is_scip_indexer_installed", side_effect=check_results
         ):
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch("subprocess.run", return_value=mock_npm_result) as mock_run:
+                with patch(
+                    "subprocess.run",
+                    side_effect=[
+                        mock_npm_result,
+                        mock_npm_result,
+                        mock_scip_dotnet_check,
+                    ],
+                ) as mock_run:
                     result = installer.install_scip_indexers()
 
         assert result is True
-        assert mock_run.call_count == 2
+        assert mock_run.call_count == 3
         mock_run.assert_any_call(
             ["npm", "install", "-g", "@sourcegraph/scip-python"],
             capture_output=True,
@@ -138,29 +158,50 @@ class TestInstallScipIndexers:
             text=True,
             timeout=180,
         )
+        # scip-dotnet check should be the final call
+        assert mock_run.call_args_list[2] == (
+            (["scip-dotnet", "--version"],),
+            {"capture_output": True, "text": True, "timeout": 10},
+        )
 
     def test_installs_only_missing_indexer(self, installer):
         """Test installs only the indexer that is missing."""
         mock_npm_result = Mock()
         mock_npm_result.returncode = 0
 
+        # Mock scip-dotnet check returning success (already installed)
+        mock_scip_dotnet_check = Mock()
+        mock_scip_dotnet_check.returncode = 0
+
         # scip-python already installed, scip-typescript needs install
-        check_results = [True, False, True]  # python(yes), typescript(no), typescript(yes after install)
+        check_results = [
+            True,
+            False,
+            True,
+        ]  # python(yes), typescript(no), typescript(yes after install)
 
         with patch.object(
             installer, "_is_scip_indexer_installed", side_effect=check_results
         ):
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch("subprocess.run", return_value=mock_npm_result) as mock_run:
+                with patch(
+                    "subprocess.run",
+                    side_effect=[mock_npm_result, mock_scip_dotnet_check],
+                ) as mock_run:
                     result = installer.install_scip_indexers()
 
         assert result is True
-        # Should only install scip-typescript
-        mock_run.assert_called_once_with(
-            ["npm", "install", "-g", "@sourcegraph/scip-typescript"],
-            capture_output=True,
-            text=True,
-            timeout=180,
+        # Should have 2 calls: npm install + scip-dotnet check
+        assert mock_run.call_count == 2
+        # First call: install scip-typescript
+        assert mock_run.call_args_list[0] == (
+            (["npm", "install", "-g", "@sourcegraph/scip-typescript"],),
+            {"capture_output": True, "text": True, "timeout": 180},
+        )
+        # Second call: check scip-dotnet
+        assert mock_run.call_args_list[1] == (
+            (["scip-dotnet", "--version"],),
+            {"capture_output": True, "text": True, "timeout": 10},
         )
 
     def test_returns_false_when_npm_install_fails(self, installer):
@@ -203,11 +244,23 @@ class TestInstallScipIndexers:
 
     def test_handles_generic_exception(self, installer):
         """Test returns False when npm install raises unexpected exception."""
+        # Mock npm result for second indexer attempt
+        mock_npm_result = Mock()
+        mock_npm_result.returncode = 0
+
+        # Mock scip-dotnet check returning success (already installed)
+        mock_scip_dotnet_check = Mock()
+        mock_scip_dotnet_check.returncode = 0
+
         with patch.object(installer, "_is_scip_indexer_installed", return_value=False):
             with patch.object(installer, "_is_npm_available", return_value=True):
                 with patch(
                     "subprocess.run",
-                    side_effect=RuntimeError("unexpected error"),
+                    side_effect=[
+                        RuntimeError("unexpected error"),  # scip-python install fails
+                        mock_npm_result,  # scip-typescript install succeeds
+                        mock_scip_dotnet_check,  # scip-dotnet check
+                    ],
                 ):
                     result = installer.install_scip_indexers()
 
@@ -222,8 +275,16 @@ class TestInstallScipIndexers:
         mock_npm_result_success = Mock()
         mock_npm_result_success.returncode = 0
 
+        # Mock scip-dotnet check returning success (already installed)
+        mock_scip_dotnet_check = Mock()
+        mock_scip_dotnet_check.returncode = 0
+
         # Both not installed initially
-        check_results = [False, False, True]  # python(no), typescript(no), typescript(yes after install)
+        check_results = [
+            False,
+            False,
+            True,
+        ]  # python(no), typescript(no), typescript(yes after install)
 
         with patch.object(
             installer, "_is_scip_indexer_installed", side_effect=check_results
@@ -231,11 +292,436 @@ class TestInstallScipIndexers:
             with patch.object(installer, "_is_npm_available", return_value=True):
                 with patch(
                     "subprocess.run",
-                    side_effect=[mock_npm_result_fail, mock_npm_result_success],
+                    side_effect=[
+                        mock_npm_result_fail,
+                        mock_npm_result_success,
+                        mock_scip_dotnet_check,
+                    ],
                 ) as mock_run:
                     result = installer.install_scip_indexers()
 
         # Should return False because not all succeeded
         assert result is False
-        # But should have attempted both
-        assert mock_run.call_count == 2
+        # But should have attempted both npm installs + scip-dotnet check
+        assert mock_run.call_count == 3
+
+
+class TestIsDotnetSdkAvailable:
+    """Tests for _is_dotnet_sdk_available method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_returns_true_when_dotnet_sdk_available(self, installer):
+        """Test returns True when dotnet --version succeeds."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "8.0.100"
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = installer._is_dotnet_sdk_available()
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["dotnet", "--version"], capture_output=True, text=True, timeout=10
+        )
+
+    def test_returns_false_when_dotnet_not_found(self, installer):
+        """Test returns False when dotnet command not found."""
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            result = installer._is_dotnet_sdk_available()
+
+        assert result is False
+
+    def test_returns_false_when_dotnet_returns_nonzero(self, installer):
+        """Test returns False when dotnet returns non-zero exit code."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = installer._is_dotnet_sdk_available()
+
+        assert result is False
+
+    def test_returns_false_on_timeout(self, installer):
+        """Test returns False when dotnet command times out."""
+        with patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired("dotnet", 10)
+        ):
+            result = installer._is_dotnet_sdk_available()
+
+        assert result is False
+
+
+class TestIsScipDotnetInstalled:
+    """Tests for _is_scip_dotnet_installed method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_returns_true_when_scip_dotnet_installed(self, installer):
+        """Test returns True when scip-dotnet --version succeeds."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = installer._is_scip_dotnet_installed()
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["scip-dotnet", "--version"], capture_output=True, text=True, timeout=10
+        )
+
+    def test_returns_false_when_scip_dotnet_not_found(self, installer):
+        """Test returns False when scip-dotnet command not found."""
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            result = installer._is_scip_dotnet_installed()
+
+        assert result is False
+
+    def test_returns_false_when_scip_dotnet_returns_nonzero(self, installer):
+        """Test returns False when scip-dotnet returns non-zero exit code."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = installer._is_scip_dotnet_installed()
+
+        assert result is False
+
+    def test_returns_false_on_timeout(self, installer):
+        """Test returns False when scip-dotnet command times out."""
+        with patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired("scip-dotnet", 10)
+        ):
+            result = installer._is_scip_dotnet_installed()
+
+        assert result is False
+
+
+class TestInstallScipDotnet:
+    """Tests for install_scip_dotnet method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_skips_installation_when_already_installed(self, installer):
+        """Test skips dotnet tool install when scip-dotnet already present."""
+        with patch.object(
+            installer, "_is_scip_dotnet_installed", return_value=True
+        ) as mock_check:
+            with patch("subprocess.run") as mock_run:
+                result = installer.install_scip_dotnet()
+
+        assert result is True
+        mock_check.assert_called_once()
+        mock_run.assert_not_called()
+
+    def test_skips_installation_when_dotnet_sdk_not_available(self, installer):
+        """Test skips installation and logs warning when .NET SDK not found."""
+        with patch.object(installer, "_is_scip_dotnet_installed", return_value=False):
+            with patch.object(
+                installer, "_is_dotnet_sdk_available", return_value=False
+            ):
+                result = installer.install_scip_dotnet()
+
+        assert result is False
+
+    def test_installs_scip_dotnet_when_not_installed(self, installer):
+        """Test runs dotnet tool install when scip-dotnet not present."""
+        mock_install_result = Mock()
+        mock_install_result.returncode = 0
+
+        # First check returns False (not installed), after install returns True
+        check_results = [False, True]
+
+        with patch.object(
+            installer, "_is_scip_dotnet_installed", side_effect=check_results
+        ):
+            with patch.object(installer, "_is_dotnet_sdk_available", return_value=True):
+                with patch(
+                    "subprocess.run", return_value=mock_install_result
+                ) as mock_run:
+                    result = installer.install_scip_dotnet()
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["dotnet", "tool", "install", "--global", "scip-dotnet"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    def test_returns_false_when_dotnet_tool_install_fails(self, installer):
+        """Test returns False when dotnet tool install returns non-zero."""
+        mock_install_result = Mock()
+        mock_install_result.returncode = 1
+        mock_install_result.stderr = "dotnet tool install failed"
+
+        with patch.object(installer, "_is_scip_dotnet_installed", return_value=False):
+            with patch.object(installer, "_is_dotnet_sdk_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_install_result):
+                    result = installer.install_scip_dotnet()
+
+        assert result is False
+
+    def test_returns_false_when_verification_fails(self, installer):
+        """Test returns False when post-install verification fails."""
+        mock_install_result = Mock()
+        mock_install_result.returncode = 0
+
+        # Both checks return False (verification fails)
+        with patch.object(installer, "_is_scip_dotnet_installed", return_value=False):
+            with patch.object(installer, "_is_dotnet_sdk_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_install_result):
+                    result = installer.install_scip_dotnet()
+
+        assert result is False
+
+    def test_handles_dotnet_tool_timeout(self, installer):
+        """Test returns False when dotnet tool install times out."""
+        with patch.object(installer, "_is_scip_dotnet_installed", return_value=False):
+            with patch.object(installer, "_is_dotnet_sdk_available", return_value=True):
+                with patch(
+                    "subprocess.run",
+                    side_effect=subprocess.TimeoutExpired("dotnet", 180),
+                ):
+                    result = installer.install_scip_dotnet()
+
+        assert result is False
+
+    def test_handles_generic_exception(self, installer):
+        """Test returns False when dotnet tool install raises unexpected exception."""
+        with patch.object(installer, "_is_scip_dotnet_installed", return_value=False):
+            with patch.object(installer, "_is_dotnet_sdk_available", return_value=True):
+                with patch(
+                    "subprocess.run",
+                    side_effect=RuntimeError("unexpected error"),
+                ):
+                    result = installer.install_scip_dotnet()
+
+        assert result is False
+
+
+class TestIsGoSdkAvailable:
+    """Tests for _is_go_sdk_available method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_returns_true_when_go_sdk_available(self, installer):
+        """Test returns True when go version succeeds."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = installer._is_go_sdk_available()
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["go", "version"], capture_output=True, text=True, timeout=10
+        )
+
+    def test_returns_false_when_go_not_found(self, installer):
+        """Test returns False when go command not found."""
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            result = installer._is_go_sdk_available()
+
+        assert result is False
+
+    def test_returns_false_when_go_returns_nonzero(self, installer):
+        """Test returns False when go returns non-zero exit code."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = installer._is_go_sdk_available()
+
+        assert result is False
+
+    def test_returns_false_on_timeout(self, installer):
+        """Test returns False when go command times out."""
+        with patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired("go", 10)
+        ):
+            result = installer._is_go_sdk_available()
+
+        assert result is False
+
+
+class TestIsScipGoInstalled:
+    """Tests for _is_scip_go_installed method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_returns_true_when_scip_go_installed(self, installer):
+        """Test returns True when scip-go --version succeeds."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = installer._is_scip_go_installed()
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["scip-go", "--version"], capture_output=True, text=True, timeout=10
+        )
+
+    def test_returns_false_when_scip_go_not_found(self, installer):
+        """Test returns False when scip-go command not found."""
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            result = installer._is_scip_go_installed()
+
+        assert result is False
+
+    def test_returns_false_when_scip_go_returns_nonzero(self, installer):
+        """Test returns False when scip-go returns non-zero exit code."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = installer._is_scip_go_installed()
+
+        assert result is False
+
+    def test_returns_false_on_timeout(self, installer):
+        """Test returns False when scip-go command times out."""
+        with patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired("scip-go", 10)
+        ):
+            result = installer._is_scip_go_installed()
+
+        assert result is False
+
+
+class TestInstallScipGo:
+    """Tests for install_scip_go method."""
+
+    @pytest.fixture
+    def installer(self, tmp_path):
+        """Create installer with temporary directory."""
+        with patch.object(ServerInstaller, "__init__", lambda self, **kwargs: None):
+            inst = ServerInstaller.__new__(ServerInstaller)
+            inst.server_dir = tmp_path / ".cidx-server"
+            return inst
+
+    def test_skips_installation_when_already_installed(self, installer):
+        """Test skips go install when scip-go already present."""
+        with patch.object(
+            installer, "_is_scip_go_installed", return_value=True
+        ) as mock_check:
+            with patch("subprocess.run") as mock_run:
+                result = installer.install_scip_go()
+
+        assert result is True
+        mock_check.assert_called_once()
+        mock_run.assert_not_called()
+
+    def test_skips_installation_when_go_sdk_not_available(self, installer):
+        """Test skips installation and logs warning when Go SDK not found."""
+        with patch.object(installer, "_is_scip_go_installed", return_value=False):
+            with patch.object(
+                installer, "_is_go_sdk_available", return_value=False
+            ):
+                result = installer.install_scip_go()
+
+        assert result is False
+
+    def test_installs_scip_go_when_not_installed(self, installer):
+        """Test runs go install when scip-go not present."""
+        mock_install_result = Mock()
+        mock_install_result.returncode = 0
+
+        check_results = [False, True]
+
+        with patch.object(
+            installer, "_is_scip_go_installed", side_effect=check_results
+        ):
+            with patch.object(installer, "_is_go_sdk_available", return_value=True):
+                with patch(
+                    "subprocess.run", return_value=mock_install_result
+                ) as mock_run:
+                    result = installer.install_scip_go()
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["go", "install", "github.com/sourcegraph/scip-go/cmd/scip-go@latest"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    def test_returns_false_when_go_install_fails(self, installer):
+        """Test returns False when go install returns non-zero."""
+        mock_install_result = Mock()
+        mock_install_result.returncode = 1
+        mock_install_result.stderr = "go install failed"
+
+        with patch.object(installer, "_is_scip_go_installed", return_value=False):
+            with patch.object(installer, "_is_go_sdk_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_install_result):
+                    result = installer.install_scip_go()
+
+        assert result is False
+
+    def test_returns_false_when_verification_fails(self, installer):
+        """Test returns False when post-install verification fails."""
+        mock_install_result = Mock()
+        mock_install_result.returncode = 0
+
+        with patch.object(installer, "_is_scip_go_installed", return_value=False):
+            with patch.object(installer, "_is_go_sdk_available", return_value=True):
+                with patch("subprocess.run", return_value=mock_install_result):
+                    result = installer.install_scip_go()
+
+        assert result is False
+
+    def test_handles_go_install_timeout(self, installer):
+        """Test returns False when go install times out."""
+        with patch.object(installer, "_is_scip_go_installed", return_value=False):
+            with patch.object(installer, "_is_go_sdk_available", return_value=True):
+                with patch(
+                    "subprocess.run",
+                    side_effect=subprocess.TimeoutExpired("go", 180),
+                ):
+                    result = installer.install_scip_go()
+
+        assert result is False
+
+    def test_handles_generic_exception(self, installer):
+        """Test returns False when go install raises unexpected exception."""
+        with patch.object(installer, "_is_scip_go_installed", return_value=False):
+            with patch.object(installer, "_is_go_sdk_available", return_value=True):
+                with patch(
+                    "subprocess.run",
+                    side_effect=RuntimeError("unexpected error"),
+                ):
+                    result = installer.install_scip_go()
+
+        assert result is False

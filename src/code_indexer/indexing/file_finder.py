@@ -18,6 +18,7 @@ class FileFinder:
 
         # Initialize override filter service if override config is available
         self.override_filter_service = None
+        self._force_include_spec = None
         # Only initialize if we have a real OverrideConfig object, not a Mock
         if (
             hasattr(config, "override_config")
@@ -30,6 +31,11 @@ class FileFinder:
                 self.override_filter_service = OverrideFilterService(
                     config.override_config
                 )
+                # Store force_include_spec for directory walk optimization
+                if config.override_config.force_include_patterns:
+                    self._force_include_spec = pathspec.PathSpec.from_lines(
+                        "gitwildmatch", config.override_config.force_include_patterns
+                    )
             except (TypeError, AttributeError):
                 # If initialization fails (e.g., due to mock objects), skip override filtering
                 pass
@@ -246,12 +252,35 @@ class FileFinder:
             root_path = Path(root)
 
             # Filter directories to avoid walking into excluded ones
+            # But don't prune directories that might contain force-included files
             dirs_to_remove = []
             for dir_name in dirs:
                 dir_path = root_path / dir_name
                 relative_dir = dir_path.relative_to(self.config.codebase_dir)
-                if self.exclude_spec.match_file(str(relative_dir) + "/"):
-                    dirs_to_remove.append(dir_name)
+                dir_str = str(relative_dir)
+
+                # Check if directory matches exclude patterns
+                if self.exclude_spec.match_file(dir_str + "/"):
+                    # Before pruning, check if force_include_patterns might match files in this dir
+                    should_keep = False
+                    if self._force_include_spec:
+                        # Check if any force_include pattern could match files under this directory
+                        # by testing if pattern would match a hypothetical file in this directory
+                        test_path = dir_str + "/test_file.txt"
+                        if self._force_include_spec.match_file(test_path):
+                            should_keep = True
+                        # Also check glob patterns like "projects/**/*.jsonl"
+                        for pattern in (self.config.override_config.force_include_patterns
+                                       if hasattr(self.config, 'override_config')
+                                       and self.config.override_config
+                                       and self.config.override_config.force_include_patterns
+                                       else []):
+                            if pattern.startswith(dir_str) or dir_str.startswith(pattern.split('/')[0]):
+                                should_keep = True
+                                break
+
+                    if not should_keep:
+                        dirs_to_remove.append(dir_name)
 
             for dir_name in dirs_to_remove:
                 dirs.remove(dir_name)

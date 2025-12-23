@@ -182,3 +182,88 @@ class TestProjectDiscovery:
         assert python_pkg.language == "python"
         assert python_pkg.build_system == "poetry"
         assert python_pkg.build_file == Path("python-pkg/pyproject.toml")
+
+    def test_discover_csharp_solution(self, tmp_path):
+        """Test discovering C# solution projects."""
+        # Arrange: Create C# solution
+        (tmp_path / "dotnet-app" / "MyApp.sln").parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        (tmp_path / "dotnet-app" / "MyApp.sln").write_text(
+            "Microsoft Visual Studio Solution File"
+        )
+
+        # Act: Discover projects
+        discovery = ProjectDiscovery(tmp_path)
+        projects = discovery.discover()
+
+        # Assert: C# solution discovered
+        assert len(projects) == 1
+        dotnet_app = projects[0]
+        assert dotnet_app.language == "csharp"
+        assert dotnet_app.build_system == "solution"
+        assert dotnet_app.relative_path == Path("dotnet-app")
+        assert dotnet_app.build_file == Path("dotnet-app/MyApp.sln")
+
+    def test_discover_csharp_project(self, tmp_path):
+        """Test discovering C# project files (.csproj)."""
+        # Arrange: Create C# project
+        (tmp_path / "dotnet-lib" / "MyLib.csproj").parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        (tmp_path / "dotnet-lib" / "MyLib.csproj").write_text(
+            '<Project Sdk="Microsoft.NET.Sdk"></Project>'
+        )
+
+        # Act: Discover projects
+        discovery = ProjectDiscovery(tmp_path)
+        projects = discovery.discover()
+
+        # Assert: C# project discovered
+        assert len(projects) == 1
+        dotnet_lib = projects[0]
+        assert dotnet_lib.language == "csharp"
+        assert dotnet_lib.build_system == "project"
+        assert dotnet_lib.relative_path == Path("dotnet-lib")
+        assert dotnet_lib.build_file == Path("dotnet-lib/MyLib.csproj")
+
+    def test_csharp_solution_priority_over_project(self, tmp_path):
+        """Test C# solution takes priority over .csproj in same directory."""
+        # Arrange: Create directory with both .sln and .csproj
+        dotnet_dir = tmp_path / "dotnet-app"
+        dotnet_dir.mkdir(parents=True, exist_ok=True)
+        (dotnet_dir / "MyApp.sln").write_text("Microsoft Visual Studio Solution File")
+        (dotnet_dir / "MyApp.csproj").write_text(
+            '<Project Sdk="Microsoft.NET.Sdk"></Project>'
+        )
+
+        # Act: Discover projects
+        discovery = ProjectDiscovery(tmp_path)
+        projects = discovery.discover()
+
+        # Assert: Only ONE project discovered using solution (higher priority)
+        assert len(projects) == 1
+        dotnet_app = projects[0]
+        assert dotnet_app.language == "csharp"
+        assert dotnet_app.build_system == "solution"
+        assert dotnet_app.build_file == Path("dotnet-app/MyApp.sln")
+
+    def test_discover_go_module(self, tmp_path):
+        """Test discovering Go module projects."""
+        # Arrange: Create Go module project
+        (tmp_path / "go-service" / "go.mod").parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "go-service" / "go.mod").write_text(
+            "module github.com/example/service\n\ngo 1.21"
+        )
+
+        # Act: Discover projects
+        discovery = ProjectDiscovery(tmp_path)
+        projects = discovery.discover()
+
+        # Assert: Go module discovered
+        assert len(projects) == 1
+        go_service = projects[0]
+        assert go_service.language == "go"
+        assert go_service.build_system == "module"
+        assert go_service.relative_path == Path("go-service")
+        assert go_service.build_file == Path("go-service/go.mod")

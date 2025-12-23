@@ -12,6 +12,8 @@ from .indexers.base import SCIPIndexer
 from .indexers.java import JavaIndexer
 from .indexers.typescript import TypeScriptIndexer
 from .indexers.python import PythonIndexer
+from .indexers.csharp import CSharpIndexer
+from .indexers.go import GoIndexer
 from .status import ProjectStatus
 from .database.schema import DatabaseManager
 from .database.builder import SCIPDatabaseBuilder
@@ -71,6 +73,8 @@ class SCIPGenerator:
             "kotlin": JavaIndexer(),  # Kotlin uses scip-java
             "typescript": TypeScriptIndexer(),
             "python": PythonIndexer(),
+            "csharp": CSharpIndexer(),
+            "go": GoIndexer(),
         }
 
     def generate(

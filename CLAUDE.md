@@ -75,6 +75,23 @@ systemctl status cidx-server --no-pager
 
 ---
 
+## SCIP INDEX FILE LIFECYCLE - CRITICAL KNOWLEDGE
+
+**SCIP files are DELETED after database conversion.**
+
+When `cidx scip generate` runs:
+1. Language indexer (scip-dotnet, scip-python, etc.) creates `index.scip` (protobuf format)
+2. CIDX converts `index.scip` to `index.scip.db` (SQLite database)
+3. Original `index.scip` file is **DELETED** after successful conversion
+
+**NEVER look for .scip files** - they don't exist after generation completes. Only `.scip.db` files remain.
+
+**Query commands work with .scip.db files**, not raw .scip protobuf files.
+
+**RECORDED**: 2025-12-21 - After repeatedly searching for non-existent .scip files during C# SCIP indexer testing.
+
+---
+
 ## 1. CRITICAL BUSINESS INSIGHT - Query is Everything
 
 **THE SINGLE MOST IMPORTANT FEATURE**: Query capability is the core value proposition of CIDX. All query features available in CLI MUST be available in MCP/REST APIs with full parity.

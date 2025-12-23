@@ -11,7 +11,7 @@ def mock_scip_environment(tmp_path, monkeypatch):
     # Create .code-indexer/scip directory
     scip_dir = tmp_path / ".code-indexer" / "scip"
     scip_dir.mkdir(parents=True)
-    scip_file = scip_dir / "test.scip"
+    scip_file = scip_dir / "test.scip.db"
     scip_file.touch()
 
     # Change to temp directory
@@ -27,7 +27,9 @@ def mock_scip_environment(tmp_path, monkeypatch):
 class TestDefinitionLimit:
     """Test --limit option for 'cidx scip definition' command."""
 
-    def test_definition_with_limit_zero_returns_all_results(self, mock_scip_environment):
+    def test_definition_with_limit_zero_returns_all_results(
+        self, mock_scip_environment
+    ):
         """Test that definition --limit 0 returns all results (unlimited)."""
         # Create 5 mock results
         mock_results = [
@@ -55,16 +57,22 @@ class TestDefinitionLimit:
                 from code_indexer.cli_scip import scip_definition
 
                 runner = click.testing.CliRunner()
-                result = runner.invoke(scip_definition, ["authenticate", "--limit", "0"])
+                result = runner.invoke(
+                    scip_definition, ["authenticate", "--limit", "0"]
+                )
 
                 assert result.exit_code == 0
                 lines = result.output.strip().split("\n")
 
                 # Count result lines (should be all 5)
-                result_lines = [line for line in lines if "auth" in line and ".py:" in line]
+                result_lines = [
+                    line for line in lines if "auth" in line and ".py:" in line
+                ]
                 assert len(result_lines) == 5
 
-    def test_definition_with_limit_five_returns_max_five_results(self, mock_scip_environment):
+    def test_definition_with_limit_five_returns_max_five_results(
+        self, mock_scip_environment
+    ):
         """Test that definition --limit 5 returns at most 5 results."""
         # Create 10 mock results
         mock_results = [
@@ -92,13 +100,17 @@ class TestDefinitionLimit:
                 from code_indexer.cli_scip import scip_definition
 
                 runner = click.testing.CliRunner()
-                result = runner.invoke(scip_definition, ["authenticate", "--limit", "5"])
+                result = runner.invoke(
+                    scip_definition, ["authenticate", "--limit", "5"]
+                )
 
                 assert result.exit_code == 0
                 lines = result.output.strip().split("\n")
 
                 # Count result lines (should be max 5)
-                result_lines = [line for line in lines if "auth" in line and ".py:" in line]
+                result_lines = [
+                    line for line in lines if "auth" in line and ".py:" in line
+                ]
                 assert len(result_lines) <= 5
 
     def test_definition_default_limit_is_zero(self, mock_scip_environment):
@@ -123,7 +135,9 @@ class TestReferencesLimit:
         assert len(limit_option) == 1, "Should have --limit option"
         assert limit_option[0].default == 0, "Default should be 0 (unlimited)"
 
-    def test_references_with_limit_zero_returns_all_results(self, mock_scip_environment):
+    def test_references_with_limit_zero_returns_all_results(
+        self, mock_scip_environment
+    ):
         """Test that references --limit 0 returns all results (unlimited)."""
         # Create 8 mock results
         mock_results = [
@@ -151,20 +165,26 @@ class TestReferencesLimit:
                 from code_indexer.cli_scip import scip_references
 
                 runner = click.testing.CliRunner()
-                result = runner.invoke(scip_references, ["authenticate", "--limit", "0"])
+                result = runner.invoke(
+                    scip_references, ["authenticate", "--limit", "0"]
+                )
 
                 assert result.exit_code == 0
                 lines = result.output.strip().split("\n")
 
                 # Count result lines (should be all 8)
-                result_lines = [line for line in lines if "file" in line and ".py:" in line]
+                result_lines = [
+                    line for line in lines if "file" in line and ".py:" in line
+                ]
                 assert len(result_lines) == 8
 
 
 class TestDependenciesLimit:
     """Test --limit option for 'cidx scip dependencies' command."""
 
-    def test_dependencies_with_limit_zero_returns_all_results(self, mock_scip_environment):
+    def test_dependencies_with_limit_zero_returns_all_results(
+        self, mock_scip_environment
+    ):
         """Test that dependencies --limit 0 returns all results (unlimited)."""
         # Create 6 mock results
         mock_results = [
@@ -192,13 +212,17 @@ class TestDependenciesLimit:
                 from code_indexer.cli_scip import scip_dependencies
 
                 runner = click.testing.CliRunner()
-                result = runner.invoke(scip_dependencies, ["UserService", "--limit", "0"])
+                result = runner.invoke(
+                    scip_dependencies, ["UserService", "--limit", "0"]
+                )
 
                 assert result.exit_code == 0
                 lines = result.output.strip().split("\n")
 
                 # Count result lines (should be all 6)
-                result_lines = [line for line in lines if "repo" in line and ".py:" in line]
+                result_lines = [
+                    line for line in lines if "repo" in line and ".py:" in line
+                ]
                 assert len(result_lines) == 6
 
     def test_dependencies_default_limit_is_zero(self, mock_scip_environment):
@@ -214,7 +238,9 @@ class TestDependenciesLimit:
 class TestDependentsLimit:
     """Test --limit option for 'cidx scip dependents' command."""
 
-    def test_dependents_with_limit_zero_returns_all_results(self, mock_scip_environment):
+    def test_dependents_with_limit_zero_returns_all_results(
+        self, mock_scip_environment
+    ):
         """Test that dependents --limit 0 returns all results (unlimited)."""
         # Create 7 mock results
         mock_results = [
@@ -248,7 +274,9 @@ class TestDependentsLimit:
                 lines = result.output.strip().split("\n")
 
                 # Count result lines (should be all 7)
-                result_lines = [line for line in lines if "service" in line and ".py:" in line]
+                result_lines = [
+                    line for line in lines if "service" in line and ".py:" in line
+                ]
                 assert len(result_lines) == 7
 
     def test_dependents_default_limit_is_zero(self, mock_scip_environment):
@@ -279,7 +307,9 @@ class TestImpactLimit:
 
         mock_impact_result = Mock()
         mock_impact_result.total_affected = 9
-        mock_impact_result.affected_files = [Mock(path=f"src/auth{i}.py") for i in range(9)]
+        mock_impact_result.affected_files = [
+            Mock(path=f"src/auth{i}.py") for i in range(9)
+        ]
         mock_impact_result.affected_symbols = mock_results
 
         with patch("code_indexer.scip.query.composites.analyze_impact") as mock_analyze:
@@ -301,7 +331,9 @@ class TestImpactLimit:
                 lines = result.output.strip().split("\n")
 
                 # Count result lines (should be all 9)
-                result_lines = [line for line in lines if "auth" in line and ".py:" in line]
+                result_lines = [
+                    line for line in lines if "auth" in line and ".py:" in line
+                ]
                 assert len(result_lines) == 9
 
     def test_impact_default_limit_is_zero(self, mock_scip_environment):

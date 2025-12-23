@@ -4,7 +4,7 @@ Complete guide to CIDX SCIP (Source Code Intelligence Protocol) commands for pre
 
 ## Overview
 
-SCIP provides language-agnostic code intelligence beyond semantic search. It enables precise navigation, dependency analysis, and impact assessment across Java, Kotlin, TypeScript, and Python projects.
+SCIP provides language-agnostic code intelligence beyond semantic search. It enables precise navigation, dependency analysis, and impact assessment across Java, Kotlin, TypeScript, Python, C#, and Go projects.
 
 ## Prerequisites
 
@@ -259,6 +259,8 @@ cidx scip generate --skip-verify      # Skip verification for CI performance
 - TypeScript: npm/yarn projects (package.json)
 - Python: Poetry projects (pyproject.toml)
 - Kotlin: Gradle projects (build.gradle.kts)
+- C#: Solution files (*.sln) or project files (*.csproj) - requires .NET SDK 8.0+
+- Go: Module projects (go.mod) - requires Go SDK 1.18+ (https://go.dev/dl/)
 
 **Storage**: Indexes stored in `.code-indexer/scip/`, status in `.code-indexer/scip/status.json`
 

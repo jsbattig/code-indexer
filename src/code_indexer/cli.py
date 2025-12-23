@@ -6077,78 +6077,52 @@ def teach_ai(
     # Step 2: Update awareness file
     # Smart update: preserve existing content and update only CIDX section
     if target_path.exists():
-        # File exists - use Claude CLI to intelligently merge content
-        console.print("📝 Updating existing file with Claude CLI...", style="dim")
+        # File exists - use fast regex replacement (no Claude CLI needed)
+        console.print("📝 Updating existing file...", style="dim")
 
         try:
             existing_content = target_path.read_text()
 
-            # Create prompt for Claude to intelligently merge
-            merge_prompt = f"""You are updating an AI instruction file. Your task is to intelligently merge new CIDX semantic search instructions into an existing file while preserving ALL existing content.
+            # Pattern to find existing SEMANTIC SEARCH section
+            # Matches: "## 1. SEMANTIC SEARCH", "## SEMANTIC SEARCH", etc.
+            import re
 
-EXISTING FILE CONTENT:
-{existing_content}
-
-NEW CIDX SECTION TO ADD/UPDATE:
-{awareness_content}
-
-INSTRUCTIONS:
-1. If the file already has a CIDX/semantic search section (look for headers like "SEMANTIC SEARCH", "CIDX SEMANTIC SEARCH", etc.), UPDATE that section with the new content
-2. If the file does NOT have a CIDX section, ADD the new section at the end
-3. Preserve ALL other existing content exactly as-is
-4. Maintain the file's existing formatting style
-5. Output ONLY the raw merged file content with NO markdown code fences, NO explanations, NO commentary
-6. Start output immediately with the first line of the merged file
-
-OUTPUT THE COMPLETE MERGED FILE (raw content only, no markdown wrappers):"""
-
-            # Call Claude CLI with explicit text output format
-            result = subprocess.run(
-                [
-                    "claude",
-                    "-p",
-                    "--output-format",
-                    "text",
-                    "--dangerously-skip-permissions",
-                    merge_prompt,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=180,  # 3 minutes for large files
+            section_pattern = re.compile(
+                r"(^##\s*(?:\d+\.\s*)?SEMANTIC SEARCH.*?)(?=^##\s|\Z)",
+                re.MULTILINE | re.DOTALL | re.IGNORECASE,
             )
 
-            if result.returncode != 0:
-                console.print(
-                    f"❌ Claude CLI failed: {result.stderr or 'Unknown error'}",
-                    style="red",
+            match = section_pattern.search(existing_content)
+
+            if match:
+                # Replace existing section with new awareness content
+                merged_content = (
+                    existing_content[: match.start()]
+                    + awareness_content.strip()
+                    + "\n\n"
+                    + existing_content[match.end() :].lstrip()
                 )
-                sys.exit(1)
-
-            merged_content = result.stdout.strip()
-
-            # Strip markdown code fences if Claude added them despite instructions
-            if merged_content.startswith("```"):
-                lines = merged_content.split("\n")
-                # Remove first line (```markdown or similar) and last line (```)
-                if lines[-1].strip() == "```":
-                    merged_content = "\n".join(lines[1:-1])
+                action = "updated"
+            else:
+                # No existing section - append at end
+                merged_content = (
+                    existing_content.rstrip() + "\n\n---\n\n" + awareness_content
+                )
+                action = "added"
 
             # Write merged content
             target_path.write_text(merged_content)
 
             console.print(
-                f"✅ {platform_name.title()} instructions updated in {scope_desc}",
+                f"✅ {platform_name.title()} instructions {action} in {scope_desc}",
                 style="green",
             )
             console.print(f"   File: {target_path}", style="dim")
             console.print(
-                "   ℹ️  Existing content preserved, CIDX section updated",
+                f"   ℹ️  Existing content preserved, CIDX section {action}",
                 style="blue dim",
             )
 
-        except subprocess.TimeoutExpired:
-            console.print("❌ Claude CLI timed out", style="red")
-            sys.exit(1)
         except Exception as e:
             console.print(f"❌ Failed to update instruction file: {e}", style="red")
             sys.exit(1)

@@ -431,6 +431,7 @@ WantedBy=multi-user.target
         Installs:
         - @sourcegraph/scip-python for Python code
         - @sourcegraph/scip-typescript for TypeScript/JavaScript
+        - scip-dotnet for C#/.NET code
 
         Returns:
             True if all indexers are available after this method
@@ -476,7 +477,9 @@ WantedBy=multi-user.target
                 if self._is_scip_indexer_installed(indexer_cmd):
                     logger.info(f"{indexer_cmd} installed successfully")
                 else:
-                    logger.error(f"{indexer_cmd} installation failed: verification failed")
+                    logger.error(
+                        f"{indexer_cmd} installation failed: verification failed"
+                    )
                     all_installed = False
 
             except subprocess.TimeoutExpired:
@@ -486,4 +489,180 @@ WantedBy=multi-user.target
                 logger.error(f"{indexer_cmd} installation failed: {e}")
                 all_installed = False
 
+        # Install scip-dotnet (non-fatal if fails)
+        self.install_scip_dotnet()
+
+        # Install scip-go (non-fatal if fails)
+        self.install_scip_go()
+
         return all_installed
+
+    def _is_dotnet_sdk_available(self) -> bool:
+        """
+        Check if .NET SDK is available.
+
+        Returns:
+            True if dotnet command is available
+        """
+        try:
+            result = subprocess.run(
+                ["dotnet", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def _is_scip_dotnet_installed(self) -> bool:
+        """
+        Check if scip-dotnet is installed.
+
+        Returns:
+            True if scip-dotnet command is available
+        """
+        try:
+            result = subprocess.run(
+                ["scip-dotnet", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def install_scip_dotnet(self) -> bool:
+        """
+        Install scip-dotnet if .NET SDK is available.
+
+        Returns:
+            True if scip-dotnet is available after this method
+            (either already installed or successfully installed),
+            False if installation failed or .NET SDK not available.
+        """
+        # Check if already installed (idempotent)
+        if self._is_scip_dotnet_installed():
+            logger.info("scip-dotnet already installed")
+            return True
+
+        # Check if .NET SDK available
+        if not self._is_dotnet_sdk_available():
+            logger.warning(".NET SDK not found - scip-dotnet installation skipped")
+            logger.info("Install .NET SDK manually to enable C# SCIP indexing")
+            return False
+
+        # Install via dotnet tool
+        try:
+            logger.info("Installing scip-dotnet via dotnet tool...")
+            result = subprocess.run(
+                ["dotnet", "tool", "install", "--global", "scip-dotnet"],
+                capture_output=True,
+                text=True,
+                timeout=180,  # 3 minute timeout
+            )
+
+            if result.returncode != 0:
+                logger.error(f"scip-dotnet installation failed: {result.stderr}")
+                return False
+
+            # Verify installation succeeded
+            if self._is_scip_dotnet_installed():
+                logger.info("scip-dotnet installed successfully")
+                return True
+            else:
+                logger.error("scip-dotnet installation failed: verification failed")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.error("scip-dotnet installation failed: timeout")
+            return False
+        except Exception as e:
+            logger.error(f"scip-dotnet installation failed: {e}")
+            return False
+
+    def _is_go_sdk_available(self) -> bool:
+        """
+        Check if Go SDK is available.
+
+        Returns:
+            True if go command is available
+        """
+        try:
+            result = subprocess.run(
+                ["go", "version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def _is_scip_go_installed(self) -> bool:
+        """
+        Check if scip-go is installed.
+
+        Returns:
+            True if scip-go command is available
+        """
+        try:
+            result = subprocess.run(
+                ["scip-go", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def install_scip_go(self) -> bool:
+        """
+        Install scip-go if Go SDK is available.
+
+        Returns:
+            True if scip-go is available after this method
+            (either already installed or successfully installed),
+            False if installation failed or Go SDK not available.
+        """
+        # Check if already installed (idempotent)
+        if self._is_scip_go_installed():
+            logger.info("scip-go already installed")
+            return True
+
+        # Check if Go SDK available
+        if not self._is_go_sdk_available():
+            logger.warning("Go SDK not found - scip-go installation skipped")
+            logger.info("Install Go from https://go.dev/dl/")
+            return False
+
+        # Install via go install
+        try:
+            logger.info("Installing scip-go via go install...")
+            result = subprocess.run(
+                ["go", "install", "github.com/sourcegraph/scip-go/cmd/scip-go@latest"],
+                capture_output=True,
+                text=True,
+                timeout=180,  # 3 minute timeout
+            )
+
+            if result.returncode != 0:
+                logger.error(f"scip-go installation failed: {result.stderr}")
+                return False
+
+            # Verify installation succeeded
+            if self._is_scip_go_installed():
+                logger.info("scip-go installed successfully")
+                return True
+            else:
+                logger.error("scip-go installation failed: verification failed")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.error("scip-go installation failed: timeout")
+            return False
+        except Exception as e:
+            logger.error(f"scip-go installation failed: {e}")
+            return False

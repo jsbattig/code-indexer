@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 
 
-# Build file mappings: filename -> (language, build_system)
+# Build file mappings: filename/pattern -> (language, build_system)
+# NOTE: C# uses glob patterns (*.sln, *.csproj) because solution/project filenames vary.
+# All other languages use exact filenames (pom.xml, package.json, etc.)
 BUILD_FILE_MAPPINGS: Dict[str, Tuple[str, str]] = {
     "pom.xml": ("java", "maven"),
     "build.gradle": ("java", "gradle"),
@@ -14,6 +16,9 @@ BUILD_FILE_MAPPINGS: Dict[str, Tuple[str, str]] = {
     "pyproject.toml": ("python", "poetry"),
     "setup.py": ("python", "setuptools"),
     "requirements.txt": ("python", "pip"),
+    "*.sln": ("csharp", "solution"),
+    "*.csproj": ("csharp", "project"),
+    "go.mod": ("go", "module"),
 }
 
 # Build file priority: lower number = higher priority
@@ -26,6 +31,9 @@ BUILD_FILE_PRIORITY: Dict[str, int] = {
     "build.gradle": 1,
     "build.gradle.kts": 1,
     "package.json": 1,
+    "*.sln": 1,
+    "*.csproj": 2,
+    "go.mod": 1,
 }
 
 
@@ -50,6 +58,30 @@ class ProjectDiscovery:
             repo_root: Root directory of the repository to scan
         """
         self.repo_root = Path(repo_root)
+
+    def _get_build_file_pattern(self, filename: str) -> str:
+        """
+        Get the BUILD_FILE_MAPPINGS pattern that matches a filename.
+
+        Args:
+            filename: Actual filename (e.g., "MyApp.sln", "pom.xml")
+
+        Returns:
+            Pattern key from BUILD_FILE_MAPPINGS (e.g., "*.sln", "pom.xml")
+        """
+        # First try exact match
+        if filename in BUILD_FILE_MAPPINGS:
+            return filename
+
+        # Try glob pattern match
+        for pattern in BUILD_FILE_MAPPINGS.keys():
+            if "*" in pattern:
+                # Extract extension from pattern (e.g., "*.sln" -> ".sln")
+                pattern_ext = pattern.replace("*", "")
+                if filename.endswith(pattern_ext):
+                    return pattern
+
+        return filename  # Fallback to filename itself
 
     def discover(self) -> List[DiscoveredProject]:
         """
@@ -76,9 +108,10 @@ class ProjectDiscovery:
                 if project_dir in seen_dirs:
                     existing = seen_dirs[project_dir]
                     current_priority = BUILD_FILE_PRIORITY.get(build_file_name, 999)
-                    existing_priority = BUILD_FILE_PRIORITY.get(
-                        existing.build_file.name, 999
+                    existing_pattern = self._get_build_file_pattern(
+                        existing.build_file.name
                     )
+                    existing_priority = BUILD_FILE_PRIORITY.get(existing_pattern, 999)
                     # Skip if current build file has lower priority (higher number)
                     if current_priority >= existing_priority:
                         continue

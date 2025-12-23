@@ -11,7 +11,7 @@ def mock_scip_environment(tmp_path, monkeypatch):
     # Create .code-indexer/scip directory
     scip_dir = tmp_path / ".code-indexer" / "scip"
     scip_dir.mkdir(parents=True)
-    scip_file = scip_dir / "test.scip"
+    scip_file = scip_dir / "test.scip.db"
     scip_file.touch()
 
     # Change to temp directory
@@ -563,7 +563,7 @@ class TestContextCompactOutput:
         """
         # Create mock ContextSymbol with .name field containing full SCIP symbol
         # Note: We use spec=['name', 'line', 'relationship'] to ensure hasattr checks work correctly
-        mock_symbol = Mock(spec=['name', 'line', 'relationship', 'column'])
+        mock_symbol = Mock(spec=["name", "line", "relationship", "column"])
         mock_symbol.name = (
             "scip-python python code-indexer abc123 `auth`/authenticate()."
         )

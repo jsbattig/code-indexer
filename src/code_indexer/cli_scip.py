@@ -684,22 +684,22 @@ def scip_definition(ctx, symbol: str, limit: int, exact: bool, project: Optional
         console.print("   Run 'cidx scip generate' first", style="dim")
         sys.exit(1)
 
-    # Find all .scip files (filter by project if specified)
+    # Find all .scip.db files (filter by project if specified)
     if project:
         # Filter to specific project path
         project_scip_dir = scip_dir / project
-        scip_files = list(project_scip_dir.glob("**/*.scip"))
+        scip_files = list(project_scip_dir.glob("**/*.scip.db"))
     else:
         # Search all projects
-        scip_files = list(scip_dir.glob("**/*.scip"))
+        scip_files = list(scip_dir.glob("**/*.scip.db"))
 
     if not scip_files:
         if project:
             console.print(
-                f"Error: No .scip files found for project '{project}'", style="red"
+                f"Error: No .scip.db files found for project '{project}'", style="red"
             )
         else:
-            console.print("Error: No .scip files found", style="red")
+            console.print("Error: No .scip.db files found", style="red")
         sys.exit(1)
 
     # Search across all SCIP files
@@ -784,22 +784,22 @@ def scip_references(ctx, symbol: str, limit: int, exact: bool, project: Optional
         console.print("   Run 'cidx scip generate' first", style="dim")
         sys.exit(1)
 
-    # Find all .scip files (filter by project if specified)
+    # Find all .scip.db files (filter by project if specified)
     if project:
         # Filter to specific project path
         project_scip_dir = scip_dir / project
-        scip_files = list(project_scip_dir.glob("**/*.scip"))
+        scip_files = list(project_scip_dir.glob("**/*.scip.db"))
     else:
         # Search all projects
-        scip_files = list(scip_dir.glob("**/*.scip"))
+        scip_files = list(scip_dir.glob("**/*.scip.db"))
 
     if not scip_files:
         if project:
             console.print(
-                f"Error: No .scip files found for project '{project}'", style="red"
+                f"Error: No .scip.db files found for project '{project}'", style="red"
             )
         else:
-            console.print("Error: No .scip files found", style="red")
+            console.print("Error: No .scip.db files found", style="red")
         sys.exit(1)
 
     # Search across all SCIP files
@@ -896,22 +896,22 @@ def scip_dependencies(
         console.print("   Run 'cidx scip generate' first", style="dim")
         sys.exit(1)
 
-    # Find all .scip files (filter by project if specified)
+    # Find all .scip.db files (filter by project if specified)
     if project:
         # Filter to specific project path
         project_scip_dir = scip_dir / project
-        scip_files = list(project_scip_dir.glob("**/*.scip"))
+        scip_files = list(project_scip_dir.glob("**/*.scip.db"))
     else:
         # Search all projects
-        scip_files = list(scip_dir.glob("**/*.scip"))
+        scip_files = list(scip_dir.glob("**/*.scip.db"))
 
     if not scip_files:
         if project:
             console.print(
-                f"Error: No .scip files found for project '{project}'", style="red"
+                f"Error: No .scip.db files found for project '{project}'", style="red"
             )
         else:
-            console.print("Error: No .scip files found", style="red")
+            console.print("Error: No .scip.db files found", style="red")
         sys.exit(1)
 
     # Search across all SCIP files
@@ -1008,22 +1008,22 @@ def scip_dependents(ctx, symbol: str, limit: int, depth: int, exact: bool, proje
         console.print("   Run 'cidx scip generate' first", style="dim")
         sys.exit(1)
 
-    # Find all .scip files (filter by project if specified)
+    # Find all .scip.db files (filter by project if specified)
     if project:
         # Filter to specific project path
         project_scip_dir = scip_dir / project
-        scip_files = list(project_scip_dir.glob("**/*.scip"))
+        scip_files = list(project_scip_dir.glob("**/*.scip.db"))
     else:
         # Search all projects
-        scip_files = list(scip_dir.glob("**/*.scip"))
+        scip_files = list(scip_dir.glob("**/*.scip.db"))
 
     if not scip_files:
         if project:
             console.print(
-                f"Error: No .scip files found for project '{project}'", style="red"
+                f"Error: No .scip.db files found for project '{project}'", style="red"
             )
         else:
-            console.print("Error: No .scip files found", style="red")
+            console.print("Error: No .scip.db files found", style="red")
         sys.exit(1)
 
     # Search across all SCIP files
@@ -1219,14 +1219,14 @@ def scip_callchain(
         sys.exit(1)
 
     # Find SCIP database file
-    scip_files = list(scip_dir.glob("**/*.scip"))
+    scip_files = list(scip_dir.glob("**/*.scip.db"))
     if not scip_files:
         console.print("Error: No SCIP files found", style="red")
         console.print("   Run 'cidx scip generate' first", style="dim")
         sys.exit(1)
 
-    # Prioritize index.scip, otherwise use largest file to avoid test fixtures
-    index_scip = scip_dir / "index.scip"
+    # Prioritize index.scip.db, otherwise use largest file to avoid test fixtures
+    index_scip = scip_dir / "index.scip.db"
     if index_scip.exists():
         scip_file = index_scip
     else:
