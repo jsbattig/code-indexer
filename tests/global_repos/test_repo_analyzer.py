@@ -19,6 +19,12 @@ from code_indexer.global_repos.repo_analyzer import RepoAnalyzer, RepoInfo
 class TestRepoAnalyzer:
     """Test suite for repository analysis and information extraction."""
 
+    @pytest.fixture(autouse=True)
+    def disable_claude_for_static_tests(self):
+        """Disable Claude CLI for static analysis tests to prevent subprocess hangs."""
+        with patch.dict(os.environ, {"CIDX_USE_CLAUDE_FOR_META": "false"}):
+            yield
+
     def test_analyze_repo_with_readme(self, tmp_path):
         """
         Test that analyzer extracts info from README.md.
