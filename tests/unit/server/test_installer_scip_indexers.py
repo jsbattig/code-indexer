@@ -90,26 +90,27 @@ class TestInstallScipIndexers:
 
     def test_skips_installation_when_both_already_installed(self, installer):
         """Test skips npm install when both indexers already present."""
-        # Mock scip-dotnet check returning success (already installed)
-        mock_scip_dotnet_check = Mock()
-        mock_scip_dotnet_check.returncode = 0
-
         with patch.object(
             installer, "_is_scip_indexer_installed", return_value=True
         ) as mock_check:
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch(
-                    "subprocess.run", return_value=mock_scip_dotnet_check
-                ) as mock_run:
-                    result = installer.install_scip_indexers()
+                with patch.object(
+                    installer, "install_scip_dotnet", return_value=True
+                ) as mock_dotnet:
+                    with patch.object(
+                        installer, "install_scip_go", return_value=True
+                    ) as mock_go:
+                        with patch("subprocess.run") as mock_run:
+                            result = installer.install_scip_indexers()
 
         assert result is True
         # Should check both npm indexers but not run npm install
         assert mock_check.call_count == 2
-        # Should only check scip-dotnet (which is already installed)
-        mock_run.assert_called_once_with(
-            ["scip-dotnet", "--version"], capture_output=True, text=True, timeout=10
-        )
+        # Should call install_scip_dotnet and install_scip_go
+        mock_dotnet.assert_called_once()
+        mock_go.assert_called_once()
+        # subprocess.run should not be called for npm install
+        mock_run.assert_not_called()
 
     def test_skips_installation_when_npm_not_available(self, installer):
         """Test skips installation and logs warning when npm not found."""
@@ -123,10 +124,6 @@ class TestInstallScipIndexers:
         mock_npm_result = Mock()
         mock_npm_result.returncode = 0
 
-        # Mock scip-dotnet check returning success (already installed)
-        mock_scip_dotnet_check = Mock()
-        mock_scip_dotnet_check.returncode = 0
-
         # First check returns False (not installed), after install returns True
         check_results = [False, True, False, True]  # Two indexers, each checked twice
 
@@ -134,18 +131,20 @@ class TestInstallScipIndexers:
             installer, "_is_scip_indexer_installed", side_effect=check_results
         ):
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch(
-                    "subprocess.run",
-                    side_effect=[
-                        mock_npm_result,
-                        mock_npm_result,
-                        mock_scip_dotnet_check,
-                    ],
-                ) as mock_run:
-                    result = installer.install_scip_indexers()
+                with patch.object(
+                    installer, "install_scip_dotnet", return_value=True
+                ) as mock_dotnet:
+                    with patch.object(
+                        installer, "install_scip_go", return_value=True
+                    ) as mock_go:
+                        with patch(
+                            "subprocess.run",
+                            side_effect=[mock_npm_result, mock_npm_result],
+                        ) as mock_run:
+                            result = installer.install_scip_indexers()
 
         assert result is True
-        assert mock_run.call_count == 3
+        assert mock_run.call_count == 2
         mock_run.assert_any_call(
             ["npm", "install", "-g", "@sourcegraph/scip-python"],
             capture_output=True,
@@ -158,20 +157,14 @@ class TestInstallScipIndexers:
             text=True,
             timeout=180,
         )
-        # scip-dotnet check should be the final call
-        assert mock_run.call_args_list[2] == (
-            (["scip-dotnet", "--version"],),
-            {"capture_output": True, "text": True, "timeout": 10},
-        )
+        # Should call install_scip_dotnet and install_scip_go
+        mock_dotnet.assert_called_once()
+        mock_go.assert_called_once()
 
     def test_installs_only_missing_indexer(self, installer):
         """Test installs only the indexer that is missing."""
         mock_npm_result = Mock()
         mock_npm_result.returncode = 0
-
-        # Mock scip-dotnet check returning success (already installed)
-        mock_scip_dotnet_check = Mock()
-        mock_scip_dotnet_check.returncode = 0
 
         # scip-python already installed, scip-typescript needs install
         check_results = [
@@ -184,25 +177,29 @@ class TestInstallScipIndexers:
             installer, "_is_scip_indexer_installed", side_effect=check_results
         ):
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch(
-                    "subprocess.run",
-                    side_effect=[mock_npm_result, mock_scip_dotnet_check],
-                ) as mock_run:
-                    result = installer.install_scip_indexers()
+                with patch.object(
+                    installer, "install_scip_dotnet", return_value=True
+                ) as mock_dotnet:
+                    with patch.object(
+                        installer, "install_scip_go", return_value=True
+                    ) as mock_go:
+                        with patch(
+                            "subprocess.run",
+                            side_effect=[mock_npm_result],
+                        ) as mock_run:
+                            result = installer.install_scip_indexers()
 
         assert result is True
-        # Should have 2 calls: npm install + scip-dotnet check
-        assert mock_run.call_count == 2
-        # First call: install scip-typescript
+        # Should have 1 npm install call
+        assert mock_run.call_count == 1
+        # Only call: install scip-typescript
         assert mock_run.call_args_list[0] == (
             (["npm", "install", "-g", "@sourcegraph/scip-typescript"],),
             {"capture_output": True, "text": True, "timeout": 180},
         )
-        # Second call: check scip-dotnet
-        assert mock_run.call_args_list[1] == (
-            (["scip-dotnet", "--version"],),
-            {"capture_output": True, "text": True, "timeout": 10},
-        )
+        # Should call install_scip_dotnet and install_scip_go
+        mock_dotnet.assert_called_once()
+        mock_go.assert_called_once()
 
     def test_returns_false_when_npm_install_fails(self, installer):
         """Test returns False when npm install returns non-zero."""
@@ -248,23 +245,29 @@ class TestInstallScipIndexers:
         mock_npm_result = Mock()
         mock_npm_result.returncode = 0
 
-        # Mock scip-dotnet check returning success (already installed)
-        mock_scip_dotnet_check = Mock()
-        mock_scip_dotnet_check.returncode = 0
-
         with patch.object(installer, "_is_scip_indexer_installed", return_value=False):
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch(
-                    "subprocess.run",
-                    side_effect=[
-                        RuntimeError("unexpected error"),  # scip-python install fails
-                        mock_npm_result,  # scip-typescript install succeeds
-                        mock_scip_dotnet_check,  # scip-dotnet check
-                    ],
-                ):
-                    result = installer.install_scip_indexers()
+                with patch.object(
+                    installer, "install_scip_dotnet", return_value=True
+                ) as mock_dotnet:
+                    with patch.object(
+                        installer, "install_scip_go", return_value=True
+                    ) as mock_go:
+                        with patch(
+                            "subprocess.run",
+                            side_effect=[
+                                RuntimeError(
+                                    "unexpected error"
+                                ),  # scip-python install fails
+                                mock_npm_result,  # scip-typescript install succeeds
+                            ],
+                        ):
+                            result = installer.install_scip_indexers()
 
         assert result is False
+        # Should still call install_scip_dotnet and install_scip_go
+        mock_dotnet.assert_called_once()
+        mock_go.assert_called_once()
 
     def test_continues_installation_after_one_failure(self, installer):
         """Test continues installing second indexer even if first fails."""
@@ -274,10 +277,6 @@ class TestInstallScipIndexers:
 
         mock_npm_result_success = Mock()
         mock_npm_result_success.returncode = 0
-
-        # Mock scip-dotnet check returning success (already installed)
-        mock_scip_dotnet_check = Mock()
-        mock_scip_dotnet_check.returncode = 0
 
         # Both not installed initially
         check_results = [
@@ -290,20 +289,28 @@ class TestInstallScipIndexers:
             installer, "_is_scip_indexer_installed", side_effect=check_results
         ):
             with patch.object(installer, "_is_npm_available", return_value=True):
-                with patch(
-                    "subprocess.run",
-                    side_effect=[
-                        mock_npm_result_fail,
-                        mock_npm_result_success,
-                        mock_scip_dotnet_check,
-                    ],
-                ) as mock_run:
-                    result = installer.install_scip_indexers()
+                with patch.object(
+                    installer, "install_scip_dotnet", return_value=True
+                ) as mock_dotnet:
+                    with patch.object(
+                        installer, "install_scip_go", return_value=True
+                    ) as mock_go:
+                        with patch(
+                            "subprocess.run",
+                            side_effect=[
+                                mock_npm_result_fail,
+                                mock_npm_result_success,
+                            ],
+                        ) as mock_run:
+                            result = installer.install_scip_indexers()
 
         # Should return False because not all succeeded
         assert result is False
-        # But should have attempted both npm installs + scip-dotnet check
-        assert mock_run.call_count == 3
+        # But should have attempted both npm installs
+        assert mock_run.call_count == 2
+        # Should still call install_scip_dotnet and install_scip_go
+        mock_dotnet.assert_called_once()
+        mock_go.assert_called_once()
 
 
 class TestIsDotnetSdkAvailable:

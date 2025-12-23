@@ -266,10 +266,12 @@ class TestSCIPImpactTool:
 
         with (
             patch("code_indexer.scip.query.composites.analyze_impact") as mock_analyze,
-            patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_scip_dir"
+            ) as mock_get_dir,
         ):
             mock_analyze.return_value = mock_impact_result
-            mock_find.return_value = [Path("/fake/path/index.scip")]
+            mock_get_dir.return_value = Path("/fake/golden/repos")
 
             response = await scip_impact(params, mock_user)
 
@@ -295,43 +297,32 @@ class TestSCIPCallChainTool:
     async def test_scip_callchain_returns_mcp_response(self, mock_user):
         """Should return MCP-compliant response with call chain results."""
         from code_indexer.server.mcp.handlers import scip_callchain
-        from code_indexer.scip.query.composites import (
-            CallChainResult,
-            CallChain,
-            CallStep,
-        )
+        from code_indexer.scip.query.backends import CallChain
         from pathlib import Path
 
-        mock_result = CallChainResult(
-            from_symbol="Controller",
-            to_symbol="Database",
-            chains=[
-                CallChain(
-                    path=[
-                        CallStep(
-                            symbol="Service",
-                            file_path=Path("src/service.py"),
-                            line=10,
-                            column=5,
-                            call_type="call",
-                        )
-                    ],
-                    length=1,
-                )
-            ],
-            total_chains_found=1,
-            truncated=False,
-            max_depth_reached=False,
+        # Handler uses primitive backend API (backends.CallChain with List[str] path)
+        mock_chain = CallChain(
+            path=["Controller", "Service", "Database"],  # List of symbol names
+            length=3,
+            has_cycle=False,
         )
 
         params = {"from_symbol": "Controller", "to_symbol": "Database"}
 
         with (
-            patch("code_indexer.scip.query.composites.trace_call_chain") as mock_trace,
             patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find,
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
         ):
-            mock_trace.return_value = mock_result
             mock_find.return_value = [Path("/fake/path/index.scip")]
+
+            # Mock SCIPQueryEngine instance and backend
+            mock_engine = Mock()
+            mock_backend = Mock()
+            mock_backend.trace_call_chain.return_value = [mock_chain]
+            mock_engine.backend = mock_backend
+            mock_engine_class.return_value = mock_engine
 
             response = await scip_callchain(params, mock_user)
 
@@ -389,10 +380,12 @@ class TestSCIPContextTool:
             patch(
                 "code_indexer.scip.query.composites.get_smart_context"
             ) as mock_context,
-            patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_scip_dir"
+            ) as mock_get_dir,
         ):
             mock_context.return_value = mock_result
-            mock_find.return_value = [Path("/fake/path/index.scip")]
+            mock_get_dir.return_value = Path("/fake/golden/repos")
 
             response = await scip_context(params, mock_user)
 

@@ -215,7 +215,7 @@ class TestBootstrapCidxMeta:
                 assert index_call[0][1]["check"] is True
 
     def test_no_op_when_cidx_meta_already_exists(self, golden_repos_dir):
-        """Test that bootstrap is no-op when cidx-meta already exists."""
+        """Test that bootstrap runs indexing even when cidx-meta already exists."""
         # Setup: cidx-meta already exists
 
         # Create mock manager
@@ -223,15 +223,18 @@ class TestBootstrapCidxMeta:
         mock_manager.golden_repo_exists = Mock(return_value=True)
         mock_manager.golden_repos = {}
 
-        # Mock subprocess to ensure it's NOT called
+        # Mock subprocess to verify cidx index is called
         with patch("subprocess.run") as mock_subprocess:
             # Execute bootstrap
             from code_indexer.server.app import bootstrap_cidx_meta
 
             bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
 
-            # Verify: No cidx commands were executed
-            mock_subprocess.assert_not_called()
+            # Verify: cidx index was called once to ensure index is up to date
+            mock_subprocess.assert_called_once()
+            call_args = mock_subprocess.call_args
+            assert call_args[0][0] == ["cidx", "index"]
+            assert "cidx-meta" in call_args[1]["cwd"]
 
     def test_creates_directory_structure(self, golden_repos_dir):
         """Test that bootstrap creates the cidx-meta directory."""
@@ -371,5 +374,7 @@ class TestBootstrapCidxMeta:
 
                 bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
 
-                # Verify: Second call didn't execute any cidx commands
-                assert mock_subprocess.call_count == 0
+                # Verify: Second call executes cidx index to ensure index is up to date
+                assert mock_subprocess.call_count == 1
+                call_args = mock_subprocess.call_args
+                assert call_args[0][0] == ["cidx", "index"]

@@ -265,6 +265,8 @@ class TestToolsCallHandler:
     @pytest.mark.asyncio
     async def test_valid_call_returns_stub_success(self):
         """Test tools/call dispatches to actual handler."""
+        from pathlib import Path
+
         user = User(
             username="test",
             password_hash="hashed_password",
@@ -273,8 +275,14 @@ class TestToolsCallHandler:
         )
         params = {"name": "list_repositories", "arguments": {}}
 
-        with patch("code_indexer.server.app.activated_repo_manager") as mock_mgr:
+        with (
+            patch("code_indexer.server.app.activated_repo_manager") as mock_mgr,
+            patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_get_dir,
+            patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_registry,
+        ):
             mock_mgr.list_activated_repositories = Mock(return_value=[])
+            mock_get_dir.return_value = Path("/fake/golden/repos")
+            mock_registry.return_value.list_global_repos.return_value = []
             result = await handle_tools_call(params, user)
 
         # MCP responses have content array with text blocks
@@ -293,6 +301,8 @@ class TestToolsCallHandler:
     @pytest.mark.asyncio
     async def test_call_without_arguments(self):
         """Test tools/call accepts missing arguments field."""
+        from pathlib import Path
+
         user = User(
             username="test",
             password_hash="hashed_password",
@@ -301,8 +311,14 @@ class TestToolsCallHandler:
         )
         params = {"name": "list_repositories"}  # No arguments
 
-        with patch("code_indexer.server.app.activated_repo_manager") as mock_mgr:
+        with (
+            patch("code_indexer.server.app.activated_repo_manager") as mock_mgr,
+            patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_get_dir,
+            patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_registry,
+        ):
             mock_mgr.list_activated_repositories = Mock(return_value=[])
+            mock_get_dir.return_value = Path("/fake/golden/repos")
+            mock_registry.return_value.list_global_repos.return_value = []
             result = await handle_tools_call(params, user)
 
         # MCP responses have content array with text blocks

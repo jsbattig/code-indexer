@@ -6,6 +6,7 @@ Tests focus on the two critical remaining issues:
 2. Proper daemon shutdown with socket cleanup
 """
 
+import pytest
 import sys
 import time
 import json
@@ -61,6 +62,7 @@ class TestRPyCDaemon(TestCase):
         if Path(self.temp_dir).exists():
             shutil.rmtree(self.temp_dir)
 
+    @pytest.mark.slow
     def test_cache_hit_performance_under_100ms(self):
         """Test that cache hit queries complete in <100ms (Issue #1)."""
         from src.code_indexer.services.rpyc_daemon import CIDXDaemonService

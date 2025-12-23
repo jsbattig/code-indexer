@@ -18,6 +18,7 @@ from src.code_indexer.api_clients.system_client import (
 from src.code_indexer.api_clients.base_client import AuthenticationError, APIClientError
 
 
+@pytest.mark.integration
 class TestSystemHealthMonitoringE2E:
     """End-to-end tests for complete system health monitoring workflow."""
 

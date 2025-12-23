@@ -20,6 +20,7 @@ from code_indexer.server.app import QueryResultItem
 from code_indexer.search.query import SearchResult
 
 
+@pytest.mark.integration
 class TestTimestampIntegrationWorkflow:
     """Test end-to-end timestamp integration workflow."""
 

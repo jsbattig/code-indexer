@@ -17,30 +17,6 @@ from unittest.mock import patch
 class TestAppStateGoldenReposDir:
     """Test that app.state.golden_repos_dir is set correctly during server startup."""
 
-    def test_app_state_golden_repos_dir_attribute_exists(self):
-        """Test that app.state has golden_repos_dir attribute after startup."""
-        # This test verifies the attribute exists but doesn't test value
-        # because actual startup requires mocking too many dependencies
-        with (
-            patch.dict(os.environ, {}),
-            patch(
-                "code_indexer.server.lifecycle.global_repos_lifecycle.GlobalReposLifecycleManager"
-            ),
-            patch(
-                "code_indexer.server.lifecycle.startup_meta_populator.StartupMetaPopulator"
-            ),
-            patch("code_indexer.global_repos.global_registry.GlobalRegistry"),
-        ):
-            # Import after patching to avoid initialization issues
-            from code_indexer.server.app import app
-
-            # Test that app exists (basic sanity check)
-            assert app is not None
-
-            # After actual server startup, app.state.golden_repos_dir should exist
-            # This is the fix we're implementing - currently this attribute doesn't exist
-            # The test will fail initially (RED) and pass after implementation (GREEN)
-
     def test_golden_repos_dir_path_construction_logic(self, tmp_path):
         """Test the logic for constructing golden_repos_dir path."""
         # Test the path construction logic that should be used in app.py

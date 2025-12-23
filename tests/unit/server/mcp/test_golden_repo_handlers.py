@@ -52,6 +52,8 @@ class TestAddGoldenRepoHandler:
                 repo_url="https://github.com/user/repo.git",
                 alias="my-golden-repo",
                 default_branch="develop",
+                enable_temporal=False,
+                temporal_options=None,
                 submitter_username="admin",  # Actual username from user object
             )
 
