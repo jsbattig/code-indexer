@@ -13,6 +13,18 @@ from .test_data_factory import TestDataFactory, TestRepository, TestUser
 from .server_test_helpers import ServerTestHelper, ServerLifecycleManager
 from .auth_test_helpers import AuthTestHelper, JWTTokenManager
 
+
+class EnvironmentManager:
+    """
+    Stub class for removed container infrastructure.
+
+    Tests importing this will fail since container support was removed.
+    This stub prevents collection errors.
+    """
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("Container infrastructure was removed - EnvironmentManager cannot be instantiated")
+
+
 __all__ = [
     "TestDataFactory",
     "TestRepository",
@@ -21,4 +33,5 @@ __all__ = [
     "ServerLifecycleManager",
     "AuthTestHelper",
     "JWTTokenManager",
+    "EnvironmentManager",
 ]

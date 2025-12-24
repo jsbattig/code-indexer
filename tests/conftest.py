@@ -340,3 +340,14 @@ def temp_audit_dir():
     temp_dir = tempfile.mkdtemp()
     yield Path(temp_dir)
     shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def shared_container_test_environment():
+    """
+    Stub fixture for removed container infrastructure.
+
+    Tests importing this will skip since container support was removed.
+    This stub prevents collection errors.
+    """
+    pytest.skip("Container infrastructure was removed - test cannot run")
