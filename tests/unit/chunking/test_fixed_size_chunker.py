@@ -171,8 +171,8 @@ class TestFixedSizeChunker:
 
     def test_edge_case_very_large_file(self, chunker):
         """Test handling of very large files."""
-        # Test with 1MB worth of characters (reduced from 10MB to prevent test timeouts)
-        large_size = 1_000_000  # Still large enough to test edge cases
+        # Test with 10MB worth of characters
+        large_size = 10_000_000
         text = "x" * large_size
         file_path = Path("test.py")
 

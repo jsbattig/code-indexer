@@ -170,7 +170,9 @@ class CacheEntry:
 
         # IDENTICAL loading mechanism as HEAD collection
         hnsw_manager = HNSWIndexManager(vector_dim=vector_dim, space="cosine")
-        self.temporal_hnsw_index = hnsw_manager.load_index(collection_path)
+        self.temporal_hnsw_index = hnsw_manager.load_index(
+            collection_path, max_elements=100000
+        )
 
         # Load ID index using IDIndexManager
         id_manager = IDIndexManager()

@@ -1,1 +1,0 @@
-=== RUNNING TEST SUITE AFTER CLEANUP === echo Start time: $(date) time python3 -m pytest tests/unit/ tests/mcpb/  --ignore=tests/unit/server/  --ignore=tests/unit/infrastructure/  --ignore=tests/mcpb/integration/test_bridge_e2e_real.py  -m not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers  -v --tb=short
