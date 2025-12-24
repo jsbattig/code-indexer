@@ -1360,7 +1360,7 @@ class CIDXDaemonService(Service):
 
             # Load HNSW index using HNSWIndexManager
             hnsw_manager = HNSWIndexManager(vector_dim=vector_dim, space="cosine")
-            hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+            hnsw_index = hnsw_manager.load_index(collection_path)
 
             # Load ID index using IDIndexManager
             id_manager = IDIndexManager()

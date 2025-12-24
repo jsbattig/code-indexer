@@ -33,6 +33,11 @@ class HNSWIndexManager:
     INDEX_FILENAME = "hnsw_index.bin"
     VALID_SPACES = {"cosine", "l2", "ip"}  # inner product
 
+    # Dynamic sizing constants
+    GROWTH_FACTOR = 1.5  # 50% growth headroom
+    RESIZE_THRESHOLD = 0.8  # Trigger resize at 80% capacity
+    MINIMUM_MAX_ELEMENTS = 100000  # Minimum capacity (100K vectors)
+
     def __init__(self, vector_dim: int = 1536, space: str = "cosine"):
         """Initialize HNSW index manager.
 
@@ -56,6 +61,41 @@ class HNSWIndexManager:
 
         self.vector_dim = vector_dim
         self.space = space
+
+    def calculate_dynamic_max_elements(self, current_count: int) -> int:
+        """Calculate dynamic max_elements based on current vector count.
+
+        Uses 1.5x growth factor with 100K minimum to prevent hardcoded limit crashes.
+
+        Args:
+            current_count: Current number of vectors in index
+
+        Returns:
+            Calculated max_elements value (minimum 100K)
+        """
+        # Apply growth factor
+        calculated = int(current_count * self.GROWTH_FACTOR)
+
+        # Respect minimum threshold
+        return max(calculated, self.MINIMUM_MAX_ELEMENTS)
+
+    def should_resize(self, current_count: int, max_elements: int) -> bool:
+        """Check if index should be resized based on utilization threshold.
+
+        Triggers resize at 80% capacity to prevent hitting hard limit.
+
+        Args:
+            current_count: Current number of vectors in index
+            max_elements: Current max_elements capacity
+
+        Returns:
+            True if resize needed, False otherwise
+        """
+        if max_elements == 0:
+            return False
+
+        utilization = current_count / max_elements
+        return utilization >= self.RESIZE_THRESHOLD
 
     def build_index(
         self,
@@ -95,9 +135,12 @@ class HNSWIndexManager:
 
         num_vectors = len(vectors)
 
+        # Calculate dynamic max_elements with growth headroom
+        max_elements = self.calculate_dynamic_max_elements(num_vectors)
+
         # Create HNSW index
         index = hnswlib.Index(space=self.space, dim=self.vector_dim)
-        index.init_index(max_elements=num_vectors, M=M, ef_construction=ef_construction)
+        index.init_index(max_elements=max_elements, M=M, ef_construction=ef_construction)
 
         # Add vectors to index with labels (use indices as labels)
         # We'll store the ID mapping separately in metadata
@@ -128,6 +171,7 @@ class HNSWIndexManager:
         self._update_metadata(
             collection_path=collection_path,
             vector_count=num_vectors,
+            max_elements=max_elements,
             M=M,
             ef_construction=ef_construction,
             ids=ids,
@@ -135,13 +179,16 @@ class HNSWIndexManager:
         )
 
     def load_index(
-        self, collection_path: Path, max_elements: int = 100000
+        self, collection_path: Path, max_elements: Optional[int] = None
     ) -> Optional[Any]:
-        """Load HNSW index from disk.
+        """Load HNSW index from disk with dynamic sizing.
+
+        Reads max_elements from metadata for crash recovery. Falls back to
+        calculating dynamic max_elements if metadata missing.
 
         Args:
             collection_path: Path to collection directory
-            max_elements: Maximum number of elements (for index initialization)
+            max_elements: Optional override for maximum elements (for backward compatibility)
 
         Returns:
             hnswlib.Index instance or None if index doesn't exist
@@ -150,6 +197,32 @@ class HNSWIndexManager:
 
         if not index_file.exists():
             return None
+
+        # Determine max_elements: override > metadata > calculated
+        if max_elements is None:
+            # Try to read from metadata
+            meta_file = collection_path / "collection_meta.json"
+            if meta_file.exists():
+                try:
+                    with open(meta_file) as f:
+                        metadata = json.load(f)
+
+                    stored_max = metadata.get("hnsw_index", {}).get("max_elements")
+                    vector_count = metadata.get("hnsw_index", {}).get("vector_count", 0)
+
+                    if stored_max is not None:
+                        # Use stored max_elements from metadata
+                        max_elements = stored_max
+                    else:
+                        # Fallback: calculate from vector_count for old metadata
+                        max_elements = self.calculate_dynamic_max_elements(vector_count)
+
+                except (json.JSONDecodeError, KeyError):
+                    # Corrupted metadata - use safe default
+                    max_elements = self.MINIMUM_MAX_ELEMENTS
+            else:
+                # No metadata - use safe default
+                max_elements = self.MINIMUM_MAX_ELEMENTS
 
         # Create index instance
         index = hnswlib.Index(space=self.space, dim=self.vector_dim)
@@ -325,6 +398,9 @@ class HNSWIndexManager:
         # Convert to numpy array
         vectors = np.array(vectors_list, dtype=np.float32)
 
+        # Calculate dynamic max_elements
+        max_elements = self.calculate_dynamic_max_elements(len(vectors))
+
         # Use BackgroundIndexRebuilder for atomic swap with locking
         rebuilder = BackgroundIndexRebuilder(collection_path)
         index_file = collection_path / self.INDEX_FILENAME
@@ -333,7 +409,7 @@ class HNSWIndexManager:
             """Build HNSW index to temp file."""
             # Create HNSW index
             index = hnswlib.Index(space=self.space, dim=self.vector_dim)
-            index.init_index(max_elements=len(vectors), M=16, ef_construction=200)
+            index.init_index(max_elements=max_elements, M=16, ef_construction=200)
 
             # Add vectors
             labels = np.arange(len(vectors))
@@ -354,6 +430,7 @@ class HNSWIndexManager:
         self._update_metadata(
             collection_path=collection_path,
             vector_count=len(vectors),
+            max_elements=max_elements,
             M=16,
             ef_construction=200,
             ids=ids_list,
@@ -465,6 +542,7 @@ class HNSWIndexManager:
         self,
         collection_path: Path,
         vector_count: int,
+        max_elements: int,
         M: int,
         ef_construction: int,
         ids: List[str],
@@ -475,6 +553,7 @@ class HNSWIndexManager:
         Args:
             collection_path: Path to collection directory
             vector_count: Number of vectors in index
+            max_elements: Maximum elements capacity of index
             M: HNSW M parameter
             ef_construction: HNSW ef_construction parameter
             ids: List of vector IDs
@@ -510,6 +589,7 @@ class HNSWIndexManager:
                         uuid.uuid4()
                     ),  # AC12: Track rebuild version
                     "vector_count": vector_count,
+                    "max_elements": max_elements,  # Store for crash recovery
                     "vector_dim": self.vector_dim,
                     "M": M,
                     "ef_construction": ef_construction,
@@ -584,8 +664,8 @@ class HNSWIndexManager:
             # No existing index - return empty mappings
             return None, {}, {}, 0
 
-        # Load HNSW index
-        index = self.load_index(collection_path, max_elements=100000)
+        # Load HNSW index (using dynamic sizing from metadata)
+        index = self.load_index(collection_path)
 
         # Load ID mappings from metadata
         label_to_id = self._load_id_mapping(collection_path)
@@ -741,6 +821,9 @@ class HNSWIndexManager:
                 M = existing_hnsw.get("M", 16)
                 ef_construction = existing_hnsw.get("ef_construction", 200)
 
+                # Calculate dynamic max_elements based on current vector count
+                max_elements = self.calculate_dynamic_max_elements(vector_count)
+
                 # Create ID mapping (label -> ID) for metadata
                 id_mapping = {
                     str(label): point_id for label, point_id in label_to_id.items()
@@ -756,6 +839,7 @@ class HNSWIndexManager:
                         uuid.uuid4()
                     ),  # AC12: Track rebuild version
                     "vector_count": vector_count,
+                    "max_elements": max_elements,  # Store for crash recovery
                     "vector_dim": self.vector_dim,
                     "M": M,
                     "ef_construction": ef_construction,

@@ -1911,9 +1911,7 @@ class FilesystemVectorStore:
 
                 def hnsw_loader():
                     """Loader function for cache miss."""
-                    index = hnsw_manager.load_index(
-                        collection_path, max_elements=100000
-                    )
+                    index = hnsw_manager.load_index(collection_path)
                     # Load ID mapping from metadata for cache entry
                     id_mapping = hnsw_manager._load_id_mapping(collection_path)
                     return index, id_mapping
@@ -1924,9 +1922,7 @@ class FilesystemVectorStore:
                 )
             else:
                 # No cache - load directly (original behavior)
-                hnsw_index = hnsw_manager.load_index(
-                    collection_path, max_elements=100000
-                )
+                hnsw_index = hnsw_manager.load_index(collection_path)
 
             hnsw_load_ms = (time.time() - t_hnsw) * 1000
 
@@ -2962,9 +2958,7 @@ class FilesystemVectorStore:
                     # Load from cache or disk if not cached
                     if cache_entry.hnsw_index is None:
                         # Cache not loaded - load from disk
-                        cache_entry.hnsw_index = hnsw_manager.load_index(
-                            collection_path, max_elements=100000
-                        )
+                        cache_entry.hnsw_index = hnsw_manager.load_index(collection_path)
 
                         from .id_index_manager import IDIndexManager
 
