@@ -9,6 +9,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Any, List, Optional, Tuple, Union
 from code_indexer.server.auth.dependencies import (
     get_current_user,
+    get_current_user_for_mcp,
     _build_www_authenticate_header,
     _should_refresh_token,
     _refresh_jwt_cookie,
@@ -269,7 +270,7 @@ async def process_batch_request(
 
 @mcp_router.post("/mcp")
 async def mcp_endpoint(
-    request: Request, response: Response, current_user: User = Depends(get_current_user)
+    request: Request, response: Response, current_user: User = Depends(get_current_user_for_mcp)
 ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
     """
     MCP JSON-RPC 2.0 endpoint.
@@ -277,10 +278,15 @@ async def mcp_endpoint(
     Handles tool discovery and execution via JSON-RPC 2.0 protocol.
     Supports both single requests and batch requests.
 
+    Authentication priority (Story #616 AC6):
+    1. MCP credentials (Basic auth or client_secret_post)
+    2. OAuth/JWT tokens (existing authentication)
+    3. 401 Unauthorized if none present
+
     Args:
         request: FastAPI Request object
         response: FastAPI Response object for setting headers
-        current_user: Authenticated user (from Bearer token)
+        current_user: Authenticated user (from MCP credentials, OAuth, or JWT)
 
     Returns:
         JSON-RPC response (single or batch)

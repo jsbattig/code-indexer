@@ -371,6 +371,36 @@ class ApiKeyListResponse(BaseModel):
     keys: List[Dict[str, Any]] = Field(..., description="List of API key metadata")
 
 
+class CreateMCPCredentialRequest(BaseModel):
+    """Request model for MCP credential creation."""
+
+    name: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Optional name for the MCP credential",
+    )
+
+
+class CreateMCPCredentialResponse(BaseModel):
+    """Response model for MCP credential creation."""
+
+    client_id: str = Field(..., description="The generated client_id (shown always)")
+    client_secret: str = Field(..., description="The generated client_secret (shown only once)")
+    credential_id: str = Field(..., description="Unique identifier for the credential")
+    name: Optional[str] = Field(default=None, description="Name of the credential")
+    created_at: str = Field(..., description="ISO format timestamp of creation")
+    message: str = Field(
+        default="Save this client_secret - it will not be shown again",
+        description="Warning message to save the secret",
+    )
+
+
+class MCPCredentialListResponse(BaseModel):
+    """Response model for listing MCP credentials."""
+
+    credentials: List[Dict[str, Any]] = Field(..., description="List of MCP credential metadata")
+
+
 class AddGoldenRepoRequest(BaseModel):
     """Request model for adding golden repositories."""
 
@@ -1944,10 +1974,15 @@ def create_app() -> FastAPI:
         background_job_manager=background_job_manager,
     )
 
+    # Initialize MCP credential manager
+    from code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+    mcp_credential_manager = MCPCredentialManager(user_manager=user_manager)
+
     # Set global dependencies
     dependencies.jwt_manager = jwt_manager
     dependencies.user_manager = user_manager
     dependencies.oauth_manager = oauth_manager
+    dependencies.mcp_credential_manager = mcp_credential_manager
 
     # Seed initial admin user
     user_manager.seed_initial_admin()
@@ -2626,6 +2661,84 @@ def create_app() -> FastAPI:
         if not deleted:
             raise HTTPException(status_code=404, detail="API key not found")
         return {"message": "API key deleted successfully"}
+
+    @app.post("/api/mcp-credentials", response_model=CreateMCPCredentialResponse, status_code=201)
+    async def create_mcp_credential(
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+        request: CreateMCPCredentialRequest = None,
+    ):
+        """
+        Generate a new MCP client credential for the authenticated user.
+
+        Returns:
+            CreateMCPCredentialResponse: Generated client_id and client_secret with metadata
+                (client_secret shown only once)
+
+        Raises:
+            HTTPException: If credential generation fails
+        """
+        from code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+
+        try:
+            mcp_manager = MCPCredentialManager(user_manager=user_manager)
+            name = request.name if request else None
+
+            result = mcp_manager.generate_credential(
+                user_id=current_user.username,
+                name=name,
+            )
+
+            return CreateMCPCredentialResponse(
+                client_id=result["client_id"],
+                client_secret=result["client_secret"],
+                credential_id=result["credential_id"],
+                name=result["name"],
+                created_at=result["created_at"],
+            )
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"MCP credential generation failed: {str(e)}",
+            )
+
+    @app.get("/api/mcp-credentials", response_model=MCPCredentialListResponse)
+    async def list_mcp_credentials(
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        List all MCP credentials for the authenticated user.
+
+        Returns metadata only (credential_id, client_id, client_id_prefix, name, created_at, last_used_at).
+        Never returns hashes or full secrets.
+        """
+        credentials = user_manager.get_mcp_credentials(current_user.username)
+        return MCPCredentialListResponse(credentials=credentials)
+
+    @app.delete("/api/mcp-credentials/{credential_id}", status_code=200)
+    async def delete_mcp_credential(
+        credential_id: str,
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        Delete an MCP credential.
+
+        Args:
+            credential_id: Credential ID to delete
+
+        Returns:
+            Success message
+
+        Raises:
+            HTTPException 404: If credential not found
+        """
+        from code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+
+        mcp_manager = MCPCredentialManager(user_manager=user_manager)
+        deleted = mcp_manager.revoke_credential(current_user.username, credential_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="MCP credential not found")
+        return {"message": "MCP credential deleted successfully"}
 
     # Protected endpoints (require authentication)
     @app.get("/api/repos", response_model=RepositoryListResponse)

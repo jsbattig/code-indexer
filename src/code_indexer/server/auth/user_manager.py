@@ -575,3 +575,129 @@ class UserManager:
                 )
 
         return None
+
+    def add_mcp_credential(
+        self,
+        username: str,
+        credential_id: str,
+        client_id: str,
+        client_secret_hash: str,
+        client_id_prefix: str,
+        name: Optional[str],
+        created_at: str,
+    ) -> bool:
+        """
+        Add an MCP credential to user's mcp_credentials array.
+
+        Args:
+            username: Username
+            credential_id: Unique credential ID (UUID)
+            client_id: Full client_id
+            client_secret_hash: Hashed client_secret
+            client_id_prefix: First 8 characters of client_id for display
+            name: Optional name for the credential
+            created_at: ISO format timestamp
+
+        Returns:
+            True if added, False if user not found
+        """
+        users_data = self._load_users()
+        if username not in users_data:
+            return False
+
+        if "mcp_credentials" not in users_data[username]:
+            users_data[username]["mcp_credentials"] = []
+
+        users_data[username]["mcp_credentials"].append(
+            {
+                "credential_id": credential_id,
+                "client_id": client_id,
+                "client_secret_hash": client_secret_hash,
+                "client_id_prefix": client_id_prefix,
+                "name": name,
+                "created_at": created_at,
+                "last_used_at": None,
+            }
+        )
+
+        self._save_users(users_data)
+        return True
+
+    def get_mcp_credentials(self, username: str) -> List[Dict[str, Any]]:
+        """
+        Get list of MCP credentials for user (without hashes).
+
+        Args:
+            username: Username
+
+        Returns:
+            List of MCP credential metadata (without hashes or secrets)
+        """
+        users_data = self._load_users()
+        if username not in users_data:
+            return []
+
+        mcp_credentials = users_data[username].get("mcp_credentials", [])
+        # Return metadata only, not hashes or secrets
+        return [
+            {
+                "credential_id": cred["credential_id"],
+                "client_id": cred["client_id"],
+                "client_id_prefix": cred.get("client_id_prefix", cred["client_id"][:8]),
+                "name": cred.get("name"),
+                "created_at": cred["created_at"],
+                "last_used_at": cred.get("last_used_at"),
+            }
+            for cred in mcp_credentials
+        ]
+
+    def delete_mcp_credential(self, username: str, credential_id: str) -> bool:
+        """
+        Delete an MCP credential from user's mcp_credentials array.
+
+        Args:
+            username: Username
+            credential_id: Credential ID to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        users_data = self._load_users()
+        if username not in users_data:
+            return False
+
+        mcp_credentials = users_data[username].get("mcp_credentials", [])
+        original_count = len(mcp_credentials)
+        users_data[username]["mcp_credentials"] = [
+            c for c in mcp_credentials if c["credential_id"] != credential_id
+        ]
+
+        if len(users_data[username]["mcp_credentials"]) == original_count:
+            return False  # Credential not found
+
+        self._save_users(users_data)
+        return True
+
+    def update_mcp_credential_last_used(self, username: str, credential_id: str) -> bool:
+        """
+        Update last_used_at timestamp for an MCP credential.
+
+        Args:
+            username: Username
+            credential_id: Credential ID to update
+
+        Returns:
+            True if updated, False if not found
+        """
+        users_data = self._load_users()
+        if username not in users_data:
+            return False
+
+        mcp_credentials = users_data[username].get("mcp_credentials", [])
+        for cred in mcp_credentials:
+            if cred["credential_id"] == credential_id:
+                cred["last_used_at"] = datetime.now(timezone.utc).isoformat()
+                self._save_users(users_data)
+                return True
+
+        return False

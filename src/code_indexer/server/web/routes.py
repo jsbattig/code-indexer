@@ -3372,6 +3372,64 @@ async def user_api_keys_list_partial(request: Request):
     return response
 
 
+@user_router.get("/mcp-credentials", response_class=HTMLResponse)
+async def user_mcp_credentials_page(request: Request):
+    """User MCP Credentials management page - any authenticated user can manage their own MCP credentials."""
+    session = _require_authenticated_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    return _create_user_mcp_credentials_page_response(request, session)
+
+
+def _create_user_mcp_credentials_page_response(
+    request: Request,
+    session: SessionData,
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> HTMLResponse:
+    """Create user MCP credentials page response."""
+    username = session.username
+    credentials = dependencies.user_manager.get_mcp_credentials(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "user_mcp_credentials.html",
+        {
+            "show_nav": True,
+            "current_page": "mcp-credentials",
+            "username": username,
+            "mcp_credentials": credentials,
+            "success_message": success_message,
+            "error_message": error_message,
+            "csrf_token": session.csrf_token,
+        },
+    )
+    return response
+
+
+@user_router.get("/partials/mcp-credentials-list", response_class=HTMLResponse)
+async def user_mcp_credentials_list_partial(request: Request):
+    """Partial for user MCP credentials list (HTMX refresh)."""
+    session = _require_authenticated_session(request)
+    if not session:
+        return HTMLResponse(
+            content="<p>Session expired. Please refresh the page.</p>", status_code=401
+        )
+
+    username = session.username
+    credentials = dependencies.user_manager.get_mcp_credentials(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "partials/mcp_credentials_list.html",
+        {"mcp_credentials": credentials},
+    )
+    return response
+
+
 @user_router.get("/logout")
 async def user_logout(request: Request):
     """

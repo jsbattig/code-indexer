@@ -9,12 +9,14 @@ from fastapi import Depends, HTTPException, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from functools import wraps
 from datetime import datetime, timezone
+import base64
 
 from .jwt_manager import JWTManager, TokenExpiredError, InvalidTokenError
 from .user_manager import UserManager, User
 
 if TYPE_CHECKING:
     from .oauth.oauth_manager import OAuthManager
+    from .mcp_credential_manager import MCPCredentialManager
 
 
 # Global instances (will be initialized by app)
@@ -23,6 +25,7 @@ user_manager: Optional[UserManager] = None
 oauth_manager: Optional["OAuthManager"] = (
     None  # Forward reference to avoid circular dependency
 )
+mcp_credential_manager: Optional["MCPCredentialManager"] = None
 
 # Security scheme for bearer token authentication
 # auto_error=False allows us to handle missing credentials manually and return 401 per MCP spec
@@ -288,3 +291,140 @@ def get_current_power_user(current_user: User = Depends(get_current_user)) -> Us
             detail="Power user or admin access required",
         )
     return current_user
+
+
+async def get_mcp_user_from_credentials(request: Request) -> Optional[User]:
+    """
+    Authenticate using MCP client credentials.
+
+    Checks Basic auth header, then client_secret_post body.
+    Returns User if authenticated, None if no credentials present.
+    Raises HTTPException(401) if credentials present but invalid.
+
+    Per Story #616 AC1-AC2:
+    - Basic auth: Authorization header with "Basic base64(client_id:client_secret)"
+    - client_secret_post: POST body with client_id and client_secret fields
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        User object if MCP credentials valid, None if no MCP credentials present
+
+    Raises:
+        HTTPException: 401 if credentials present but invalid
+    """
+    if not mcp_credential_manager or not user_manager:
+        return None
+
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+
+    # Check Basic auth header (AC1)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Basic "):
+        try:
+            # Decode base64 credentials
+            encoded = auth_header[6:]  # Remove "Basic " prefix
+            decoded = base64.b64decode(encoded).decode("utf-8")
+
+            # Split on first colon only (client_secret may contain colons)
+            if ":" in decoded:
+                client_id, client_secret = decoded.split(":", 1)
+        except Exception:
+            # Invalid Basic auth format - return 401
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": _build_www_authenticate_header()},
+            )
+
+    # Check client_secret_post in body (AC2)
+    if not client_id and request.method == "POST":
+        try:
+            # Check if body has already been parsed and cached
+            if hasattr(request.state, "_json"):
+                body = request.state._json
+            else:
+                # Try to parse JSON body
+                body = await request.json()
+
+            if isinstance(body, dict):
+                body_client_id = body.get("client_id")
+                body_client_secret = body.get("client_secret")
+
+                if body_client_id and body_client_secret:
+                    client_id = body_client_id
+                    client_secret = body_client_secret
+        except Exception:
+            # Body not JSON, already consumed, or parse error - no client_secret_post present
+            pass
+
+    # If no MCP credentials found, return None (no error)
+    if not client_id or not client_secret:
+        return None
+
+    # Verify credentials using MCPCredentialManager (AC3-AC5)
+    user_id = mcp_credential_manager.verify_credential(client_id, client_secret)
+
+    if not user_id:
+        # Invalid credentials - return 401 (AC3)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
+        )
+
+    # Get User object
+    user = user_manager.get_user(user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
+        )
+
+    # Success - verify_credential() already updated last_used_at (AC5)
+    return user
+
+
+async def get_current_user_for_mcp(request: Request) -> User:
+    """
+    Get authenticated user for /mcp endpoint.
+
+    Authentication priority per Story #616 AC6:
+    1. MCP credentials (Basic auth or client_secret_post)
+    2. OAuth/JWT tokens (existing authentication)
+    3. 401 Unauthorized if none present
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        Authenticated User object
+
+    Raises:
+        HTTPException: 401 if authentication fails
+    """
+    # Priority 1: Try MCP credentials
+    user = await get_mcp_user_from_credentials(request)
+    if user:
+        return user
+
+    # Priority 2: Fall back to OAuth/JWT (existing auth)
+    # Extract credentials from request for get_current_user
+    credentials: Optional[HTTPAuthorizationCredentials] = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]  # Remove "Bearer " prefix
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+    try:
+        return get_current_user(request, credentials)
+    except HTTPException:
+        # Re-raise with proper WWW-Authenticate header
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
+        )
