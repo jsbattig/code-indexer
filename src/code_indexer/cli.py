@@ -12620,6 +12620,69 @@ def _display_jobs_table(jobs_response: dict, status_filter: Optional[str]):
 
 
 # Administrative commands
+
+
+def _load_admin_credentials(project_root: Path):
+    """Load and decrypt admin credentials for API client.
+
+    Args:
+        project_root: Project root directory
+
+    Returns:
+        Tuple of (credentials_dict, server_url)
+
+    Raises:
+        SystemExit: If credentials cannot be loaded
+    """
+    from .remote.config import load_remote_configuration
+    from .remote.credential_manager import (
+        CredentialNotFoundError,
+        load_encrypted_credentials,
+        ProjectCredentialManager,
+    )
+
+    # Load remote configuration
+    remote_config = load_remote_configuration(project_root)
+    server_url = remote_config["server_url"]
+
+    # Load and decrypt credentials
+    try:
+        encrypted_data = load_encrypted_credentials(project_root)
+        credential_manager = ProjectCredentialManager()
+
+        username_for_creds = remote_config.get("username")
+        if not username_for_creds:
+            console.print(
+                "❌ No username found in remote configuration", style="red"
+            )
+            console.print(
+                "Run 'cidx auth login' to authenticate first", style="dim"
+            )
+            sys.exit(1)
+
+        decrypted_creds = credential_manager.decrypt_credentials(
+            encrypted_data=encrypted_data,
+            username=username_for_creds,
+            repo_path=str(project_root),
+            server_url=server_url,
+        )
+
+        credentials = {
+            "username": decrypted_creds.username,
+            "password": decrypted_creds.password,
+        }
+        return credentials, server_url
+
+    except CredentialNotFoundError:
+        console.print("❌ No credentials found", style="red")
+        console.print("Run 'cidx auth login' to authenticate first", style="dim")
+        sys.exit(1)
+    except (FileNotFoundError, ValueError, KeyError) as e:
+        console.print(f"❌ Failed to load credentials: {e}", style="red")
+        console.print("Run 'cidx auth login' to authenticate first", style="dim")
+        sys.exit(1)
+
+
 @cli.group("admin")
 @click.pass_context
 @require_mode("remote")
@@ -13635,6 +13698,286 @@ def admin_users_change_password(ctx, username: str, password: str, force: bool):
         if ctx.obj.get("verbose"):
             import traceback
 
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+# =============================================================================
+# Admin MCP Credentials Commands
+# =============================================================================
+
+
+@admin_group.group("mcp-credentials")
+@click.pass_context
+def admin_mcp_credentials_group(ctx):
+    """MCP client credential management commands.
+
+    Administrative commands for managing MCP (Model Context Protocol) client
+    credentials for users. Allows admins to create, list, and revoke credentials
+    on behalf of users.
+    """
+    pass
+
+
+@admin_mcp_credentials_group.command("list")
+@click.option("--user", required=True, help="Username to list credentials for")
+@click.option(
+    "--format",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format",
+)
+@click.pass_context
+def admin_mcp_credentials_list(ctx, user: str, format: str):
+    """List MCP credentials for a specific user."""
+    from .mode_detection.command_mode_detector import find_project_root
+    from .api_clients.admin_client import AdminAPIClient
+
+    async def _list_credentials_async():
+        """Async wrapper to ensure proper event loop handling."""
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+        try:
+            response = await admin_client.list_mcp_credentials(username=user)
+            return response
+        finally:
+            await admin_client.close()
+
+    try:
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            sys.exit(1)
+
+        credentials, server_url = _load_admin_credentials(project_root)
+
+        with console.status(f"📋 Fetching MCP credentials for {user}..."):
+            response = run_async(_list_credentials_async())
+
+        credentials_list = response.get("credentials", [])
+
+        if format == "json":
+            console.print(json.dumps(credentials_list, indent=2))
+        else:
+            if not credentials_list:
+                console.print(f"No MCP credentials found for user: {user}", style="dim")
+            else:
+                table = Table(title=f"MCP Credentials for {user}")
+                table.add_column("Name", style="cyan")
+                table.add_column("Client ID Prefix", style="green")
+                table.add_column("Created At", style="yellow")
+                table.add_column("Last Used At", style="magenta")
+
+                for cred in credentials_list:
+                    table.add_row(
+                        cred.get("name") or "(unnamed)",
+                        cred.get("client_id_prefix", "N/A"),
+                        cred.get("created_at", "N/A"),
+                        cred.get("last_used_at") or "Never",
+                    )
+
+                console.print(table)
+
+    except Exception as e:
+        console.print(f"❌ Failed to list MCP credentials: {e}", style="red")
+        error_str = str(e).lower()
+        if "user" in error_str and "not found" in error_str:
+            console.print(f"💡 User '{user}' not found", style="dim")
+        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print("💡 You need admin privileges", style="dim")
+        if ctx.obj.get("verbose"):
+            import traceback
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_mcp_credentials_group.command("create")
+@click.option("--user", required=True, help="Username to create credential for")
+@click.option("--name", default=None, help="Optional name for the credential")
+@click.option(
+    "--format",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format",
+)
+@click.pass_context
+def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: str):
+    """Create a new MCP credential for a user."""
+    from .mode_detection.command_mode_detector import find_project_root
+    from .api_clients.admin_client import AdminAPIClient
+
+    async def _create_credential_async():
+        """Async wrapper to ensure proper event loop handling."""
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+        try:
+            response = await admin_client.create_mcp_credential(username=user, name=name)
+            return response
+        finally:
+            await admin_client.close()
+
+    try:
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            sys.exit(1)
+
+        credentials, server_url = _load_admin_credentials(project_root)
+
+        with console.status(f"🔐 Creating MCP credential for {user}..."):
+            response = run_async(_create_credential_async())
+
+        if format == "json":
+            console.print(json.dumps(response, indent=2))
+        else:
+            console.print("✅ MCP Credential Created Successfully", style="green bold")
+            console.print()
+            console.print("⚠️  WARNING: Save these credentials now. The secret will not be shown again!", style="yellow bold")
+            console.print()
+
+            table = Table(show_header=False, box=None)
+            table.add_column("Label", style="cyan bold")
+            table.add_column("Value", style="white")
+
+            table.add_row("Name:", response.get("name") or "(unnamed)")
+            table.add_row("Client ID:", response.get("client_id"))
+            table.add_row("Client Secret:", response.get("client_secret"))
+            table.add_row("Created At:", response.get("created_at"))
+
+            console.print(table)
+            console.print()
+            console.print("💡 Provide these credentials to the user securely", style="dim")
+
+    except Exception as e:
+        console.print(f"❌ Failed to create MCP credential: {e}", style="red")
+        error_str = str(e).lower()
+        if "user" in error_str and "not found" in error_str:
+            console.print(f"💡 User '{user}' not found", style="dim")
+        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print("💡 You need admin privileges", style="dim")
+        if ctx.obj.get("verbose"):
+            import traceback
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_mcp_credentials_group.command("revoke")
+@click.option("--user", required=True, help="Username")
+@click.option("--credential-id", required=True, help="Credential ID to revoke")
+@click.pass_context
+def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
+    """Revoke an MCP credential for a user."""
+    from .mode_detection.command_mode_detector import find_project_root
+    from .api_clients.admin_client import AdminAPIClient
+
+    async def _revoke_credential_async():
+        """Async wrapper to ensure proper event loop handling."""
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+        try:
+            await admin_client.revoke_mcp_credential(username=user, credential_id=credential_id)
+        finally:
+            await admin_client.close()
+
+    try:
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            sys.exit(1)
+
+        credentials, server_url = _load_admin_credentials(project_root)
+
+        with console.status(f"🗑️  Revoking credential..."):
+            run_async(_revoke_credential_async())
+
+        console.print("✅ Credential revoked successfully", style="green")
+
+    except Exception as e:
+        console.print(f"❌ Failed to revoke MCP credential: {e}", style="red")
+        error_str = str(e).lower()
+        if "credential not found" in error_str or "not found" in error_str:
+            console.print("💡 Credential not found", style="dim")
+        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print("💡 You need admin privileges", style="dim")
+        if ctx.obj.get("verbose"):
+            import traceback
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_mcp_credentials_group.command("list-all")
+@click.option("--limit", default=100, type=int, help="Maximum number of results")
+@click.option(
+    "--format",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format",
+)
+@click.pass_context
+def admin_mcp_credentials_list_all(ctx, limit: int, format: str):
+    """List all MCP credentials across all users."""
+    from .mode_detection.command_mode_detector import find_project_root
+    from .api_clients.admin_client import AdminAPIClient
+
+    async def _list_all_credentials_async():
+        """Async wrapper to ensure proper event loop handling."""
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+        try:
+            response = await admin_client.list_all_mcp_credentials(limit=limit)
+            return response
+        finally:
+            await admin_client.close()
+
+    try:
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            sys.exit(1)
+
+        credentials, server_url = _load_admin_credentials(project_root)
+
+        with console.status("📋 Fetching all MCP credentials..."):
+            response = run_async(_list_all_credentials_async())
+
+        credentials_list = response.get("credentials", [])
+
+        if format == "json":
+            console.print(json.dumps(credentials_list, indent=2))
+        else:
+            if not credentials_list:
+                console.print("No MCP credentials found", style="dim")
+            else:
+                table = Table(title="All MCP Credentials")
+                table.add_column("Username", style="cyan")
+                table.add_column("Name", style="green")
+                table.add_column("Client ID Prefix", style="yellow")
+                table.add_column("Created At", style="magenta")
+                table.add_column("Last Used At", style="blue")
+
+                for cred in credentials_list:
+                    table.add_row(
+                        cred.get("username", "N/A"),
+                        cred.get("name") or "(unnamed)",
+                        cred.get("client_id_prefix", "N/A"),
+                        cred.get("created_at", "N/A"),
+                        cred.get("last_used_at") or "Never",
+                    )
+
+                console.print(table)
+                console.print(f"\nShowing {len(credentials_list)} credentials", style="dim")
+
+    except Exception as e:
+        console.print(f"❌ Failed to list all MCP credentials: {e}", style="red")
+        error_str = str(e).lower()
+        if "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print("💡 You need admin privileges", style="dim")
+        if ctx.obj.get("verbose"):
+            import traceback
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 

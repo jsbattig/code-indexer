@@ -941,3 +941,232 @@ class AdminAPIClient(CIDXRemoteAPIClient):
         Note: Stub implementation - to be completed in future story.
         """
         pass
+
+    async def list_mcp_credentials(self, username: str) -> Dict[str, Any]:
+        """List MCP credentials for a specific user (admin only).
+
+        Args:
+            username: Username to list credentials for
+
+        Returns:
+            Dictionary with credentials list
+
+        Raises:
+            APIClientError: If API request fails
+            AuthenticationError: If authentication fails or insufficient privileges
+            NetworkError: If network request fails
+        """
+        try:
+            response = await self._authenticated_request(
+                "GET", f"/api/admin/users/{username}/mcp-credentials"
+            )
+
+            if response.status_code == 200:
+                return dict(response.json())
+            elif response.status_code == 403:
+                raise AuthenticationError(
+                    "Insufficient privileges to list user MCP credentials (admin role required)"
+                )
+            elif response.status_code == 404:
+                raise APIClientError(f"User '{username}' not found", 404)
+            else:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                except Exception:
+                    error_detail = f"HTTP {response.status_code}"
+
+                raise APIClientError(
+                    f"Failed to list MCP credentials: {error_detail}",
+                    response.status_code,
+                )
+
+        except (
+            APIClientError,
+            AuthenticationError,
+            NetworkError,
+            NetworkConnectionError,
+            NetworkTimeoutError,
+            DNSResolutionError,
+            SSLCertificateError,
+            ServerError,
+            RateLimitError,
+        ):
+            raise
+        except Exception as e:
+            raise APIClientError(f"Unexpected error listing MCP credentials: {e}")
+
+    async def create_mcp_credential(
+        self, username: str, name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Create a new MCP credential for a user (admin only).
+
+        Args:
+            username: Username to create credential for
+            name: Optional name for the credential
+
+        Returns:
+            Dictionary with credential data including client_id and client_secret
+
+        Raises:
+            APIClientError: If API request fails
+            AuthenticationError: If authentication fails or insufficient privileges
+            NetworkError: If network request fails
+        """
+        try:
+            payload = {}
+            if name:
+                payload["name"] = name
+
+            response = await self._authenticated_request(
+                "POST", f"/api/admin/users/{username}/mcp-credentials", json=payload
+            )
+
+            if response.status_code == 201:
+                return dict(response.json())
+            elif response.status_code == 403:
+                raise AuthenticationError(
+                    "Insufficient privileges to create user MCP credentials (admin role required)"
+                )
+            elif response.status_code == 404:
+                raise APIClientError(f"User '{username}' not found", 404)
+            else:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                except Exception:
+                    error_detail = f"HTTP {response.status_code}"
+
+                raise APIClientError(
+                    f"Failed to create MCP credential: {error_detail}",
+                    response.status_code,
+                )
+
+        except (
+            APIClientError,
+            AuthenticationError,
+            NetworkError,
+            NetworkConnectionError,
+            NetworkTimeoutError,
+            DNSResolutionError,
+            SSLCertificateError,
+            ServerError,
+            RateLimitError,
+        ):
+            raise
+        except Exception as e:
+            raise APIClientError(f"Unexpected error creating MCP credential: {e}")
+
+    async def revoke_mcp_credential(
+        self, username: str, credential_id: str
+    ) -> Dict[str, Any]:
+        """Revoke an MCP credential for a user (admin only).
+
+        Args:
+            username: Username
+            credential_id: Credential ID to revoke
+
+        Returns:
+            Dictionary with success status
+
+        Raises:
+            APIClientError: If API request fails
+            AuthenticationError: If authentication fails or insufficient privileges
+            NetworkError: If network request fails
+        """
+        try:
+            response = await self._authenticated_request(
+                "DELETE",
+                f"/api/admin/users/{username}/mcp-credentials/{credential_id}",
+            )
+
+            if response.status_code == 200:
+                return dict(response.json())
+            elif response.status_code == 403:
+                raise AuthenticationError(
+                    "Insufficient privileges to revoke user MCP credentials (admin role required)"
+                )
+            elif response.status_code == 404:
+                raise APIClientError("Credential not found", 404)
+            else:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                except Exception:
+                    error_detail = f"HTTP {response.status_code}"
+
+                raise APIClientError(
+                    f"Failed to revoke MCP credential: {error_detail}",
+                    response.status_code,
+                )
+
+        except (
+            APIClientError,
+            AuthenticationError,
+            NetworkError,
+            NetworkConnectionError,
+            NetworkTimeoutError,
+            DNSResolutionError,
+            SSLCertificateError,
+            ServerError,
+            RateLimitError,
+        ):
+            raise
+        except Exception as e:
+            raise APIClientError(f"Unexpected error revoking MCP credential: {e}")
+
+    async def list_all_mcp_credentials(self, limit: int = 100) -> Dict[str, Any]:
+        """List all MCP credentials across all users (admin only).
+
+        Args:
+            limit: Maximum number of credentials to return
+
+        Returns:
+            Dictionary with credentials list
+
+        Raises:
+            APIClientError: If API request fails
+            AuthenticationError: If authentication fails or insufficient privileges
+            NetworkError: If network request fails
+        """
+        try:
+            response = await self._authenticated_request(
+                "GET", f"/api/admin/mcp-credentials?limit={limit}"
+            )
+
+            if response.status_code == 200:
+                return dict(response.json())
+            elif response.status_code == 403:
+                raise AuthenticationError(
+                    "Insufficient privileges to list all MCP credentials (admin role required)"
+                )
+            else:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                except Exception:
+                    error_detail = f"HTTP {response.status_code}"
+
+                raise APIClientError(
+                    f"Failed to list all MCP credentials: {error_detail}",
+                    response.status_code,
+                )
+
+        except (
+            APIClientError,
+            AuthenticationError,
+            NetworkError,
+            NetworkConnectionError,
+            NetworkTimeoutError,
+            DNSResolutionError,
+            SSLCertificateError,
+            ServerError,
+            RateLimitError,
+        ):
+            raise
+        except Exception as e:
+            raise APIClientError(f"Unexpected error listing all MCP credentials: {e}")

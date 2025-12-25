@@ -707,3 +707,48 @@ class UserManager:
                 return True
 
         return False
+
+    def list_all_mcp_credentials(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        List MCP credentials across all users with pagination.
+
+        Args:
+            limit: Maximum number of credentials to return
+            offset: Number of credentials to skip
+
+        Returns:
+            List of credential metadata with username information
+        """
+        all_credentials = []
+        users_data = self._load_users()
+
+        # Sort users by username for consistent pagination
+        sorted_usernames = sorted(users_data.keys())
+
+        count = 0
+        for username in sorted_usernames:
+            if count >= limit + offset:
+                break
+
+            user_data = users_data[username]
+            credentials = user_data.get("mcp_credentials", [])
+
+            for cred in credentials:
+                if count < offset:
+                    count += 1
+                    continue
+
+                if count >= limit + offset:
+                    break
+
+                all_credentials.append({
+                    "username": username,
+                    "credential_id": cred["credential_id"],
+                    "name": cred.get("name"),
+                    "client_id_prefix": cred.get("client_id_prefix", cred.get("client_id", "")[:8]),
+                    "created_at": cred["created_at"],
+                    "last_used_at": cred.get("last_used_at")
+                })
+                count += 1
+
+        return all_credentials
