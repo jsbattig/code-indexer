@@ -320,3 +320,48 @@ class TestMCPCredentialsAPI:
         # Step 5: List is empty again
         list_response = client.get("/api/mcp-credentials")
         assert len(list_response.json()["credentials"]) == 0
+
+    def test_revoked_credential_fails_authentication_immediately(self, client):
+        """
+        AC4: Revoked credentials immediately fail authentication.
+
+        Verifies:
+        - Credential works before revocation (can authenticate)
+        - After revocation, authentication fails immediately
+        - No caching delays the revocation effect
+        - Returns proper None for revoked credentials
+        """
+        import src.code_indexer.server.app as app_module
+        from src.code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+
+        # Generate credential
+        create_response = client.post(
+            "/api/mcp-credentials",
+            json={"name": "Test Auth"}
+        )
+        assert create_response.status_code == 201
+        credential = create_response.json()
+        client_id = credential["client_id"]
+        client_secret = credential["client_secret"]
+        credential_id = credential["credential_id"]
+
+        # Use the same user_manager that the app uses (injected by fixture)
+        mcp_manager = MCPCredentialManager(user_manager=app_module.user_manager)
+
+        # Step 1: Verify credential works BEFORE revocation
+        user_id = mcp_manager.verify_credential(client_id, client_secret)
+        assert user_id == "testuser", "Credential should work before revocation"
+
+        # Step 2: Revoke the credential
+        delete_response = client.delete(f"/api/mcp-credentials/{credential_id}")
+        assert delete_response.status_code == 200
+
+        # Step 3: Verify credential IMMEDIATELY fails authentication (no caching)
+        user_id = mcp_manager.verify_credential(client_id, client_secret)
+        assert user_id is None, "Revoked credential should immediately fail authentication"
+
+        # Step 4: Additional verification - specific revoked credential should not be in list
+        list_response = client.get("/api/mcp-credentials")
+        credentials = list_response.json()["credentials"]
+        credential_ids = [c["credential_id"] for c in credentials]
+        assert credential_id not in credential_ids, "Revoked credential should not appear in list"

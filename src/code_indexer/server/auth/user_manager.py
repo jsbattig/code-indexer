@@ -631,15 +631,16 @@ class UserManager:
             username: Username
 
         Returns:
-            List of MCP credential metadata (without hashes or secrets)
+            List of MCP credential metadata (without hashes or secrets), sorted by created_at descending (newest first)
         """
         users_data = self._load_users()
         if username not in users_data:
             return []
 
         mcp_credentials = users_data[username].get("mcp_credentials", [])
-        # Return metadata only, not hashes or secrets
-        return [
+
+        # Build metadata list without hashes or secrets
+        credentials_metadata = [
             {
                 "credential_id": cred["credential_id"],
                 "client_id": cred["client_id"],
@@ -650,6 +651,11 @@ class UserManager:
             }
             for cred in mcp_credentials
         ]
+
+        # Sort by created_at descending (newest first)
+        credentials_metadata.sort(key=lambda x: x["created_at"], reverse=True)
+
+        return credentials_metadata
 
     def delete_mcp_credential(self, username: str, credential_id: str) -> bool:
         """

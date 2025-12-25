@@ -209,6 +209,44 @@ class TestGetCredentials:
         credentials = mcp_manager.get_credentials("nonexistent_user")
         assert credentials == []
 
+    def test_get_credentials_sorted_by_created_at_desc(self, mcp_manager, user_manager):
+        """AC1: Credentials sorted by created_at descending (newest first)"""
+        import time
+
+        # Generate three credentials with slight time gaps
+        result1 = mcp_manager.generate_credential("testuser", name="First")
+        time.sleep(0.01)  # Small delay to ensure different timestamps
+        result2 = mcp_manager.generate_credential("testuser", name="Second")
+        time.sleep(0.01)
+        result3 = mcp_manager.generate_credential("testuser", name="Third")
+
+        # Get credentials
+        credentials = mcp_manager.get_credentials("testuser")
+
+        # Should have all three
+        assert len(credentials) == 3
+
+        # Verify sorted by created_at descending (newest first)
+        # Third credential should be first
+        assert credentials[0]["name"] == "Third"
+        assert credentials[0]["credential_id"] == result3["credential_id"]
+
+        # Second credential should be second
+        assert credentials[1]["name"] == "Second"
+        assert credentials[1]["credential_id"] == result2["credential_id"]
+
+        # First credential should be last
+        assert credentials[2]["name"] == "First"
+        assert credentials[2]["credential_id"] == result1["credential_id"]
+
+        # Verify timestamps are in descending order
+        created_1 = datetime.fromisoformat(credentials[0]["created_at"])
+        created_2 = datetime.fromisoformat(credentials[1]["created_at"])
+        created_3 = datetime.fromisoformat(credentials[2]["created_at"])
+
+        assert created_1 >= created_2  # Newest first
+        assert created_2 >= created_3
+
 
 class TestVerifyCredential:
     """Test MCPCredentialManager.verify_credential()"""
