@@ -99,6 +99,7 @@ class OAuthManager:
             "authorization_endpoint": f"{self.issuer}/oauth/authorize",
             "token_endpoint": f"{self.issuer}/oauth/token",
             "registration_endpoint": f"{self.issuer}/oauth/register",
+            "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         }
 
     def register_client(
