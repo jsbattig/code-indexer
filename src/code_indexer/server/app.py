@@ -2664,7 +2664,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/mcp-credentials", response_model=CreateMCPCredentialResponse, status_code=201)
     async def create_mcp_credential(
-        current_user: dependencies.User = Depends(dependencies.get_current_user),
+        current_user: dependencies.User = Depends(dependencies.get_current_user_web_or_api),
         request: CreateMCPCredentialRequest = None,
     ):
         """
@@ -2704,7 +2704,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/mcp-credentials", response_model=MCPCredentialListResponse)
     async def list_mcp_credentials(
-        current_user: dependencies.User = Depends(dependencies.get_current_user),
+        current_user: dependencies.User = Depends(dependencies.get_current_user_web_or_api),
     ):
         """
         List all MCP credentials for the authenticated user.
@@ -2718,7 +2718,7 @@ def create_app() -> FastAPI:
     @app.delete("/api/mcp-credentials/{credential_id}", status_code=200)
     async def delete_mcp_credential(
         credential_id: str,
-        current_user: dependencies.User = Depends(dependencies.get_current_user),
+        current_user: dependencies.User = Depends(dependencies.get_current_user_web_or_api),
     ):
         """
         Delete an MCP credential.

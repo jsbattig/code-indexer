@@ -388,6 +388,74 @@ async def get_mcp_user_from_credentials(request: Request) -> Optional[User]:
     return user
 
 
+def get_current_user_web_or_api(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> User:
+    """
+    Get current authenticated user from web UI session OR API credentials.
+
+    Authentication priority:
+    1. Web UI session cookie ("session") via SessionManager
+    2. JWT cookie ("cidx_session") or Bearer token (existing API auth)
+    3. 401 Unauthorized if neither present
+
+    This enables the same endpoint to be accessed from both:
+    - Web UI (using itsdangerous session cookies)
+    - API clients (using JWT tokens or Bearer auth)
+
+    Args:
+        request: FastAPI Request object
+        credentials: Optional Bearer token from Authorization header
+
+    Returns:
+        Authenticated User object
+
+    Raises:
+        HTTPException: 401 if authentication fails
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    if not user_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication not properly initialized",
+        )
+
+    # Priority 1: Try web UI session cookie
+    session_cookie = request.cookies.get("session")
+    if session_cookie:
+        try:
+            from code_indexer.server.web.auth import get_session_manager
+
+            session_manager = get_session_manager()
+            session_data = session_manager.get_session(request)
+
+            if session_data:
+                # Valid web session - get User object
+                user = user_manager.get_user(session_data.username)
+                if user:
+                    return user
+        except Exception as e:
+            # Web session validation failed - fall through to JWT/Bearer auth
+            logger.debug(
+                "Web session validation failed, falling back to JWT/Bearer: %s", e
+            )
+
+    # Priority 2: Fall back to JWT/Bearer authentication
+    try:
+        return get_current_user(request, credentials)
+    except HTTPException:
+        # Re-raise with proper WWW-Authenticate header
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
+        )
+
+
 async def get_current_user_for_mcp(request: Request) -> User:
     """
     Get authenticated user for /mcp endpoint.
