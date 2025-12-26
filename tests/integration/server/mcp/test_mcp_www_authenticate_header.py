@@ -26,7 +26,7 @@ class TestMCPWWWAuthenticateHeader:
         Test that POST /mcp returns WWW-Authenticate header with resource_metadata on 401.
 
         Per RFC 9728 Section 5.1, the header format should be:
-        WWW-Authenticate: Bearer resource_metadata="https://server/.well-known/oauth-authorization-server"
+        WWW-Authenticate: Bearer resource_metadata=https://server/.well-known/oauth-protected-resource
 
         This test verifies:
         1. 401 status when invalid token provided
@@ -55,13 +55,13 @@ class TestMCPWWWAuthenticateHeader:
             "resource_metadata" in www_auth.lower()
         ), f"WWW-Authenticate header missing resource_metadata: {www_auth}"
 
-        # Should point to OAuth discovery endpoint (/.well-known/oauth-authorization-server)
+        # Should point to OAuth discovery endpoint (/.well-known/oauth-protected-resource)
         assert (
-            ".well-known/oauth-authorization-server" in www_auth
+            ".well-known/oauth-protected-resource" in www_auth
         ), f"resource_metadata doesn't point to OAuth discovery: {www_auth}"
 
         # Verify format matches RFC 9728 pattern
-        # Expected: Bearer resource_metadata="https://server/.well-known/oauth-authorization-server"
+        # Expected: Bearer resource_metadata=https://server/.well-known/oauth-protected-resource
         assert www_auth.lower().startswith(
             "bearer"
         ), f"WWW-Authenticate should start with 'Bearer': {www_auth}"

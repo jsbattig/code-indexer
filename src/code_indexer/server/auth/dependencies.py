@@ -47,8 +47,8 @@ def _build_www_authenticate_header() -> str:
     """
     # Build discovery URL from oauth_manager's issuer
     if oauth_manager:
-        discovery_url = f"{oauth_manager.issuer}/.well-known/oauth-authorization-server"
-        return f'Bearer realm="mcp", resource_metadata="{discovery_url}"'
+        discovery_url = f"{oauth_manager.issuer}/.well-known/oauth-protected-resource"
+        return f"Bearer resource_metadata={discovery_url}"
     else:
         # Fallback to basic Bearer with realm if oauth_manager not initialized
         return 'Bearer realm="mcp"'
