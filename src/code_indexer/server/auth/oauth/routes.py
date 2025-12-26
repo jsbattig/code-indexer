@@ -141,7 +141,11 @@ async def discovery_endpoint(manager: OAuthManager = Depends(get_oauth_manager))
     return manager.get_discovery_metadata()
 
 
-@router.post("/register", response_model=ClientRegistrationResponse)
+@router.post(
+    "/register",
+    response_model=ClientRegistrationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def register_client(
     request_model: ClientRegistrationRequest,
     http_request: Request,
@@ -506,7 +510,9 @@ async def token_endpoint(
     except OAuthError as e:
         oauth_token_rate_limiter.record_failed_attempt(client_id)
         # Return 401 for invalid credentials in client_credentials grant
-        if grant_type == "client_credentials" and "Invalid client credentials" in str(e):
+        if grant_type == "client_credentials" and "Invalid client credentials" in str(
+            e
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={"error": "invalid_client", "error_description": str(e)},
