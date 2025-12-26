@@ -96,14 +96,9 @@ class OAuthManager:
 
     def get_discovery_metadata(self) -> Dict[str, Any]:
         return {
-            "issuer": self.issuer,
             "authorization_endpoint": f"{self.issuer}/oauth/authorize",
             "token_endpoint": f"{self.issuer}/oauth/token",
             "registration_endpoint": f"{self.issuer}/oauth/register",
-            "code_challenge_methods_supported": ["S256"],
-            "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
-            "response_types_supported": ["code"],
-            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
         }
 
     def register_client(

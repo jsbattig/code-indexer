@@ -6591,9 +6591,7 @@ def create_app() -> FastAPI:
         return {
             "resource": f"{issuer_url}/mcp",
             "authorization_servers": [issuer_url],
-            "bearer_methods_supported": ["header"],
-            "scopes_supported": ["mcp:read", "mcp:write"],
-            "resource_documentation": "https://github.com/jsbattig/code-indexer",
+            "scopes_supported": ["openid", "read", "write"],
         }
 
     # Favicon redirect
