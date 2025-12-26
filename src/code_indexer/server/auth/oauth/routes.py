@@ -56,9 +56,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
+import base64
 
 from .oauth_manager import OAuthManager, OAuthError, PKCEVerificationError
 from ..user_manager import UserManager
+from ..mcp_credential_manager import MCPCredentialManager
 from ..audit_logger import password_audit_logger
 from ..oauth_rate_limiter import oauth_token_rate_limiter, oauth_register_rate_limiter
 
@@ -75,6 +77,12 @@ def get_oauth_manager() -> OAuthManager:
 
 def get_user_manager() -> UserManager:
     return UserManager()
+
+
+def get_mcp_credential_manager() -> MCPCredentialManager:
+    """Get MCPCredentialManager instance with UserManager injected."""
+    user_manager = get_user_manager()
+    return MCPCredentialManager(user_manager=user_manager)
 
 
 # Pydantic models for request/response
@@ -342,17 +350,41 @@ async def token_endpoint(
     grant_type: str = Form(...),
     code: Optional[str] = Form(None),
     code_verifier: Optional[str] = Form(None),
-    client_id: str = Form(...),
+    client_id: Optional[str] = Form(None),
+    client_secret: Optional[str] = Form(None),
     refresh_token: Optional[str] = Form(None),
     http_request: Request = None,
     manager: OAuthManager = Depends(get_oauth_manager),
+    mcp_credential_manager: MCPCredentialManager = Depends(get_mcp_credential_manager),
 ):
     """Token endpoint for authorization code exchange with rate limiting and audit logging.
 
     OAuth 2.1 compliant - accepts application/x-www-form-urlencoded data.
+    Supports grant types: authorization_code, refresh_token, client_credentials.
     """
     ip_address = http_request.client.host if http_request.client else "unknown"
     user_agent = http_request.headers.get("user-agent")
+
+    # Extract client credentials from Authorization header (Basic Auth) if present
+    auth_header = http_request.headers.get("authorization", "")
+    if auth_header.startswith("Basic ") and grant_type == "client_credentials":
+        try:
+            # Decode Basic Auth: "Basic base64(client_id:client_secret)"
+            encoded_credentials = auth_header[6:]  # Remove "Basic " prefix
+            decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+            client_id, client_secret = decoded_credentials.split(":", 1)
+        except (ValueError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Authorization header format",
+            )
+
+    # Validate client_id for rate limiting (required for all grant types)
+    if not client_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="client_id required",
+        )
 
     # Rate limit check
     rate_limit_error = oauth_token_rate_limiter.check_rate_limit(client_id)
@@ -417,6 +449,38 @@ async def token_endpoint(
                 )
 
             return result
+
+        elif grant_type == "client_credentials":
+            if not client_secret:
+                oauth_token_rate_limiter.record_failed_attempt(client_id)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="client_secret required for client_credentials grant",
+                )
+
+            result = manager.handle_client_credentials_grant(
+                client_id=client_id,
+                client_secret=client_secret,
+                scope=None,
+                mcp_credential_manager=mcp_credential_manager,
+            )
+
+            # Record success
+            oauth_token_rate_limiter.record_successful_attempt(client_id)
+
+            # Audit log
+            token_info = manager.validate_token(result["access_token"])
+            if token_info:
+                password_audit_logger.log_oauth_token_exchange(
+                    username=token_info["user_id"],
+                    client_id=client_id,
+                    grant_type="client_credentials",
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+
+            return result
+
         else:
             oauth_token_rate_limiter.record_failed_attempt(client_id)
             raise HTTPException(
@@ -431,6 +495,12 @@ async def token_endpoint(
         )
     except OAuthError as e:
         oauth_token_rate_limiter.record_failed_attempt(client_id)
+        # Return 401 for invalid credentials in client_credentials grant
+        if grant_type == "client_credentials" and "Invalid client credentials" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "invalid_client", "error_description": str(e)},
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "invalid_request", "error_description": str(e)},

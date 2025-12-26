@@ -101,8 +101,9 @@ class OAuthManager:
             "token_endpoint": f"{self.issuer}/oauth/token",
             "registration_endpoint": f"{self.issuer}/oauth/register",
             "code_challenge_methods_supported": ["S256"],
-            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
             "response_types_supported": ["code"],
+            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
         }
 
     def register_client(
@@ -375,3 +376,69 @@ class OAuthManager:
             )
 
             return {"username": row["user_id"], "token_type": determined_type}
+
+    def handle_client_credentials_grant(
+        self,
+        client_id: str,
+        client_secret: str,
+        scope: Optional[str] = None,
+        mcp_credential_manager: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Handle OAuth 2.1 client_credentials grant type.
+
+        Args:
+            client_id: MCP client ID
+            client_secret: MCP client secret
+            scope: Optional scope (not used currently)
+            mcp_credential_manager: MCPCredentialManager instance for credential verification
+
+        Returns:
+            Token response with access_token, token_type, expires_in
+
+        Raises:
+            OAuthError: If credentials are invalid or missing
+        """
+        # Validate parameters
+        if not client_id or not client_secret:
+            raise OAuthError("client_id and client_secret required")
+
+        # Verify credentials using MCPCredentialManager
+        if not mcp_credential_manager:
+            raise OAuthError("MCPCredentialManager not available")
+
+        user_id = mcp_credential_manager.verify_credential(client_id, client_secret)
+        if not user_id:
+            raise OAuthError("Invalid client credentials")
+
+        # Generate access token (no refresh token for client_credentials)
+        token_id = secrets.token_urlsafe(32)
+        access_token = secrets.token_urlsafe(48)
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=self.ACCESS_TOKEN_LIFETIME_HOURS)
+        hard_expires_at = now + timedelta(days=self.HARD_EXPIRATION_DAYS)
+
+        # Store token in database (use "client_credentials" as client_id for tracking)
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            conn.execute(
+                """INSERT INTO oauth_tokens (token_id, client_id, user_id, access_token, refresh_token,
+                   expires_at, created_at, last_activity, hard_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    token_id,
+                    "client_credentials",  # Special client_id for client_credentials grant
+                    user_id,
+                    access_token,
+                    None,  # No refresh token for client_credentials
+                    expires_at.isoformat(),
+                    now.isoformat(),
+                    now.isoformat(),
+                    hard_expires_at.isoformat(),
+                ),
+            )
+            conn.commit()
+
+        return {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "expires_in": int(self.ACCESS_TOKEN_LIFETIME_HOURS * 3600),
+        }
