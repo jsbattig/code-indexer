@@ -385,7 +385,9 @@ class CreateMCPCredentialResponse(BaseModel):
     """Response model for MCP credential creation."""
 
     client_id: str = Field(..., description="The generated client_id (shown always)")
-    client_secret: str = Field(..., description="The generated client_secret (shown only once)")
+    client_secret: str = Field(
+        ..., description="The generated client_secret (shown only once)"
+    )
     credential_id: str = Field(..., description="Unique identifier for the credential")
     name: Optional[str] = Field(default=None, description="Name of the credential")
     created_at: str = Field(..., description="ISO format timestamp of creation")
@@ -398,7 +400,9 @@ class CreateMCPCredentialResponse(BaseModel):
 class MCPCredentialListResponse(BaseModel):
     """Response model for listing MCP credentials."""
 
-    credentials: List[Dict[str, Any]] = Field(..., description="List of MCP credential metadata")
+    credentials: List[Dict[str, Any]] = Field(
+        ..., description="List of MCP credential metadata"
+    )
 
 
 class AddGoldenRepoRequest(BaseModel):
@@ -1976,6 +1980,7 @@ def create_app() -> FastAPI:
 
     # Initialize MCP credential manager
     from code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+
     mcp_credential_manager = MCPCredentialManager(user_manager=user_manager)
 
     # Set global dependencies
@@ -2662,9 +2667,15 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="API key not found")
         return {"message": "API key deleted successfully"}
 
-    @app.post("/api/mcp-credentials", response_model=CreateMCPCredentialResponse, status_code=201)
+    @app.post(
+        "/api/mcp-credentials",
+        response_model=CreateMCPCredentialResponse,
+        status_code=201,
+    )
     async def create_mcp_credential(
-        current_user: dependencies.User = Depends(dependencies.get_current_user_web_or_api),
+        current_user: dependencies.User = Depends(
+            dependencies.get_current_user_web_or_api
+        ),
         request: CreateMCPCredentialRequest = None,
     ):
         """
@@ -2704,7 +2715,9 @@ def create_app() -> FastAPI:
 
     @app.get("/api/mcp-credentials", response_model=MCPCredentialListResponse)
     async def list_mcp_credentials(
-        current_user: dependencies.User = Depends(dependencies.get_current_user_web_or_api),
+        current_user: dependencies.User = Depends(
+            dependencies.get_current_user_web_or_api
+        ),
     ):
         """
         List all MCP credentials for the authenticated user.
@@ -2718,7 +2731,9 @@ def create_app() -> FastAPI:
     @app.delete("/api/mcp-credentials/{credential_id}", status_code=200)
     async def delete_mcp_credential(
         credential_id: str,
-        current_user: dependencies.User = Depends(dependencies.get_current_user_web_or_api),
+        current_user: dependencies.User = Depends(
+            dependencies.get_current_user_web_or_api
+        ),
     ):
         """
         Delete an MCP credential.
@@ -2744,7 +2759,7 @@ def create_app() -> FastAPI:
     @app.get("/api/admin/users/{username}/mcp-credentials")
     async def admin_list_user_mcp_credentials(
         username: str,
-        current_user: dependencies.User = Depends(dependencies.get_current_admin_user)
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
     ):
         """Admin endpoint to list a user's MCP credentials.
 
@@ -2773,8 +2788,8 @@ def create_app() -> FastAPI:
             extra={
                 "admin_user": current_user.username,
                 "target_user": username,
-                "action": "list_mcp_credentials"
-            }
+                "action": "list_mcp_credentials",
+            },
         )
 
         return {"credentials": credentials, "username": username}
@@ -2783,7 +2798,7 @@ def create_app() -> FastAPI:
     async def admin_create_user_mcp_credential(
         username: str,
         request: Request,
-        current_user: dependencies.User = Depends(dependencies.get_current_admin_user)
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
     ):
         """Admin endpoint to create MCP credential for a user.
 
@@ -2817,8 +2832,8 @@ def create_app() -> FastAPI:
                 "admin_user": current_user.username,
                 "target_user": username,
                 "credential_id": credential["credential_id"],
-                "action": "create_mcp_credential"
-            }
+                "action": "create_mcp_credential",
+            },
         )
 
         return {
@@ -2826,14 +2841,14 @@ def create_app() -> FastAPI:
             "client_id": credential["client_id"],
             "client_secret": credential["client_secret"],
             "name": credential.get("name"),
-            "created_at": credential["created_at"]
+            "created_at": credential["created_at"],
         }
 
     @app.delete("/api/admin/users/{username}/mcp-credentials/{credential_id}")
     async def admin_revoke_user_mcp_credential(
         username: str,
         credential_id: str,
-        current_user: dependencies.User = Depends(dependencies.get_current_admin_user)
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
     ):
         """Admin endpoint to revoke a user's MCP credential.
 
@@ -2866,8 +2881,8 @@ def create_app() -> FastAPI:
                 "admin_user": current_user.username,
                 "target_user": username,
                 "credential_id": credential_id,
-                "action": "revoke_mcp_credential"
-            }
+                "action": "revoke_mcp_credential",
+            },
         )
 
         return {"message": "Credential revoked successfully"}
@@ -2875,7 +2890,7 @@ def create_app() -> FastAPI:
     @app.get("/api/admin/mcp-credentials")
     async def admin_list_all_mcp_credentials(
         limit: int = 100,
-        current_user: dependencies.User = Depends(dependencies.get_current_admin_user)
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
     ):
         """Admin endpoint to list all MCP credentials across all users.
 
@@ -6574,7 +6589,7 @@ def create_app() -> FastAPI:
         issuer_url = os.getenv("CIDX_ISSUER_URL", "http://localhost:8000")
 
         return {
-            "resource": issuer_url,
+            "resource": f"{issuer_url}/mcp",
             "authorization_servers": [issuer_url],
             "bearer_methods_supported": ["header"],
             "scopes_supported": ["mcp:read", "mcp:write"],

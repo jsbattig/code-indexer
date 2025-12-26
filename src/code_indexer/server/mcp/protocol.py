@@ -223,8 +223,23 @@ async def process_jsonrpc_request(
                 "serverInfo": {"name": "CIDX", "version": __version__},
             }
             return create_jsonrpc_response(result, request_id)
+        elif method == "notifications/initialized":
+            # Per losvedir: Must return 202, empty response
+            # This is a notification from client, no response data needed
+            # Return empty result (FastAPI will use 202 if we set it in route)
+            return create_jsonrpc_response(None, request_id)
         elif method == "tools/list":
             result = await handle_tools_list(params, user)
+            return create_jsonrpc_response(result, request_id)
+        elif method == "prompts/list":
+            # Per losvedir line 97-106 and README line 275
+            # Claude always requests this regardless of capabilities
+            result = {"prompts": []}
+            return create_jsonrpc_response(result, request_id)
+        elif method == "resources/list":
+            # Per losvedir line 108-117 and README line 275
+            # Claude always requests this regardless of capabilities
+            result = {"resources": []}
             return create_jsonrpc_response(result, request_id)
         elif method == "tools/call":
             result = await handle_tools_call(params, user)
@@ -270,7 +285,9 @@ async def process_batch_request(
 
 @mcp_router.post("/mcp")
 async def mcp_endpoint(
-    request: Request, response: Response, current_user: User = Depends(get_current_user_for_mcp)
+    request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user_for_mcp),
 ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
     """
     MCP JSON-RPC 2.0 endpoint.
@@ -499,8 +516,25 @@ async def process_public_jsonrpc_request(
                 request_id,
             )
 
+        elif method == "notifications/initialized":
+            # Per losvedir: Must return 202, empty response
+            # This is a notification from client, no response data needed
+            return create_jsonrpc_response(None, request_id)
+
         elif method == "tools/list":
             result = await handle_public_tools_list(user)
+            return create_jsonrpc_response(result, request_id)
+
+        elif method == "prompts/list":
+            # Per losvedir line 97-106 and README line 275
+            # Claude always requests this regardless of capabilities
+            result = {"prompts": []}
+            return create_jsonrpc_response(result, request_id)
+
+        elif method == "resources/list":
+            # Per losvedir line 108-117 and README line 275
+            # Claude always requests this regardless of capabilities
+            result = {"resources": []}
             return create_jsonrpc_response(result, request_id)
 
         elif method == "tools/call":
