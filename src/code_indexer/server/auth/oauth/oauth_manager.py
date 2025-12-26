@@ -103,20 +103,32 @@ class OAuthManager:
             "code_challenge_methods_supported": ["S256"],
             "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
             "response_types_supported": ["code"],
-            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
         }
 
     def register_client(
-        self, client_name: str, redirect_uris: List[str]
+        self,
+        client_name: str,
+        redirect_uris: List[str],
+        grant_types: Optional[List[str]] = None,
+        response_types: Optional[List[str]] = None,
+        token_endpoint_auth_method: Optional[str] = None,
+        scope: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not client_name or client_name.strip() == "":
             raise OAuthError("client_name cannot be empty")
         client_id = secrets.token_urlsafe(32)
         created_at = datetime.now(timezone.utc).isoformat()
+        metadata = {
+            "token_endpoint_auth_method": token_endpoint_auth_method or "none",
+            "grant_types": grant_types or ["authorization_code", "refresh_token"],
+            "response_types": response_types or ["code"],
+            "scope": scope,
+        }
         with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute(
-                "INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at) VALUES (?, ?, ?, ?)",
-                (client_id, client_name, json.dumps(redirect_uris), created_at),
+                "INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at, metadata) VALUES (?, ?, ?, ?, ?)",
+                (client_id, client_name, json.dumps(redirect_uris), created_at, json.dumps(metadata)),
             )
             conn.commit()
         return {
@@ -124,6 +136,9 @@ class OAuthManager:
             "client_name": client_name,
             "redirect_uris": redirect_uris,
             "client_secret_expires_at": 0,
+            "token_endpoint_auth_method": token_endpoint_auth_method or "none",
+            "grant_types": grant_types or ["authorization_code", "refresh_token"],
+            "response_types": response_types or ["code"],
         }
 
     def get_client(self, client_id: str) -> Optional[Dict[str, Any]]:

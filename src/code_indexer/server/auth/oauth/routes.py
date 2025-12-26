@@ -90,6 +90,9 @@ class ClientRegistrationRequest(BaseModel):
     client_name: str
     redirect_uris: List[str]
     grant_types: Optional[List[str]] = ["authorization_code", "refresh_token"]
+    response_types: Optional[List[str]] = ["code"]
+    token_endpoint_auth_method: Optional[str] = "none"
+    scope: Optional[str] = None
 
 
 class ClientRegistrationResponse(BaseModel):
@@ -97,6 +100,9 @@ class ClientRegistrationResponse(BaseModel):
     client_name: str
     redirect_uris: List[str]
     client_secret_expires_at: int
+    token_endpoint_auth_method: str
+    grant_types: Optional[List[str]] = None
+    response_types: Optional[List[str]] = None
 
 
 class AuthorizeRequest(BaseModel):
@@ -156,6 +162,10 @@ async def register_client(
         result = manager.register_client(
             client_name=request_model.client_name,
             redirect_uris=request_model.redirect_uris,
+            grant_types=request_model.grant_types,
+            response_types=request_model.response_types,
+            token_endpoint_auth_method=request_model.token_endpoint_auth_method,
+            scope=request_model.scope,
         )
 
         # Record success
