@@ -259,6 +259,7 @@ class GoldenRepoManager:
 
                 return {
                     "success": True,
+                    "alias": alias,
                     "message": f"Golden repository '{alias}' added successfully",
                 }
 
@@ -391,6 +392,7 @@ class GoldenRepoManager:
                 message = f"Golden repository '{alias}' removed successfully"
                 return {
                     "success": True,
+                    "alias": alias,
                     "message": message,
                 }
             else:
@@ -994,6 +996,7 @@ class GoldenRepoManager:
 
                 return {
                     "success": True,
+                    "alias": alias,
                     "message": f"Golden repository '{alias}' refreshed successfully",
                 }
 
@@ -1521,6 +1524,7 @@ class GoldenRepoManager:
 
                 return {
                     "success": True,
+                    "alias": alias,
                     "message": f"Index type '{index_type}' added successfully to '{alias}'",
                     "stdout": captured_stdout,
                     "stderr": captured_stderr,
