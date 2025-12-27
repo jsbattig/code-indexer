@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
@@ -51,58 +52,69 @@ class GlobalRegistry:
         self.golden_repos_dir.mkdir(parents=True, exist_ok=True)
         self.aliases_dir.mkdir(exist_ok=True)
 
+        # Thread safety for concurrent file operations (Story #620 Priority 2B)
+        # Using RLock (reentrant lock) to allow _save_registry() calls from within _load_registry()
+        self._file_lock = threading.RLock()
+
         # Load or initialize registry
         self._registry_data: Dict[str, Dict[str, Any]] = {}
         self._load_registry()
 
     def _load_registry(self) -> None:
-        """Load registry from disk or create empty if doesn't exist."""
-        if self.registry_file.exists():
-            try:
-                with open(self.registry_file, "r") as f:
-                    self._registry_data = json.load(f)
-                logger.info(
-                    f"Loaded global registry with {len(self._registry_data)} repos"
-                )
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Failed to load global registry, starting fresh: {e}")
-                self._registry_data = {}
-                self._save_registry()
-        else:
-            # Create empty registry
-            self._save_registry()
+        """Load registry from disk or create empty if doesn't exist.
+
+        Thread-safe: Uses _file_lock (RLock) to prevent concurrent access (Story #620 Priority 2B).
+        """
+        with self._file_lock:
+            if self.registry_file.exists():
+                try:
+                    with open(self.registry_file, "r") as f:
+                        self._registry_data = json.load(f)
+                    logger.info(
+                        f"Loaded global registry with {len(self._registry_data)} repos"
+                    )
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Failed to load global registry, starting fresh: {e}")
+                    self._registry_data = {}
+                    self._save_registry()  # Safe: RLock allows reentrant acquisition
+            else:
+                # Create empty registry
+                self._save_registry()  # Safe: RLock allows reentrant acquisition
 
     def _save_registry(self) -> None:
         """
         Save registry to disk with atomic write.
+
+        Thread-safe: Uses _file_lock (RLock) to prevent concurrent access (Story #620 Priority 2B).
 
         Uses atomic write pattern to prevent corruption:
         1. Write to temporary file
         2. Sync to disk
         3. Atomic rename over existing file
         """
-        # Write to temporary file first
-        tmp_fd, tmp_path = tempfile.mkstemp(
-            dir=str(self.golden_repos_dir), prefix=".global_registry_", suffix=".tmp"
-        )
+        with self._file_lock:
+            # Write to temporary file first
+            tmp_fd, tmp_path = tempfile.mkstemp(
+                dir=str(self.golden_repos_dir), prefix=".global_registry_", suffix=".tmp"
+            )
 
-        try:
-            with os.fdopen(tmp_fd, "w") as f:
-                json.dump(self._registry_data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-
-            # Atomic rename
-            os.replace(tmp_path, str(self.registry_file))
-            logger.debug("Global registry saved atomically")
-
-        except Exception as e:
-            # Clean up temp file on failure
             try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise RuntimeError(f"Failed to save global registry: {e}")
+                with os.fdopen(tmp_fd, "w") as f:
+                    json.dump(self._registry_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+
+                # Atomic rename
+                os.replace(tmp_path, str(self.registry_file))
+                logger.debug("Global registry saved atomically")
+
+            except Exception as e:
+                # Clean up temp file on failure
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise RuntimeError(f"Failed to save global registry: {e}")
 
     def register_global_repo(
         self,

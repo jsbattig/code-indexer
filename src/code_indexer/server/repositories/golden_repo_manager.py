@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import logging
 import time
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
@@ -107,6 +108,9 @@ class GoldenRepoManager:
         # Ensure directory structure exists
         os.makedirs(self.golden_repos_dir, exist_ok=True)
 
+        # Thread safety for concurrent operations (Story #620 Priority 2A)
+        self._operation_lock = threading.Lock()
+
         # Storage for golden repositories
         self.golden_repos: Dict[str, GoldenRepo] = {}
 
@@ -114,28 +118,41 @@ class GoldenRepoManager:
         self._load_metadata()
 
     def _load_metadata(self) -> None:
-        """Load golden repository metadata from file."""
-        if os.path.exists(self.metadata_file):
-            try:
-                with open(self.metadata_file, "r") as f:
-                    data = json.load(f)
-                    for alias, repo_data in data.items():
-                        self.golden_repos[alias] = GoldenRepo(**repo_data)
-            except (json.JSONDecodeError, TypeError, KeyError):
-                # If metadata file is corrupted, start fresh
+        """Load golden repository metadata from file.
+
+        Thread-safe: Uses _operation_lock to prevent concurrent access (Story #620 Priority 2A).
+        """
+        with self._operation_lock:
+            if os.path.exists(self.metadata_file):
+                try:
+                    with open(self.metadata_file, "r") as f:
+                        data = json.load(f)
+                        for alias, repo_data in data.items():
+                            self.golden_repos[alias] = GoldenRepo(**repo_data)
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    # If metadata file is corrupted, start fresh
+                    self.golden_repos = {}
+            else:
+                # Create empty metadata file
+                # NOTE: Cannot call _save_metadata() here as it also acquires _operation_lock,
+                # which would cause deadlock (threading.Lock is NOT reentrant). Inline the save logic.
                 self.golden_repos = {}
-        else:
-            # Create empty metadata file
-            self._save_metadata()
+                data = {}
+                with open(self.metadata_file, "w") as f:
+                    json.dump(data, f, indent=2)
 
     def _save_metadata(self) -> None:
-        """Save golden repository metadata to file."""
-        data = {}
-        for alias, repo in self.golden_repos.items():
-            data[alias] = repo.to_dict()
+        """Save golden repository metadata to file.
 
-        with open(self.metadata_file, "w") as f:
-            json.dump(data, f, indent=2)
+        Thread-safe: Uses _operation_lock to prevent concurrent access (Story #620 Priority 2A).
+        """
+        with self._operation_lock:
+            data = {}
+            for alias, repo in self.golden_repos.items():
+                data[alias] = repo.to_dict()
+
+            with open(self.metadata_file, "w") as f:
+                json.dump(data, f, indent=2)
 
     def add_golden_repo(
         self,

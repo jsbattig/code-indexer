@@ -232,6 +232,9 @@ class HNSWIndexCache:
     Performance improvement: ~277ms → <1ms for repeated queries (1800x faster).
     """
 
+    # Estimated memory size per HNSW index entry (in MB)
+    ESTIMATED_INDEX_SIZE_MB = 100
+
     def __init__(self, config: Optional[HNSWIndexCacheConfig] = None):
         """
         Initialize HNSW index cache.
@@ -330,6 +333,10 @@ class HNSWIndexCache:
             # Store in cache
             self._cache[repo_path] = entry
 
+            # Enforce size limit (AC3A: Cache size limits)
+            # NOTE: Called within _cache_lock, so _enforce_size_limit must not re-acquire lock
+            self._enforce_size_limit()
+
             logger.info(f"Cached HNSW index for {repo_path}")
 
             return hnsw_index, id_mapping
@@ -356,6 +363,44 @@ class HNSWIndexCache:
             self._cache.clear()
             self._eviction_count += evicted
             logger.info(f"Cleared cache ({evicted} entries)")
+
+    def _enforce_size_limit(self) -> None:
+        """
+        Enforce cache size limit by evicting LRU entries (AC3A: Cache size limits).
+
+        IMPORTANT: Must be called while holding _cache_lock (does not acquire lock itself).
+        Called after adding new entries to ensure cache stays within max_cache_size_mb.
+        Evicts oldest (least recently accessed) entries first.
+        """
+        # Skip if no size limit configured
+        if self.config.max_cache_size_mb is None:
+            return
+
+        # Calculate current cache size using estimated size per index
+        current_size_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
+
+        # Evict LRU entries until under limit
+        while current_size_mb > self.config.max_cache_size_mb and self._cache:
+            # Find least recently accessed entry
+            lru_repo_path = min(
+                self._cache.keys(),
+                key=lambda path: self._cache[path].last_accessed,
+            )
+
+            # Evict LRU entry
+            del self._cache[lru_repo_path]
+            self._eviction_count += 1
+            logger.debug(
+                f"Evicted LRU cache entry to enforce size limit: {lru_repo_path}"
+            )
+
+            # Recalculate size
+            current_size_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
+
+        if current_size_mb <= self.config.max_cache_size_mb and self._cache:
+            logger.debug(
+                f"Cache size: {current_size_mb}MB / {self.config.max_cache_size_mb}MB"
+            )
 
     def _cleanup_expired_entries(self) -> None:
         """
@@ -424,10 +469,8 @@ class HNSWIndexCache:
             HNSWIndexCacheStats with current cache metrics
         """
         with self._cache_lock:
-            # Calculate total memory usage (rough estimate)
-            # Each HNSW index size is difficult to estimate without access to internal structures
-            # For now, use cached repository count as proxy
-            total_memory_mb = len(self._cache) * 100  # Rough estimate: 100MB per index
+            # Calculate total memory usage using estimated size per index
+            total_memory_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
 
             # Per-repository stats
             per_repo_stats = {}

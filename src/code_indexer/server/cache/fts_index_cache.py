@@ -227,6 +227,9 @@ class FTSIndexCache:
     Expected speedup: 5-50x for repeated FTS queries.
     """
 
+    # Estimated memory size per FTS index entry (in MB)
+    ESTIMATED_INDEX_SIZE_MB = 10
+
     def __init__(self, config: Optional[FTSIndexCacheConfig] = None):
         """
         Initialize FTS index cache.
@@ -335,6 +338,10 @@ class FTSIndexCache:
             # Store in cache
             self._cache[index_dir] = entry
 
+            # Enforce size limit (AC3A: Cache size limits)
+            # NOTE: Called within _cache_lock, so _enforce_size_limit must not re-acquire lock
+            self._enforce_size_limit()
+
             logger.info(f"Cached FTS index for {index_dir}")
 
             return tantivy_index, schema
@@ -361,6 +368,44 @@ class FTSIndexCache:
             self._cache.clear()
             self._eviction_count += evicted
             logger.info(f"Cleared FTS cache ({evicted} entries)")
+
+    def _enforce_size_limit(self) -> None:
+        """
+        Enforce cache size limit by evicting LRU entries (AC3A: Cache size limits).
+
+        IMPORTANT: Must be called while holding _cache_lock (does not acquire lock itself).
+        Called after adding new entries to ensure cache stays within max_cache_size_mb.
+        Evicts oldest (least recently accessed) entries first.
+        """
+        # Skip if no size limit configured
+        if self.config.max_cache_size_mb is None:
+            return
+
+        # Calculate current cache size using estimated size per index
+        current_size_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
+
+        # Evict LRU entries until under limit
+        while current_size_mb > self.config.max_cache_size_mb and self._cache:
+            # Find least recently accessed entry
+            lru_index_dir = min(
+                self._cache.keys(),
+                key=lambda path: self._cache[path].last_accessed,
+            )
+
+            # Evict LRU entry
+            del self._cache[lru_index_dir]
+            self._eviction_count += 1
+            logger.debug(
+                f"Evicted LRU FTS cache entry to enforce size limit: {lru_index_dir}"
+            )
+
+            # Recalculate size
+            current_size_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
+
+        if current_size_mb <= self.config.max_cache_size_mb and self._cache:
+            logger.debug(
+                f"FTS cache size: {current_size_mb}MB / {self.config.max_cache_size_mb}MB"
+            )
 
     def _cleanup_expired_entries(self) -> None:
         """
@@ -429,9 +474,8 @@ class FTSIndexCache:
             FTSIndexCacheStats with current cache metrics
         """
         with self._cache_lock:
-            # Rough memory estimate (mmap doesn't consume RAM directly)
-            # For FTS, estimate ~10MB per index (much less than HNSW)
-            total_memory_mb = len(self._cache) * 10
+            # Calculate total memory usage using estimated size per index
+            total_memory_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
 
             # Per-repository stats
             per_repo_stats = {}

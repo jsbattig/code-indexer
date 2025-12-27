@@ -67,6 +67,28 @@ class RefreshScheduler:
         # Thread management
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()  # Event-based signaling for efficient stop
+
+        # Per-repo locking for concurrent refresh serialization
+        self._repo_locks: dict[str, threading.Lock] = {}
+        self._repo_locks_lock = threading.Lock()  # Protects _repo_locks dict
+
+    def _get_repo_lock(self, alias_name: str) -> threading.Lock:
+        """
+        Get or create a lock for a specific repository.
+
+        Thread-safe method to retrieve existing lock or create new one.
+
+        Args:
+            alias_name: Repository alias name
+
+        Returns:
+            Lock instance for the specified repository
+        """
+        with self._repo_locks_lock:
+            if alias_name not in self._repo_locks:
+                self._repo_locks[alias_name] = threading.Lock()
+            return self._repo_locks[alias_name]
 
     def get_refresh_interval(self) -> int:
         """
@@ -103,6 +125,7 @@ class RefreshScheduler:
             return
 
         self._running = True
+        self._stop_event.clear()  # Reset event for new start
         self._thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self._thread.start()
         logger.info("Refresh scheduler started")
@@ -120,6 +143,7 @@ class RefreshScheduler:
             return
 
         self._running = False
+        self._stop_event.set()  # Signal scheduler loop to exit immediately
 
         if self._thread is not None:
             self._thread.join(timeout=5.0)
@@ -157,13 +181,10 @@ class RefreshScheduler:
             except Exception as e:
                 logger.error(f"Error in scheduler loop: {e}", exc_info=True)
 
-            # Sleep in small increments to allow faster shutdown
+            # Wait using Event.wait() for interruptible sleep
+            # Event.wait() returns True if event is set, False on timeout
             interval = self.get_refresh_interval()
-            sleep_remaining = interval
-            while sleep_remaining > 0 and self._running:
-                sleep_chunk = min(1.0, sleep_remaining)
-                time.sleep(sleep_chunk)
-                sleep_remaining -= sleep_chunk
+            self._stop_event.wait(timeout=interval)
 
         logger.debug("Refresh scheduler loop exited")
 
@@ -178,77 +199,84 @@ class RefreshScheduler:
         4. Alias swap
         5. Cleanup scheduling
 
+        Per-repo locking ensures concurrent refresh attempts on the same repo
+        are serialized, while different repos can refresh in parallel.
+
         Args:
             alias_name: Global alias name (e.g., "my-repo-global")
 
         Raises:
             Exception: If refresh fails (logged, not propagated by scheduler loop)
         """
-        try:
-            logger.info(f"Starting refresh for {alias_name}")
+        # Acquire per-repo lock to serialize concurrent refresh attempts
+        repo_lock = self._get_repo_lock(alias_name)
 
-            # Get current alias target
-            current_target = self.alias_manager.read_alias(alias_name)
-            if not current_target:
-                logger.warning(f"Alias {alias_name} not found, skipping refresh")
-                return
+        with repo_lock:
+            try:
+                logger.info(f"Starting refresh for {alias_name}")
 
-            # Get repo info from registry
-            repo_info = self.registry.get_global_repo(alias_name)
-            if not repo_info:
-                logger.warning(f"Repo {alias_name} not in registry, skipping refresh")
-                return
+                # Get current alias target
+                current_target = self.alias_manager.read_alias(alias_name)
+                if not current_target:
+                    logger.warning(f"Alias {alias_name} not found, skipping refresh")
+                    return
 
-            # Get golden repo path from alias (registry path becomes stale after refresh)
-            golden_repo_path = current_target
+                # Get repo info from registry
+                repo_info = self.registry.get_global_repo(alias_name)
+                if not repo_info:
+                    logger.warning(f"Repo {alias_name} not in registry, skipping refresh")
+                    return
 
-            # Skip refresh for local:// repos (no remote = no refresh = no versioning)
-            repo_url = repo_info.get("repo_url")
-            if repo_url and repo_url.startswith("local://"):
-                logger.info(
-                    f"Skipping refresh for local repo: {alias_name} ({repo_url})"
+                # Get golden repo path from alias (registry path becomes stale after refresh)
+                golden_repo_path = current_target
+
+                # Skip refresh for local:// repos (no remote = no refresh = no versioning)
+                repo_url = repo_info.get("repo_url")
+                if repo_url and repo_url.startswith("local://"):
+                    logger.info(
+                        f"Skipping refresh for local repo: {alias_name} ({repo_url})"
+                    )
+                    return
+
+                # Create updater for this repo
+                updater = GitPullUpdater(golden_repo_path)
+
+                # Check for changes
+                has_changes = updater.has_changes()
+
+                if not has_changes:
+                    logger.info(f"No changes detected for {alias_name}, skipping refresh")
+                    return
+
+                # Pull latest changes
+                logger.info(f"Pulling latest changes for {alias_name}")
+                updater.update()
+
+                # Create new versioned index
+                new_index_path = self._create_new_index(
+                    alias_name=alias_name, source_path=updater.get_source_path()
                 )
-                return
 
-            # Create updater for this repo
-            updater = GitPullUpdater(golden_repo_path)
+                # Swap alias to new index
+                logger.info(f"Swapping alias {alias_name} to new index")
+                self.alias_manager.swap_alias(
+                    alias_name=alias_name,
+                    new_target=new_index_path,
+                    old_target=current_target,
+                )
 
-            # Check for changes
-            has_changes = updater.has_changes()
+                # Schedule cleanup of old index
+                logger.info(f"Scheduling cleanup of old index: {current_target}")
+                self.cleanup_manager.schedule_cleanup(current_target)
 
-            if not has_changes:
-                logger.info(f"No changes detected for {alias_name}, skipping refresh")
-                return
+                # Update registry timestamp
+                self.registry.update_refresh_timestamp(alias_name)
 
-            # Pull latest changes
-            logger.info(f"Pulling latest changes for {alias_name}")
-            updater.update()
+                logger.info(f"Refresh complete for {alias_name}")
 
-            # Create new versioned index
-            new_index_path = self._create_new_index(
-                alias_name=alias_name, source_path=updater.get_source_path()
-            )
-
-            # Swap alias to new index
-            logger.info(f"Swapping alias {alias_name} to new index")
-            self.alias_manager.swap_alias(
-                alias_name=alias_name,
-                new_target=new_index_path,
-                old_target=current_target,
-            )
-
-            # Schedule cleanup of old index
-            logger.info(f"Scheduling cleanup of old index: {current_target}")
-            self.cleanup_manager.schedule_cleanup(current_target)
-
-            # Update registry timestamp
-            self.registry.update_refresh_timestamp(alias_name)
-
-            logger.info(f"Refresh complete for {alias_name}")
-
-        except Exception as e:
-            logger.error(f"Refresh failed for {alias_name}: {e}", exc_info=True)
-            # Don't re-raise - scheduler loop should continue
+            except Exception as e:
+                logger.error(f"Refresh failed for {alias_name}: {e}", exc_info=True)
+                # Don't re-raise - scheduler loop should continue
 
     def _create_new_index(self, alias_name: str, source_path: str) -> str:
         """
