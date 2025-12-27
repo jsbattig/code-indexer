@@ -226,7 +226,9 @@ class SmartContextResult:
 
 def _find_target_definition(symbol: str, scip_dir: Path) -> Optional[QueryResult]:
     """Find the definition location for the target symbol."""
-    scip_files = list(scip_dir.glob("**/*.scip"))
+    # CRITICAL: .scip protobuf files are DELETED after database conversion
+    # Only .scip.db (SQLite) files persist after 'cidx scip generate'
+    scip_files = list(scip_dir.glob("**/*.scip.db"))
 
     for scip_file in scip_files:
         try:
@@ -258,7 +260,9 @@ def _bfs_traverse_dependents(
     the need for Python BFS traversal (256-567x faster).
     """
     affected_symbols: List[AffectedSymbol] = []
-    scip_files = list(scip_dir.glob("**/*.scip"))
+    # CRITICAL: .scip protobuf files are DELETED after database conversion
+    # Only .scip.db (SQLite) files persist after 'cidx scip generate'
+    scip_files = list(scip_dir.glob("**/*.scip.db"))
 
     # Query all SCIP files for transitive dependents
     # Database CTE handles the traversal, returning all dependents with depth info
@@ -633,7 +637,9 @@ def get_smart_context(
     Returns:
         SmartContextResult with prioritized file list
     """
-    scip_files = list(scip_dir.glob("**/*.scip"))
+    # CRITICAL: .scip protobuf files are DELETED after database conversion
+    # Only .scip.db (SQLite) files persist after 'cidx scip generate'
+    scip_files = list(scip_dir.glob("**/*.scip.db"))
 
     # Collect all related symbols with relationships
     context_data: Dict[Path, List[tuple]] = (

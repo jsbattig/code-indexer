@@ -35,8 +35,10 @@ def _find_scip_files() -> List[Path]:
     if not scip_dir.exists():
         return []
 
-    # Find all .scip files recursively
-    return list(scip_dir.glob("**/*.scip"))
+    # CRITICAL: .scip protobuf files are DELETED after database conversion
+    # Only .scip.db (SQLite) files persist after 'cidx scip generate'
+    scip_files = list(scip_dir.glob("**/*.scip.db"))
+    return scip_files
 
 
 @router.get("/definition")

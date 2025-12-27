@@ -815,11 +815,13 @@ def _get_golden_repos_list():
                     ):
                         repo["has_temporal"] = True
 
-                    # Check SCIP index (.code-indexer/scip/ with .scip files)
+                    # Check SCIP index (.code-indexer/scip/ with .scip.db files)
+                    # CRITICAL: .scip protobuf files are DELETED after database conversion
+                    # Only .scip.db (SQLite) files persist after 'cidx scip generate'
                     scip_dir = index_base / "scip"
                     if scip_dir.exists():
-                        # Check for any .scip files in scip directory or subdirectories
-                        scip_files = list(scip_dir.glob("**/*.scip"))
+                        # Check for any .scip.db files in scip directory or subdirectories
+                        scip_files = list(scip_dir.glob("**/*.scip.db"))
                         if scip_files:
                             repo["has_scip"] = True
 

@@ -5,6 +5,9 @@ These tests follow TDD methodology - tests are written FIRST before implementati
 All tests use real components following MESSI Rule #1: No mocks.
 """
 
+import os
+import json
+from pathlib import Path
 from typing import Dict, Any
 from fastapi.testclient import TestClient
 
@@ -463,6 +466,148 @@ class TestGoldenReposPartial:
             302,
             303,
         ], f"Golden repos partial should redirect unauthenticated, got {response.status_code}"
+
+
+# =============================================================================
+# CSRF Protection Tests
+# =============================================================================
+
+
+# =============================================================================
+# SCIP Badge Detection Tests (Bug Fix)
+# =============================================================================
+
+
+class TestSCIPBadgeDetection:
+    """
+    Tests for SCIP badge detection in golden repos list.
+
+    BUG: routes.py line 822 checks for .scip files but these are DELETED after
+    database conversion. Only .scip.db files persist.
+
+    These tests verify the fix to check for .scip.db files instead.
+    """
+
+    def test_has_scip_true_with_scip_db_files(
+        self, web_infrastructure: WebTestInfrastructure
+    ):
+        """
+        SCIP badge should show when .scip.db files exist.
+
+        CRITICAL: SCIP .scip protobuf files are DELETED after database conversion.
+        Only .scip.db (SQLite) files remain after 'cidx scip generate'.
+
+        Given a golden repository exists
+        And the repository has .scip.db files in .code-indexer/scip/
+        When I call _get_golden_repos_list()
+        Then has_scip should be True
+        """
+        # Get temp directory from infrastructure
+        temp_dir = web_infrastructure.temp_dir
+        assert temp_dir is not None
+
+        # Create golden repo directory structure
+        golden_repos_dir = temp_dir / "data" / "golden-repos"
+        golden_repos_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a test repository clone
+        test_repo_path = golden_repos_dir / "test-scip-repo"
+        test_repo_path.mkdir()
+
+        # Create .code-indexer/scip structure with .scip.db file
+        scip_dir = test_repo_path / ".code-indexer" / "scip" / "python-project"
+        scip_dir.mkdir(parents=True)
+
+        # Create .scip.db file (this is what exists after SCIP generation)
+        scip_db_file = scip_dir / "index.scip.db"
+        scip_db_file.write_text("mock scip database")
+
+        # Create metadata.json file in golden-repos directory
+        # This is what GoldenRepoManager loads from
+        metadata = {
+            "test-scip-repo": {
+                "alias": "test-scip-repo",
+                "repo_url": "/tmp/test-scip-repo",
+                "clone_path": str(test_repo_path),
+                "default_branch": "main",
+                "created_at": "2025-12-26T00:00:00",
+                "enable_temporal": False,
+                "temporal_options": None,
+            }
+        }
+        metadata_file = golden_repos_dir / "metadata.json"
+        metadata_file.write_text(json.dumps(metadata, indent=2))
+
+        # Call the actual production code
+        from code_indexer.server.web.routes import _get_golden_repos_list
+
+        repos = _get_golden_repos_list()
+
+        # Verify we got our test repo
+        assert len(repos) > 0, "Should have at least one repo"
+        test_repo = next((r for r in repos if r["alias"] == "test-scip-repo"), None)
+        assert test_repo is not None, "Should find test-scip-repo in results"
+
+        # THIS IS THE FAILING ASSERTION - will fail until routes.py is fixed
+        assert (
+            test_repo["has_scip"] is True
+        ), "has_scip should be True when .scip.db files exist"
+
+    def test_has_scip_false_with_no_scip_files(
+        self, web_infrastructure: WebTestInfrastructure
+    ):
+        """
+        SCIP badge should NOT show when no SCIP files exist.
+
+        Given a golden repository exists
+        And the repository has NO .scip.db files
+        When I call _get_golden_repos_list()
+        Then has_scip should be False
+        """
+        # Get temp directory from infrastructure
+        temp_dir = web_infrastructure.temp_dir
+        assert temp_dir is not None
+
+        # Create golden repo directory structure
+        golden_repos_dir = temp_dir / "data" / "golden-repos"
+        golden_repos_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a test repository WITHOUT SCIP index
+        test_repo_path = golden_repos_dir / "test-no-scip-repo"
+        test_repo_path.mkdir()
+
+        # Create .code-indexer but NO scip directory
+        code_indexer_dir = test_repo_path / ".code-indexer"
+        code_indexer_dir.mkdir()
+
+        # Create metadata.json file in golden-repos directory
+        metadata = {
+            "test-no-scip-repo": {
+                "alias": "test-no-scip-repo",
+                "repo_url": "/tmp/test-no-scip-repo",
+                "clone_path": str(test_repo_path),
+                "default_branch": "main",
+                "created_at": "2025-12-26T00:00:00",
+                "enable_temporal": False,
+                "temporal_options": None,
+            }
+        }
+        metadata_file = golden_repos_dir / "metadata.json"
+        metadata_file.write_text(json.dumps(metadata, indent=2))
+
+        # Call the actual production code
+        from code_indexer.server.web.routes import _get_golden_repos_list
+
+        repos = _get_golden_repos_list()
+
+        # Verify we got our test repo
+        test_repo = next((r for r in repos if r["alias"] == "test-no-scip-repo"), None)
+        assert test_repo is not None, "Should find test-no-scip-repo in results"
+
+        # Verify has_scip is False
+        assert (
+            test_repo["has_scip"] is False
+        ), "has_scip should be False when no SCIP files exist"
 
 
 # =============================================================================
