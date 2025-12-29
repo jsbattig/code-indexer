@@ -321,6 +321,49 @@ class SCIPConfig(BaseModel):
     )
 
 
+class GitServiceConfig(BaseModel):
+    """Configuration for Git operations service account.
+
+    The git service uses a service account for committer identity while preserving
+    the actual user as the author (dual attribution model).
+    """
+
+    service_committer_name: str = Field(
+        default="CIDX Service",
+        description="Service account name for Git committer"
+    )
+    service_committer_email: str = Field(
+        default="cidx-service@example.com",
+        description="Service account email (must match SSH key owner in GitHub/GitLab)"
+    )
+
+    @field_validator('service_committer_email')
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        """Validate email format and check for common issues."""
+        import re
+
+        # RFC 5322 compliant basic validation
+        email_pattern = re.compile(
+            r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@'
+            r'[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?'
+            r'(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
+        )
+
+        if not email_pattern.match(v):
+            raise ValueError(f"Invalid email format: {v}")
+
+        # Additional validation: require domain
+        if '@' not in v or '.' not in v.split('@')[1]:
+            raise ValueError(f"Email must have valid domain: {v}")
+
+        # Security: prevent obviously malicious patterns
+        if '..' in v or v.startswith('.') or v.endswith('.'):
+            raise ValueError(f"Invalid email format (security): {v}")
+
+        return v
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -477,6 +520,12 @@ class Config(BaseModel):
     scip: Optional[SCIPConfig] = Field(
         default=None,
         description="SCIP (Source Code Intelligence Protocol) configuration",
+    )
+
+    # Git service configuration
+    git_service: GitServiceConfig = Field(
+        default_factory=GitServiceConfig,
+        description="Git operations service account configuration",
     )
 
     @field_validator("codebase_dir", mode="before")
