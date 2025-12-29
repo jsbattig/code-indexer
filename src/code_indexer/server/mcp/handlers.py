@@ -4018,11 +4018,10 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         category_filter = params.get("category")
 
-        # Category mapping for tool names
+        # Category mapping for tool names (ALL 53 TOOLS)
         categories = {
             "search": [
                 "search_code",
-                "omni_search_code",
                 "list_global_repos",
                 "global_repo_status",
                 "regex_search",
@@ -4036,28 +4035,87 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 "scip_callchain",
                 "scip_context",
             ],
-            "git": [
+            "git_exploration": [
                 "git_log",
                 "git_show_commit",
                 "git_search_commits",
                 "git_search_diffs",
                 "git_diff",
-                "git_list_branches",
-                "git_list_tags",
+                "git_blame",
+                "git_file_history",
+                "git_file_at_revision",
             ],
-            "directory": ["browse_directory", "directory_tree", "get_file_content"],
+            "git_operations": [
+                "git_status",
+                "git_stage",
+                "git_unstage",
+                "git_commit",
+                "git_push",
+                "git_pull",
+                "git_fetch",
+                "git_reset",
+                "git_clean",
+                "git_checkout_file",
+                "git_merge_abort",
+                "git_branch_list",
+                "git_branch_create",
+                "git_branch_switch",
+                "git_branch_delete",
+            ],
+            "files": [
+                "list_files",
+                "get_file_content",
+                "browse_directory",
+                "directory_tree",
+                "create_file",
+                "edit_file",
+                "delete_file",
+            ],
             "repo_management": [
-                "activate_global_repo",
-                "deactivate_global_repo",
+                "discover_repositories",
+                "list_repositories",
+                "activate_repository",
+                "deactivate_repository",
+                "get_repository_status",
+                "switch_branch",
+                "get_branches",
+                "sync_repository",
+                "manage_composite_repository",
+            ],
+            "golden_repos": [
                 "add_golden_repo",
                 "remove_golden_repo",
                 "refresh_golden_repo",
+                "add_golden_repo_index",
+                "get_golden_repo_indexes",
+                "get_global_config",
+                "set_global_config",
+            ],
+            "system": [
+                "check_health",
+                "get_job_details",
+                "get_job_statistics",
+                "get_repository_statistics",
+                "get_all_repositories_status",
+                "trigger_reindex",
+                "get_index_status",
             ],
             "user_management": [
+                "authenticate",
                 "create_user",
-                "delete_user",
                 "list_users",
-                "update_user_role",
+            ],
+            "ssh_keys": [
+                "cidx_ssh_key_create",
+                "cidx_ssh_key_list",
+                "cidx_ssh_key_delete",
+                "cidx_ssh_key_show_public",
+                "cidx_ssh_key_assign_host",
+            ],
+            "meta": [
+                "cidx_quick_reference",
+                "get_tool_categories",
+                "first_time_user_guide",
             ],
         }
 
@@ -4116,8 +4174,177 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         })
 
 
+async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Trigger manual re-indexing for activated repository.
+
+    Args:
+        params: {
+            "repository_alias": str - Repository alias to reindex
+            "index_types": List[str] - Index types (semantic, fts, temporal, scip)
+            "clear": bool - Rebuild from scratch vs incremental (default: False)
+        }
+        user: User requesting reindex
+
+    Returns:
+        MCP response with job details
+    """
+    import time
+    from datetime import datetime, timezone
+    from code_indexer.server.services.activated_repo_index_manager import (
+        ActivatedRepoIndexManager,
+    )
+
+    start_time = time.time()
+
+    try:
+        # Extract parameters
+        repo_alias = params.get("repository_alias")
+        index_types = params.get("index_types", [])
+        clear = params.get("clear", False)
+
+        if not repo_alias:
+            return _mcp_response({
+                "success": False,
+                "error": "repository_alias is required",
+            })
+
+        if not index_types:
+            return _mcp_response({
+                "success": False,
+                "error": "index_types is required",
+            })
+
+        # Create index manager and trigger reindex
+        index_manager = ActivatedRepoIndexManager()
+        job_id = index_manager.trigger_reindex(
+            repo_alias=repo_alias,
+            index_types=index_types,
+            clear=clear,
+            username=user.username,
+        )
+
+        # Calculate estimated duration based on index types
+        # Rough estimates: semantic/fts/temporal=5min each, scip=2min
+        duration_estimates = {
+            "semantic": 5,
+            "fts": 5,
+            "temporal": 5,
+            "scip": 2,
+        }
+        estimated_minutes = sum(
+            duration_estimates.get(t, 5) for t in index_types
+        )
+
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.info(
+            f"trigger_reindex completed in {elapsed_ms}ms - "
+            f"job_id={job_id}, repo={repo_alias}, types={index_types}"
+        )
+
+        return _mcp_response({
+            "success": True,
+            "job_id": job_id,
+            "status": "queued",
+            "index_types": index_types,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "estimated_duration_minutes": estimated_minutes,
+        })
+
+    except ValueError as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.warning(f"trigger_reindex validation error in {elapsed_ms}ms: {e}")
+        return _mcp_response({
+            "success": False,
+            "error": str(e),
+        })
+    except FileNotFoundError as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.warning(f"trigger_reindex repo not found in {elapsed_ms}ms: {e}")
+        return _mcp_response({
+            "success": False,
+            "error": str(e),
+        })
+    except Exception as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.exception(f"trigger_reindex error in {elapsed_ms}ms: {e}")
+        return _mcp_response({
+            "success": False,
+            "error": str(e),
+        })
+
+
+async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Get indexing status for all index types.
+
+    Args:
+        params: {
+            "repository_alias": str - Repository alias
+        }
+        user: User requesting status
+
+    Returns:
+        MCP response with index status for all types
+    """
+    import time
+    from code_indexer.server.services.activated_repo_index_manager import (
+        ActivatedRepoIndexManager,
+    )
+
+    start_time = time.time()
+
+    try:
+        # Extract parameters
+        repo_alias = params.get("repository_alias")
+
+        if not repo_alias:
+            return _mcp_response({
+                "success": False,
+                "error": "repository_alias is required",
+            })
+
+        # Create index manager and get status
+        index_manager = ActivatedRepoIndexManager()
+        status_data = index_manager.get_index_status(
+            repo_alias=repo_alias,
+            username=user.username,
+        )
+
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.info(
+            f"get_index_status completed in {elapsed_ms}ms - repo={repo_alias}"
+        )
+
+        # Build response with all index types
+        response = {
+            "success": True,
+            "repository_alias": repo_alias,
+        }
+        response.update(status_data)
+
+        return _mcp_response(response)
+
+    except FileNotFoundError as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.warning(f"get_index_status repo not found in {elapsed_ms}ms: {e}")
+        return _mcp_response({
+            "success": False,
+            "error": str(e),
+        })
+    except Exception as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.exception(f"get_index_status error in {elapsed_ms}ms: {e}")
+        return _mcp_response({
+            "success": False,
+            "error": str(e),
+        })
+
+
 # Register the quick_reference handler
 HANDLER_REGISTRY["cidx_quick_reference"] = quick_reference
+
+# Register re-indexing handlers
+HANDLER_REGISTRY["trigger_reindex"] = trigger_reindex
+HANDLER_REGISTRY["get_index_status"] = get_index_status
 
 # Register SCIP handlers
 HANDLER_REGISTRY["scip_definition"] = scip_definition

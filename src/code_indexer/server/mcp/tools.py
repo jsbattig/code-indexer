@@ -4612,10 +4612,10 @@ TOOL_REGISTRY["cidx_quick_reference"] = {
     "name": "cidx_quick_reference",
     "description": (
         "TL;DR: Get quick reference documentation for CIDX MCP tools. Returns concise summaries of available tools with their purposes and when to use them. "
-        "USE CASES: (1) Discover what tools are available, (2) Understand tool purposes before using them, (3) Find the right tool for a specific task, (4) Filter tools by category (search, scip, git, directory, user management). "
-        "CATEGORIES: search (semantic/FTS code search), scip (code intelligence - definitions, references, dependencies, call chains), git (repository exploration, commit history, diffs), directory (browse files and folders), repo_management (activate/deactivate repos), user_management (create/delete users, manage roles). "
+        "USE CASES: (1) Discover what tools are available, (2) Understand tool purposes before using them, (3) Find the right tool for a specific task, (4) Filter tools by category. "
+        "CATEGORIES: search (semantic/FTS code search), scip (code intelligence - definitions, references, dependencies, call chains), git_exploration (repository exploration, commit history, diffs), git_operations (status, stage, commit, push, pull, branch management), files (CRUD operations - list, create, edit, delete, move files), repo_management (activate/deactivate repos), golden_repos (add/remove/refresh global repositories), system (health checks, job monitoring, statistics), user_management (create/delete users, manage roles), ssh_keys (manage SSH keys for git operations), meta (documentation, quick reference). "
         "OUTPUT: Returns tool names with TL;DR descriptions extracted from full tool definitions. Use category filter to narrow results. "
-        'EXAMPLE: {"category": "scip"} returns all 7 SCIP tools with their TL;DR summaries. {"category": null} returns all 49 tools.'
+        'EXAMPLE: {"category": "scip"} returns all 7 SCIP tools with their TL;DR summaries. {"category": null} returns all 53 tools.'
     ),
     "inputSchema": {
         "type": "object",
@@ -4625,14 +4625,19 @@ TOOL_REGISTRY["cidx_quick_reference"] = {
                 "enum": [
                     "search",
                     "scip",
-                    "git",
-                    "directory",
+                    "git_exploration",
+                    "git_operations",
+                    "files",
                     "repo_management",
+                    "golden_repos",
+                    "system",
                     "user_management",
+                    "ssh_keys",
+                    "meta",
                     None,
                 ],
                 "default": None,
-                "description": "Optional category filter. null/omitted returns all tools. Options: search, scip, git, directory, repo_management, user_management.",
+                "description": "Optional category filter. null/omitted returns all tools. Options: search, scip, git_exploration, git_operations, files, repo_management, golden_repos, system, user_management, ssh_keys, meta.",
             },
         },
         "required": [],
