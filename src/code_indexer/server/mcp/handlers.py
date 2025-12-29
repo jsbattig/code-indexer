@@ -29,6 +29,13 @@ from code_indexer.server.services.ssh_key_generator import (
     InvalidKeyNameError,
     KeyAlreadyExistsError,
 )
+from code_indexer.server.services.git_operations_service import (
+    git_operations_service,
+    GitCommandError,
+)
+from code_indexer.server.repositories.activated_repo_manager import (
+    ActivatedRepoManager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2015,6 +2022,216 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
         return _mcp_response({"success": False, "error": str(e)})
 
 
+# =============================================================================
+# File CRUD Handlers (Story #628)
+# =============================================================================
+
+
+async def handle_create_file(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Create new file in activated repository.
+
+    Args:
+        params: Dictionary with repository_alias, file_path, content
+        user: User performing the operation
+
+    Returns:
+        MCP response with file metadata including content_hash for optimistic locking
+    """
+    from code_indexer.server.services.file_crud_service import (
+        file_crud_service,
+        CRUDOperationError,
+    )
+
+    try:
+        # Validate required parameters
+        repository_alias = params.get("repository_alias")
+        file_path = params.get("file_path")
+        content = params.get("content")
+
+        if not repository_alias:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository_alias"}
+            )
+        if not file_path:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: file_path"}
+            )
+        if content is None:  # Allow empty string content
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: content"}
+            )
+
+        # Call file CRUD service
+        result = file_crud_service.create_file(
+            repo_alias=repository_alias,
+            file_path=file_path,
+            content=content,
+            username=user.username,
+        )
+
+        return _mcp_response(result)
+
+    except FileExistsError as e:
+        logger.warning(f"File creation failed - file already exists: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except PermissionError as e:
+        logger.warning(f"File creation failed - permission denied: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except CRUDOperationError as e:
+        logger.error(f"File creation failed - CRUD operation error: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except ValueError as e:
+        logger.warning(f"File creation failed - invalid parameters: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in handle_create_file: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_edit_file(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Edit file using exact string replacement with optimistic locking.
+
+    Args:
+        params: Dictionary with repository_alias, file_path, old_string, new_string,
+                content_hash, and optional replace_all
+        user: User performing the operation
+
+    Returns:
+        MCP response with new content_hash and change metadata
+    """
+    from code_indexer.server.services.file_crud_service import (
+        file_crud_service,
+        HashMismatchError,
+        CRUDOperationError,
+    )
+
+    try:
+        # Validate required parameters
+        repository_alias = params.get("repository_alias")
+        file_path = params.get("file_path")
+        old_string = params.get("old_string")
+        new_string = params.get("new_string")
+        content_hash = params.get("content_hash")
+        replace_all = params.get("replace_all", False)
+
+        if not repository_alias:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository_alias"}
+            )
+        if not file_path:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: file_path"}
+            )
+        if old_string is None:  # Allow empty string
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: old_string"}
+            )
+        if new_string is None:  # Allow empty string
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: new_string"}
+            )
+        if not content_hash:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: content_hash"}
+            )
+
+        # Call file CRUD service
+        result = file_crud_service.edit_file(
+            repo_alias=repository_alias,
+            file_path=file_path,
+            old_string=old_string,
+            new_string=new_string,
+            content_hash=content_hash,
+            replace_all=replace_all,
+            username=user.username,
+        )
+
+        return _mcp_response(result)
+
+    except HashMismatchError as e:
+        logger.warning(f"File edit failed - hash mismatch (concurrent modification): {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except FileNotFoundError as e:
+        logger.warning(f"File edit failed - file not found: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except ValueError as e:
+        logger.warning(f"File edit failed - validation error: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except PermissionError as e:
+        logger.warning(f"File edit failed - permission denied: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except CRUDOperationError as e:
+        logger.error(f"File edit failed - CRUD operation error: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in handle_edit_file: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_delete_file(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Delete file from activated repository.
+
+    Args:
+        params: Dictionary with repository_alias, file_path, and optional content_hash
+        user: User performing the operation
+
+    Returns:
+        MCP response with deletion confirmation
+    """
+    from code_indexer.server.services.file_crud_service import (
+        file_crud_service,
+        HashMismatchError,
+        CRUDOperationError,
+    )
+
+    try:
+        # Validate required parameters
+        repository_alias = params.get("repository_alias")
+        file_path = params.get("file_path")
+        content_hash = params.get("content_hash")  # Optional
+
+        if not repository_alias:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository_alias"}
+            )
+        if not file_path:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: file_path"}
+            )
+
+        # Call file CRUD service
+        result = file_crud_service.delete_file(
+            repo_alias=repository_alias,
+            file_path=file_path,
+            content_hash=content_hash,
+            username=user.username,
+        )
+
+        return _mcp_response(result)
+
+    except HashMismatchError as e:
+        logger.warning(f"File deletion failed - hash mismatch (safety check): {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except FileNotFoundError as e:
+        logger.warning(f"File deletion failed - file not found: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except PermissionError as e:
+        logger.warning(f"File deletion failed - permission denied: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except CRUDOperationError as e:
+        logger.error(f"File deletion failed - CRUD operation error: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except ValueError as e:
+        logger.warning(f"File deletion failed - invalid parameters: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in handle_delete_file: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
 # Handler registry mapping tool names to handler functions
 HANDLER_REGISTRY = {
     "search_code": search_code,
@@ -2047,6 +2264,9 @@ HANDLER_REGISTRY = {
     "add_golden_repo_index": handle_add_golden_repo_index,
     "get_golden_repo_indexes": handle_get_golden_repo_indexes,
     "regex_search": handle_regex_search,
+    "create_file": handle_create_file,
+    "edit_file": handle_edit_file,
+    "delete_file": handle_delete_file,
 }
 
 
@@ -4345,6 +4565,985 @@ HANDLER_REGISTRY["cidx_quick_reference"] = quick_reference
 # Register re-indexing handlers
 HANDLER_REGISTRY["trigger_reindex"] = trigger_reindex
 HANDLER_REGISTRY["get_index_status"] = get_index_status
+
+
+# =============================================================================
+# Git Write Operations MCP Handlers (Story #626)
+# =============================================================================
+
+async def git_status(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_status tool - get repository working tree status."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_status(Path(repo_path))
+        result["success"] = True
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_status failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_status: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_stage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_stage tool - stage files for commit."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    file_paths = args.get("file_paths")
+    if not file_paths:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: file_paths"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_stage(Path(repo_path), file_paths)
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_stage failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_stage: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_unstage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_unstage tool - unstage files."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    file_paths = args.get("file_paths")
+    if not file_paths:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: file_paths"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_unstage(Path(repo_path), file_paths)
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_unstage failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_unstage: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_commit(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_commit tool - create a git commit."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    message = args.get("message")
+    if not message:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: message"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        # Get user email - try from user object first, fallback to username-based
+        user_email = getattr(user, "email", None) or f"{user.username}@cidx.local"
+        user_name = args.get("author_name") or user.username
+
+        result = git_operations_service.git_commit(
+            Path(repo_path), message, user_email, user_name
+        )
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_commit failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except ValueError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_commit: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_push(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_push tool - push commits to remote."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        remote = args.get("remote", "origin")
+        branch = args.get("branch")
+        result = git_operations_service.git_push(Path(repo_path), remote, branch)
+        result["remote"] = remote
+        if branch:
+            result["branch"] = branch
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_push failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_push: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_pull(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_pull tool - pull updates from remote."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        remote = args.get("remote", "origin")
+        branch = args.get("branch")
+        result = git_operations_service.git_pull(Path(repo_path), remote, branch)
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_pull failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_pull: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_fetch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_fetch tool - fetch refs from remote."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        remote = args.get("remote", "origin")
+        result = git_operations_service.git_fetch(Path(repo_path), remote)
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_fetch failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_fetch: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_reset(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_reset tool - reset working tree."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    mode = args.get("mode", "mixed")
+    target = args.get("target")
+    confirmation_token = args.get("confirmation_token")
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_reset(
+            Path(repo_path),
+            mode=mode,
+            target=target,
+            confirmation_token=confirmation_token,
+        )
+
+        # Handle confirmation token requirement
+        if result.get("requires_confirmation"):
+            return _mcp_response({
+                "success": False,
+                "confirmation_token_required": {
+                    "token": result["token"],
+                    "message": f"Hard reset requires confirmation. "
+                               f"Call again with confirmation_token='{result['token']}'",
+                },
+            })
+
+        return _mcp_response(result)
+
+    except ValueError as e:
+        # Token validation failed - generate new token
+        token = git_operations_service.generate_confirmation_token("git_reset_hard")
+        return _mcp_response({
+            "success": False,
+            "confirmation_token_required": {
+                "token": token,
+                "message": str(e),
+            },
+        })
+    except GitCommandError as e:
+        logger.error(f"git_reset failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_reset: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_clean(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_clean tool - remove untracked files."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    confirmation_token = args.get("confirmation_token")
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_clean(
+            Path(repo_path), confirmation_token=confirmation_token
+        )
+
+        # Handle confirmation token requirement
+        if result.get("requires_confirmation"):
+            return _mcp_response({
+                "success": False,
+                "confirmation_token_required": {
+                    "token": result["token"],
+                    "message": f"Git clean requires confirmation. "
+                               f"Call again with confirmation_token='{result['token']}'",
+                },
+            })
+
+        return _mcp_response(result)
+
+    except ValueError as e:
+        # Token validation failed - generate new token
+        token = git_operations_service.generate_confirmation_token("git_clean")
+        return _mcp_response({
+            "success": False,
+            "confirmation_token_required": {
+                "token": token,
+                "message": str(e),
+            },
+        })
+    except GitCommandError as e:
+        logger.error(f"git_clean failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_clean: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_merge_abort(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_merge_abort tool - abort in-progress merge."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_merge_abort(Path(repo_path))
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_merge_abort failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_merge_abort: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_checkout_file(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_checkout_file tool - restore file from HEAD."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    file_path = args.get("file_path")
+    if not file_path:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: file_path"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_checkout_file(Path(repo_path), file_path)
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_checkout_file failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_checkout_file: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_branch_list(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_branch_list tool - list all branches."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_branch_list(Path(repo_path))
+        result["success"] = True
+        # Transform result to expected format if service returns local/current format
+        if "branches" not in result and "local" in result:
+            branches = []
+            current = result.get("current", "")
+            for branch in result.get("local", []):
+                branches.append({"name": branch, "current": branch == current})
+            result["branches"] = branches
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_branch_list failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_branch_list: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_branch_create(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_branch_create tool - create new branch."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    branch_name = args.get("branch_name")
+    if not branch_name:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: branch_name"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_branch_create(Path(repo_path), branch_name)
+        # Map created_branch to branch_name for consistent API
+        if "created_branch" in result and "branch_name" not in result:
+            result["branch_name"] = result["created_branch"]
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_branch_create failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_branch_create: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_branch_switch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_branch_switch tool - switch to different branch."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    branch_name = args.get("branch_name")
+    if not branch_name:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: branch_name"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_branch_switch(Path(repo_path), branch_name)
+        # Map current_branch to branch_name for consistent API
+        if "current_branch" in result and "branch_name" not in result:
+            result["branch_name"] = result["current_branch"]
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_branch_switch failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_branch_switch: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def git_branch_delete(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_branch_delete tool - delete branch."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    branch_name = args.get("branch_name")
+    if not branch_name:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: branch_name"}
+        )
+
+    confirmation_token = args.get("confirmation_token")
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        result = git_operations_service.git_branch_delete(
+            Path(repo_path), branch_name, confirmation_token=confirmation_token
+        )
+
+        # Handle confirmation token requirement
+        if result.get("requires_confirmation"):
+            return _mcp_response({
+                "success": False,
+                "confirmation_token_required": {
+                    "token": result["token"],
+                    "message": f"Branch deletion requires confirmation. "
+                               f"Call again with confirmation_token='{result['token']}'",
+                },
+            })
+
+        return _mcp_response(result)
+
+    except ValueError as e:
+        # Token validation failed - generate new token
+        token = git_operations_service.generate_confirmation_token("git_branch_delete")
+        return _mcp_response({
+            "success": False,
+            "confirmation_token_required": {
+                "token": token,
+                "message": str(e),
+            },
+        })
+    except GitCommandError as e:
+        logger.error(f"git_branch_delete failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_branch_delete: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Register Git Write Operations handlers (Batch 1, 2, 3, 4 & 5)
+HANDLER_REGISTRY["git_status"] = git_status
+HANDLER_REGISTRY["git_stage"] = git_stage
+HANDLER_REGISTRY["git_unstage"] = git_unstage
+HANDLER_REGISTRY["git_commit"] = git_commit
+HANDLER_REGISTRY["git_push"] = git_push
+HANDLER_REGISTRY["git_pull"] = git_pull
+HANDLER_REGISTRY["git_fetch"] = git_fetch
+HANDLER_REGISTRY["git_reset"] = git_reset
+HANDLER_REGISTRY["git_clean"] = git_clean
+HANDLER_REGISTRY["git_merge_abort"] = git_merge_abort
+HANDLER_REGISTRY["git_checkout_file"] = git_checkout_file
+HANDLER_REGISTRY["git_branch_list"] = git_branch_list
+HANDLER_REGISTRY["git_branch_create"] = git_branch_create
+HANDLER_REGISTRY["git_branch_switch"] = git_branch_switch
+HANDLER_REGISTRY["git_branch_delete"] = git_branch_delete
+
+
+async def git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_diff tool - get diff of working tree changes."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        file_paths = args.get("file_paths")
+        result = git_operations_service.git_diff(Path(repo_path), file_paths=file_paths)
+        result["success"] = True
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_diff failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_diff: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["git_diff"] = git_diff
+
+
+async def git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for git_log tool - get commit history."""
+    repository_alias = args.get("repository_alias")
+    if not repository_alias:
+        return _mcp_response(
+            {"success": False, "error": "Missing required parameter: repository_alias"}
+        )
+
+    try:
+        repo_manager = ActivatedRepoManager()
+        repo_path = repo_manager.get_activated_repo_path(
+            username=user.username, user_alias=repository_alias
+        )
+
+        limit = args.get("limit", 10)
+        since_date = args.get("since_date")
+        result = git_operations_service.git_log(
+            Path(repo_path), limit=limit, since_date=since_date
+        )
+        result["success"] = True
+        return _mcp_response(result)
+
+    except GitCommandError as e:
+        logger.error(f"git_log failed: {e}")
+        return _mcp_response({
+            "success": False,
+            "error_type": "GitCommandError",
+            "error": str(e),
+            "stderr": e.stderr,
+            "command": e.command,
+        })
+    except FileNotFoundError as e:
+        return _mcp_response({"success": False, "error": str(e)})
+    except Exception as e:
+        logger.exception(f"Unexpected error in git_log: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["git_log"] = git_log
+
+
+# =============================================================================
+# Meta Tools Handlers (Batch 6: first_time_user_guide, get_tool_categories)
+# =============================================================================
+
+
+async def first_time_user_guide(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for first_time_user_guide tool - returns step-by-step onboarding guide."""
+    guide = {
+        "steps": [
+            {
+                "step_number": 1,
+                "title": "Check your identity and permissions",
+                "description": "Use whoami() to see your username, role, and what actions you can perform.",
+                "example_call": "whoami()",
+                "expected_result": "Returns your username, role (admin/normal_user), and permission list",
+            },
+            {
+                "step_number": 2,
+                "title": "Discover available repositories",
+                "description": "Use list_global_repos() to see all repositories available for searching.",
+                "example_call": "list_global_repos()",
+                "expected_result": "List of repository aliases ending in '-global' (e.g., 'backend-global')",
+            },
+            {
+                "step_number": 3,
+                "title": "Check repository capabilities",
+                "description": "Use global_repo_status() to see what indexes exist for a repository.",
+                "example_call": "global_repo_status('backend-global')",
+                "expected_result": "Index status showing semantic, FTS, temporal, and SCIP availability",
+            },
+            {
+                "step_number": 4,
+                "title": "Run your first search",
+                "description": "Use search_code() with a conceptual query. Start with small limit to conserve tokens.",
+                "example_call": "search_code(query_text='authentication', repository_alias='backend-global', limit=5)",
+                "expected_result": "Code snippets with similarity scores, file paths, and line numbers",
+            },
+            {
+                "step_number": 5,
+                "title": "Explore repository structure",
+                "description": "Use browse_directory() to see files and folders in a repository.",
+                "example_call": "browse_directory(repository_alias='backend-global', path='src')",
+                "expected_result": "List of files and directories with metadata",
+            },
+            {
+                "step_number": 6,
+                "title": "Use code intelligence (if SCIP available)",
+                "description": "Use scip_definition() to find where functions/classes are defined.",
+                "example_call": "scip_definition(symbol='authenticate_user', repository_alias='backend-global')",
+                "expected_result": "Definition location with file path, line number, and context",
+            },
+            {
+                "step_number": 7,
+                "title": "Activate repository for editing",
+                "description": "Use activate_repository() to create your personal writable workspace.",
+                "example_call": "activate_repository(golden_repo_alias='backend-global', user_alias='my-backend')",
+                "expected_result": "Confirmation with your new workspace alias",
+            },
+            {
+                "step_number": 8,
+                "title": "Make changes with git workflow",
+                "description": "Use file CRUD and git tools: create_file/edit_file -> git_stage -> git_commit -> git_push",
+                "example_call": "git_stage(repository_alias='my-backend', file_paths=['src/new_file.py'])",
+                "expected_result": "Files staged for commit, ready for git_commit",
+            },
+        ],
+        "quick_start_summary": [
+            "1. whoami() - Check your permissions",
+            "2. list_global_repos() - Find available repositories",
+            "3. global_repo_status('repo-global') - Check index capabilities",
+            "4. search_code('query', 'repo-global', limit=5) - Search code",
+            "5. browse_directory('repo-global', 'src') - Explore structure",
+            "6. scip_definition('symbol', 'repo-global') - Find definitions",
+            "7. activate_repository('repo-global', 'my-repo') - Enable editing",
+            "8. edit_file -> git_stage -> git_commit -> git_push - Make changes",
+        ],
+        "common_errors": [
+            {
+                "error": "Repository 'myrepo' not found",
+                "solution": "Check if you meant 'myrepo-global' (for search) or need to activate first. Use list_global_repos() and list_activated_repos() to verify.",
+            },
+            {
+                "error": "Cannot write to global repository",
+                "solution": "Global repos are read-only. Use activate_repository() first to create a writable workspace.",
+            },
+            {
+                "error": "Permission denied: requires repository:write",
+                "solution": "Check your role with whoami(). The normal_user role may not have write permissions.",
+            },
+            {
+                "error": "Empty temporal query results",
+                "solution": "Temporal indexing may not be enabled. Check with global_repo_status() - look for enable_temporal: true.",
+            },
+            {
+                "error": "SCIP definition/references returns no results",
+                "solution": "SCIP indexes may not exist for this repository. Check global_repo_status() for SCIP availability.",
+            },
+        ],
+    }
+
+    return _mcp_response({"success": True, "guide": guide})
+
+
+HANDLER_REGISTRY["first_time_user_guide"] = first_time_user_guide
+
+
+async def get_tool_categories(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Handler for get_tool_categories tool - returns tools organized by category."""
+    from .tools import TOOL_REGISTRY
+
+    # Define tool categories and their members
+    # Each tool gets a short one-line description extracted from its full description
+    tool_categories = {
+        "SEARCH & DISCOVERY": [
+            "search_code",
+            "regex_search",
+            "browse_directory",
+            "directory_tree",
+            "get_file_content",
+            "list_global_repos",
+            "global_repo_status",
+        ],
+        "GIT HISTORY & EXPLORATION": [
+            "git_log",
+            "git_show_commit",
+            "git_file_at_revision",
+            "git_diff",
+            "git_blame",
+            "git_file_history",
+            "git_search_commits",
+            "git_search_diffs",
+        ],
+        "GIT OPERATIONS": [
+            "git_status",
+            "git_stage",
+            "git_unstage",
+            "git_commit",
+            "git_push",
+            "git_pull",
+            "git_fetch",
+            "git_reset",
+            "git_clean",
+            "git_merge_abort",
+            "git_checkout_file",
+            "git_branch_list",
+            "git_branch_create",
+            "git_branch_switch",
+            "git_branch_delete",
+        ],
+        "FILE CRUD": [
+            "create_file",
+            "edit_file",
+            "delete_file",
+        ],
+        "SCIP CODE INTELLIGENCE": [
+            "scip_definition",
+            "scip_references",
+            "scip_dependencies",
+            "scip_dependents",
+            "scip_impact",
+            "scip_callchain",
+            "scip_context",
+        ],
+        "REPOSITORY MANAGEMENT": [
+            "activate_repository",
+            "deactivate_repository",
+            "list_activated_repos",
+            "trigger_reindex",
+            "get_index_status",
+        ],
+        "SYSTEM & ADMIN": [
+            "whoami",
+            "authenticate",
+            "cidx_ssh_key_create",
+            "cidx_ssh_key_list",
+            "cidx_ssh_key_delete",
+            "cidx_ssh_key_show_public",
+            "cidx_ssh_key_assign_host",
+        ],
+        "HELP & GUIDANCE": [
+            "first_time_user_guide",
+            "get_tool_categories",
+            "cidx_quick_reference",
+        ],
+    }
+
+    def get_short_description(tool_name: str) -> str:
+        """Extract short description from tool's full description."""
+        tool_def = TOOL_REGISTRY.get(tool_name, {})
+        description = tool_def.get("description", "")
+        # Extract TL;DR if present, otherwise first sentence
+        if "TL;DR:" in description:
+            tldr_start = description.index("TL;DR:") + 6
+            tldr_end = description.find(".", tldr_start)
+            if tldr_end > tldr_start:
+                return description[tldr_start:tldr_end + 1].strip()
+        # Fall back to first sentence
+        first_sentence_end = description.find(".")
+        if first_sentence_end > 0:
+            return description[:first_sentence_end + 1].strip()
+        return description[:100].strip() if description else "No description available"
+
+    # Build categorized response
+    categories = {}
+    total_tools = 0
+
+    for category_name, tool_names in tool_categories.items():
+        category_tools = []
+        for tool_name in tool_names:
+            if tool_name in TOOL_REGISTRY:
+                short_desc = get_short_description(tool_name)
+                category_tools.append(f"{tool_name} - {short_desc}")
+                total_tools += 1
+        if category_tools:
+            categories[category_name] = category_tools
+
+    return _mcp_response({
+        "success": True,
+        "categories": categories,
+        "total_tools": total_tools,
+    })
+
+
+HANDLER_REGISTRY["get_tool_categories"] = get_tool_categories
+
 
 # Register SCIP handlers
 HANDLER_REGISTRY["scip_definition"] = scip_definition
