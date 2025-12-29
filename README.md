@@ -2,7 +2,7 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-**Version 8.0.0** - [Changelog](CHANGELOG.md) | [Migration Guide](docs/migration-to-v8.md) | [Architecture](docs/architecture.md)
+**Version 8.4.46** - [Changelog](CHANGELOG.md) | [Migration Guide](docs/migration-to-v8.md) | [Architecture](docs/architecture.md)
 
 ## CIDX MCP Bridge for Claude Desktop
 
@@ -68,6 +68,7 @@ Token refresh is fully automatic. MCPB transparently refreshes expired tokens us
 - **SSE Streaming**: Progressive results for large queries
 - **Multi-Platform**: macOS (Intel/Apple Silicon), Linux, Windows
 - **Zero Dependencies**: Single binary, no Python runtime required
+- **Comprehensive Tool Docs**: All 53 MCP tools with inline TL;DR format (quick-start, use cases, troubleshooting)
 - **Complete Documentation**: 4,000+ lines covering setup, API, queries, troubleshooting
 
 ### Documentation
