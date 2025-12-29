@@ -42,29 +42,59 @@ class User(BaseModel):
             "created_at": self.created_at.isoformat(),
         }
 
-    def has_permission(self, permission: str) -> bool:
+    def has_permission(self, permission: Optional[str]) -> bool:
         """
         Check if user has specific permission.
 
+        Permission model uses inheritance:
+        - ADMIN inherits all POWER_USER + NORMAL_USER permissions + admin-specific
+        - POWER_USER inherits all NORMAL_USER permissions + power-user-specific
+        - NORMAL_USER has base permissions
+
         Args:
-            permission: Permission to check
+            permission: Permission to check (can be None for public tools)
 
         Returns:
             True if user has permission, False otherwise
         """
-        # Define permission mapping
-        role_permissions = {
+        # Handle None permission (public tools) and "public" permission
+        if permission is None or permission == "public":
+            return True
+
+        # Define base permissions for each role (without inheritance)
+        base_permissions = {
+            UserRole.NORMAL_USER: {
+                "query_repos",
+                "repository:read",  # Can read repo status, list branches, etc.
+            },
+            UserRole.POWER_USER: {
+                "activate_repos",
+                "repository:write",  # Can modify files, commit, push, etc.
+            },
             UserRole.ADMIN: {
                 "manage_users",
                 "manage_golden_repos",
-                "activate_repos",
-                "query_repos",
+                "repository:admin",  # Can perform destructive operations
             },
-            UserRole.POWER_USER: {"activate_repos", "query_repos"},
-            UserRole.NORMAL_USER: {"query_repos"},
         }
 
-        user_permissions = role_permissions.get(self.role, set())
+        # Build inherited permissions based on role hierarchy
+        if self.role == UserRole.ADMIN:
+            # ADMIN inherits from POWER_USER and NORMAL_USER
+            user_permissions = (
+                base_permissions[UserRole.NORMAL_USER]
+                | base_permissions[UserRole.POWER_USER]
+                | base_permissions[UserRole.ADMIN]
+            )
+        elif self.role == UserRole.POWER_USER:
+            # POWER_USER inherits from NORMAL_USER
+            user_permissions = (
+                base_permissions[UserRole.NORMAL_USER]
+                | base_permissions[UserRole.POWER_USER]
+            )
+        else:  # NORMAL_USER
+            user_permissions = base_permissions[UserRole.NORMAL_USER]
+
         return permission in user_permissions
 
 
