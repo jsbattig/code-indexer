@@ -294,12 +294,25 @@ class TestActivatedRepoManager:
         # Mock that source is a git repository
         mock_exists.return_value = True
 
-        # Mock all subprocess calls to return success
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "origin\t/path/to/golden/repo\t(fetch)\n"
-        mock_result.stderr = ""
-        mock_subprocess.return_value = mock_result
+        # Mock subprocess calls with different responses
+        def subprocess_side_effect(*args, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stderr = ""
+
+            # Check command to return appropriate stdout
+            if args[0][0] == "git" and args[0][1] == "rev-parse":
+                # Return "false" for bare repository check (non-bare repo)
+                result.stdout = "false"
+            elif args[0][0] == "git" and args[0][1] == "remote" and args[0][2] == "get-url":
+                # Return GitHub URL for origin remote
+                result.stdout = "git@github.com:example/repo.git"
+            else:
+                result.stdout = ""
+
+            return result
+
+        mock_subprocess.side_effect = subprocess_side_effect
 
         result = activated_repo_manager._clone_with_copy_on_write(
             golden_path, activated_path
@@ -307,20 +320,30 @@ class TestActivatedRepoManager:
 
         assert result is True
 
-        # Verify CoW clone workflow (Issue #500 fix):
+        # Verify CoW clone workflow (Story #636 - dual remote setup):
         # 1. cp --reflink=auto -r
-        # 2. git update-index --refresh
-        # 3. git restore .
-        # 4. cidx fix-config --force
-        # 5. git remote add origin
-        # 6. git fetch origin
-        # 7. git status (verification)
+        # 2. git rev-parse --is-bare-repository (bare detection)
+        # 3. git update-index --refresh
+        # 4. git restore .
+        # 5. cidx fix-config --force
+        # 6. git remote get-url origin (from golden repo)
+        # 7. git remote add origin <github-url>
+        # 8. git remote add golden <local-path>
+        # 9. git fetch golden
+        # 10. git status (verification)
         expected_calls = [
             call(
                 ["cp", "--reflink=auto", "-r", golden_path, activated_path],
                 capture_output=True,
                 text=True,
                 timeout=120,
+            ),
+            call(
+                ["git", "rev-parse", "--is-bare-repository"],
+                cwd=activated_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
             ),
             call(
                 ["git", "update-index", "--refresh"],
@@ -344,14 +367,28 @@ class TestActivatedRepoManager:
                 timeout=60,
             ),
             call(
-                ["git", "remote", "add", "origin", golden_path],
+                ["git", "remote", "get-url", "origin"],
+                cwd=golden_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            ),
+            call(
+                ["git", "remote", "add", "origin", "git@github.com:example/repo.git"],
                 cwd=activated_path,
                 capture_output=True,
                 text=True,
                 timeout=30,
             ),
             call(
-                ["git", "fetch", "origin"],
+                ["git", "remote", "add", "golden", golden_path],
+                cwd=activated_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            ),
+            call(
+                ["git", "fetch", "golden"],
                 cwd=activated_path,
                 capture_output=True,
                 text=True,

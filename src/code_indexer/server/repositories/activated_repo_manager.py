@@ -64,6 +64,10 @@ class ActivatedRepoManager:
     that support branch switching and copy-on-write cloning.
     """
 
+    # Git operation timeout constants (Story #636)
+    GIT_COMMAND_TIMEOUT = 30  # seconds for general git commands
+    GIT_FETCH_TIMEOUT = 60  # seconds for git fetch operations
+
     def __init__(
         self,
         data_dir: Optional[str] = None,
@@ -844,6 +848,7 @@ class ActivatedRepoManager:
                 repo_data = json.load(f)
 
             current_branch = repo_data.get("current_branch", "master")
+            golden_repo_alias = repo_data.get("golden_repo_alias")
 
             # Check if this is a git repository
             git_dir = os.path.join(repo_dir, ".git")
@@ -852,13 +857,23 @@ class ActivatedRepoManager:
                     f"Repository '{user_alias}' is not a git repository - sync not supported"
                 )
 
-            # Step 1: Fetch from origin (golden repository)
+            # Story #636: Check and migrate legacy remotes before fetch
+            if golden_repo_alias and golden_repo_alias in self.golden_repo_manager.golden_repos:
+                golden_repo = self.golden_repo_manager.golden_repos[golden_repo_alias]
+                golden_repo_path = golden_repo.clone_path
+                self._detect_and_migrate_legacy_remotes(repo_dir, golden_repo_path)
+            else:
+                self.logger.warning(
+                    f"Cannot migrate remotes for '{user_alias}': golden repo alias '{golden_repo_alias}' not found"
+                )
+
+            # Step 1: Fetch from golden (local golden repository) - Story #636
             self.logger.info(
                 f"Syncing repository '{user_alias}' with golden repository"
             )
 
             fetch_result = subprocess.run(
-                ["git", "fetch", "origin"],
+                ["git", "fetch", "golden"],
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
@@ -883,9 +898,9 @@ class ActivatedRepoManager:
                     }
 
             # Step 2: Check if there are changes to merge
-            # Compare current branch with origin branch
+            # Compare current branch with golden branch
             diff_result = subprocess.run(
-                ["git", "diff", f"HEAD..origin/{current_branch}", "--name-only"],
+                ["git", "diff", f"HEAD..golden/{current_branch}", "--name-only"],
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
@@ -902,9 +917,9 @@ class ActivatedRepoManager:
                     "changes_applied": False,
                 }
 
-            # Step 3: Merge changes from origin
+            # Step 3: Merge changes from golden
             merge_result = subprocess.run(
-                ["git", "merge", f"origin/{current_branch}"],
+                ["git", "merge", f"golden/{current_branch}"],
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
@@ -1855,7 +1870,69 @@ class ActivatedRepoManager:
 
             self.logger.info(f"CoW clone successful: {source_path} -> {dest_path}")
 
-            # Step 2: Fix git status for CoW cloned files (only if git repo)
+            # Step 2: Detect and convert bare repositories (Story #636)
+            # Golden repos are stored as bare, but activated repos need working trees
+            result = subprocess.run(
+                ["git", "rev-parse", "--is-bare-repository"],
+                cwd=dest_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            is_bare = result.returncode == 0 and result.stdout.strip() == "true"
+
+            if is_bare:
+                self.logger.info(
+                    f"Detected bare repository clone, converting to non-bare: {dest_path}"
+                )
+
+                # Convert bare to non-bare
+                result = subprocess.run(
+                    ["git", "config", "core.bare", "false"],
+                    cwd=dest_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                if result.returncode != 0:
+                    raise ActivatedRepoError(
+                        f"Failed to set core.bare=false: {result.stderr}"
+                    )
+
+                # Move git internals to .git subdirectory
+                git_dir_new = os.path.join(dest_path, ".git")
+                os.makedirs(git_dir_new, exist_ok=True)
+
+                # Move all git files/dirs to .git/ except .git itself
+                for item in os.listdir(dest_path):
+                    if item != ".git":
+                        src_item = os.path.join(dest_path, item)
+                        dst_item = os.path.join(git_dir_new, item)
+                        if os.path.exists(dst_item):
+                            if os.path.isdir(dst_item):
+                                shutil.rmtree(dst_item)
+                            else:
+                                os.remove(dst_item)
+                        shutil.move(src_item, dst_item)
+
+                # Checkout working tree
+                result = subprocess.run(
+                    ["git", "checkout", "-f", "HEAD"],
+                    cwd=dest_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+                if result.returncode != 0:
+                    self.logger.warning(
+                        f"git checkout -f HEAD failed (non-fatal): {result.stderr}"
+                    )
+
+                self.logger.info(f"Successfully converted bare repo to non-bare: {dest_path}")
+
+            # Step 3: Fix git status for CoW cloned files (only if git repo)
             git_dir = os.path.join(dest_path, ".git")
             if os.path.exists(git_dir):
                 # Step 2a: Run git update-index --refresh to sync index with file timestamps
@@ -2014,14 +2091,63 @@ class ActivatedRepoManager:
         except Exception as e:
             self.logger.warning(f"Error setting up git remote: {str(e)}")
 
+    def _add_or_update_remote(
+        self, repo_path: str, remote_name: str, url: str
+    ) -> None:
+        """
+        Add or update a git remote (helper method to eliminate duplication).
+
+        Args:
+            repo_path: Path to git repository
+            remote_name: Name of remote (e.g., 'origin', 'golden')
+            url: URL or path for the remote
+
+        Raises:
+            ActivatedRepoError: If remote configuration fails
+        """
+        # Try to add remote
+        result = subprocess.run(
+            ["git", "remote", "add", remote_name, url],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=self.GIT_COMMAND_TIMEOUT,
+        )
+
+        if result.returncode != 0:
+            # If remote already exists, update it
+            if "already exists" in result.stderr:
+                result = subprocess.run(
+                    ["git", "remote", "set-url", remote_name, url],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.GIT_COMMAND_TIMEOUT,
+                )
+                if result.returncode != 0:
+                    raise ActivatedRepoError(
+                        f"Failed to update {remote_name} remote: {result.stderr}"
+                    )
+            else:
+                raise ActivatedRepoError(
+                    f"Failed to add {remote_name} remote: {result.stderr}"
+                )
+
     def _configure_git_structure(self, source_path: str, dest_path: str) -> None:
         """
-        Configure git structure in CoW repository for proper branch operations.
+        Configure git structure in CoW repository with dual remotes (Story #636).
 
         Sets up the activated repository to work correctly with git operations by:
-        1. Adding the golden repository as 'origin' remote
-        2. Ensuring proper git configuration
-        3. Verifying git operations work
+        1. Extracting GitHub/GitLab URL from golden repository's origin
+        2. Adding 'origin' remote pointing to GitHub/GitLab (for push/pull)
+        3. Adding 'golden' remote pointing to local golden repo (for fast sync)
+        4. Ensuring proper git configuration
+        5. Verifying git operations work
+
+        This enables:
+        - Users can push changes to GitHub/GitLab via 'origin'
+        - Fast local sync from golden repo via 'golden' remote
+        - Backward compatibility with sync_with_golden_repository()
 
         Args:
             source_path: Source golden repository path
@@ -2031,56 +2157,54 @@ class ActivatedRepoManager:
             ActivatedRepoError: If git configuration fails
         """
         try:
-            # Set up 'origin' remote pointing to golden repository
-            # This is essential for git fetch/checkout operations to work
-            result = subprocess.run(
-                ["git", "remote", "add", "origin", source_path],
-                cwd=dest_path,
+            # Step 1: Extract GitHub/GitLab URL from golden repo's origin
+            github_url_result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=source_path,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=self.GIT_COMMAND_TIMEOUT,
             )
 
-            if result.returncode != 0:
-                # If remote already exists, update it
-                if "already exists" in result.stderr:
-                    result = subprocess.run(
-                        ["git", "remote", "set-url", "origin", source_path],
-                        cwd=dest_path,
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-                    if result.returncode != 0:
-                        raise ActivatedRepoError(
-                            f"Failed to update git remote: {result.stderr}"
-                        )
-                else:
-                    raise ActivatedRepoError(
-                        f"Failed to add git remote: {result.stderr}"
-                    )
+            if github_url_result.returncode == 0:
+                github_url = github_url_result.stdout.strip()
+                self.logger.info(
+                    f"Extracted GitHub/GitLab URL from golden repo: {github_url}"
+                )
+            else:
+                # Fallback: If golden repo has no origin, use local path
+                github_url = source_path
+                self.logger.warning(
+                    f"Golden repo has no origin remote, using local path: {source_path}"
+                )
 
-            # Fetch from origin to ensure remote branches are available
+            # Step 2: Set up 'origin' remote pointing to GitHub/GitLab
+            self._add_or_update_remote(dest_path, "origin", github_url)
+
+            # Step 3: Set up 'golden' remote pointing to local golden repo path
+            self._add_or_update_remote(dest_path, "golden", source_path)
+
+            # Step 4: Fetch from golden (local, fast) to ensure remote branches are available
             result = subprocess.run(
-                ["git", "fetch", "origin"],
+                ["git", "fetch", "golden"],
                 cwd=dest_path,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=self.GIT_FETCH_TIMEOUT,
             )
 
             if result.returncode != 0:
                 raise ActivatedRepoError(
-                    f"Failed to fetch from origin: {result.stderr}"
+                    f"Failed to fetch from golden remote: {result.stderr}"
                 )
 
-            # Verify git structure is working
+            # Step 5: Verify git structure is working
             result = subprocess.run(
                 ["git", "status"],
                 cwd=dest_path,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=self.GIT_COMMAND_TIMEOUT,
             )
 
             if result.returncode != 0:
@@ -2088,12 +2212,133 @@ class ActivatedRepoManager:
                     f"Git repository structure invalid: {result.stderr}"
                 )
 
-            self.logger.info(f"Git structure configured successfully for: {dest_path}")
+            self.logger.info(
+                f"Dual remote git structure configured successfully for: {dest_path}"
+            )
+            self.logger.info(f"  origin -> {github_url}")
+            self.logger.info(f"  golden -> {source_path}")
 
         except subprocess.TimeoutExpired:
             raise ActivatedRepoError("Git configuration operation timed out")
         except Exception as e:
             raise ActivatedRepoError(f"Failed to configure git structure: {str(e)}")
+
+    def _detect_and_migrate_legacy_remotes(
+        self, repo_dir: str, golden_repo_path: str
+    ) -> bool:
+        """
+        Detect and migrate legacy activated repos with single origin remote (Story #636).
+
+        Legacy repos have 'origin' pointing to local golden repo path instead of GitHub/GitLab.
+        This method provides just-in-time migration to dual remote setup.
+
+        Migration process:
+        1. Check if origin points to local path (starts with /)
+        2. If yes: Rename origin -> golden, add new origin -> GitHub URL
+        3. If origin is GitHub URL but no golden remote: Add golden remote
+        4. If already using dual remotes: Return False (idempotent)
+
+        Args:
+            repo_dir: Path to activated repository
+            golden_repo_path: Path to golden repository
+
+        Returns:
+            True if migration was performed, False if already using dual remotes
+
+        Raises:
+            ActivatedRepoError: If migration fails
+        """
+        try:
+            # Check if origin remote exists and get its URL
+            origin_result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                timeout=self.GIT_COMMAND_TIMEOUT,
+            )
+
+            if origin_result.returncode != 0:
+                # No origin remote - nothing to migrate
+                return False
+
+            origin_url = origin_result.stdout.strip()
+
+            # Check if origin points to local path (legacy setup)
+            if origin_url.startswith("/"):
+                self.logger.info(
+                    f"Detected legacy single-remote setup in {repo_dir}, migrating to dual remotes"
+                )
+
+                # Get GitHub URL from golden repo's origin
+                github_url_result = subprocess.run(
+                    ["git", "remote", "get-url", "origin"],
+                    cwd=golden_repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.GIT_COMMAND_TIMEOUT,
+                )
+
+                if github_url_result.returncode == 0:
+                    github_url = github_url_result.stdout.strip()
+
+                    # Validate GitHub URL is not another local path (Story #636)
+                    if github_url.startswith("/"):
+                        self.logger.warning(
+                            f"Cannot migrate: golden repo origin is local path, not remote URL: {github_url}"
+                        )
+                        return False
+                else:
+                    # Fallback: Use golden repo path if it has no origin
+                    github_url = golden_repo_path
+                    self.logger.warning(
+                        f"Golden repo has no origin, using local path: {golden_repo_path}"
+                    )
+
+                # Rename origin to golden
+                rename_result = subprocess.run(
+                    ["git", "remote", "rename", "origin", "golden"],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.GIT_COMMAND_TIMEOUT,
+                )
+
+                if rename_result.returncode != 0:
+                    raise ActivatedRepoError(
+                        f"Failed to rename origin to golden: {rename_result.stderr}"
+                    )
+
+                # Add new origin pointing to GitHub
+                self._add_or_update_remote(repo_dir, "origin", github_url)
+
+                self.logger.info(
+                    f"Migration complete: origin={github_url}, golden={golden_repo_path}"
+                )
+                return True
+
+            # Check if golden remote exists (dual remote setup)
+            golden_result = subprocess.run(
+                ["git", "remote", "get-url", "golden"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                timeout=self.GIT_COMMAND_TIMEOUT,
+            )
+
+            if golden_result.returncode != 0:
+                # origin is GitHub URL but no golden remote - add it
+                self._add_or_update_remote(repo_dir, "golden", golden_repo_path)
+                self.logger.info(f"Added missing golden remote: {golden_repo_path}")
+                return True
+
+            # Already using dual remotes - no migration needed
+            return False
+
+        except subprocess.TimeoutExpired:
+            raise ActivatedRepoError("Migration operation timed out")
+        except Exception as e:
+            raise ActivatedRepoError(f"Failed to migrate legacy remotes: {str(e)}")
 
     def _validate_branch_name(self, branch_name: str) -> None:
         """

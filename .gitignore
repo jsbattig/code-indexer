@@ -186,3 +186,5 @@ code-indexer-temporal/
 .test-telemetry/
 coverage.json
 .local-testing
+/reports/manual-testing
+/reports/test-debug

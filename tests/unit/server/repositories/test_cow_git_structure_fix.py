@@ -362,7 +362,7 @@ class TestCoWGitStructureFix:
         assert result.returncode == 0, f"git branch failed: {result.stderr}"
         branches = result.stdout
         assert "master" in branches, f"Should see master branch: {branches}"
-        assert "remotes/origin" in branches, f"Should see remote branches: {branches}"
+        assert "remotes/golden" in branches, f"Should see remote branches (golden): {branches}"
         assert "feature-branch" in branches, f"Should see feature-branch: {branches}"
 
     def test_activated_repo_branch_switching_works_after_fix(

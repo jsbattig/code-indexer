@@ -119,6 +119,71 @@ class GitOperationsService:
 
     # REST API Wrapper Methods (resolve repo_alias to repo_path)
 
+    def _trigger_migration_if_needed(self, repo_path: str, username: str, repo_alias: str) -> None:
+        """
+        Trigger legacy remote migration if needed (Story #636).
+
+        Checks if the activated repo uses legacy single-remote setup and
+        automatically migrates to dual remote setup (origin=GitHub, golden=local).
+
+        Args:
+            repo_path: Path to activated repository
+            username: Username
+            repo_alias: Repository alias
+
+        Note:
+            This method silently succeeds if migration is not needed or already done.
+            Logs warnings if golden repo metadata is not available.
+        """
+        try:
+            # Get activated repo metadata to find golden repo alias
+            from pathlib import Path as PathLib
+
+            user_dir = PathLib(repo_path).parent
+            metadata_file = user_dir / f"{repo_alias}_metadata.json"
+
+            if not metadata_file.exists():
+                logger.warning(
+                    f"Cannot trigger migration: metadata file not found for {username}/{repo_alias}"
+                )
+                return
+
+            with open(metadata_file, "r") as f:
+                repo_data = json.load(f)
+
+            golden_repo_alias = repo_data.get("golden_repo_alias")
+            if not golden_repo_alias:
+                logger.warning(
+                    f"Cannot trigger migration: golden_repo_alias not found in metadata for {username}/{repo_alias}"
+                )
+                return
+
+            # Get golden repo path from golden repo manager
+            if golden_repo_alias not in self.activated_repo_manager.golden_repo_manager.golden_repos:
+                logger.warning(
+                    f"Cannot trigger migration: golden repo '{golden_repo_alias}' not found for {username}/{repo_alias}"
+                )
+                return
+
+            golden_repo = self.activated_repo_manager.golden_repo_manager.golden_repos[golden_repo_alias]
+            golden_repo_path = golden_repo.clone_path
+
+            # Trigger migration via ActivatedRepoManager
+            migrated = self.activated_repo_manager._detect_and_migrate_legacy_remotes(
+                repo_path, golden_repo_path
+            )
+
+            if migrated:
+                logger.info(
+                    f"Automatically migrated legacy remotes for {username}/{repo_alias}"
+                )
+
+        except Exception as e:
+            # Don't fail the git operation if migration check fails
+            logger.warning(
+                f"Failed to check/trigger migration for {username}/{repo_alias}: {str(e)}"
+            )
+
     def get_status(self, repo_alias: str, username: str) -> Dict[str, Any]:
         """
         Get git status for an activated repository (REST API wrapper).
@@ -363,6 +428,10 @@ class GitOperationsService:
         repo_path = self.activated_repo_manager.get_activated_repo_path(
             username=username, user_alias=repo_alias
         )
+
+        # Story #636: Trigger migration before push if needed
+        self._trigger_migration_if_needed(repo_path, username, repo_alias)
+
         result = self.git_push(Path(repo_path), remote=remote, branch=branch)
         result["success"] = True
         return result
@@ -394,6 +463,10 @@ class GitOperationsService:
         repo_path = self.activated_repo_manager.get_activated_repo_path(
             username=username, user_alias=repo_alias
         )
+
+        # Story #636: Trigger migration before pull if needed
+        self._trigger_migration_if_needed(repo_path, username, repo_alias)
+
         result = self.git_pull(Path(repo_path), remote=remote, branch=branch)
         result["success"] = True
         return result
@@ -424,6 +497,10 @@ class GitOperationsService:
         repo_path = self.activated_repo_manager.get_activated_repo_path(
             username=username, user_alias=repo_alias
         )
+
+        # Story #636: Trigger migration before fetch if needed
+        self._trigger_migration_if_needed(repo_path, username, repo_alias)
+
         result = self.git_fetch(Path(repo_path), remote=remote)
         result["success"] = True
         return result
