@@ -307,3 +307,160 @@ class TestNewConfigDataclasses:
         config = ServerConfig(server_dir="/tmp/test")
 
         assert config.workers == 4
+
+
+class TestOIDCConfigSettings:
+    """Test OIDC configuration settings."""
+
+    def test_update_oidc_enabled_true(self, tmp_path):
+        """Test updating OIDC enabled to true."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "enabled", "true")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.enabled is True
+
+    def test_update_oidc_enabled_false(self, tmp_path):
+        """Test updating OIDC enabled to false."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "enabled", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.enabled is False
+
+    def test_update_oidc_provider_name(self, tmp_path):
+        """Test updating OIDC provider name."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "provider_name", "MySSO")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.provider_name == "MySSO"
+
+    def test_update_oidc_issuer_url(self, tmp_path):
+        """Test updating OIDC issuer URL."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "issuer_url", "https://auth.example.com")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.issuer_url == "https://auth.example.com"
+
+    def test_update_oidc_client_id(self, tmp_path):
+        """Test updating OIDC client ID."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "client_id", "my-client-id")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.client_id == "my-client-id"
+
+    def test_update_oidc_client_secret(self, tmp_path):
+        """Test updating OIDC client secret."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "client_secret", "my-secret")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.client_secret == "my-secret"
+
+    def test_update_oidc_client_secret_empty_preserves_existing(self, tmp_path):
+        """Test that empty client secret doesn't overwrite existing value."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set initial secret
+        service.update_setting("oidc", "client_secret", "original-secret")
+
+        # Try to update with empty string
+        service.update_setting("oidc", "client_secret", "")
+
+        config = service.get_config()
+        # Should still have original secret
+        assert config.oidc_provider_config.client_secret == "original-secret"
+
+    def test_update_oidc_scopes(self, tmp_path):
+        """Test updating OIDC scopes."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "scopes", "openid profile email groups")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.scopes == ["openid", "profile", "email", "groups"]
+
+    def test_update_oidc_email_claim(self, tmp_path):
+        """Test updating OIDC email claim."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "email_claim", "user_email")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.email_claim == "user_email"
+
+    def test_update_oidc_username_claim(self, tmp_path):
+        """Test updating OIDC username claim."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "username_claim", "sub")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.username_claim == "sub"
+
+    def test_update_oidc_use_pkce(self, tmp_path):
+        """Test updating OIDC use_pkce."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "use_pkce", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.use_pkce is False
+
+    def test_update_oidc_require_email_verification(self, tmp_path):
+        """Test updating OIDC require_email_verification."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "require_email_verification", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.require_email_verification is False
+
+    def test_update_oidc_enable_jit_provisioning(self, tmp_path):
+        """Test updating OIDC enable_jit_provisioning."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "enable_jit_provisioning", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.enable_jit_provisioning is False
+
+    def test_update_oidc_default_role(self, tmp_path):
+        """Test updating OIDC default_role."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "default_role", "admin")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.default_role == "admin"
+
+    def test_update_unknown_oidc_setting_raises_error(self, tmp_path):
+        """Test that updating unknown OIDC setting raises ValueError."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        with pytest.raises(ValueError, match="Unknown OIDC setting: invalid_key"):
+            service.update_setting("oidc", "invalid_key", "value")

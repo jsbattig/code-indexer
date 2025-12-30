@@ -295,8 +295,36 @@ class ConfigService:
         self, config: ServerConfig, key: str, value: Any
     ) -> None:
         """Update an OIDC setting."""
-        # Minimal stub - implement settings as needed
-        pass
+        oidc = config.oidc_provider_config
+        if key == "enabled":
+            oidc.enabled = value in ["true", True]
+        elif key == "provider_name":
+            oidc.provider_name = str(value)
+        elif key == "issuer_url":
+            oidc.issuer_url = str(value)
+        elif key == "client_id":
+            oidc.client_id = str(value)
+        elif key == "client_secret":
+            # Only update if value is provided (not empty)
+            if value:
+                oidc.client_secret = str(value)
+        elif key == "scopes":
+            # Convert space-separated string to list
+            oidc.scopes = str(value).split() if value else ["openid", "profile", "email"]
+        elif key == "email_claim":
+            oidc.email_claim = str(value)
+        elif key == "username_claim":
+            oidc.username_claim = str(value)
+        elif key == "use_pkce":
+            oidc.use_pkce = value in ["true", True]
+        elif key == "require_email_verification":
+            oidc.require_email_verification = value in ["true", True]
+        elif key == "enable_jit_provisioning":
+            oidc.enable_jit_provisioning = value in ["true", True]
+        elif key == "default_role":
+            oidc.default_role = str(value)
+        else:
+            raise ValueError(f"Unknown OIDC setting: {key}")
 
     def save_all_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
         """
