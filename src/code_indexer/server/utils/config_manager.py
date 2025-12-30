@@ -110,6 +110,14 @@ class OmniSearchConfig:
 
 
 @dataclass
+class AutoWatchConfig:
+    """Auto-watch configuration for server file operations - Story #640."""
+
+    auto_watch_enabled: bool = True
+    auto_watch_timeout: int = 300  # Timeout in seconds for auto-stop
+
+
+@dataclass
 class ServerConfig:
     """
     Server configuration data structure.
@@ -129,6 +137,7 @@ class ServerConfig:
     cache_config: Optional[CacheConfig] = None
     reindexing_config: Optional[ReindexingConfig] = None
     omni_search_config: Optional[OmniSearchConfig] = None
+    auto_watch_config: Optional[AutoWatchConfig] = None
 
     # Claude CLI integration settings
     anthropic_api_key: Optional[str] = None
@@ -147,6 +156,8 @@ class ServerConfig:
             self.reindexing_config = ReindexingConfig()
         if self.omni_search_config is None:
             self.omni_search_config = OmniSearchConfig()
+        if self.auto_watch_config is None:
+            self.auto_watch_config = AutoWatchConfig()
 
 
 class ServerConfigManager:

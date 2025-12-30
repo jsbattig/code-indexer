@@ -2298,6 +2298,32 @@ class ActivatedRepoManager:
                         f"Golden repo has no origin, using local path: {golden_repo_path}"
                     )
 
+                # Check if golden remote already exists (Bug #639 fix)
+                golden_check_result = subprocess.run(
+                    ["git", "remote", "get-url", "golden"],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.GIT_COMMAND_TIMEOUT,
+                )
+
+                # If golden exists, remove it first to avoid "already exists" error
+                if golden_check_result.returncode == 0:
+                    self.logger.info(
+                        f"Removing existing golden remote before migration: {golden_check_result.stdout.strip()}"
+                    )
+                    remove_result = subprocess.run(
+                        ["git", "remote", "remove", "golden"],
+                        cwd=repo_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=self.GIT_COMMAND_TIMEOUT,
+                    )
+                    if remove_result.returncode != 0:
+                        raise ActivatedRepoError(
+                            f"Failed to remove existing golden remote: {remove_result.stderr}"
+                        )
+
                 # Rename origin to golden
                 rename_result = subprocess.run(
                     ["git", "remote", "rename", "origin", "golden"],

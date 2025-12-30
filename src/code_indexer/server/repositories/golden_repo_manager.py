@@ -189,9 +189,25 @@ class GoldenRepoManager:
             Job ID for tracking add operation progress
 
         Raises:
+            ValueError: If alias contains path traversal characters
             GoldenRepoError: If alias already exists
             GitOperationError: If git repository is invalid or inaccessible
         """
+        # SECURITY: Validate alias BEFORE any operations (defense-in-depth)
+        # Reject path traversal characters to prevent escaping golden repos directory
+        if ".." in alias:
+            raise ValueError(
+                f"Invalid alias '{alias}': cannot contain path traversal characters (..)"
+            )
+        if "/" in alias:
+            raise ValueError(
+                f"Invalid alias '{alias}': cannot contain path traversal characters (/)"
+            )
+        if "\\" in alias:
+            raise ValueError(
+                f"Invalid alias '{alias}': cannot contain path traversal characters (\\)"
+            )
+
         # Validate BEFORE submitting job
         if alias in self.golden_repos:
             raise GoldenRepoError(f"Golden repository alias '{alias}' already exists")
