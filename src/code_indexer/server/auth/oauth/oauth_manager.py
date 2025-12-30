@@ -100,6 +100,7 @@ class OAuthManager:
             "authorization_endpoint": f"{self.issuer}/oauth/authorize",
             "token_endpoint": f"{self.issuer}/oauth/token",
             "registration_endpoint": f"{self.issuer}/oauth/register",
+            "response_types_supported": ["code"],
             "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         }
 
