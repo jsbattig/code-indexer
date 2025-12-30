@@ -150,9 +150,10 @@ def main() -> int:
         except Exception as e:
             # Unexpected error - show warning and fall through
             from rich.console import Console
+            from rich.markup import escape
 
             console = Console()
-            console.print(f"[yellow]Daemon unavailable: {e}[/yellow]")
+            console.print(f"[yellow]Daemon unavailable: {escape(str(e))}[/yellow]")
             console.print("[dim]Falling back to standalone mode...[/dim]")
             # Fall through to slow path
 

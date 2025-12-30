@@ -806,9 +806,9 @@ def _display_semantic_results(
                         line_num = line_start + j
                         numbered_lines.append(f"{line_num:3}: {line}")
                     content_with_line_numbers = "\n".join(numbered_lines)
-                    console.print(content_with_line_numbers)
+                    console.print(content_with_line_numbers, markup=False)
                 else:
-                    console.print(content)
+                    console.print(content, markup=False)
             console.print()  # Empty line between results
         else:
             # Normal verbose mode
@@ -897,11 +897,11 @@ def _display_semantic_results(
                     try:
                         # For now, use plain text with line numbers for better readability
                         # Rich's Syntax with line_numbers=True uses its own numbering system
-                        console.print(content_with_line_numbers)
+                        console.print(content_with_line_numbers, markup=False)
                     except Exception:
-                        console.print(content_with_line_numbers)
+                        console.print(content_with_line_numbers, markup=False)
                 else:
-                    console.print(content_with_line_numbers)
+                    console.print(content_with_line_numbers, markup=False)
 
             console.print("─" * 50)
 
@@ -1367,9 +1367,9 @@ def _display_hybrid_results(
                             line_num = line_start + j
                             numbered_lines.append(f"{line_num:3}: {line}")
                         content_with_line_numbers = "\n".join(numbered_lines)
-                        console.print(content_with_line_numbers)
+                        console.print(content_with_line_numbers, markup=False)
                     else:
-                        console.print(content)
+                        console.print(content, markup=False)
             else:
                 # Full display mode
                 console.print(f"\n[magenta]{i}.[/magenta] Score: {score:.3f}")
@@ -1380,7 +1380,7 @@ def _display_hybrid_results(
                 if content:
                     console.print("Content:")
                     console.print("-" * 40)
-                    console.print(content)
+                    console.print(content, markup=False)
                     console.print("-" * 40)
     else:
         if not quiet:
@@ -5181,9 +5181,9 @@ def query(
                                 line_num = line_start + j
                                 numbered_lines.append(f"{line_num:3}: {line}")
                             content_with_line_numbers = "\n".join(numbered_lines)
-                            console.print(content_with_line_numbers)
+                            console.print(content_with_line_numbers, markup=False)
                         else:
-                            console.print(content)
+                            console.print(content, markup=False)
                 else:
                     # Full display mode
                     header = f"[{i}] Score: {score:.3f}"
@@ -5220,7 +5220,7 @@ def query(
                             console.print(f"Relevance: {score:.3f}/1.0")
                         console.print("Content:")
                         console.print("-" * 40)
-                        console.print(content)
+                        console.print(content, markup=False)
                         console.print("-" * 40)
 
         except Exception as e:
@@ -5753,7 +5753,7 @@ def query(
         )
 
     except Exception as e:
-        console.print(f"❌ Search failed: {e}", style="red")
+        console.print(f"❌ Search failed: {e}", style="red", markup=False)
         sys.exit(1)
 
 
@@ -5947,7 +5947,7 @@ def teach_ai(
     # Handle --show-only mode
     if show_only:
         console.print(f"📄 {platform_name.title()} Awareness Content:\n")
-        console.print(awareness_content)
+        console.print(awareness_content, markup=False)
         console.print("\n" + "=" * 80 + "\n")
         console.print("📦 Skills Files:\n")
 
@@ -15816,6 +15816,7 @@ def global_regex_search(
     from pathlib import Path
     from .global_repos.global_registry import GlobalRegistry
     from .global_repos.regex_search import RegexSearchService
+    from rich.text import Text
 
     # rich imports removed - not needed for this output format
 
@@ -15920,14 +15921,20 @@ def global_regex_search(
 
                 # Show context before
                 for ctx_line in match.context_before:
-                    console.print(f"  [dim]{ctx_line}[/dim]")
+                    text = Text("  ")
+                    text.append(ctx_line, style="dim")
+                    console.print(text)
 
                 # Show matching line
-                console.print(f"  [bold]{match.line_content}[/bold]")
+                text = Text("  ")
+                text.append(match.line_content, style="bold")
+                console.print(text)
 
                 # Show context after
                 for ctx_line in match.context_after:
-                    console.print(f"  [dim]{ctx_line}[/dim]")
+                    text = Text("  ")
+                    text.append(ctx_line, style="dim")
+                    console.print(text)
 
                 console.print()
 

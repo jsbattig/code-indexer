@@ -286,3 +286,36 @@ class TestFallbackBehavior:
         # Assert - should have attempted fast path, then fallen back
         mock_execute.assert_called_once()
         # Note: Actual fallback implementation may vary
+
+    @patch("code_indexer.cli_fast_entry.quick_daemon_check")
+    @patch("code_indexer.cli_daemon_fast.execute_via_daemon")
+    @patch("code_indexer.cli.cli")
+    def test_fallback_handles_rich_markup_in_exception(
+        self, mock_cli, mock_execute, mock_check
+    ):
+        """Test that Rich markup in exception messages is properly escaped.
+
+        Regression test for Rich markup injection bug where exception messages
+        containing Rich markup tags (like [/{status_style}]) would cause
+        MarkupError when embedded in f-string with [yellow]...[/yellow].
+        """
+        # Arrange
+        mock_check.return_value = (True, Path("/fake/config.json"))
+        # Create exception with Rich markup that would break console.print
+        exception_msg = "Daemon unavailable [/{status_style}] connection failed"
+        mock_execute.side_effect = Exception(exception_msg)
+
+        from code_indexer.cli_fast_entry import main
+
+        # Act & Assert - should not raise MarkupError
+        with patch.object(sys, "argv", ["cidx", "query", "test"]):
+            try:
+                main()
+            except Exception as e:
+                # Should not be a MarkupError
+                assert "MarkupError" not in str(type(e))
+                assert "closing tag" not in str(e)
+
+        # Assert - should have attempted fast path, then fallen back
+        mock_execute.assert_called_once()
+        mock_cli.assert_called_once()
