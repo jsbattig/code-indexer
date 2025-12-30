@@ -110,6 +110,28 @@ class OmniSearchConfig:
 
 
 @dataclass
+class OIDCProviderConfig:
+    """Single external OIDC provider configuration."""
+
+    enabled: bool = False
+    provider_name: str = "SSO"
+    issuer_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: list = None
+    email_claim: str = "email"
+    username_claim: str = "preferred_username"
+    use_pkce: bool = True
+    require_email_verification: bool = True
+    enable_jit_provisioning: bool = True
+    default_role: str = "normal_user"
+
+    def __post_init__(self):
+        if self.scopes is None:
+            self.scopes = ["openid", "profile", "email"]
+
+
+@dataclass
 class ServerConfig:
     """
     Server configuration data structure.
@@ -129,6 +151,7 @@ class ServerConfig:
     cache_config: Optional[CacheConfig] = None
     reindexing_config: Optional[ReindexingConfig] = None
     omni_search_config: Optional[OmniSearchConfig] = None
+    oidc_provider_config: Optional[OIDCProviderConfig] = None
 
     # Claude CLI integration settings
     anthropic_api_key: Optional[str] = None
@@ -147,6 +170,8 @@ class ServerConfig:
             self.reindexing_config = ReindexingConfig()
         if self.omni_search_config is None:
             self.omni_search_config = OmniSearchConfig()
+        if self.oidc_provider_config is None:
+            self.oidc_provider_config = OIDCProviderConfig()
 
 
 class ServerConfigManager:
@@ -253,6 +278,14 @@ class ServerConfigManager:
             ):
                 config_dict["omni_search_config"] = OmniSearchConfig(
                     **config_dict["omni_search_config"]
+                )
+
+            # Convert nested oidc_provider_config dict to OIDCProviderConfig
+            if "oidc_provider_config" in config_dict and isinstance(
+                config_dict["oidc_provider_config"], dict
+            ):
+                config_dict["oidc_provider_config"] = OIDCProviderConfig(
+                    **config_dict["oidc_provider_config"]
                 )
 
             return ServerConfig(**config_dict)

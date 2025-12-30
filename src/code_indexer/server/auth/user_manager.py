@@ -575,3 +575,115 @@ class UserManager:
                 )
 
         return None
+
+    def get_user_by_email(self, email: str) -> Optional[User]:
+        """Get user by email address (case-insensitive).
+
+        Args:
+            email: Email address to search for
+
+        Returns:
+            User object if found, None otherwise
+        """
+        users_data = self._load_users()
+        email_lower = email.lower().strip()
+
+        for username, user_data in users_data.items():
+            user_email = user_data.get("email")
+            if user_email and user_email.lower().strip() == email_lower:
+                return User(
+                    username=username,
+                    password_hash=user_data["password_hash"],
+                    role=UserRole(user_data["role"]),
+                    created_at=DateTimeParser.parse_user_datetime(
+                        user_data["created_at"]
+                    ),
+                )
+
+        return None
+
+    def set_oidc_identity(self, username: str, identity: Dict[str, Any]) -> bool:
+        """Set OIDC identity for user.
+
+        Args:
+            username: Username
+            identity: OIDC identity data (subject, email, linked_at, last_login)
+
+        Returns:
+            True if successful, False if user not found
+        """
+        users_data = self._load_users()
+
+        if username not in users_data:
+            return False
+
+        users_data[username]["oidc_identity"] = identity
+        self._save_users(users_data)
+        return True
+
+    def remove_oidc_identity(self, username: str) -> bool:
+        """Remove OIDC identity from user.
+
+        Args:
+            username: Username
+
+        Returns:
+            True if removed, False if user not found
+        """
+        users_data = self._load_users()
+
+        if username not in users_data:
+            return False
+
+        # Remove oidc_identity if it exists
+        if "oidc_identity" in users_data[username]:
+            del users_data[username]["oidc_identity"]
+
+        self._save_users(users_data)
+        return True
+
+    def create_oidc_user(self, username, role, email, oidc_identity):
+        """Create user via JIT provisioning (without user-known password).
+
+        Args:
+            username: Username
+            role: User role
+            email: User email (optional)
+            oidc_identity: OIDC identity data
+
+        Returns:
+            Created User object
+
+        Raises:
+            ValueError: If user already exists
+        """
+        import secrets
+
+        users_data = self._load_users()
+
+        if username in users_data:
+            raise ValueError(f"User already exists: {username}")
+
+        # Generate random password that user will never know (for password_hash field)
+        random_password = secrets.token_urlsafe(32)
+        password_hash = self.password_manager.hash_password(random_password)
+        created_at = datetime.now(timezone.utc)
+
+        users_data[username] = {
+            "role": role.value,
+            "password_hash": password_hash,
+            "created_at": DateTimeParser.format_for_storage(created_at),
+            "oidc_identity": oidc_identity,
+        }
+
+        if email:
+            users_data[username]["email"] = email
+
+        self._save_users(users_data)
+
+        return User(
+            username=username,
+            password_hash=password_hash,
+            role=role,
+            created_at=created_at,
+        )

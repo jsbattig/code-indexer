@@ -130,6 +130,14 @@ async def login_page(
 
     Shows login form with CSRF protection using signed cookies.
     """
+    # Check if OIDC/SSO is enabled (lazy import, access module attribute for runtime-injected value)
+    from ..auth.oidc import routes as oidc_routes
+
+    sso_enabled = (
+        oidc_routes.oidc_manager is not None
+        and oidc_routes.oidc_manager.is_enabled()
+    )
+
     # Generate CSRF token for the form
     csrf_token = generate_csrf_token()
 
@@ -147,6 +155,7 @@ async def login_page(
             "error": error,
             "info": info,
             "show_nav": False,
+            "sso_enabled": sso_enabled,
         },
     )
 
@@ -631,6 +640,18 @@ async def delete_user(
 
     try:
         user_manager.delete_user(username)
+
+        # Clean up OIDC identity link if OIDC manager exists
+        from ..auth.oidc import routes as oidc_routes
+        if oidc_routes.oidc_manager:
+            import aiosqlite
+            async with aiosqlite.connect(oidc_routes.oidc_manager.db_path) as db:
+                await db.execute(
+                    "DELETE FROM oidc_identity_links WHERE username = ?",
+                    (username,)
+                )
+                await db.commit()
+
         return _create_users_page_response(
             request, session, success_message=f"User '{username}' deleted successfully"
         )
