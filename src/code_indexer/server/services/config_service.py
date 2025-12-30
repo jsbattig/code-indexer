@@ -124,6 +124,21 @@ class ConfigService:
                 "max_concurrent_claude_cli": config.max_concurrent_claude_cli,
                 "description_refresh_interval_hours": config.description_refresh_interval_hours,
             },
+            # OIDC/SSO authentication
+            "oidc": {
+                "enabled": config.oidc_provider_config.enabled,
+                "provider_name": config.oidc_provider_config.provider_name,
+                "issuer_url": config.oidc_provider_config.issuer_url,
+                "client_id": config.oidc_provider_config.client_id,
+                "client_secret": config.oidc_provider_config.client_secret,
+                "scopes": config.oidc_provider_config.scopes,
+                "email_claim": config.oidc_provider_config.email_claim,
+                "username_claim": config.oidc_provider_config.username_claim,
+                "use_pkce": config.oidc_provider_config.use_pkce,
+                "require_email_verification": config.oidc_provider_config.require_email_verification,
+                "enable_jit_provisioning": config.oidc_provider_config.enable_jit_provisioning,
+                "default_role": config.oidc_provider_config.default_role,
+            },
         }
 
         return settings
@@ -154,6 +169,8 @@ class ConfigService:
             self._update_password_security_setting(config, key, value)
         elif category == "claude_cli":
             self._update_claude_cli_setting(config, key, value)
+        elif category == "oidc":
+            self._update_oidc_setting(config, key, value)
         else:
             raise ValueError(f"Unknown category: {category}")
 
@@ -273,6 +290,13 @@ class ConfigService:
             config.description_refresh_interval_hours = int(value)
         else:
             raise ValueError(f"Unknown claude_cli setting: {key}")
+
+    def _update_oidc_setting(
+        self, config: ServerConfig, key: str, value: Any
+    ) -> None:
+        """Update an OIDC setting."""
+        # Minimal stub - implement settings as needed
+        pass
 
     def save_all_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
         """

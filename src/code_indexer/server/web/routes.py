@@ -2459,9 +2459,17 @@ def _detect_language_from_path(file_path: str) -> str:
 def _get_current_config() -> dict:
     """Get current configuration from ConfigService (persisted to ~/.cidx-server/config.json)."""
     from ..services.config_service import get_config_service
+    from ..utils.config_manager import OIDCProviderConfig
+    from dataclasses import asdict
 
     config_service = get_config_service()
     settings = config_service.get_all_settings()
+
+    # Ensure OIDC config has all required fields with defaults
+    oidc_config = settings.get("oidc")
+    if not oidc_config:
+        # Provide defaults if OIDC config is missing
+        oidc_config = asdict(OIDCProviderConfig())
 
     # Convert to template-friendly format
     return {
@@ -2470,6 +2478,7 @@ def _get_current_config() -> dict:
         "reindexing": settings["reindexing"],
         "timeouts": settings["timeouts"],
         "password_security": settings["password_security"],
+        "oidc": oidc_config,
     }
 
 
@@ -2745,7 +2754,7 @@ async def update_config_section(
         )
 
     # Validate section
-    valid_sections = ["server", "cache", "reindexing", "timeouts", "password_security"]
+    valid_sections = ["server", "cache", "reindexing", "timeouts", "password_security", "oidc"]
     if section not in valid_sections:
         return _create_config_page_response(
             request, session, error_message=f"Invalid section: {section}"
