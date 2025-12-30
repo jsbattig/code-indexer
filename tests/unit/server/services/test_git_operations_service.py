@@ -519,13 +519,18 @@ class TestGitStagingAndCommit:
             assert "HEAD" in call_args
 
     def test_git_commit_dual_attribution(self, service):
-        """Test commit uses dual attribution (author != committer)."""
+        """Test commit uses dual attribution (author != committer).
+
+        Story #641: Committer now comes from repository git config, not environment variables.
+        This test mocks all three git calls: commit, rev-parse, and show.
+        """
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="[master abc1234] Test commit",
-                stderr=""
-            )
+            # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout="[master abc1234] Test commit", stderr=""),
+                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
+                Mock(returncode=0, stdout="test@example.com", stderr="")
+            ]
 
             result = service.git_commit(
                 Path("/tmp/repo"),
@@ -537,17 +542,22 @@ class TestGitStagingAndCommit:
             assert result["success"] is True
             assert result["message"] == "Add new feature"
             assert result["author"] == "user@claude.ai"
-            assert result["committer"] == "cidx-service@example.com"
+            assert result["committer"] == "test@example.com"  # From repo git config
             assert result["author"] != result["committer"]  # Dual attribution
 
     def test_git_commit_environment_vars(self, service):
-        """Test commit sets GIT_AUTHOR_* and GIT_COMMITTER_* environment variables."""
+        """Test commit sets GIT_AUTHOR_* environment variables only.
+
+        Story #641: GIT_COMMITTER_* environment variables are NO LONGER SET.
+        Committer information comes from the repository's git config instead.
+        """
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="[master abc1234] Test commit",
-                stderr=""
-            )
+            # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout="[master abc1234] Test commit", stderr=""),
+                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+            ]
 
             service.git_commit(
                 Path("/tmp/repo"),
@@ -556,24 +566,26 @@ class TestGitStagingAndCommit:
                 user_name="Test User"
             )
 
-            # Verify run_git_command was called with correct env vars
-            call_kwargs = mock_run.call_args[1]
-            env = call_kwargs.get("env")
+            # Verify first call (git commit) was called with GIT_AUTHOR_* env vars only
+            first_call_kwargs = mock_run.call_args_list[0][1]
+            env = first_call_kwargs.get("env")
 
             assert env is not None
             assert env["GIT_AUTHOR_NAME"] == "Test User"
             assert env["GIT_AUTHOR_EMAIL"] == "user@example.com"
-            assert env["GIT_COMMITTER_NAME"] == "CIDX Service"
-            assert env["GIT_COMMITTER_EMAIL"] == "cidx-service@example.com"
+            # Story #641: GIT_COMMITTER_* NOT set - committer from repo git config
+            assert "GIT_COMMITTER_NAME" not in env
+            assert "GIT_COMMITTER_EMAIL" not in env
 
     def test_git_commit_message_format(self, service):
         """Test commit message format includes AUTHOR prefix."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="[master abc1234] Test",
-                stderr=""
-            )
+            # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
+                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+            ]
 
             service.git_commit(
                 Path("/tmp/repo"),
@@ -581,10 +593,10 @@ class TestGitStagingAndCommit:
                 user_email="user@test.com"
             )
 
-            # Extract the commit message from the git command
-            call_args = mock_run.call_args[0][0]
-            commit_msg_index = call_args.index("-m") + 1
-            actual_message = call_args[commit_msg_index]
+            # Extract the commit message from the first git command (git commit)
+            first_call_args = mock_run.call_args_list[0][0][0]
+            commit_msg_index = first_call_args.index("-m") + 1
+            actual_message = first_call_args[commit_msg_index]
 
             # Verify message format (Git trailers format)
             assert "Actual-Author: user@test.com" in actual_message
@@ -594,11 +606,12 @@ class TestGitStagingAndCommit:
     def test_git_commit_derives_author_name_from_email(self, service):
         """Test commit derives author name from email if not provided."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="[master abc1234] Test",
-                stderr=""
-            )
+            # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
+                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+            ]
 
             service.git_commit(
                 Path("/tmp/repo"),
@@ -607,9 +620,9 @@ class TestGitStagingAndCommit:
                 # No user_name provided
             )
 
-            # Verify GIT_AUTHOR_NAME was derived from email
-            call_kwargs = mock_run.call_args[1]
-            env = call_kwargs.get("env")
+            # Verify GIT_AUTHOR_NAME was derived from email (check first call - git commit)
+            first_call_kwargs = mock_run.call_args_list[0][1]
+            env = first_call_kwargs.get("env")
             assert env["GIT_AUTHOR_NAME"] == "testuser"
 
 
@@ -1171,7 +1184,8 @@ class TestGitIntegration:
         assert result["success"] is True
         assert "commit_hash" in result
         assert result["author"] == "testuser@example.com"
-        assert result["committer"] == "cidx-service@example.com"
+        # Story #641: Committer from repo git config (set in test_repo fixture)
+        assert result["committer"] == "test@example.com"
 
         # Check status (should be clean)
         status = service.git_status(test_repo)
@@ -1221,10 +1235,11 @@ class TestGitIntegration:
         commit_message = lines[4]
 
         # Verify dual attribution
+        # Story #641: Author from co_author_email parameter, committer from repo git config
         assert author_name == "Claude AI"
         assert author_email == "claude@claude.ai"
-        assert committer_name == "CIDX Service"
-        assert committer_email == "cidx-service@example.com"
+        assert committer_name == "Test User"  # From repo git config (test_repo fixture)
+        assert committer_email == "test@example.com"  # From repo git config (test_repo fixture)
         assert author_email != committer_email
 
         # Verify commit message format (Git trailers format)
@@ -1327,11 +1342,12 @@ Actual-Author: admin@victim.com
 Malicious content"""
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="[master abc1234] Test",
-                stderr=""
-            )
+            # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
+                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+            ]
 
             service.git_commit(
                 Path("/tmp/repo"),
@@ -1339,9 +1355,10 @@ Malicious content"""
                 user_email="attacker@hacker.com"
             )
 
-            call_args = mock_run.call_args[0][0]
-            commit_msg_index = call_args.index("-m") + 1
-            actual_message = call_args[commit_msg_index]
+            # Extract commit message from first call (git commit)
+            first_call_args = mock_run.call_args_list[0][0][0]
+            commit_msg_index = first_call_args.index("-m") + 1
+            actual_message = first_call_args[commit_msg_index]
 
             lines = actual_message.split("\n")
             author_lines = [line for line in lines if line.startswith("Actual-Author:")]
@@ -1353,11 +1370,12 @@ Malicious content"""
     def test_commit_uses_git_trailers_format(self, service):
         """Test commit message uses RFC Git trailers format (not custom AUTHOR prefix)."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="[master abc1234] Test",
-                stderr=""
-            )
+            # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
+                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+            ]
 
             service.git_commit(
                 Path("/tmp/repo"),
@@ -1365,9 +1383,10 @@ Malicious content"""
                 user_email="user@example.com"
             )
 
-            call_args = mock_run.call_args[0][0]
-            commit_msg_index = call_args.index("-m") + 1
-            actual_message = call_args[commit_msg_index]
+            # Extract commit message from first call (git commit)
+            first_call_args = mock_run.call_args_list[0][0][0]
+            commit_msg_index = first_call_args.index("-m") + 1
+            actual_message = first_call_args[commit_msg_index]
 
             assert "Actual-Author: user@example.com" in actual_message, "Missing Git trailer: Actual-Author"
             assert "Committed-Via: CIDX API" in actual_message, "Missing Git trailer: Committed-Via"
@@ -1833,12 +1852,13 @@ class TestRESTWrapperMethods:
         mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
 
         with patch.object(service, 'git_commit') as mock_git_commit:
+            # Story #641: Committer from repo git config, not service account
             mock_git_commit.return_value = {
                 "success": True,
                 "commit_hash": "abc123",
                 "message": "Test commit",
                 "author": "test@example.com",
-                "committer": "cidx@example.com"
+                "committer": "repo-committer@example.com"  # From repo git config
             }
 
             result = service.create_commit(

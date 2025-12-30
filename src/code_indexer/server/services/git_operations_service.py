@@ -1110,17 +1110,17 @@ class GitOperationsService:
         user_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a git commit with dual attribution.
+        Create a git commit with dual attribution (Story #641).
 
         Uses dual attribution model:
-        - Git Author: user_email parameter (actual Claude.ai user)
-        - Git Committer: Service account from config (matches SSH key owner)
+        - Git Author: user_email parameter (co_author_email - actual Claude.ai user)
+        - Git Committer: From repository's git config (set during activation via SSH key discovery)
         - Commit message: Injects AUTHOR prefix for audit trail
 
         Args:
             repo_path: Path to git repository
             message: Commit message (user's actual message)
-            user_email: Email of actual user (Claude.ai user) - becomes Git author
+            user_email: MANDATORY co_author_email (actual Claude.ai user) - becomes Git author
             user_name: Optional user name (derived from email if not provided)
 
         Returns:
@@ -1128,14 +1128,18 @@ class GitOperationsService:
 
         Raises:
             GitCommandError: If git commit fails
-            ValueError: If user_email or user_name fail validation
+            ValueError: If user_email is missing, empty, or has invalid format
         """
         try:
-            # Validate user_email (RFC 5322 basic format)
+            # Story #641 AC #3: Validate co_author_email parameter is MANDATORY
+            if user_email is None or user_email == "":
+                raise ValueError("co_author_email parameter is required and cannot be None or empty")
+
+            # Story #641 AC #4: Validate user_email format (RFC 5322 basic format)
             import re
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, user_email):
-                raise ValueError(f"Invalid email format: {user_email}")
+                raise ValueError(f"Invalid email format for co_author_email: {user_email}")
 
             # Derive author name from email if not provided
             if not user_name:
@@ -1160,12 +1164,12 @@ class GitOperationsService:
             # Format: Key: value (no prefix ambiguity, structured metadata)
             attributed_message = f"{sanitized_message}\n\nActual-Author: {user_email}\nCommitted-Via: CIDX API"
 
-            # Set Git identity via environment variables
+            # Story #641 AC #5: Set Git Author via environment variables
+            # Git Committer comes from repository's git config (set during activation)
             env = os.environ.copy()
             env["GIT_AUTHOR_NAME"] = user_name
             env["GIT_AUTHOR_EMAIL"] = user_email
-            env["GIT_COMMITTER_NAME"] = self.git_config.service_committer_name
-            env["GIT_COMMITTER_EMAIL"] = self.git_config.service_committer_email
+            # DO NOT set GIT_COMMITTER_* - let git use repository config
 
             cmd = ["git", "commit", "-m", attributed_message]
 
@@ -1187,12 +1191,21 @@ class GitOperationsService:
             )
             commit_hash = hash_result.stdout.strip()
 
+            # Get actual committer email from the commit
+            committer_result = run_git_command(
+                ["git", "show", "-s", "--format=%ce", "HEAD"],
+                cwd=repo_path,
+                timeout=DEFAULT_TIMEOUT,
+                check=True
+            )
+            actual_committer = committer_result.stdout.strip()
+
             return {
                 "success": True,
                 "commit_hash": commit_hash,
                 "message": message,
                 "author": user_email,
-                "committer": self.git_config.service_committer_email
+                "committer": actual_committer
             }
 
         except subprocess.CalledProcessError as e:

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Git Settings - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="git-settings-header">
+    <h1>Git Settings</h1>
+    <div class="git-settings-actions">
+        <button
+            id="refresh-btn"
+            class="outline"
+            onclick="location.reload()"
+        >
+            Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+<div id="message-container">
+    {% if success_message %}
+    <article class="message-success">
+        <p>{{ success_message }}</p>
+    </article>
+    {% endif %}
+
+    {% if error_message %}
+    <article class="message-error">
+        <p>{{ error_message }}</p>
+    </article>
+    {% endif %}
+</div>
+
+<!-- Hidden CSRF token for JavaScript -->
+<input type="hidden" id="csrf-token-source" value="{{ csrf_token }}">
+
+<!-- Service Configuration (Read-Only) -->
+<article>
+    <header>
+        <h2>Service Configuration</h2>
+    </header>
+    <p>These settings are configured at server initialization and cannot be changed through the UI.</p>
+
+    <table role="grid">
+        <tbody>
+            <tr>
+                <td><strong>Service Committer Name</strong></td>
+                <td><code id="service_committer_name">{{ config.service_committer_name }}</code></td>
+            </tr>
+            <tr>
+                <td><strong>Service Committer Email</strong></td>
+                <td><code id="service_committer_email">{{ config.service_committer_email }}</code></td>
+            </tr>
+        </tbody>
+    </table>
+</article>
+
+<!-- Default Committer Email (Editable) -->
+<article>
+    <header>
+        <h2>Default Committer Email</h2>
+    </header>
+    <p>Set the default email address used for git operations when no specific committer email is provided.</p>
+
+    <form id="git-settings-form" onsubmit="saveGitSettings(event)">
+        <label for="default_committer_email">Default Committer Email</label>
+        <input
+            type="email"
+            id="default_committer_email"
+            name="default_committer_email"
+            placeholder="user@example.com"
+            value="{{ config.default_committer_email or '' }}"
+            pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+            title="Valid email address"
+        >
+        <small>Email address format for git commits (e.g., user@example.com)</small>
+
+        <div class="form-actions">
+            <button type="submit" class="primary" id="save-btn">Save Changes</button>
+            <button type="button" class="secondary" onclick="resetForm()">Reset</button>
+        </div>
+    </form>
+</article>
+
+<style>
+.git-settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.git-settings-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.message-success {
+    background: #1e4620;
+    border-left: 4px solid #2ea043;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.message-error {
+    background: #4a1c1c;
+    border-left: 4px solid #cf222e;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+table[role="grid"] td:first-child {
+    width: 40%;
+}
+</style>
+
+<script>
+async function saveGitSettings(event) {
+    event.preventDefault();
+
+    const form = document.getElementById('git-settings-form');
+    const saveBtn = document.getElementById('save-btn');
+    const messageContainer = document.getElementById('message-container');
+
+    // Get form data
+    const defaultEmail = document.getElementById('default_committer_email').value;
+
+    // Disable submit button
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+        const response = await fetch('/api/settings/git', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                default_committer_email: defaultEmail || null
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        // Show success message
+        messageContainer.innerHTML = `
+            <article class="message-success">
+                <p>Git settings updated successfully!</p>
+            </article>
+        `;
+
+        // Update displayed values
+        if (result.default_committer_email !== undefined) {
+            document.getElementById('default_committer_email').value = result.default_committer_email || '';
+        }
+
+        // Auto-dismiss success message after 3 seconds
+        setTimeout(() => {
+            const successMsg = messageContainer.querySelector('.message-success');
+            if (successMsg) {
+                successMsg.remove();
+            }
+        }, 3000);
+
+    } catch (error) {
+        // Show error message
+        messageContainer.innerHTML = `
+            <article class="message-error">
+                <p>Failed to update git settings: ${error.message}</p>
+            </article>
+        `;
+    } finally {
+        // Re-enable submit button
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Changes';
+    }
+}
+
+function resetForm() {
+    const form = document.getElementById('git-settings-form');
+    form.reset();
+
+    // Clear any messages
+    const messageContainer = document.getElementById('message-container');
+    messageContainer.innerHTML = '';
+}
+</script>
+{% endblock %}

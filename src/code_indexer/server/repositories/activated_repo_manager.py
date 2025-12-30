@@ -19,6 +19,8 @@ from pydantic import BaseModel
 
 from .golden_repo_manager import GoldenRepoManager
 from .background_jobs import BackgroundJobManager
+from ..services.committer_resolution_service import CommitterResolutionService
+from ...config import GitServiceConfig
 
 
 class ActivatedRepoError(Exception):
@@ -1317,8 +1319,50 @@ class ActivatedRepoManager:
             # cidx fix-config was already called in _clone_with_copy_on_write()
             # No need to manually create config - it comes from golden repo!
 
+            # Story #641: Resolve git committer email via SSH key discovery
+            update_progress(82, "Resolving git committer email via SSH key")
+            git_config = GitServiceConfig()
+            committer_service = CommitterResolutionService()
+            git_committer_email, ssh_key_used = committer_service.resolve_committer_email(
+                golden_repo_url=golden_repo.repo_url,
+                default_email=git_config.default_committer_email
+            )
+
+            # Set git config user.email and user.name in activated repository
+            if git_committer_email:
+                update_progress(85, f"Setting git config user.email to {git_committer_email}")
+                result = subprocess.run(
+                    ["git", "config", "user.email", git_committer_email],
+                    cwd=activated_repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode != 0:
+                    self.logger.warning(
+                        f"Failed to set git config user.email: {result.stderr}"
+                    )
+
+                # Set git config user.name (generic for all CIDX users)
+                result = subprocess.run(
+                    ["git", "config", "user.name", "CIDX User"],
+                    cwd=activated_repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode != 0:
+                    self.logger.warning(
+                        f"Failed to set git config user.name: {result.stderr}"
+                    )
+
+                self.logger.info(
+                    f"Git config set: user.email={git_committer_email}, user.name=CIDX User"
+                    + (f", ssh_key_used={ssh_key_used}" if ssh_key_used else "")
+                )
+
             # Create metadata file
-            update_progress(80, "Creating repository metadata")
+            update_progress(88, "Creating repository metadata")
             activated_at = datetime.now(timezone.utc).isoformat()
             metadata = {
                 "user_alias": user_alias,
@@ -1326,6 +1370,8 @@ class ActivatedRepoManager:
                 "current_branch": branch_name,
                 "activated_at": activated_at,
                 "last_accessed": activated_at,
+                "git_committer_email": git_committer_email,
+                "ssh_key_used": ssh_key_used,
             }
 
             metadata_file = os.path.join(user_dir, f"{user_alias}_metadata.json")

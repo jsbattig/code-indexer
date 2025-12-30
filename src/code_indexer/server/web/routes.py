@@ -119,6 +119,32 @@ def validate_login_csrf_token(request: Request, submitted_token: Optional[str]) 
         return False
 
 
+def get_csrf_token_from_cookie(request: Request) -> Optional[str]:
+    """
+    Retrieve existing CSRF token from cookie.
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        CSRF token if valid cookie exists, None otherwise
+    """
+    csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+    if not csrf_cookie:
+        return None
+
+    try:
+        serializer = _get_csrf_serializer()
+        token = serializer.loads(
+            csrf_cookie,
+            salt="csrf-login",
+            max_age=CSRF_MAX_AGE_SECONDS,
+        )
+        return token
+    except (SignatureExpired, BadSignature):
+        return None
+
+
 @web_router.get("/login", response_class=HTMLResponse)
 async def login_page(
     request: Request,
@@ -651,7 +677,11 @@ async def users_list_partial(request: Request):
             url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    csrf_token = generate_csrf_token()
+    # Reuse existing CSRF token from cookie instead of generating new one
+    csrf_token = get_csrf_token_from_cookie(request)
+    if not csrf_token:
+        # Fallback: generate new token if cookie missing/invalid
+        csrf_token = generate_csrf_token()
     users = _get_users_list()
 
     response = templates.TemplateResponse(
@@ -1123,7 +1153,11 @@ async def golden_repos_list_partial(request: Request):
             url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    csrf_token = generate_csrf_token()
+    # Reuse existing CSRF token from cookie instead of generating new one
+    csrf_token = get_csrf_token_from_cookie(request)
+    if not csrf_token:
+        # Fallback: generate new token if cookie missing/invalid
+        csrf_token = generate_csrf_token()
     repos = _get_golden_repos_list()
 
     response = templates.TemplateResponse(
@@ -1362,7 +1396,11 @@ async def repos_list_partial(
             url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    csrf_token = generate_csrf_token()
+    # Reuse existing CSRF token from cookie instead of generating new one
+    csrf_token = get_csrf_token_from_cookie(request)
+    if not csrf_token:
+        # Fallback: generate new token if cookie missing/invalid
+        csrf_token = generate_csrf_token()
 
     # Get all activated repos
     all_repos = _get_all_activated_repos()
@@ -1670,8 +1708,11 @@ async def jobs_list_partial(
             url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    # Generate CSRF token for cancel forms
-    csrf_token = generate_csrf_token()
+    # Reuse existing CSRF token from cookie instead of generating new one
+    csrf_token = get_csrf_token_from_cookie(request)
+    if not csrf_token:
+        # Fallback: generate new token if cookie missing/invalid
+        csrf_token = generate_csrf_token()
 
     # Get jobs
     jobs, total_count, total_pages = _get_all_jobs(
@@ -2052,24 +2093,33 @@ async def query_submit(
                 # For global repos, resolve path from GlobalRegistry
                 if not repo_path and target_repo.get("is_global"):
                     try:
-                        from code_indexer.global_repos.global_registry import GlobalRegistry
+                        from code_indexer.global_repos.global_registry import (
+                            GlobalRegistry,
+                        )
+
                         server_data_dir = os.environ.get(
                             "CIDX_SERVER_DATA_DIR",
                             os.path.expanduser("~/.cidx-server"),
                         )
-                        golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
+                        golden_repos_dir = (
+                            Path(server_data_dir) / "data" / "golden-repos"
+                        )
                         registry = GlobalRegistry(str(golden_repos_dir))
                         global_repo_meta = registry.get_global_repo(user_alias)
                         if global_repo_meta:
                             repo_path = global_repo_meta.get("index_path")
                     except Exception as e:
-                        logger.warning(f"Failed to resolve global repo path for '{user_alias}': {e}")
+                        logger.warning(
+                            f"Failed to resolve global repo path for '{user_alias}': {e}"
+                        )
 
                 if not repo_path:
                     error_message = f"Repository '{user_alias}' path not found"
                 else:
                     # Find SCIP index files
-                    scip_pattern = str(Path(repo_path) / ".code-indexer" / "scip" / "**" / "*.scip")
+                    scip_pattern = str(
+                        Path(repo_path) / ".code-indexer" / "scip" / "**" / "*.scip"
+                    )
                     scip_files = glob.glob(scip_pattern, recursive=True)
 
                     if not scip_files:
@@ -2079,100 +2129,143 @@ async def query_submit(
                             # Execute query based on type
                             query_results = []
                             if scip_query_type == "impact":
-                                from code_indexer.scip.query.composites import analyze_impact
-                                from code_indexer.scip.query.primitives import QueryResult
+                                from code_indexer.scip.query.composites import (
+                                    analyze_impact,
+                                )
+                                from code_indexer.scip.query.primitives import (
+                                    QueryResult,
+                                )
+
                                 scip_dir = Path(repo_path) / ".code-indexer" / "scip"
                                 # Use depth=2 (lower than CLI default of 3) to balance coverage vs Web UI response time
                                 impact_result = analyze_impact(
                                     query_text.strip(),
                                     scip_dir,
                                     depth=2,
-                                    project=str(repo_path)
+                                    project=str(repo_path),
                                 )
                                 # Convert affected_symbols to QueryResult format
                                 for affected in impact_result.affected_symbols:
-                                    query_results.append(QueryResult(
-                                        symbol=affected.symbol,
-                                        project=str(repo_path),
-                                        file_path=str(affected.file_path),
-                                        line=affected.line,
-                                        column=affected.column,
-                                        kind="impact",
-                                        relationship=affected.relationship,
-                                        context=None,
-                                    ))
+                                    query_results.append(
+                                        QueryResult(
+                                            symbol=affected.symbol,
+                                            project=str(repo_path),
+                                            file_path=str(affected.file_path),
+                                            line=affected.line,
+                                            column=affected.column,
+                                            kind="impact",
+                                            relationship=affected.relationship,
+                                            context=None,
+                                        )
+                                    )
                             elif scip_query_type == "callchain":
-                                from code_indexer.scip.query.primitives import QueryResult
+                                from code_indexer.scip.query.primitives import (
+                                    QueryResult,
+                                )
+
                                 parts = query_text.strip().split(maxsplit=1)
                                 if len(parts) != 2:
-                                    raise ValueError("Call chain requires two symbols: 'from_symbol to_symbol'")
+                                    raise ValueError(
+                                        "Call chain requires two symbols: 'from_symbol to_symbol'"
+                                    )
                                 scip_file = Path(scip_files[0])
                                 engine = SCIPQueryEngine(scip_file)
-                                chains = engine.trace_call_chain(parts[0], parts[1], max_depth=5)
+                                chains = engine.trace_call_chain(
+                                    parts[0], parts[1], max_depth=5
+                                )
                                 for chain in chains:
-                                    query_results.append(QueryResult(
-                                        symbol=" -> ".join(chain.path),
-                                        project=str(repo_path),
-                                        file_path="(call chain)",
-                                        line=0,
-                                        column=0,
-                                        kind="callchain",
-                                        relationship=f"length={chain.length}",
-                                        context=None,
-                                    ))
+                                    query_results.append(
+                                        QueryResult(
+                                            symbol=" -> ".join(chain.path),
+                                            project=str(repo_path),
+                                            file_path="(call chain)",
+                                            line=0,
+                                            column=0,
+                                            kind="callchain",
+                                            relationship=f"length={chain.length}",
+                                            context=None,
+                                        )
+                                    )
                             elif scip_query_type == "context":
-                                from code_indexer.scip.query.composites import get_smart_context
-                                from code_indexer.scip.query.primitives import QueryResult
+                                from code_indexer.scip.query.composites import (
+                                    get_smart_context,
+                                )
+                                from code_indexer.scip.query.primitives import (
+                                    QueryResult,
+                                )
+
                                 scip_dir = Path(repo_path) / ".code-indexer" / "scip"
                                 context_result = get_smart_context(
                                     query_text.strip(),
                                     scip_dir,
                                     limit=limit,
                                     min_score=float(min_score) if min_score else 0.0,
-                                    project=str(repo_path)
+                                    project=str(repo_path),
                                 )
                                 for ctx_file in context_result.files:
-                                    query_results.append(QueryResult(
-                                        symbol=query_text.strip(),
-                                        project=str(repo_path),
-                                        file_path=str(ctx_file.path),
-                                        line=0,
-                                        column=0,
-                                        kind="context",
-                                        relationship=f"score={ctx_file.relevance_score:.2f}, symbols={len(ctx_file.symbols)}",
-                                        context=None,
-                                    ))
+                                    query_results.append(
+                                        QueryResult(
+                                            symbol=query_text.strip(),
+                                            project=str(repo_path),
+                                            file_path=str(ctx_file.path),
+                                            line=0,
+                                            column=0,
+                                            kind="context",
+                                            relationship=f"score={ctx_file.relevance_score:.2f}, symbols={len(ctx_file.symbols)}",
+                                            context=None,
+                                        )
+                                    )
                             else:
                                 # For definition/references/dependencies/dependents, use engine
                                 scip_file = Path(scip_files[0])
                                 engine = SCIPQueryEngine(scip_file)
 
                                 if scip_query_type == "definition":
-                                    query_results = engine.find_definition(query_text.strip(), exact=scip_exact)
+                                    query_results = engine.find_definition(
+                                        query_text.strip(), exact=scip_exact
+                                    )
                                 elif scip_query_type == "references":
-                                    query_results = engine.find_references(query_text.strip(), limit=limit, exact=scip_exact)
+                                    query_results = engine.find_references(
+                                        query_text.strip(),
+                                        limit=limit,
+                                        exact=scip_exact,
+                                    )
                                 elif scip_query_type == "dependencies":
-                                    query_results = engine.get_dependencies(query_text.strip(), exact=scip_exact)
+                                    query_results = engine.get_dependencies(
+                                        query_text.strip(), exact=scip_exact
+                                    )
                                 elif scip_query_type == "dependents":
-                                    query_results = engine.get_dependents(query_text.strip(), exact=scip_exact)
+                                    query_results = engine.get_dependents(
+                                        query_text.strip(), exact=scip_exact
+                                    )
 
                             # Format results for template
                             for result in query_results:
-                                results.append({
-                                    "file_path": result.file_path,
-                                    "line_numbers": str(result.line),
-                                    "content": f"{result.kind}: {result.symbol}",
-                                    "score": 1.0,  # SCIP results don't have similarity scores
-                                    "language": _detect_language_from_path(result.file_path),
-                                    "repository_alias": user_alias,
-                                    "scip_symbol": result.symbol,
-                                    "scip_kind": result.kind,
-                                })
+                                results.append(
+                                    {
+                                        "file_path": result.file_path,
+                                        "line_numbers": str(result.line),
+                                        "content": f"{result.kind}: {result.symbol}",
+                                        "score": 1.0,  # SCIP results don't have similarity scores
+                                        "language": _detect_language_from_path(
+                                            result.file_path
+                                        ),
+                                        "repository_alias": user_alias,
+                                        "scip_symbol": result.symbol,
+                                        "scip_kind": result.kind,
+                                    }
+                                )
                         except FileNotFoundError as e:
-                            logger.error("SCIP query failed - file not found: %s", e, exc_info=True)
+                            logger.error(
+                                "SCIP query failed - file not found: %s",
+                                e,
+                                exc_info=True,
+                            )
                             error_message = f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`"
                         except Exception as e:
-                            logger.error("SCIP query execution failed: %s", e, exc_info=True)
+                            logger.error(
+                                "SCIP query execution failed: %s", e, exc_info=True
+                            )
                             error_message = f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`"
 
         else:
@@ -2382,6 +2475,7 @@ def _execute_scip_query(
         try:
             from code_indexer.global_repos.global_registry import GlobalRegistry
             import os
+
             server_data_dir = os.environ.get(
                 "CIDX_SERVER_DATA_DIR",
                 os.path.expanduser("~/.cidx-server"),
@@ -2392,7 +2486,9 @@ def _execute_scip_query(
             if global_repo_meta:
                 repo_path = global_repo_meta.get("index_path")
         except Exception as e:
-            logger.warning(f"Failed to resolve global repo path for '{user_alias}': {e}")
+            logger.warning(
+                f"Failed to resolve global repo path for '{user_alias}': {e}"
+            )
 
     if not repo_path:
         return results, f"Repository '{user_alias}' path not found"
@@ -2400,7 +2496,10 @@ def _execute_scip_query(
     scip_pattern = str(Path(repo_path) / ".code-indexer" / "scip" / "**" / "*.scip")
     scip_files = glob.glob(scip_pattern, recursive=True)
     if not scip_files:
-        return results, f"No SCIP index found for repository '{user_alias}'. Run 'cidx scip index' first."
+        return (
+            results,
+            f"No SCIP index found for repository '{user_alias}'. Run 'cidx scip index' first.",
+        )
 
     try:
         query_results = []
@@ -2408,56 +2507,112 @@ def _execute_scip_query(
 
         if scip_query_type == "impact":
             from code_indexer.scip.query.composites import analyze_impact
-            res = analyze_impact(query_text.strip(), scip_dir, depth=2, project=str(repo_path))
-            query_results = [QueryResult(symbol=a.symbol, project=str(repo_path), file_path=str(a.file_path),
-                           line=a.line, column=a.column, kind="impact", relationship=a.relationship, context=None)
-                           for a in res.affected_symbols]
+
+            res = analyze_impact(
+                query_text.strip(), scip_dir, depth=2, project=str(repo_path)
+            )
+            query_results = [
+                QueryResult(
+                    symbol=a.symbol,
+                    project=str(repo_path),
+                    file_path=str(a.file_path),
+                    line=a.line,
+                    column=a.column,
+                    kind="impact",
+                    relationship=a.relationship,
+                    context=None,
+                )
+                for a in res.affected_symbols
+            ]
         elif scip_query_type == "callchain":
             parts = query_text.strip().split(maxsplit=1)
             if len(parts) != 2:
-                raise ValueError("Call chain requires two symbols: 'from_symbol to_symbol'")
+                raise ValueError(
+                    "Call chain requires two symbols: 'from_symbol to_symbol'"
+                )
             engine = SCIPQueryEngine(Path(scip_files[0]))
             chains = engine.trace_call_chain(parts[0], parts[1], max_depth=5)
-            query_results = [QueryResult(symbol=" -> ".join(c.path), project=str(repo_path), file_path="(call chain)",
-                           line=0, column=0, kind="callchain", relationship=f"length={c.length}", context=None)
-                           for c in chains]
+            query_results = [
+                QueryResult(
+                    symbol=" -> ".join(c.path),
+                    project=str(repo_path),
+                    file_path="(call chain)",
+                    line=0,
+                    column=0,
+                    kind="callchain",
+                    relationship=f"length={c.length}",
+                    context=None,
+                )
+                for c in chains
+            ]
         elif scip_query_type == "context":
             from code_indexer.scip.query.composites import get_smart_context
-            res = get_smart_context(query_text.strip(), scip_dir, limit=limit,
-                                   min_score=float(min_score) if min_score else 0.0, project=str(repo_path))
-            query_results = [QueryResult(symbol=query_text.strip(), project=str(repo_path), file_path=str(f.path),
-                           line=0, column=0, kind="context",
-                           relationship=f"score={f.relevance_score:.2f}, symbols={len(f.symbols)}", context=None)
-                           for f in res.files]
+
+            res = get_smart_context(
+                query_text.strip(),
+                scip_dir,
+                limit=limit,
+                min_score=float(min_score) if min_score else 0.0,
+                project=str(repo_path),
+            )
+            query_results = [
+                QueryResult(
+                    symbol=query_text.strip(),
+                    project=str(repo_path),
+                    file_path=str(f.path),
+                    line=0,
+                    column=0,
+                    kind="context",
+                    relationship=f"score={f.relevance_score:.2f}, symbols={len(f.symbols)}",
+                    context=None,
+                )
+                for f in res.files
+            ]
         else:
             engine = SCIPQueryEngine(Path(scip_files[0]))
             if scip_query_type == "definition":
-                query_results = engine.find_definition(query_text.strip(), exact=scip_exact)
+                query_results = engine.find_definition(
+                    query_text.strip(), exact=scip_exact
+                )
             elif scip_query_type == "references":
-                query_results = engine.find_references(query_text.strip(), limit=limit, exact=scip_exact)
+                query_results = engine.find_references(
+                    query_text.strip(), limit=limit, exact=scip_exact
+                )
             elif scip_query_type == "dependencies":
-                query_results = engine.get_dependencies(query_text.strip(), exact=scip_exact)
+                query_results = engine.get_dependencies(
+                    query_text.strip(), exact=scip_exact
+                )
             elif scip_query_type == "dependents":
-                query_results = engine.get_dependents(query_text.strip(), exact=scip_exact)
+                query_results = engine.get_dependents(
+                    query_text.strip(), exact=scip_exact
+                )
 
         # Format results for template
         for result in query_results:
-            results.append({
-                "file_path": result.file_path,
-                "line_numbers": str(result.line),
-                "content": f"{result.kind}: {result.symbol}",
-                "score": 1.0,  # SCIP results don't have similarity scores
-                "language": _detect_language_from_path(result.file_path),
-                "repository_alias": user_alias,
-                "scip_symbol": result.symbol,
-                "scip_kind": result.kind,
-            })
+            results.append(
+                {
+                    "file_path": result.file_path,
+                    "line_numbers": str(result.line),
+                    "content": f"{result.kind}: {result.symbol}",
+                    "score": 1.0,  # SCIP results don't have similarity scores
+                    "language": _detect_language_from_path(result.file_path),
+                    "repository_alias": user_alias,
+                    "scip_symbol": result.symbol,
+                    "scip_kind": result.kind,
+                }
+            )
     except FileNotFoundError as e:
         logger.error("SCIP query failed - file not found: %s", e, exc_info=True)
-        return results, f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`"
+        return (
+            results,
+            f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`",
+        )
     except Exception as e:
         logger.error("SCIP query execution failed: %s", e, exc_info=True)
-        return results, f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`"
+        return (
+            results,
+            f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`",
+        )
 
     return results, None
 
@@ -2572,7 +2727,13 @@ async def query_results_partial_post(
             elif search_mode == "scip":
                 # Execute SCIP query using helper function
                 scip_results, scip_error = _execute_scip_query(
-                    target_repo, user_alias, query_text, scip_query_type, scip_exact, limit, min_score
+                    target_repo,
+                    user_alias,
+                    query_text,
+                    scip_query_type,
+                    scip_exact,
+                    limit,
+                    min_score,
                 )
                 results.extend(scip_results)
                 if scip_error:
@@ -3118,7 +3279,11 @@ async def config_section_partial(
             url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    csrf_token = generate_csrf_token()
+    # Reuse existing CSRF token from cookie instead of generating new one
+    csrf_token = get_csrf_token_from_cookie(request)
+    if not csrf_token:
+        # Fallback: generate new token if cookie missing/invalid
+        csrf_token = generate_csrf_token()
     config = _get_current_config()
 
     response = templates.TemplateResponse(
@@ -3132,6 +3297,51 @@ async def config_section_partial(
     )
 
     set_csrf_cookie(response, csrf_token)
+    return response
+
+
+# =============================================================================
+# Git Settings
+# =============================================================================
+
+
+@web_router.get("/settings/git", response_class=HTMLResponse)
+async def git_settings_page(request: Request):
+    """
+    Git settings page - view and edit git service configuration.
+
+    Admin-only page for configuring git committer settings.
+    """
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    from ..utils.config_manager import ConfigManager
+
+    # Get current configuration
+    config_manager = ConfigManager.get_instance()
+    git_config = config_manager.get_git_service_config()
+
+    # Generate CSRF token
+    csrf_token = generate_csrf_token()
+
+    response = templates.TemplateResponse(
+        request,
+        "git_settings.html",
+        {
+            "username": session.username,
+            "current_page": "git-settings",
+            "show_nav": True,
+            "csrf_token": csrf_token,
+            "config": git_config,
+        },
+    )
+
+    # Set CSRF cookie
+    set_csrf_cookie(response, csrf_token)
+
     return response
 
 
@@ -3678,6 +3888,7 @@ def _create_ssh_keys_page_response(
     unmanaged_keys = []
     try:
         from ..services.ssh_key_manager import SSHKeyManager
+
         manager = SSHKeyManager()
         key_list = manager.list_keys()
         managed_keys = key_list.managed
