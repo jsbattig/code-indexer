@@ -479,3 +479,64 @@ class TestOIDCRoutes:
         oidc_mgr.provider.exchange_code_for_token.assert_called_once()
         oidc_mgr.provider.get_user_info.assert_called_once_with("test-access-token")
         oidc_mgr.match_or_create_user.assert_called_once()
+
+    def test_sso_callback_handles_match_or_create_user_returning_none(self):
+        """Test that sso_callback handles case where match_or_create_user returns None (JIT disabled, no match)."""
+        from code_indexer.server.auth.oidc.routes import router
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider, OIDCUserInfo
+        from code_indexer.server.auth.oidc.state_manager import StateManager
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from unittest.mock import Mock, AsyncMock
+
+        # Create configured OIDC manager
+        config = OIDCProviderConfig(
+            enabled=True,
+            provider_name="TestSSO",
+            issuer_url="https://example.com",
+            client_id="test-client-id"
+        )
+        oidc_mgr = OIDCManager(config, None, None)
+
+        # Mock provider methods
+        oidc_mgr.provider = Mock(spec=OIDCProvider)
+        oidc_mgr.provider.exchange_code_for_token = AsyncMock(return_value={
+            "access_token": "test-access-token",
+            "id_token": "test-id-token"
+        })
+        oidc_mgr.provider.get_user_info = AsyncMock(return_value=OIDCUserInfo(
+            subject="test-subject-123",
+            email="test@example.com",
+            email_verified=True
+        ))
+
+        # Mock match_or_create_user to return None (JIT disabled, no matching user)
+        oidc_mgr.match_or_create_user = AsyncMock(return_value=None)
+
+        # Create state manager with valid state
+        state_mgr = StateManager()
+        state_token = state_mgr.create_state({
+            "code_verifier": "test-code-verifier",
+            "redirect_uri": "/admin"
+        })
+
+        # Inject managers into routes module
+        import code_indexer.server.auth.oidc.routes as routes_module
+        from code_indexer.server.utils.config_manager import ServerConfig
+        routes_module.oidc_manager = oidc_mgr
+        routes_module.state_manager = state_mgr
+        routes_module.server_config = ServerConfig(server_dir="/tmp", host="localhost", port=8090)
+
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Make callback request
+        response = client.get(
+            f"/auth/sso/callback?code=test-auth-code&state={state_token}",
+            follow_redirects=False
+        )
+
+        # Should return 403 Forbidden (authentication succeeded but authorization failed)
+        assert response.status_code == 403
+        assert "not authorized" in response.json()["detail"].lower()

@@ -57,6 +57,9 @@ class TestOIDCManager:
                 def json(self):
                     return mock_response
 
+                def raise_for_status(self):
+                    pass  # No error for success case
+
             return MockResponse()
 
         # Mock httpx.AsyncClient
@@ -422,6 +425,9 @@ class TestOIDCManager:
             class MockResponse:
                 def json(self):
                     return mock_response
+
+                def raise_for_status(self):
+                    pass  # No error for success case
 
             return MockResponse()
 

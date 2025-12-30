@@ -91,6 +91,9 @@ class TestOIDCProvider:
                 def json(self):
                     return mock_response
 
+                def raise_for_status(self):
+                    pass  # No error for success case
+
             return MockResponse()
 
         # Mock httpx.AsyncClient
@@ -193,6 +196,9 @@ class TestOIDCProvider:
                 def json(self):
                     return mock_token_response
 
+                def raise_for_status(self):
+                    pass  # No error for success case
+
             return MockResponse()
 
         # Mock httpx.AsyncClient
@@ -257,6 +263,9 @@ class TestOIDCProvider:
             class MockResponse:
                 def json(self):
                     return mock_userinfo
+
+                def raise_for_status(self):
+                    pass  # No error for success case
 
             return MockResponse()
 

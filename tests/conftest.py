@@ -340,3 +340,26 @@ def temp_audit_dir():
     temp_dir = tempfile.mkdtemp()
     yield Path(temp_dir)
     shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture(scope="session")
+def mock_oidc_server():
+    """Provide a lightweight mock OIDC server for integration testing.
+
+    The server runs in a background thread and provides:
+    - Discovery endpoint (.well-known/openid-configuration)
+    - Authorization endpoint (/authorize)
+    - Token endpoint (/token)
+    - Userinfo endpoint (/userinfo)
+
+    Returns:
+        MockOIDCServer: Configured and running mock server
+    """
+    from tests.fixtures.mock_oidc_server import MockOIDCServer
+
+    server = MockOIDCServer(port=8888)
+    server.start()
+
+    yield server
+
+    server.stop()

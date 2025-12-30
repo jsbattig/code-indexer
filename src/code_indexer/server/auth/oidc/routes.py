@@ -1,8 +1,8 @@
 """OIDC authentication routes for FastAPI."""
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from ...web.auth import should_use_secure_cookies, get_session_manager
+from ...web.auth import get_session_manager
 
 router = APIRouter(prefix="/auth/sso", tags=["sso"])
 
@@ -13,10 +13,6 @@ oidc_manager = None
 
 # Global state manager instance (injected by app.py)
 state_manager = None
-
-
-# Global server config instance (injected by app.py)
-server_config = None
 
 
 @router.get("/login")
@@ -54,7 +50,7 @@ async def sso_login(request: Request, redirect_uri: Optional[str] = None):
 
 
 @router.get("/callback")
-async def sso_callback(code: str, state: str, request: Request, response: Response):
+async def sso_callback(code: str, state: str, request: Request):
     """Handle OIDC callback."""
     # Validate state token (CSRF protection)
     state_data = state_manager.validate_state(state)
@@ -74,6 +70,13 @@ async def sso_callback(code: str, state: str, request: Request, response: Respon
     
     # Match or create user (email-based)
     user = await oidc_manager.match_or_create_user(user_info)
+
+    # Check if user was found/created (JIT provisioning disabled or email not verified)
+    if user is None:
+        raise HTTPException(
+            status_code=403,
+            detail="User not authorized. Please contact administrator."
+        )
 
     # Create session (same as password login)
     session_manager = get_session_manager()

@@ -30,9 +30,19 @@ class OIDCProvider:
         well_known_url = f"{self.config.issuer_url}/.well-known/openid-configuration"
 
         # Fetch metadata from well-known endpoint
-        async with httpx.AsyncClient() as client:
-            response = await client.get(well_known_url)
-            data = response.json()  # Not async in httpx
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(well_known_url)
+                response.raise_for_status()  # Raise HTTPStatusError for 4xx/5xx
+                data = response.json()  # Not async in httpx
+        except httpx.HTTPStatusError as e:
+            raise Exception(
+                f"Failed to discover OIDC metadata: HTTP {e.response.status_code} - {e.response.text}"
+            ) from e
+        except httpx.RequestError as e:
+            raise Exception(
+                f"Failed to connect to OIDC provider at {well_known_url}: {str(e)}"
+            ) from e
 
         # Create and return OIDCMetadata
         metadata = OIDCMetadata(
@@ -78,9 +88,25 @@ class OIDCProvider:
         }
 
         # Exchange code for tokens
-        async with httpx.AsyncClient() as client:
-            response = await client.post(self._metadata.token_endpoint, data=data)
-            tokens = response.json()  # Not async in httpx
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self._metadata.token_endpoint, data=data)
+                response.raise_for_status()  # Raise HTTPStatusError for 4xx/5xx
+                tokens = response.json()  # Not async in httpx
+        except httpx.HTTPStatusError as e:
+            raise Exception(
+                f"Failed to exchange authorization code for token: HTTP {e.response.status_code} - {e.response.text}"
+            ) from e
+        except httpx.RequestError as e:
+            raise Exception(
+                f"Failed to connect to token endpoint: {str(e)}"
+            ) from e
+
+        # Validate token response has required fields
+        if "access_token" not in tokens:
+            raise Exception(
+                f"Invalid token response: missing access_token field"
+            )
 
         return tokens
 
@@ -96,9 +122,25 @@ class OIDCProvider:
 
         # Fetch user info from userinfo endpoint
         headers = {"Authorization": f"Bearer {access_token}"}
-        async with httpx.AsyncClient() as client:
-            response = await client.get(userinfo_endpoint, headers=headers)
-            data = response.json()  # Not async in httpx
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(userinfo_endpoint, headers=headers)
+                response.raise_for_status()  # Raise HTTPStatusError for 4xx/5xx
+                data = response.json()  # Not async in httpx
+        except httpx.HTTPStatusError as e:
+            raise Exception(
+                f"Failed to get user info: HTTP {e.response.status_code} - {e.response.text}"
+            ) from e
+        except httpx.RequestError as e:
+            raise Exception(
+                f"Failed to connect to userinfo endpoint: {str(e)}"
+            ) from e
+
+        # Validate userinfo response has required fields
+        if "sub" not in data or not data["sub"]:
+            raise Exception(
+                f"Invalid userinfo response: missing or empty sub (subject) claim"
+            )
 
         # Create OIDCUserInfo from response
         user_info = OIDCUserInfo(
