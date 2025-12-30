@@ -96,6 +96,7 @@ class OAuthManager:
 
     def get_discovery_metadata(self) -> Dict[str, Any]:
         return {
+            "issuer": self.issuer,
             "authorization_endpoint": f"{self.issuer}/oauth/authorize",
             "token_endpoint": f"{self.issuer}/oauth/token",
             "registration_endpoint": f"{self.issuer}/oauth/register",
