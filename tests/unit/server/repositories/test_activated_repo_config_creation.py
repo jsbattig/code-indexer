@@ -72,6 +72,8 @@ class TestActivatedRepoConfigCreation:
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         mock.golden_repos = {"test-repo": golden_repo}
+        # Mock get_actual_repo_path() to return the real path (for canonical path resolution)
+        mock.get_actual_repo_path = MagicMock(return_value=str(golden_repo_with_git))
         return mock
 
     @pytest.fixture

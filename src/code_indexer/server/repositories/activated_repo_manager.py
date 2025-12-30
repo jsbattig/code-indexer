@@ -367,9 +367,11 @@ class ActivatedRepoManager:
                 subrepo_path = composite_path / alias
 
                 try:
+                    # Use canonical path resolution for versioned repos
+                    golden_repo_actual_path = self.golden_repo_manager.get_actual_repo_path(alias)
                     # Reuse existing CoW clone method
                     success = self._clone_with_copy_on_write(
-                        str(golden_repo.clone_path), str(subrepo_path)
+                        str(golden_repo_actual_path), str(subrepo_path)
                     )
 
                     if not success:
@@ -859,8 +861,8 @@ class ActivatedRepoManager:
 
             # Story #636: Check and migrate legacy remotes before fetch
             if golden_repo_alias and golden_repo_alias in self.golden_repo_manager.golden_repos:
-                golden_repo = self.golden_repo_manager.golden_repos[golden_repo_alias]
-                golden_repo_path = golden_repo.clone_path
+                # Use canonical path resolution to handle versioned repos (Bug #3, #4 fix)
+                golden_repo_path = self.golden_repo_manager.get_actual_repo_path(golden_repo_alias)
                 self._detect_and_migrate_legacy_remotes(repo_dir, golden_repo_path)
             else:
                 self.logger.warning(
@@ -1278,10 +1280,11 @@ class ActivatedRepoManager:
 
             activated_repo_path = os.path.join(user_dir, user_alias)
 
-            # Clone repository with CoW
-            update_progress(40, f"Cloning repository from {golden_repo.clone_path}")
+            # Clone repository with CoW (use canonical path for versioned repos)
+            golden_repo_actual_path = self.golden_repo_manager.get_actual_repo_path(golden_repo_alias)
+            update_progress(40, f"Cloning repository from {golden_repo_actual_path}")
             success = self._clone_with_copy_on_write(
-                golden_repo.clone_path, activated_repo_path
+                golden_repo_actual_path, activated_repo_path
             )
 
             if not success:

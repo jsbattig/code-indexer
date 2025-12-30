@@ -3136,6 +3136,168 @@ async def config_section_partial(
 
 
 # =============================================================================
+# File Content Limits Settings
+# =============================================================================
+
+
+@web_router.get("/settings/file-content-limits", response_class=HTMLResponse)
+async def file_content_limits_page(request: Request):
+    """
+    File content limits settings page - view and edit token limits configuration.
+
+    Admin-only page for configuring file content token limits.
+    """
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    from ..services.file_content_limits_config_manager import (
+        FileContentLimitsConfigManager,
+    )
+
+    # Get current configuration
+    config_manager = FileContentLimitsConfigManager.get_instance()
+    config = config_manager.get_config()
+
+    # Generate CSRF token
+    csrf_token = generate_csrf_token()
+
+    # Calculate derived values
+    max_chars = config.max_chars_per_request
+    estimated_lines = max_chars // 80  # Typical code line length
+
+    response = templates.TemplateResponse(
+        "file_content_limits.html",
+        {
+            "request": request,
+            "username": session.username,
+            "current_page": "file-content-limits",
+            "show_nav": True,
+            "csrf_token": csrf_token,
+            "config": config,
+            "max_chars": max_chars,
+            "estimated_lines": estimated_lines,
+            "success_message": None,
+            "error_message": None,
+        },
+    )
+
+    set_csrf_cookie(response, csrf_token)
+    return response
+
+
+@web_router.post("/settings/file-content-limits", response_class=HTMLResponse)
+async def update_file_content_limits(
+    request: Request,
+    max_tokens_per_request: int = Form(...),
+    chars_per_token: int = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """
+    Update file content limits configuration.
+
+    Validates input and persists changes to database.
+    """
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_file_content_limits_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    # Validate max_tokens_per_request range
+    if max_tokens_per_request < 1000 or max_tokens_per_request > 20000:
+        return _create_file_content_limits_response(
+            request,
+            session,
+            error_message="Max tokens per request must be between 1000 and 20000",
+        )
+
+    # Validate chars_per_token range
+    if chars_per_token < 3 or chars_per_token > 5:
+        return _create_file_content_limits_response(
+            request,
+            session,
+            error_message="Chars per token must be between 3 and 5",
+        )
+
+    # Update configuration
+    try:
+        from ..models.file_content_limits_config import FileContentLimitsConfig
+        from ..services.file_content_limits_config_manager import (
+            FileContentLimitsConfigManager,
+        )
+
+        new_config = FileContentLimitsConfig(
+            max_tokens_per_request=max_tokens_per_request,
+            chars_per_token=chars_per_token,
+        )
+
+        config_manager = FileContentLimitsConfigManager.get_instance()
+        config_manager.update_config(new_config)
+
+        return _create_file_content_limits_response(
+            request,
+            session,
+            success_message="File content limits updated successfully",
+        )
+    except Exception as e:
+        logger.error("Failed to update file content limits: %s", e)
+        return _create_file_content_limits_response(
+            request,
+            session,
+            error_message=f"Failed to update configuration: {str(e)}",
+        )
+
+
+def _create_file_content_limits_response(
+    request: Request,
+    session: SessionData,
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> HTMLResponse:
+    """Create file content limits page response with messages."""
+    from ..services.file_content_limits_config_manager import (
+        FileContentLimitsConfigManager,
+    )
+
+    config_manager = FileContentLimitsConfigManager.get_instance()
+    config = config_manager.get_config()
+
+    csrf_token = generate_csrf_token()
+
+    # Calculate derived values
+    max_chars = config.max_chars_per_request
+    estimated_lines = max_chars // 80
+
+    response = templates.TemplateResponse(
+        "file_content_limits.html",
+        {
+            "request": request,
+            "username": session.username,
+            "current_page": "file-content-limits",
+            "show_nav": True,
+            "csrf_token": csrf_token,
+            "config": config,
+            "max_chars": max_chars,
+            "estimated_lines": estimated_lines,
+            "success_message": success_message,
+            "error_message": error_message,
+        },
+    )
+
+    set_csrf_cookie(response, csrf_token)
+    return response
+
+
+# =============================================================================
 # API Keys Management
 # =============================================================================
 

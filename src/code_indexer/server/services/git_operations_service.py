@@ -166,7 +166,9 @@ class GitOperationsService:
                 return
 
             golden_repo = self.activated_repo_manager.golden_repo_manager.golden_repos[golden_repo_alias]
-            golden_repo_path = golden_repo.clone_path
+
+            # Use canonical path resolution to handle versioned repos (Bug #3, #4 fix)
+            golden_repo_path = self.activated_repo_manager.golden_repo_manager.get_actual_repo_path(golden_repo_alias)
 
             # Trigger migration via ActivatedRepoManager
             migrated = self.activated_repo_manager._detect_and_migrate_legacy_remotes(

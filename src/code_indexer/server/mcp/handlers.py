@@ -1022,16 +1022,48 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 
 async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Get content of a specific file.
+    """Get content of a specific file with optional pagination.
 
     Returns MCP-compliant response with content as array of text blocks.
     Per MCP spec, content must be an array of content blocks, each with 'type' and 'text' fields.
+
+    Pagination parameters:
+    - offset: 1-indexed line number to start reading from (optional, default: 1)
+    - limit: Maximum number of lines to return (optional, default: None = all lines)
     """
     from pathlib import Path
 
     try:
         repository_alias = params["repository_alias"]
         file_path = params["file_path"]
+
+        # Extract optional pagination parameters
+        offset = params.get("offset")
+        limit = params.get("limit")
+
+        # Validate offset if provided
+        if offset is not None:
+            if not isinstance(offset, int) or offset < 1:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": "offset must be an integer >= 1",
+                        "content": [],
+                        "metadata": {},
+                    }
+                )
+
+        # Validate limit if provided
+        if limit is not None:
+            if not isinstance(limit, int) or limit < 1:
+                return _mcp_response(
+                    {
+                        "success": False,
+                        "error": "limit must be an integer >= 1",
+                        "content": [],
+                        "metadata": {},
+                    }
+                )
 
         # Check if this is a global repository (ends with -global suffix)
         if repository_alias and repository_alias.endswith("-global"):
@@ -1074,16 +1106,21 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
                 error_envelope["metadata"] = {}
                 return _mcp_response(error_envelope)
 
-            # Use resolved path for file_service
+            # Use resolved path for file_service with pagination parameters
             result = app_module.file_service.get_file_content_by_path(
                 repo_path=target_path,
                 file_path=file_path,
+                offset=offset,
+                limit=limit,
             )
         else:
+            # Call file_service with pagination parameters
             result = app_module.file_service.get_file_content(
                 repository_alias=repository_alias,
                 file_path=file_path,
                 username=user.username,
+                offset=offset,
+                limit=limit,
             )
 
         # MCP spec: content must be array of content blocks
@@ -1945,9 +1982,13 @@ async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]
 
 
 async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Handler for regex_search tool - pattern matching in repository files."""
+    """Handler for regex_search tool - pattern matching with timeout protection."""
     from pathlib import Path
     from code_indexer.global_repos.regex_search import RegexSearchService
+    from code_indexer.server.services.search_limits_config_manager import (
+        SearchLimitsConfigManager,
+    )
+    from code_indexer.server.services.search_error_formatter import SearchErrorFormatter
 
     repository_alias = args.get("repository_alias")
     repository_alias = _parse_json_string_array(repository_alias)
@@ -1981,9 +2022,13 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
             )
         repo_path = Path(resolved)
 
-        # Create service and execute search
+        # Get search limits configuration
+        config_manager = SearchLimitsConfigManager.get_instance()
+        config = config_manager.get_config()
+
+        # Create service and execute search with timeout protection
         service = RegexSearchService(repo_path)
-        result = service.search(
+        result = await service.search(
             pattern=pattern,
             path=args.get("path"),
             include_patterns=args.get("include_patterns"),
@@ -1991,6 +2036,7 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
             case_sensitive=args.get("case_sensitive", True),
             context_lines=args.get("context_lines", 0),
             max_results=args.get("max_results", 100),
+            timeout_seconds=config.timeout_seconds,
         )
 
         # Convert dataclass to dict for JSON serialization
@@ -2016,6 +2062,18 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
                 "search_time_ms": result.search_time_ms,
             }
         )
+
+    except TimeoutError as e:
+        logger.warning(f"Search timeout in regex_search: {e}")
+        # Format timeout error response
+        error_formatter = SearchErrorFormatter()
+        config_manager = SearchLimitsConfigManager.get_instance()
+        config = config_manager.get_config()
+        error_data = error_formatter.format_timeout_error(
+            timeout_seconds=config.timeout_seconds,
+            partial_results=None,
+        )
+        return _mcp_response({"success": False, **error_data})
 
     except Exception as e:
         logger.exception(f"Error in regex_search: {e}")
@@ -4739,17 +4797,15 @@ async def git_push(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
 
     try:
-        repo_manager = ActivatedRepoManager()
-        repo_path = repo_manager.get_activated_repo_path(
-            username=user.username, user_alias=repository_alias
-        )
-
+        # Bug #639: Call push_to_remote wrapper to trigger migration if needed
         remote = args.get("remote", "origin")
         branch = args.get("branch")
-        result = git_operations_service.git_push(Path(repo_path), remote, branch)
-        result["remote"] = remote
-        if branch:
-            result["branch"] = branch
+        result = git_operations_service.push_to_remote(
+            repo_alias=repository_alias,
+            username=user.username,
+            remote=remote,
+            branch=branch
+        )
         return _mcp_response(result)
 
     except GitCommandError as e:
@@ -4777,14 +4833,15 @@ async def git_pull(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
 
     try:
-        repo_manager = ActivatedRepoManager()
-        repo_path = repo_manager.get_activated_repo_path(
-            username=user.username, user_alias=repository_alias
-        )
-
+        # Bug #639: Call pull_from_remote wrapper to trigger migration if needed
         remote = args.get("remote", "origin")
         branch = args.get("branch")
-        result = git_operations_service.git_pull(Path(repo_path), remote, branch)
+        result = git_operations_service.pull_from_remote(
+            repo_alias=repository_alias,
+            username=user.username,
+            remote=remote,
+            branch=branch
+        )
         return _mcp_response(result)
 
     except GitCommandError as e:
@@ -4812,13 +4869,13 @@ async def git_fetch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
 
     try:
-        repo_manager = ActivatedRepoManager()
-        repo_path = repo_manager.get_activated_repo_path(
-            username=user.username, user_alias=repository_alias
-        )
-
+        # Bug #639: Call fetch_from_remote wrapper to trigger migration if needed
         remote = args.get("remote", "origin")
-        result = git_operations_service.git_fetch(Path(repo_path), remote)
+        result = git_operations_service.fetch_from_remote(
+            repo_alias=repository_alias,
+            username=user.username,
+            remote=remote
+        )
         return _mcp_response(result)
 
     except GitCommandError as e:

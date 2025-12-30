@@ -1,0 +1,149 @@
+"""
+Search Result File Manager for temp file management and size checking.
+
+Manages temporary output files from search operations with size limit
+enforcement and cleanup.
+"""
+
+import logging
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ParseResult:
+    """Result of parsing a search output file."""
+
+    exceeded: bool
+    file_size: int
+    limit: int
+    content: Optional[str] = None
+    truncated_content: Optional[str] = None
+
+
+@dataclass
+class SizeCheckResult:
+    """Result of checking file size against limit."""
+
+    exceeded: bool
+    file_size: int
+    limit: int
+
+
+class SearchResultFileManager:
+    """
+    Manages temporary search result files with size limits.
+
+    Features:
+    - Size checking against configurable limits
+    - Content truncation for oversized results
+    - Temp file cleanup
+    - Safe file operations
+    """
+
+    def parse_with_size_limit(
+        self, file_path: str, max_size_bytes: int
+    ) -> ParseResult:
+        """
+        Parse search output file with size limit check.
+
+        Args:
+            file_path: Path to output file
+            max_size_bytes: Maximum allowed file size in bytes
+
+        Returns:
+            ParseResult with content or truncated content
+
+        Raises:
+            FileNotFoundError: If file doesn't exist
+        """
+        # Get file size
+        file_size = self.get_file_size(file_path)
+
+        if file_size > max_size_bytes:
+            # File exceeds limit - read truncated content
+            truncated_content = self.read_limited_content(file_path, max_size_bytes)
+            return ParseResult(
+                exceeded=True,
+                file_size=file_size,
+                limit=max_size_bytes,
+                truncated_content=truncated_content,
+            )
+        else:
+            # File within limit - read full content
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            return ParseResult(
+                exceeded=False, file_size=file_size, limit=max_size_bytes, content=content
+            )
+
+    def check_size(self, file_path: str, max_size_bytes: int) -> SizeCheckResult:
+        """
+        Check if file size exceeds limit without reading content.
+
+        Args:
+            file_path: Path to file
+            max_size_bytes: Maximum allowed size in bytes
+
+        Returns:
+            SizeCheckResult indicating if limit exceeded
+        """
+        file_size = self.get_file_size(file_path)
+
+        return SizeCheckResult(
+            exceeded=file_size > max_size_bytes,
+            file_size=file_size,
+            limit=max_size_bytes,
+        )
+
+    def get_file_size(self, file_path: str) -> int:
+        """
+        Get size of file in bytes.
+
+        Args:
+            file_path: Path to file
+
+        Returns:
+            File size in bytes
+
+        Raises:
+            FileNotFoundError: If file doesn't exist
+        """
+        return os.path.getsize(file_path)
+
+    def read_limited_content(self, file_path: str, max_bytes: int) -> str:
+        """
+        Read first N bytes of file.
+
+        Args:
+            file_path: Path to file
+            max_bytes: Maximum bytes to read
+
+        Returns:
+            First max_bytes of file content
+        """
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read(max_bytes)
+        return content
+
+    def cleanup_temp_file(self, file_path: str):
+        """
+        Delete temporary file if it exists.
+
+        Args:
+            file_path: Path to temp file
+
+        Note:
+            Does not raise exception if file doesn't exist
+        """
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.debug(f"Cleaned up temp file: {file_path}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup temp file {file_path}: {e}")

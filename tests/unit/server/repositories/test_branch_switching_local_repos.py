@@ -36,7 +36,10 @@ class TestBranchSwitchingLocalRepos:
     @pytest.fixture
     def local_git_repo_no_remote(self, temp_data_dir):
         """Create a local git repository without remote origins."""
-        repo_path = os.path.join(temp_data_dir, "local_repo_no_remote")
+        # Create repo INSIDE golden-repos/ to respect security sandbox
+        golden_repos_dir = os.path.join(temp_data_dir, "golden-repos")
+        os.makedirs(golden_repos_dir, exist_ok=True)
+        repo_path = os.path.join(golden_repos_dir, "local_repo_no_remote")
         os.makedirs(repo_path)
 
         # Initialize git repository
@@ -84,7 +87,10 @@ class TestBranchSwitchingLocalRepos:
     @pytest.fixture
     def local_git_repo_with_invalid_remote(self, temp_data_dir):
         """Create a local git repository with invalid remote origin."""
-        repo_path = os.path.join(temp_data_dir, "local_repo_invalid_remote")
+        # Create repo INSIDE golden-repos/ to respect security sandbox
+        golden_repos_dir = os.path.join(temp_data_dir, "golden-repos")
+        os.makedirs(golden_repos_dir, exist_ok=True)
+        repo_path = os.path.join(golden_repos_dir, "local_repo_invalid_remote")
         os.makedirs(repo_path)
 
         # Initialize git repository

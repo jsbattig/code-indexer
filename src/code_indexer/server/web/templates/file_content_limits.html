@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}File Content Limits - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="config-header">
+    <h1>File Content Limits Configuration</h1>
+    <p>Configure token limits for file content retrieval operations</p>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success" style="background-color: var(--pico-ins-color); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error" style="background-color: var(--pico-del-color); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Configuration Form -->
+<article>
+    <h2>Token Limit Settings</h2>
+
+    <!-- Current Configuration Display -->
+    <div style="margin-bottom: 2rem; padding: 1rem; background-color: var(--pico-card-background-color); border-radius: 0.5rem;">
+        <h3>Current Configuration</h3>
+        <table class="config-table">
+            <tbody>
+                <tr>
+                    <td class="config-label" style="font-weight: bold; width: 40%;">Max Tokens Per Request</td>
+                    <td class="config-value">{{ config.max_tokens_per_request }}</td>
+                </tr>
+                <tr>
+                    <td class="config-label" style="font-weight: bold;">Characters Per Token</td>
+                    <td class="config-value">{{ config.chars_per_token }}</td>
+                </tr>
+                <tr>
+                    <td class="config-label" style="font-weight: bold;">Max Characters</td>
+                    <td class="config-value">{{ max_chars }}</td>
+                </tr>
+                <tr>
+                    <td class="config-label" style="font-weight: bold;">Estimated Max Lines</td>
+                    <td class="config-value">~{{ estimated_lines }} lines (assuming 80 chars/line)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Update Form -->
+    <form method="post" action="/admin/settings/file-content-limits" id="limits-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <label for="max-tokens">
+                Max Tokens Per Request
+                <input
+                    type="range"
+                    id="max-tokens"
+                    name="max_tokens_per_request"
+                    min="1000"
+                    max="20000"
+                    step="100"
+                    value="{{ config.max_tokens_per_request }}"
+                    oninput="updateCalculatedValues()"
+                >
+                <output for="max-tokens" id="max-tokens-value" style="display: block; margin-top: 0.5rem;">{{ config.max_tokens_per_request }}</output>
+                <small>Range: 1000 - 20000 tokens</small>
+            </label>
+
+            <label for="chars-per-token">
+                Characters Per Token
+                <select id="chars-per-token" name="chars_per_token" onchange="updateCalculatedValues()">
+                    <option value="3" {% if config.chars_per_token == 3 %}selected{% endif %}>3</option>
+                    <option value="4" {% if config.chars_per_token == 4 %}selected{% endif %}>4</option>
+                    <option value="5" {% if config.chars_per_token == 5 %}selected{% endif %}>5</option>
+                </select>
+                <small>Average characters per token ratio</small>
+            </label>
+        </div>
+
+        <!-- Live Calculation Display -->
+        <div style="margin-top: 1.5rem; padding: 1rem; background-color: var(--pico-card-background-color); border-radius: 0.5rem;">
+            <h3>Calculated Values (Live Preview)</h3>
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label" style="font-weight: bold; width: 40%;">Max Characters</td>
+                        <td class="config-value" id="calc-max-chars">{{ max_chars }}</td>
+                    </tr>
+                    <tr>
+                        <td class="config-label" style="font-weight: bold;">Estimated Max Lines</td>
+                        <td class="config-value" id="calc-estimated-lines">~{{ estimated_lines }} lines</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions" style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+            <button type="submit" class="primary">Save Configuration</button>
+            <button type="button" class="secondary" onclick="resetForm()">Reset to Current</button>
+        </div>
+    </form>
+</article>
+
+<script>
+function updateCalculatedValues() {
+    const maxTokens = parseInt(document.getElementById('max-tokens').value);
+    const charsPerToken = parseInt(document.getElementById('chars-per-token').value);
+
+    // Update slider output
+    document.getElementById('max-tokens-value').textContent = maxTokens;
+
+    // Calculate derived values
+    const maxChars = maxTokens * charsPerToken;
+    const estimatedLines = Math.floor(maxChars / 80);
+
+    // Update display
+    document.getElementById('calc-max-chars').textContent = maxChars.toLocaleString();
+    document.getElementById('calc-estimated-lines').textContent = '~' + estimatedLines.toLocaleString() + ' lines';
+}
+
+function resetForm() {
+    // Reset form to current values
+    document.getElementById('max-tokens').value = {{ config.max_tokens_per_request }};
+    document.getElementById('chars-per-token').value = {{ config.chars_per_token }};
+    updateCalculatedValues();
+}
+
+// Initialize calculated values on page load
+document.addEventListener('DOMContentLoaded', updateCalculatedValues);
+</script>
+
+<style>
+.config-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.config-table tbody tr {
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.config-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.config-table td {
+    padding: 0.75rem 0.5rem;
+}
+
+.config-label {
+    color: var(--pico-muted-color);
+}
+
+.config-value {
+    text-align: right;
+}
+
+input[type="range"] {
+    width: 100%;
+}
+
+output {
+    font-weight: bold;
+    color: var(--pico-primary);
+}
+
+.message-success {
+    color: var(--pico-contrast);
+}
+
+.message-error {
+    color: var(--pico-contrast);
+}
+
+.form-grid {
+    margin-bottom: 1rem;
+}
+
+.form-actions {
+    margin-top: 1rem;
+}
+</style>
+{% endblock %}

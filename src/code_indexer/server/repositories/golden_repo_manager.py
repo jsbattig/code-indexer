@@ -38,6 +38,12 @@ class GitOperationError(GoldenRepoError):
     pass
 
 
+class GoldenRepoNotFoundError(GoldenRepoError):
+    """Exception raised when golden repository cannot be found on filesystem."""
+
+    pass
+
+
 class GoldenRepo(BaseModel):
     """Model representing a golden repository."""
 
@@ -1371,6 +1377,127 @@ class GoldenRepoManager:
             True if repository exists, False otherwise
         """
         return alias in self.golden_repos
+
+    def get_actual_repo_path(self, alias: str) -> str:
+        """
+        Resolve actual filesystem path for golden/global repo.
+
+        Resolves the canonical filesystem path for a golden repository,
+        handling mixed topology (flat structure + versioned structure).
+
+        This method is critical for fixing Bug #3, Bug #4, Topology Bug 2.1,
+        and Topology Bug 3.1 where metadata paths become stale when repos
+        are stored in .versioned/ structure but metadata still points to
+        flat structure paths.
+
+        Checks in priority order:
+        1. Metadata clone_path (legacy flat structure)
+        2. .versioned/{alias}/v_*/ (versioned structure, latest version)
+        3. Raise GoldenRepoNotFoundError if not found
+
+        Security: Validates alias and paths to prevent path traversal attacks.
+
+        Args:
+            alias: Repository alias
+
+        Returns:
+            str: Actual filesystem path to repository
+
+        Raises:
+            ValueError: If alias contains path traversal characters or resolved path escapes sandbox
+            GoldenRepoNotFoundError: If repo doesn't exist in metadata or filesystem
+        """
+        # SECURITY: Reject dangerous characters in alias (path traversal protection)
+        if ".." in alias:
+            raise ValueError(
+                f"Invalid alias '{alias}': cannot contain path traversal characters (..)"
+            )
+        if "/" in alias:
+            raise ValueError(
+                f"Invalid alias '{alias}': cannot contain path traversal characters (/)"
+            )
+        if "\\" in alias:
+            raise ValueError(
+                f"Invalid alias '{alias}': cannot contain path traversal characters (\\)"
+            )
+
+        # Check if alias exists in metadata
+        if alias not in self.golden_repos:
+            raise GoldenRepoNotFoundError(
+                f"Golden repository '{alias}' not found in metadata"
+            )
+
+        golden_repo = self.golden_repos[alias]
+        metadata_path = golden_repo.clone_path
+
+        # Get logger for this module
+        logger = logging.getLogger(__name__)
+
+        # Priority 1: Check if metadata path exists on filesystem
+        if os.path.exists(metadata_path):
+            # SECURITY: Verify resolved path stays within golden_repos_dir (symlink protection)
+            # Only validate paths that actually exist to avoid blocking test fixtures
+            resolved_metadata = os.path.realpath(metadata_path)
+            golden_repos_realpath = os.path.realpath(self.golden_repos_dir)
+            if not resolved_metadata.startswith(golden_repos_realpath):
+                raise ValueError(
+                    f"Security violation: resolved path '{resolved_metadata}' "
+                    f"outside golden repos directory '{self.golden_repos_dir}'"
+                )
+            return metadata_path
+
+        # Priority 2: Check .versioned/{alias}/ structure
+        versioned_base = os.path.join(self.golden_repos_dir, ".versioned", alias)
+
+        if os.path.exists(versioned_base):
+            # SECURITY: Verify versioned path also stays within bounds
+            # Only validate paths that actually exist to avoid blocking test fixtures
+            resolved_versioned_base = os.path.realpath(versioned_base)
+            golden_repos_realpath = os.path.realpath(self.golden_repos_dir)
+            if not resolved_versioned_base.startswith(golden_repos_realpath):
+                raise ValueError(
+                    f"Security violation: versioned path '{resolved_versioned_base}' "
+                    f"outside golden repos directory"
+                )
+
+            # Find all v_* subdirectories
+            version_dirs = []
+            for entry in os.listdir(versioned_base):
+                if entry.startswith("v_") and os.path.isdir(
+                    os.path.join(versioned_base, entry)
+                ):
+                    version_dirs.append(entry)
+
+            # SECURITY: Filter valid version directories and skip malformed ones
+            if version_dirs:
+                valid_versions = []
+                for v_dir in version_dirs:
+                    try:
+                        # Extract timestamp from v_TIMESTAMP format
+                        timestamp = int(v_dir.split("_")[1])
+                        valid_versions.append((v_dir, timestamp))
+                    except (ValueError, IndexError) as e:
+                        # Skip malformed version directories gracefully
+                        logger.warning(
+                            f"Skipping malformed version directory: {v_dir} "
+                            f"(expected format: v_TIMESTAMP, error: {e})"
+                        )
+                        continue
+
+                if valid_versions:
+                    # Sort by timestamp (highest = latest)
+                    valid_versions.sort(key=lambda x: x[1], reverse=True)
+                    latest_version = valid_versions[0][0]
+                    versioned_path = os.path.join(versioned_base, latest_version)
+                    return versioned_path
+
+        # Not found in either location
+        raise GoldenRepoNotFoundError(
+            f"Golden repository '{alias}' not found on filesystem.\n"
+            f"Attempted paths:\n"
+            f"  1. Metadata path: {metadata_path}\n"
+            f"  2. Versioned path: {versioned_base}/v_*/"
+        )
 
     def user_can_access_golden_repo(self, alias: str, user: Any) -> bool:
         """

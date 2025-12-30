@@ -39,7 +39,10 @@ class TestBranchSwitchingIntegration:
     @pytest.fixture
     def test_git_repo(self, temp_data_dir):
         """Create a real git repository for integration testing."""
-        repo_path = os.path.join(temp_data_dir, "integration_test_repo")
+        # Create repo INSIDE golden-repos/ to respect security sandbox
+        golden_repos_dir = os.path.join(temp_data_dir, "golden-repos")
+        os.makedirs(golden_repos_dir, exist_ok=True)
+        repo_path = os.path.join(golden_repos_dir, "integration_test_repo")
         os.makedirs(repo_path)
 
         # Initialize git repository

@@ -21,6 +21,7 @@ from ..models.api_models import (
     PaginationInfo,
     FileListQueryParams,
 )
+from ..services.file_content_limits_config_manager import FileContentLimitsConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,13 @@ class FileListingService:
         from ..repositories.activated_repo_manager import ActivatedRepoManager
 
         self.activated_repo_manager = ActivatedRepoManager()
+        self._config_manager = None
+
+    def _get_config_manager(self):
+        """Get config manager instance (lazy initialization)."""
+        if not hasattr(self, '_config_manager') or self._config_manager is None:
+            self._config_manager = FileContentLimitsConfigManager.get_instance()
+        return self._config_manager
 
     def list_files(
         self, repo_id: str, username: str, query_params: FileListQueryParams
@@ -448,10 +456,108 @@ class FileListingService:
 
         return paginated_files, pagination_info
 
+    def _enforce_token_limits(
+        self, content: str, total_lines: int, effective_offset: int
+    ) -> Tuple[str, Dict[str, Any]]:
+        """
+        Enforce token limits on content and generate metadata.
+
+        Args:
+            content: Content to potentially truncate
+            total_lines: Total lines in the file
+            effective_offset: Starting line number (1-indexed)
+
+        Returns:
+            Tuple of (possibly truncated content, metadata dict with token info)
+        """
+        config = self._get_config_manager().get_config()
+        max_chars = config.max_chars_per_request
+
+        # Calculate estimated tokens from content length
+        estimated_tokens = len(content) // config.chars_per_token
+
+        # Check if truncation needed
+        truncated = False
+        truncated_at_line = None
+        actual_content = content
+
+        if len(content) > max_chars:
+            # Truncate content to fit token budget
+            actual_content = content[:max_chars]
+            truncated = True
+
+            # Calculate which line we truncated at
+            lines_before_truncation = actual_content.count('\n')
+            truncated_at_line = effective_offset + lines_before_truncation
+
+            # Recalculate estimated tokens for truncated content
+            estimated_tokens = len(actual_content) // config.chars_per_token
+
+        # Determine if pagination required
+        # Formula: last_returned_line = effective_offset + returned_lines - 1
+        # Has more if last_returned_line < total_lines, which simplifies to:
+        # effective_offset + returned_lines - 1 < total_lines
+        # OR: effective_offset + returned_lines <= total_lines
+        returned_lines = actual_content.count('\n') + (1 if actual_content and not actual_content.endswith('\n') else 0)
+        last_returned_line = effective_offset + returned_lines - 1
+        requires_pagination = truncated or (last_returned_line < total_lines)
+
+        # Generate pagination hint
+        pagination_hint = ""
+        if requires_pagination:
+            if truncated:
+                pagination_hint = f"Content truncated at line {truncated_at_line} due to token limit. Use offset={truncated_at_line + 1} to continue reading."
+            else:
+                next_offset = effective_offset + returned_lines
+                pagination_hint = f"More content available. Use offset={next_offset} to continue reading."
+
+        # Build token enforcement metadata
+        token_metadata = {
+            "estimated_tokens": estimated_tokens,
+            "max_tokens_per_request": config.max_tokens_per_request,
+            "truncated": truncated,
+            "truncated_at_line": truncated_at_line,
+            "requires_pagination": requires_pagination,
+            "pagination_hint": pagination_hint if requires_pagination else None,
+        }
+
+        return actual_content, token_metadata
+
     def get_file_content(
-        self, repository_alias: str, file_path: str, username: str
+        self,
+        repository_alias: str,
+        file_path: str,
+        username: str,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Get content of a specific file from repository."""
+        """Get content of a specific file from repository with optional pagination.
+
+        CRITICAL BEHAVIOR CHANGE: When offset and limit are both None, returns FIRST CHUNK ONLY
+        (not entire file) to prevent LLM context window exhaustion. Token limits are enforced
+        in all cases.
+
+        Args:
+            repository_alias: Repository user alias
+            file_path: Relative path to file within repository
+            username: Username owning the repository
+            offset: 1-indexed line number to start reading from (default: 1)
+            limit: Maximum number of lines to return (default: None = token-limited chunk)
+
+        Returns:
+            Dict with 'content' and 'metadata' keys. Metadata includes pagination info:
+            - total_lines: Total lines in file
+            - returned_lines: Lines returned in this response
+            - offset: Starting line number (1-indexed)
+            - limit: Limit used (None if unlimited)
+            - has_more: True if more lines exist beyond returned range
+            - estimated_tokens: Estimated token count of returned content
+            - max_tokens_per_request: Current token limit from config
+            - truncated: True if content was truncated due to token limit
+            - truncated_at_line: Line number where truncation occurred (if truncated)
+            - requires_pagination: True if file has more content to read
+            - pagination_hint: Helpful message for navigating large files
+        """
         repo_path = self._get_repository_path(repository_alias, username)
         full_file_path = Path(repo_path) / file_path
         full_file_path = full_file_path.resolve()
@@ -462,8 +568,38 @@ class FileListingService:
             raise FileNotFoundError(f"File not found: {file_path}")
         if not full_file_path.is_file():
             raise FileNotFoundError(f"Not a file: {file_path}")
+
+        # Read all lines for pagination
         with open(full_file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+            all_lines = f.readlines()
+
+        total_lines = len(all_lines)
+
+        # CRITICAL: Default behavior changed - return first chunk only (not entire file)
+        # Apply offset (convert 1-indexed to 0-indexed for slicing)
+        effective_offset = offset if offset is not None else 1
+        start_index = max(0, effective_offset - 1)
+
+        # Apply limit (if user specified)
+        if limit is None:
+            # No user-specified limit: read from offset to end, will be token-limited
+            selected_lines = all_lines[start_index:]
+            has_more = False  # Will be updated by token enforcement
+        else:
+            # User specified limit: respect it but still apply token limits
+            end_index = start_index + limit
+            selected_lines = all_lines[start_index:end_index]
+            has_more = end_index < total_lines
+
+        # Build content string
+        content = "".join(selected_lines)
+
+        # Apply token enforcement (may truncate content)
+        enforced_content, token_metadata = self._enforce_token_limits(
+            content, total_lines, effective_offset
+        )
+
+        # Build metadata with pagination info
         stat_info = full_file_path.stat()
         metadata = {
             "size": stat_info.st_size,
@@ -472,23 +608,54 @@ class FileListingService:
             ).isoformat(),
             "language": self._detect_language(full_file_path),
             "path": file_path,
+            # Original pagination metadata
+            "total_lines": total_lines,
+            "returned_lines": enforced_content.count('\n') + (1 if enforced_content and not enforced_content.endswith('\n') else 0),
+            "offset": effective_offset,
+            "limit": limit,
+            "has_more": token_metadata["requires_pagination"],  # Updated by token enforcement
         }
-        return {"content": content, "metadata": metadata}
+
+        # Merge token enforcement metadata
+        metadata.update(token_metadata)
+
+        return {"content": enforced_content, "metadata": metadata}
 
     def get_file_content_by_path(
-        self, repo_path: str, file_path: str
+        self,
+        repo_path: str,
+        file_path: str,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Get content of a specific file from a direct filesystem path (for global repos).
 
         Unlike get_file_content() which looks up activated repos by alias,
         this method accepts a direct path for global repository file access.
 
+        CRITICAL BEHAVIOR CHANGE: When offset and limit are both None, returns FIRST CHUNK ONLY
+        (not entire file) to prevent LLM context window exhaustion. Token limits are enforced
+        in all cases.
+
         Args:
             repo_path: Direct filesystem path to repository root
             file_path: Relative path to file within repository
+            offset: 1-indexed line number to start reading from (default: 1)
+            limit: Maximum number of lines to return (default: None = token-limited chunk)
 
         Returns:
-            Dict with 'content' and 'metadata' keys
+            Dict with 'content' and 'metadata' keys. Metadata includes pagination info:
+            - total_lines: Total lines in file
+            - returned_lines: Lines returned in this response
+            - offset: Starting line number (1-indexed)
+            - limit: Limit used (None if unlimited)
+            - has_more: True if more lines exist beyond returned range
+            - estimated_tokens: Estimated token count of returned content
+            - max_tokens_per_request: Current token limit from config
+            - truncated: True if content was truncated due to token limit
+            - truncated_at_line: Line number where truncation occurred (if truncated)
+            - requires_pagination: True if file has more content to read
+            - pagination_hint: Helpful message for navigating large files
 
         Raises:
             PermissionError: If path traversal attempted
@@ -503,8 +670,38 @@ class FileListingService:
             raise FileNotFoundError(f"File not found: {file_path}")
         if not full_file_path.is_file():
             raise FileNotFoundError(f"Not a file: {file_path}")
+
+        # Read all lines for pagination
         with open(full_file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+            all_lines = f.readlines()
+
+        total_lines = len(all_lines)
+
+        # CRITICAL: Default behavior changed - return first chunk only (not entire file)
+        # Apply offset (convert 1-indexed to 0-indexed for slicing)
+        effective_offset = offset if offset is not None else 1
+        start_index = max(0, effective_offset - 1)
+
+        # Apply limit (if user specified)
+        if limit is None:
+            # No user-specified limit: read from offset to end, will be token-limited
+            selected_lines = all_lines[start_index:]
+            has_more = False  # Will be updated by token enforcement
+        else:
+            # User specified limit: respect it but still apply token limits
+            end_index = start_index + limit
+            selected_lines = all_lines[start_index:end_index]
+            has_more = end_index < total_lines
+
+        # Build content string
+        content = "".join(selected_lines)
+
+        # Apply token enforcement (may truncate content)
+        enforced_content, token_metadata = self._enforce_token_limits(
+            content, total_lines, effective_offset
+        )
+
+        # Build metadata with pagination info
         stat_info = full_file_path.stat()
         metadata = {
             "size": stat_info.st_size,
@@ -513,8 +710,18 @@ class FileListingService:
             ).isoformat(),
             "language": self._detect_language(full_file_path),
             "path": file_path,
+            # Original pagination metadata
+            "total_lines": total_lines,
+            "returned_lines": enforced_content.count('\n') + (1 if enforced_content and not enforced_content.endswith('\n') else 0),
+            "offset": effective_offset,
+            "limit": limit,
+            "has_more": token_metadata["requires_pagination"],  # Updated by token enforcement
         }
-        return {"content": content, "metadata": metadata}
+
+        # Merge token enforcement metadata
+        metadata.update(token_metadata)
+
+        return {"content": enforced_content, "metadata": metadata}
 
 
 # Global service instance

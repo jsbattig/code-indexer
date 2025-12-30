@@ -26,11 +26,26 @@ Added outputSchema to:
 - **edit_file**: Returns {success, file_path, new_content_hash, modified_at, changes_made, error}
 - **delete_file**: Returns {success, file_path, deleted_at, error}
 
+### 3. get_file_content Token-Limiting Documentation ✅
+
+Added comprehensive documentation for token-based pagination (Section 8):
+- **BREAKING CHANGE documentation**: Default behavior change (entire file → first chunk only)
+- **Token enforcement configuration**: Configurable limits (1000-20000 tokens, default 5000)
+- **Input parameters**: Detailed description of offset/limit parameters
+- **Output schema**: Complete metadata documentation with 6 new token-enforcement fields
+- **Pagination workflow**: Step-by-step guide for handling large files
+- **Usage examples**: 5 detailed examples (small file, large file, pagination, truncation, errors)
+- **Best practices**: 5 patterns including recommended limits by use case
+- **Comparison to Claude Code Read tool**: Feature comparison and design philosophy
+- **When to use/not use**: Clear decision matrix
+- **Troubleshooting**: 5 common problems with solutions
+- **Migration guide**: How to update existing code
+
 ---
 
 ## Remaining Tasks
 
-### 3. Git Operations Output Schemas (HIGH PRIORITY)
+### 4. Git Operations Output Schemas (HIGH PRIORITY)
 
 Need to add outputSchema to 14 git tools:
 
@@ -248,7 +263,7 @@ Need to add outputSchema to 14 git tools:
 
 ---
 
-### 4. Expand Severely Under-Documented Tools (HIGH PRIORITY)
+### 5. Expand Severely Under-Documented Tools (HIGH PRIORITY)
 
 Three tools have minimal 3-4 word descriptions. Need to expand to full TL;DR format:
 
@@ -474,7 +489,7 @@ activate_repository (create composite workspace), deactivate_repository (remove 
 
 ---
 
-### 5. Remove Duplicate cidx_quick_reference Definition
+### 6. Remove Duplicate cidx_quick_reference Definition
 
 **Location**: Line 287 (first definition) and Line 4131 (second definition)
 
@@ -484,7 +499,7 @@ activate_repository (create composite workspace), deactivate_repository (remove 
 
 ---
 
-### 6. Standardize All Tool Descriptions (LARGE TASK)
+### 7. Standardize All Tool Descriptions (LARGE TASK)
 
 Convert ALL remaining tool descriptions to this format:
 
@@ -536,7 +551,7 @@ RELATED TOOLS: [Similar/complementary tools]
 - git_search_diffs
 - browse_directory
 - directory_tree
-- get_file_content
+- ~~get_file_content~~ (DOCUMENTED - see section below)
 - list_global_repos
 - global_repo_status
 - list_activated_repos
@@ -550,7 +565,534 @@ RELATED TOOLS: [Similar/complementary tools]
 
 ---
 
-### 7. Add get_tool_categories Tool
+### 8. get_file_content Token-Limiting Documentation (COMPLETED)
+
+**Purpose**: Document the breaking change in `get_file_content` default behavior and new token-based pagination system.
+
+**Status**: IMPLEMENTED - Documentation below describes current behavior in tools.py (lines 1163-1286)
+
+---
+
+#### BREAKING CHANGE: Token-Limited Default Behavior
+
+**OLD BEHAVIOR** (pre-pagination):
+```python
+get_file_content('repo-global', 'large_file.py')
+# Returned ENTIRE file regardless of size (could be 10,000+ lines)
+# No token awareness, could exhaust LLM context window
+```
+
+**NEW BEHAVIOR** (current):
+```python
+get_file_content('repo-global', 'large_file.py')
+# Returns FIRST CHUNK ONLY (up to 5000 tokens, approximately 200-250 lines)
+# Forces explicit pagination for large files
+# Prevents LLM context window exhaustion
+```
+
+**Backward Compatibility**: Existing calls work but get different default behavior. To maintain old behavior, explicitly pass `offset=1, limit=None` (NOT RECOMMENDED - defeats token limiting).
+
+---
+
+#### Token Enforcement Configuration
+
+**Configurable Limits** (via Web UI):
+- **Token range**: 1000-20000 tokens per request
+- **Default**: 5000 tokens (~20,000 characters at 4 chars/token estimate)
+- **Estimation**: Characters per token ratio configurable (3-5 chars/token, default 4)
+
+**Token Calculation**:
+```
+estimated_tokens = len(content) / chars_per_token
+```
+
+**Enforcement**:
+- Content ALWAYS truncated if exceeds `max_tokens_per_request`
+- Truncation happens at line boundaries (never mid-line)
+- `metadata.truncated` indicates if token limit was hit
+- `metadata.truncated_at_line` shows where content was cut
+
+---
+
+#### Input Parameters
+
+**Required Parameters**:
+- `repository_alias` (string): Repository alias (global or activated)
+- `file_path` (string): Relative path to file within repository
+
+**Optional Parameters**:
+- `offset` (integer, min=1): Line number to start reading from (1-indexed)
+  - Default: 1 (read from beginning)
+  - Example: `offset=100` starts at line 100
+
+- `limit` (integer, min=1): Maximum number of lines to return
+  - Default: Token-limited chunk (up to 5000 tokens)
+  - **Recommended**: 200-250 lines per request to stay within 5000 token budget
+  - **Note**: Token limits enforced even if larger limit specified
+  - Example: `limit=250` attempts to read 250 lines (may be truncated by token limit)
+
+---
+
+#### Output Schema
+
+**Success Response**:
+```python
+{
+  "success": true,
+  "content": [
+    {
+      "type": "text",
+      "text": "... file content ..."
+    }
+  ],
+  "metadata": {
+    # Basic file info
+    "path": "src/auth.py",
+    "size": 15000,
+    "modified_at": "2025-12-29T10:30:00Z",
+    "language": "python",
+    "total_lines": 450,
+
+    # Pagination state
+    "offset": 1,
+    "limit": 250,
+    "returned_lines": 210,
+    "has_more": true,
+
+    # Token enforcement (NEW)
+    "estimated_tokens": 4500,
+    "max_tokens_per_request": 5000,
+    "truncated": false,
+    "truncated_at_line": null,
+    "requires_pagination": true,
+    "pagination_hint": "File has more content. Continue with offset=211"
+  }
+}
+```
+
+**New Metadata Fields** (Token Enforcement):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `estimated_tokens` | integer | Estimated token count of returned content (content_length / chars_per_token) |
+| `max_tokens_per_request` | integer | Current server-configured token limit (default 5000) |
+| `truncated` | boolean | True if content was cut due to token limit (not just line limit) |
+| `truncated_at_line` | integer\|null | Line number where token truncation occurred (null if not truncated) |
+| `requires_pagination` | boolean | True if more content exists (either `has_more=true` OR `truncated=true`) |
+| `pagination_hint` | string\|null | Human-readable message with suggested next offset (null if no more content) |
+
+**Existing Metadata Fields** (Still Present):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | string | Relative file path |
+| `size` | integer | File size in bytes |
+| `modified_at` | string | ISO 8601 timestamp of last modification |
+| `language` | string\|null | Detected programming language |
+| `total_lines` | integer | Total lines in complete file |
+| `offset` | integer | Starting line number (1-indexed) for returned content |
+| `limit` | integer\|null | Line limit used (null if unlimited) |
+| `returned_lines` | integer | Number of lines returned in this response |
+| `has_more` | boolean | True if more lines exist beyond current range |
+
+---
+
+#### Pagination Workflow
+
+**Step 1: Initial Request (No Parameters)**
+```python
+result = get_file_content('backend-global', 'large_file.py')
+
+# If file is large:
+result['metadata']['requires_pagination']  # -> true
+result['metadata']['pagination_hint']      # -> "File has more content. Continue with offset=211"
+result['metadata']['estimated_tokens']     # -> 4850
+result['metadata']['returned_lines']       # -> 210
+```
+
+**Step 2: Check Pagination Need**
+```python
+if result['metadata']['requires_pagination']:
+    # More content exists - need to continue reading
+    next_offset = result['metadata']['offset'] + result['metadata']['returned_lines']
+```
+
+**Step 3: Continue Reading**
+```python
+result2 = get_file_content('backend-global', 'large_file.py',
+                           offset=211, limit=250)
+
+# Repeat until requires_pagination == false
+```
+
+**Step 4: Handle Truncation**
+```python
+if result['metadata']['truncated']:
+    print(f"Content truncated at line {result['metadata']['truncated_at_line']}")
+    print(f"Exceeded {result['metadata']['max_tokens_per_request']} token limit")
+    # Reduce limit parameter or continue with next offset
+```
+
+---
+
+#### Usage Examples
+
+**Example 1: Small File (Fits in Single Response)**
+```python
+# Request
+{
+  "repository_alias": "backend-global",
+  "file_path": "config/settings.json"
+}
+
+# Response
+{
+  "success": true,
+  "content": [{"type": "text", "text": "... entire file content (50 lines) ..."}],
+  "metadata": {
+    "path": "config/settings.json",
+    "total_lines": 50,
+    "returned_lines": 50,
+    "offset": 1,
+    "limit": null,
+    "has_more": false,
+    "estimated_tokens": 800,
+    "max_tokens_per_request": 5000,
+    "truncated": false,
+    "truncated_at_line": null,
+    "requires_pagination": false,
+    "pagination_hint": null
+  }
+}
+```
+
+**Example 2: Large File (Token-Limited, First Chunk)**
+```python
+# Request
+{
+  "repository_alias": "backend-global",
+  "file_path": "src/large_module.py"
+}
+
+# Response
+{
+  "success": true,
+  "content": [{"type": "text", "text": "... first ~200-250 lines ..."}],
+  "metadata": {
+    "path": "src/large_module.py",
+    "total_lines": 850,
+    "returned_lines": 218,
+    "offset": 1,
+    "limit": null,
+    "has_more": true,
+    "estimated_tokens": 4950,
+    "max_tokens_per_request": 5000,
+    "truncated": false,
+    "truncated_at_line": null,
+    "requires_pagination": true,
+    "pagination_hint": "File has more content. Continue with offset=219"
+  }
+}
+```
+
+**Example 3: Explicit Pagination**
+```python
+# Request (read middle section)
+{
+  "repository_alias": "backend-global",
+  "file_path": "src/large_module.py",
+  "offset": 300,
+  "limit": 200
+}
+
+# Response
+{
+  "success": true,
+  "content": [{"type": "text", "text": "... lines 300-499 ..."}],
+  "metadata": {
+    "path": "src/large_module.py",
+    "total_lines": 850,
+    "returned_lines": 200,
+    "offset": 300,
+    "limit": 200,
+    "has_more": true,
+    "estimated_tokens": 4200,
+    "max_tokens_per_request": 5000,
+    "truncated": false,
+    "truncated_at_line": null,
+    "requires_pagination": true,
+    "pagination_hint": "File has more content. Continue with offset=500"
+  }
+}
+```
+
+**Example 4: Token Truncation (Limit Too Large)**
+```python
+# Request (trying to read 500 lines but hits token limit)
+{
+  "repository_alias": "backend-global",
+  "file_path": "src/verbose_file.py",
+  "offset": 1,
+  "limit": 500
+}
+
+# Response (truncated at line 180 due to token limit)
+{
+  "success": true,
+  "content": [{"type": "text", "text": "... lines 1-180 only ..."}],
+  "metadata": {
+    "path": "src/verbose_file.py",
+    "total_lines": 800,
+    "returned_lines": 180,
+    "offset": 1,
+    "limit": 500,
+    "has_more": true,
+    "estimated_tokens": 5000,
+    "max_tokens_per_request": 5000,
+    "truncated": true,
+    "truncated_at_line": 180,
+    "requires_pagination": true,
+    "pagination_hint": "Content truncated at token limit. Continue with offset=181"
+  }
+}
+```
+
+**Example 5: Error Handling**
+```python
+# Request (file not found)
+{
+  "repository_alias": "backend-global",
+  "file_path": "nonexistent.py"
+}
+
+# Response
+{
+  "success": false,
+  "error": "File 'nonexistent.py' not found in repository 'backend-global'",
+  "metadata": null
+}
+```
+
+---
+
+#### Best Practices
+
+**1. Start Small (Conserve Context Window)**
+```python
+# GOOD: Start with default token limit
+result = get_file_content('repo-global', 'file.py')
+
+# Check if you need more
+if result['metadata']['requires_pagination']:
+    # Decide if you actually need more content
+```
+
+**2. Token Awareness**
+```python
+# Before reading, check estimated size
+if result['metadata']['total_lines'] > 500:
+    # Large file - use targeted pagination
+    result = get_file_content('repo-global', 'file.py', offset=1, limit=200)
+else:
+    # Small file - read completely
+    result = get_file_content('repo-global', 'file.py')
+```
+
+**3. Pagination Loop Pattern**
+```python
+def read_entire_file(repo_alias: str, file_path: str) -> str:
+    """Read entire file with automatic pagination."""
+    content_parts = []
+    offset = 1
+
+    while True:
+        result = get_file_content(repo_alias, file_path, offset=offset, limit=250)
+        if not result['success']:
+            raise Exception(result['error'])
+
+        content_parts.append(result['content'][0]['text'])
+
+        if not result['metadata']['requires_pagination']:
+            break
+
+        offset = result['metadata']['offset'] + result['metadata']['returned_lines']
+
+    return '\n'.join(content_parts)
+```
+
+**4. Handle Truncation Gracefully**
+```python
+result = get_file_content('repo-global', 'file.py', limit=500)
+
+if result['metadata']['truncated']:
+    print(f"WARNING: Content truncated at line {result['metadata']['truncated_at_line']}")
+    print(f"Requested 500 lines but hit {result['metadata']['max_tokens_per_request']} token limit")
+    print("Consider reducing limit parameter or using pagination")
+```
+
+**5. Recommended Limits by Use Case**
+
+| Use Case | Recommended Limit | Rationale |
+|----------|------------------|-----------|
+| Quick inspection | Default (no limit param) | Token-limited chunk, ~200-250 lines |
+| Reading imports/headers | 50-100 lines | Most files have metadata at top |
+| Code review | 200-250 lines | Fits comfortably in 5000 token budget |
+| Searching specific section | Use `search_code` first | Then use targeted offset/limit |
+| Reading entire file | Pagination loop (see above) | Automatic chunk handling |
+
+---
+
+#### Comparison to Claude Code's Read Tool
+
+**Similarities**:
+- Both use token-based limits to prevent context exhaustion
+- Both support pagination with offset/limit parameters
+- Both return metadata about truncation and pagination needs
+- Both provide hints for continuing pagination
+
+**Differences**:
+
+| Feature | CIDX get_file_content | Claude Code Read |
+|---------|----------------------|------------------|
+| Default behavior | Token-limited first chunk | Entire file up to 2000 lines |
+| Token limit | Configurable (1000-20000, default 5000) | Fixed at model context limits |
+| Truncation metadata | `truncated`, `truncated_at_line`, `estimated_tokens` | Less detailed |
+| Pagination hints | Automatic with suggested offset | Manual calculation |
+| Content format | MCP-compliant content blocks | Plain text with line numbers |
+| Repository context | Multi-repo support (global/activated) | Local filesystem only |
+
+**Design Philosophy**:
+CIDX's approach is more conservative with context budget, forcing users to make conscious decisions about large file reads. This prevents accidental context window exhaustion when exploring unfamiliar codebases.
+
+---
+
+#### When to Use get_file_content
+
+**USE when**:
+1. Reading source code after `search_code` identifies relevant files
+2. Inspecting configuration files (package.json, tsconfig.json, etc.)
+3. Reviewing file content before editing (to get `content_hash` for optimistic locking)
+4. Reading documentation files (README.md, API docs)
+5. Navigating large files efficiently with pagination
+
+**DO NOT USE when**:
+1. Need file listing -> Use `list_files` or `browse_directory`
+2. Need to search file content -> Use `search_code` or `regex_search` FIRST
+3. Need directory structure -> Use `directory_tree` or `browse_directory`
+4. Want to read multiple files -> Use `search_code` with appropriate filters
+5. Exploring unfamiliar codebase -> Start with `browse_directory` + `directory_tree`
+
+---
+
+#### Troubleshooting
+
+**Problem 1: "File not found" Error**
+```
+Symptom: {"success": false, "error": "File 'path/to/file.py' not found"}
+
+Solutions:
+1. Verify file_path with list_files() or browse_directory()
+2. Check repository_alias is correct (list_global_repos() or list_activated_repos())
+3. Ensure file path is relative to repository root (no leading /)
+4. Check repository is accessible (permissions)
+```
+
+**Problem 2: "Permission denied" Error**
+```
+Symptom: {"success": false, "error": "Permission denied: requires repository:read"}
+
+Solutions:
+1. Check your role with whoami()
+2. Verify repository is activated (for write operations) or global (for read)
+3. Confirm you have 'query_repos' permission (all roles have this)
+4. Check repository isn't restricted by admin
+```
+
+**Problem 3: Content Truncated Unexpectedly**
+```
+Symptom: metadata.truncated = true when expecting full content
+
+Solutions:
+1. Check metadata.estimated_tokens vs metadata.max_tokens_per_request
+2. Reduce limit parameter (try 200 lines instead of 500)
+3. Use pagination to read in chunks
+4. If file has unusually dense content (minified JS, etc.), expect earlier truncation
+```
+
+**Problem 4: Pagination Loop Doesn't Terminate**
+```
+Symptom: Infinite loop when reading file with pagination
+
+Debug:
+1. Log metadata.requires_pagination, metadata.has_more, metadata.truncated each iteration
+2. Verify offset calculation: next_offset = metadata.offset + metadata.returned_lines
+3. Check for off-by-one errors (offset is 1-indexed, not 0-indexed)
+4. Add iteration limit to prevent infinite loops during development
+```
+
+**Problem 5: High Token Usage Despite Pagination**
+```
+Symptom: Still consuming too much context window
+
+Solutions:
+1. Start with even smaller limits (100-150 lines)
+2. Use targeted pagination (read specific sections, not entire file)
+3. Consider if you actually need file content (maybe search_code results are sufficient)
+4. Use browse_directory to inspect file metadata before reading
+```
+
+---
+
+#### Migration Guide
+
+**For existing code using get_file_content**:
+
+**Before (assumed entire file returned)**:
+```python
+result = get_file_content('backend-global', 'large_file.py')
+full_content = result['content'][0]['text']
+# Used to get entire file, might be 1000+ lines
+```
+
+**After (handle pagination)**:
+```python
+# Option 1: Accept token-limited first chunk (RECOMMENDED)
+result = get_file_content('backend-global', 'large_file.py')
+first_chunk = result['content'][0]['text']
+# Only ~200-250 lines, but saves context window
+
+# Check if you need more
+if result['metadata']['requires_pagination']:
+    print(f"File has {result['metadata']['total_lines']} total lines")
+    print(f"Use pagination if you need more than first {result['metadata']['returned_lines']} lines")
+
+# Option 2: Read entire file with pagination (NOT RECOMMENDED - defeats token limiting)
+def read_entire_file_legacy(repo, path):
+    parts = []
+    offset = 1
+    while True:
+        result = get_file_content(repo, path, offset=offset, limit=250)
+        parts.append(result['content'][0]['text'])
+        if not result['metadata']['requires_pagination']:
+            break
+        offset += result['metadata']['returned_lines']
+    return '\n'.join(parts)
+```
+
+**Recommended Approach**: Use search-then-read pattern
+```python
+# 1. Search for relevant code first
+search_results = search_code('authentication logic', 'backend-global', limit=5)
+
+# 2. Read only relevant files (likely small sections)
+for result in search_results['results']:
+    file_content = get_file_content('backend-global', result['path'])
+    # First chunk is usually sufficient after targeted search
+```
+
+---
+
+### 9. Add get_tool_categories Tool
 
 **Purpose**: Help users discover tools by category
 
@@ -633,7 +1175,7 @@ TOOL_REGISTRY["get_tool_categories"] = {
 
 ---
 
-### 8. Add first_time_user_guide Tool
+### 10. Add first_time_user_guide Tool
 
 **Purpose**: Onboarding guide for new users
 
@@ -734,11 +1276,12 @@ TOOL_REGISTRY["first_time_user_guide"] = {
 
 ## Implementation Priority
 
-1. **HIGH**: Git Operations output schemas (14 tools) - Critical for API contract clarity
-2. **HIGH**: Expand under-documented tools (3 tools) - User confusion without proper docs
-3. **MEDIUM**: Remove duplicate cidx_quick_reference - Cleanup issue
-4. **MEDIUM**: Add get_tool_categories and first_time_user_guide - Discovery enhancement
-5. **LOW**: Standardize all tool descriptions - Large task, incremental improvement
+1. ~~**HIGH**: get_file_content token-limiting documentation~~ ✅ COMPLETED
+2. **HIGH**: Git Operations output schemas (14 tools) - Critical for API contract clarity
+3. **HIGH**: Expand under-documented tools (3 tools) - User confusion without proper docs
+4. **MEDIUM**: Remove duplicate cidx_quick_reference - Cleanup issue
+5. **MEDIUM**: Add get_tool_categories and first_time_user_guide - Discovery enhancement
+6. **LOW**: Standardize all tool descriptions - Large task, incremental improvement
 
 ---
 
@@ -746,7 +1289,8 @@ TOOL_REGISTRY["first_time_user_guide"] = {
 
 After implementation, verify:
 
-- [ ] All File CRUD tools have outputSchema (3 tools)
+- [x] get_file_content has comprehensive token-limiting documentation (Section 8)
+- [x] All File CRUD tools have outputSchema (3 tools)
 - [ ] All Git Operations tools have outputSchema (14 tools)
 - [ ] deactivate_repository has comprehensive TL;DR description
 - [ ] sync_repository has comprehensive TL;DR description
