@@ -1972,6 +1972,10 @@ def create_app() -> FastAPI:
         golden_repo_manager=golden_repo_manager,
         background_job_manager=background_job_manager,
     )
+
+    # Inject ActivatedRepoManager for cascade deletion support
+    golden_repo_manager.activated_repo_manager = activated_repo_manager
+
     repository_listing_manager = RepositoryListingManager(
         golden_repo_manager=golden_repo_manager,
         activated_repo_manager=activated_repo_manager,
@@ -1981,6 +1985,13 @@ def create_app() -> FastAPI:
         activated_repo_manager=activated_repo_manager,
         background_job_manager=background_job_manager,
     )
+
+    # Store managers in app.state for access by routes
+    app.state.golden_repo_manager = golden_repo_manager
+    app.state.background_job_manager = background_job_manager
+    app.state.activated_repo_manager = activated_repo_manager
+    app.state.repository_listing_manager = repository_listing_manager
+    app.state.semantic_query_manager = semantic_query_manager
 
     # Initialize MCP credential manager
     from code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager

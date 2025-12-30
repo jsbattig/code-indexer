@@ -360,6 +360,43 @@ class GoldenRepoManager:
         # Create no-args wrapper for background execution
         def background_worker() -> Dict[str, Any]:
             """Execute removal in background thread."""
+            # Initialize cascade results tracking
+            cascade_results = {
+                "activated_repos_deleted": [],
+                "activated_repos_failed": [],
+                "global_alias_deleted": False,
+                "golden_repo_deleted": False,
+            }
+
+            # Step 1: Cascade delete all activated repos
+            if hasattr(self, "activated_repo_manager") and self.activated_repo_manager:
+                try:
+                    activated_repos = self.activated_repo_manager.find_repos_by_golden_alias(alias)
+
+                    for repo_info in activated_repos:
+                        username = repo_info["username"]
+                        user_alias = repo_info["user_alias"]
+
+                        try:
+                            # Direct deletion (not background job) for cascade
+                            self.activated_repo_manager._do_deactivate_repository(
+                                username=username,
+                                user_alias=user_alias,
+                            )
+                            cascade_results["activated_repos_deleted"].append(
+                                f"{username}/{user_alias}"
+                            )
+                            logging.info(f"Cascade deleted activated repo: {username}/{user_alias}")
+                        except Exception as e:
+                            cascade_results["activated_repos_failed"].append({
+                                "repo": f"{username}/{user_alias}",
+                                "error": str(e),
+                            })
+                            logging.error(f"Failed to cascade delete {username}/{user_alias}: {e}")
+
+                except Exception as e:
+                    logging.error(f"Failed to find activated repos for cascade deletion: {e}")
+
             # Get repository info before removal
             golden_repo = self.golden_repos[alias]
 
@@ -411,6 +448,7 @@ class GoldenRepoManager:
                     global_activator = GlobalActivator(self.golden_repos_dir)
                     global_activator.deactivate_golden_repo(alias)
                     logging.info(f"Golden repository '{alias}' deactivated globally")
+                    cascade_results["global_alias_deleted"] = True
                 except Exception as deactivation_error:
                     # Log error but don't fail removal - the repo files are already deleted
                     # This is consistent with add_golden_repo() behavior (AC4)
@@ -435,11 +473,24 @@ class GoldenRepoManager:
                         f"Golden repository removed but meta description not deleted."
                     )
 
+                # Mark golden repo as deleted
+                cascade_results["golden_repo_deleted"] = True
+
+                # Build enhanced message with cascade deletion counts
+                activated_count = len(cascade_results["activated_repos_deleted"])
+                failed_count = len(cascade_results["activated_repos_failed"])
+
                 message = f"Golden repository '{alias}' removed successfully"
+                if activated_count > 0:
+                    message += f" (cascade deleted {activated_count} activated repos)"
+                if failed_count > 0:
+                    message += f" (WARNING: {failed_count} activated repos failed to delete)"
+
                 return {
                     "success": True,
                     "alias": alias,
                     "message": message,
+                    "cascade_results": cascade_results,
                 }
             else:
                 # FAIL the operation - don't mask cleanup failures

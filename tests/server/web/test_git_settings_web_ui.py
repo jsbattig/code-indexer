@@ -65,11 +65,12 @@ def test_git_settings_page_includes_csrf_token(authenticated_client: TestClient)
 
 def test_git_settings_page_uses_config_manager(authenticated_client: TestClient):
     """Test that the page fetches configuration from ConfigManager."""
-    from code_indexer.server.utils.config_manager import ConfigManager
+    from code_indexer.config import ConfigManager
 
     # Get current config to verify the page displays it
-    config_manager = ConfigManager.get_instance()
-    git_config = config_manager.get_git_service_config()
+    config_manager = ConfigManager()
+    config = config_manager.load()
+    git_config = config.git_service
 
     response = authenticated_client.get("/admin/settings/git")
 

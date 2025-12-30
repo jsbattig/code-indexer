@@ -710,18 +710,16 @@ async def users_list_partial(request: Request):
 
 
 def _get_golden_repo_manager():
-    """Get golden repository manager, handling import lazily to avoid circular imports."""
-    from ..repositories.golden_repo_manager import GoldenRepoManager
-    import os
-    from pathlib import Path
+    """Get golden repository manager from app state."""
+    from code_indexer.server import app as app_module
 
-    # Get data directory from environment or use default
-    # Must match app.py: data_dir = server_data_dir / "data"
-    server_data_dir = os.environ.get(
-        "CIDX_SERVER_DATA_DIR", os.path.expanduser("~/.cidx-server")
-    )
-    data_dir = str(Path(server_data_dir) / "data")
-    return GoldenRepoManager(data_dir=data_dir)
+    manager = getattr(app_module.app.state, "golden_repo_manager", None)
+    if manager is None:
+        raise RuntimeError(
+            "golden_repo_manager not initialized. "
+            "Server must set app.state.golden_repo_manager during startup."
+        )
+    return manager
 
 
 def _get_golden_repos_list():
@@ -3318,11 +3316,12 @@ async def git_settings_page(request: Request):
             url="/user/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    from ..utils.config_manager import ConfigManager
+    from code_indexer.config import ConfigManager
 
     # Get current configuration
-    config_manager = ConfigManager.get_instance()
-    git_config = config_manager.get_git_service_config()
+    config_manager = ConfigManager()
+    config = config_manager.load()
+    git_config = config.git_service
 
     # Generate CSRF token
     csrf_token = generate_csrf_token()

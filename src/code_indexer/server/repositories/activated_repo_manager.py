@@ -521,6 +521,47 @@ class ActivatedRepoManager:
 
         return activated_repos
 
+    def find_repos_by_golden_alias(self, golden_repo_alias: str) -> List[Dict[str, Any]]:
+        """
+        Find all activated repos derived from a specific golden repo.
+
+        Args:
+            golden_repo_alias: Golden repository alias to search for
+
+        Returns:
+            List of dicts with username, user_alias, is_composite for each match
+        """
+        matching_repos = []
+
+        if not os.path.exists(self.activated_repos_dir):
+            return matching_repos
+
+        for user_dir_name in os.listdir(self.activated_repos_dir):
+            user_repos_dir = os.path.join(self.activated_repos_dir, user_dir_name)
+            if not os.path.isdir(user_repos_dir):
+                continue
+
+            user_repos = self.list_activated_repositories(user_dir_name)
+
+            for repo_data in user_repos:
+                # Handle both single and composite repos
+                if repo_data.get("golden_repo_alias") == golden_repo_alias:
+                    matching_repos.append({
+                        "username": user_dir_name,
+                        "user_alias": repo_data["user_alias"],
+                        "is_composite": repo_data.get("is_composite", False),
+                    })
+                # For composite repos, check if any sub-repo matches
+                elif repo_data.get("is_composite") and golden_repo_alias in repo_data.get("golden_repo_aliases", []):
+                    matching_repos.append({
+                        "username": user_dir_name,
+                        "user_alias": repo_data["user_alias"],
+                        "is_composite": True,
+                        "is_partial_composite": True,
+                    })
+
+        return matching_repos
+
     def deactivate_repository(self, username: str, user_alias: str) -> str:
         """
         Deactivate a repository for a user (background job).

@@ -8,10 +8,9 @@ Provides REST endpoints for:
 Story #641 AC #6: Web UI & REST API for default_committer_email configuration.
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from pathlib import Path
 
 from code_indexer.config import ConfigManager
 from code_indexer.server.auth.dependencies import get_current_user_web_or_api
@@ -44,7 +43,7 @@ class GitServiceConfigUpdate(BaseModel):
         description="Fallback email used when no SSH key authenticates to remote"
     )
 
-    @field_validator('default_committer_email')
+    @field_validator("default_committer_email")
     @classmethod
     def validate_email_format(cls, v: Optional[str]) -> Optional[str]:
         """Validate email format if provided."""
@@ -60,9 +59,9 @@ class GitServiceConfigUpdate(BaseModel):
 
         # RFC 5322 compliant basic validation
         email_pattern = re.compile(
-            r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@'
-            r'[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?'
-            r'(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
+            r"^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@"
+            r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+            r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
         )
 
         if not email_pattern.match(v):
