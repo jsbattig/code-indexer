@@ -2817,8 +2817,16 @@ async def update_config_section(
     # Save configuration using ConfigService
     try:
         config_service = get_config_service()
+
+        # Update all settings without validating (batch update)
         for key, value in data.items():
-            config_service.update_setting(section, key, value)
+            config_service.update_setting(section, key, value, skip_validation=True)
+
+        # Validate and save once after all updates
+        config = config_service.get_config()
+        config_service.config_manager.validate_config(config)
+        config_service.config_manager.save_config(config)
+        logger.info(f"Saved {section} configuration with {len(data)} settings")
 
         # Hot reload OIDC configuration if OIDC section was updated
         if section == "oidc":

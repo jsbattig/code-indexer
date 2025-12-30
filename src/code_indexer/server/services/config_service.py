@@ -143,7 +143,7 @@ class ConfigService:
 
         return settings
 
-    def update_setting(self, category: str, key: str, value: Any) -> None:
+    def update_setting(self, category: str, key: str, value: Any, skip_validation: bool = False) -> None:
         """
         Update a single setting.
 
@@ -151,6 +151,7 @@ class ConfigService:
             category: Setting category (server, cache, reindexing, timeouts, password_security)
             key: Setting key within the category
             value: New value for the setting
+            skip_validation: If True, skip validation and save (for batch updates)
 
         Raises:
             ValueError: If category or key is invalid, or value fails validation
@@ -174,10 +175,14 @@ class ConfigService:
         else:
             raise ValueError(f"Unknown category: {category}")
 
-        # Validate and save
-        self.config_manager.validate_config(config)
-        self.config_manager.save_config(config)
-        logger.info("Updated setting %s.%s to %s", category, key, value)
+        # Validate and save (unless skipping for batch updates)
+        if not skip_validation:
+            self.config_manager.validate_config(config)
+            self.config_manager.save_config(config)
+            logger.info("Updated setting %s.%s to %s", category, key, value)
+        else:
+            # Just update in memory, don't validate or save yet
+            logger.debug("Updated setting %s.%s to %s (validation deferred)", category, key, value)
 
     def _update_server_setting(
         self, config: ServerConfig, key: str, value: Any
