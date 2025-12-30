@@ -464,3 +464,53 @@ class TestOIDCConfigSettings:
 
         with pytest.raises(ValueError, match="Unknown OIDC setting: invalid_key"):
             service.update_setting("oidc", "invalid_key", "value")
+
+
+class TestOIDCConfigValidation:
+    """Test OIDC configuration validation."""
+
+    def test_validation_rejects_empty_issuer_url_when_enabled(self, tmp_path):
+        """Test that empty issuer_url is rejected when OIDC is enabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required fields first
+        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting("oidc", "client_id", "test-client")
+
+        # Enable OIDC
+        service.update_setting("oidc", "enabled", "true")
+
+        # Try to clear issuer_url - should fail validation
+        with pytest.raises(ValueError, match="OIDC issuer_url is required when OIDC is enabled"):
+            service.update_setting("oidc", "issuer_url", "")
+
+    def test_validation_rejects_invalid_issuer_url_format(self, tmp_path):
+        """Test that invalid issuer_url format is rejected."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set valid fields first
+        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting("oidc", "client_id", "test-client")
+
+        # Enable OIDC
+        service.update_setting("oidc", "enabled", "true")
+
+        # Try to set invalid issuer_url - should fail validation
+        with pytest.raises(ValueError, match="OIDC issuer_url must start with http:// or https://"):
+            service.update_setting("oidc", "issuer_url", "invalid-url")
+
+    def test_validation_allows_empty_issuer_url_when_disabled(self, tmp_path):
+        """Test that empty issuer_url is allowed when OIDC is disabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Disable OIDC
+        service.update_setting("oidc", "enabled", "false")
+
+        # Clear issuer_url - should succeed because OIDC is disabled
+        service.update_setting("oidc", "issuer_url", "")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.issuer_url == ""
