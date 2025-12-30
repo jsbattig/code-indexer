@@ -278,3 +278,94 @@ class TestOIDCIntegration:
         # Should return None (no user created, no match found)
         user = await manager.match_or_create_user(user_info)
         assert user is None
+
+    @pytest.mark.asyncio
+    async def test_email_verification_required_rejects_unverified(self, mock_oidc_server, test_users_file, tmp_path):
+        """Test that unverified email is rejected when require_email_verification is True."""
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.user_manager import UserManager
+        from code_indexer.server.auth.jwt_manager import JWTManager
+
+        # Create config with email verification required (default is True)
+        config = OIDCProviderConfig(
+            enabled=True,
+            provider_name="TestSSO",
+            issuer_url=mock_oidc_server.base_url,
+            client_id="test-client",
+            client_secret="test-secret",
+            enable_jit_provisioning=True,
+            require_email_verification=True,  # Require verification
+        )
+
+        user_manager = UserManager(users_file_path=test_users_file)
+        jwt_manager = JWTManager(secret_key="test-secret")
+
+        manager = OIDCManager(config, user_manager, jwt_manager)
+        manager.db_path = str(tmp_path / "test_oidc_email_req.db")
+        await manager.initialize()
+
+        # Configure mock server with UNVERIFIED email
+        mock_oidc_server.set_userinfo(
+            sub="unverified-user-123",
+            email="unverified@example.com",
+            email_verified=False  # Not verified
+        )
+
+        # Get tokens and user info
+        tokens = await manager.provider.exchange_code_for_token(
+            code="mock-auth-code",
+            code_verifier="test-verifier",
+            redirect_uri="http://localhost/callback"
+        )
+        user_info = await manager.provider.get_user_info(tokens["access_token"])
+
+        # Should return None (email not verified and verification required)
+        user = await manager.match_or_create_user(user_info)
+        assert user is None
+
+    @pytest.mark.asyncio
+    async def test_email_verification_not_required_allows_unverified(self, mock_oidc_server, test_users_file, tmp_path):
+        """Test that unverified email is allowed when require_email_verification is False."""
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.user_manager import UserManager
+        from code_indexer.server.auth.jwt_manager import JWTManager
+
+        # Create config with email verification NOT required
+        config = OIDCProviderConfig(
+            enabled=True,
+            provider_name="TestSSO",
+            issuer_url=mock_oidc_server.base_url,
+            client_id="test-client",
+            client_secret="test-secret",
+            enable_jit_provisioning=True,
+            require_email_verification=False,  # Don't require verification
+        )
+
+        user_manager = UserManager(users_file_path=test_users_file)
+        jwt_manager = JWTManager(secret_key="test-secret")
+
+        manager = OIDCManager(config, user_manager, jwt_manager)
+        manager.db_path = str(tmp_path / "test_oidc_email_not_req.db")
+        await manager.initialize()
+
+        # Configure mock server with UNVERIFIED email
+        mock_oidc_server.set_userinfo(
+            sub="unverified-ok-user-456",
+            email="unverified-ok@example.com",
+            email_verified=False  # Not verified
+        )
+
+        # Get tokens and user info
+        tokens = await manager.provider.exchange_code_for_token(
+            code="mock-auth-code",
+            code_verifier="test-verifier",
+            redirect_uri="http://localhost/callback"
+        )
+        user_info = await manager.provider.get_user_info(tokens["access_token"])
+
+        # Should create user even though email is not verified
+        user = await manager.match_or_create_user(user_info)
+        assert user is not None
+        assert user.username.startswith("unverified-ok")

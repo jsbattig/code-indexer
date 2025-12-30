@@ -103,6 +103,11 @@ class OIDCManager:
             from code_indexer.server.auth.user_manager import UserRole
             from datetime import datetime, timezone
 
+            # Check email verification requirement
+            if self.config.require_email_verification and not user_info.email_verified:
+                # Email verification required but not verified - reject login
+                return None
+
             # Generate username from email or subject
             if user_info.email:
                 base_username = user_info.email.split('@')[0]
