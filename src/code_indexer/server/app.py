@@ -6610,7 +6610,7 @@ def create_app() -> FastAPI:
         return {
             "resource": f"{issuer_url}/mcp",
             "authorization_servers": [issuer_url],
-            "scopes_supported": ["openid", "read", "write"],
+            "scopes_supported": ["mcp:read", "mcp:write"],
         }
 
     # Favicon redirect
