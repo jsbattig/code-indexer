@@ -5,9 +5,10 @@ Tests verify that file CRUD handlers trigger auto-watch functionality
 when files are created, edited, or deleted.
 """
 
+import json
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from code_indexer.server.auth.user_manager import User
 
 
@@ -86,16 +87,17 @@ class TestHandleCreateFileAutoWatch:
             "content": "print('hello')",
         }
 
-        # Patch dependencies
+        # Patch dependencies at their source modules
         with patch(
-            "code_indexer.server.mcp.handlers.auto_watch_manager", mock_auto_watch_manager
+            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+            mock_auto_watch_manager,
         ), patch(
             "code_indexer.server.services.file_crud_service.file_crud_service",
             mock_file_crud_service,
         ), patch(
-            "code_indexer.server.services.file_crud_service.FileCRUDService.activated_repo_manager",
-            mock_activated_repo_manager,
-        ):
+            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+        ) as MockActivatedRepoManager:
+            MockActivatedRepoManager.return_value = mock_activated_repo_manager
             result = await handle_create_file(params, mock_user)
 
         # Verify auto-watch was started with repository path
@@ -105,7 +107,10 @@ class TestHandleCreateFileAutoWatch:
 
         # Verify file was created
         mock_file_crud_service.create_file.assert_called_once()
-        assert result["success"] is True
+
+        # Parse MCP response format
+        response_data = json.loads(result["content"][0]["text"])
+        assert response_data["success"] is True
 
     @pytest.mark.asyncio
     async def test_create_file_auto_watch_called_before_creation(
@@ -139,14 +144,15 @@ class TestHandleCreateFileAutoWatch:
         }
 
         with patch(
-            "code_indexer.server.mcp.handlers.auto_watch_manager", mock_auto_watch_manager
+            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+            mock_auto_watch_manager,
         ), patch(
             "code_indexer.server.services.file_crud_service.file_crud_service",
             mock_file_crud_service,
         ), patch(
-            "code_indexer.server.services.file_crud_service.FileCRUDService.activated_repo_manager",
-            mock_activated_repo_manager,
-        ):
+            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+        ) as MockActivatedRepoManager:
+            MockActivatedRepoManager.return_value = mock_activated_repo_manager
             await handle_create_file(params, mock_user)
 
         # Verify auto-watch was called BEFORE create_file
@@ -172,14 +178,15 @@ class TestHandleEditFileAutoWatch:
         }
 
         with patch(
-            "code_indexer.server.mcp.handlers.auto_watch_manager", mock_auto_watch_manager
+            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+            mock_auto_watch_manager,
         ), patch(
             "code_indexer.server.services.file_crud_service.file_crud_service",
             mock_file_crud_service,
         ), patch(
-            "code_indexer.server.services.file_crud_service.FileCRUDService.activated_repo_manager",
-            mock_activated_repo_manager,
-        ):
+            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+        ) as MockActivatedRepoManager:
+            MockActivatedRepoManager.return_value = mock_activated_repo_manager
             result = await handle_edit_file(params, mock_user)
 
         # Verify auto-watch was started
@@ -189,7 +196,10 @@ class TestHandleEditFileAutoWatch:
 
         # Verify file was edited
         mock_file_crud_service.edit_file.assert_called_once()
-        assert result["success"] is True
+
+        # Parse MCP response format
+        response_data = json.loads(result["content"][0]["text"])
+        assert response_data["success"] is True
 
 
 class TestHandleDeleteFileAutoWatch:
@@ -208,14 +218,15 @@ class TestHandleDeleteFileAutoWatch:
         }
 
         with patch(
-            "code_indexer.server.mcp.handlers.auto_watch_manager", mock_auto_watch_manager
+            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+            mock_auto_watch_manager,
         ), patch(
             "code_indexer.server.services.file_crud_service.file_crud_service",
             mock_file_crud_service,
         ), patch(
-            "code_indexer.server.services.file_crud_service.FileCRUDService.activated_repo_manager",
-            mock_activated_repo_manager,
-        ):
+            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+        ) as MockActivatedRepoManager:
+            MockActivatedRepoManager.return_value = mock_activated_repo_manager
             result = await handle_delete_file(params, mock_user)
 
         # Verify auto-watch was started
@@ -225,7 +236,10 @@ class TestHandleDeleteFileAutoWatch:
 
         # Verify file was deleted
         mock_file_crud_service.delete_file.assert_called_once()
-        assert result["success"] is True
+
+        # Parse MCP response format
+        response_data = json.loads(result["content"][0]["text"])
+        assert response_data["success"] is True
 
 
 class TestAutoWatchMultipleOperations:
@@ -249,14 +263,15 @@ class TestAutoWatchMultipleOperations:
         }
 
         with patch(
-            "code_indexer.server.mcp.handlers.auto_watch_manager", mock_auto_watch_manager
+            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+            mock_auto_watch_manager,
         ), patch(
             "code_indexer.server.services.file_crud_service.file_crud_service",
             mock_file_crud_service,
         ), patch(
-            "code_indexer.server.services.file_crud_service.FileCRUDService.activated_repo_manager",
-            mock_activated_repo_manager,
-        ):
+            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+        ) as MockActivatedRepoManager:
+            MockActivatedRepoManager.return_value = mock_activated_repo_manager
             await handle_create_file(create_params, mock_user)
 
             # Second operation: edit file

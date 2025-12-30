@@ -2100,6 +2100,10 @@ async def handle_create_file(params: Dict[str, Any], user: User) -> Dict[str, An
         file_crud_service,
         CRUDOperationError,
     )
+    from code_indexer.server.services.auto_watch_manager import auto_watch_manager
+    from code_indexer.server.repositories.activated_repo_manager import (
+        ActivatedRepoManager,
+    )
 
     try:
         # Validate required parameters
@@ -2119,6 +2123,17 @@ async def handle_create_file(params: Dict[str, Any], user: User) -> Dict[str, An
             return _mcp_response(
                 {"success": False, "error": "Missing required parameter: content"}
             )
+
+        # Start auto-watch before file creation (Story #640)
+        try:
+            activated_repo_manager = ActivatedRepoManager()
+            repo_path = activated_repo_manager.get_activated_repo_path(
+                username=user.username, user_alias=repository_alias
+            )
+            auto_watch_manager.start_watch(repo_path)
+        except Exception as e:
+            # Log but don't fail - auto-watch is enhancement, not critical
+            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}")
 
         # Call file CRUD service
         result = file_crud_service.create_file(
@@ -2164,6 +2179,10 @@ async def handle_edit_file(params: Dict[str, Any], user: User) -> Dict[str, Any]
         HashMismatchError,
         CRUDOperationError,
     )
+    from code_indexer.server.services.auto_watch_manager import auto_watch_manager
+    from code_indexer.server.repositories.activated_repo_manager import (
+        ActivatedRepoManager,
+    )
 
     try:
         # Validate required parameters
@@ -2194,6 +2213,17 @@ async def handle_edit_file(params: Dict[str, Any], user: User) -> Dict[str, Any]
             return _mcp_response(
                 {"success": False, "error": "Missing required parameter: content_hash"}
             )
+
+        # Start auto-watch before file edit (Story #640)
+        try:
+            activated_repo_manager = ActivatedRepoManager()
+            repo_path = activated_repo_manager.get_activated_repo_path(
+                username=user.username, user_alias=repository_alias
+            )
+            auto_watch_manager.start_watch(repo_path)
+        except Exception as e:
+            # Log but don't fail - auto-watch is enhancement, not critical
+            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}")
 
         # Call file CRUD service
         result = file_crud_service.edit_file(
@@ -2244,6 +2274,10 @@ async def handle_delete_file(params: Dict[str, Any], user: User) -> Dict[str, An
         HashMismatchError,
         CRUDOperationError,
     )
+    from code_indexer.server.services.auto_watch_manager import auto_watch_manager
+    from code_indexer.server.repositories.activated_repo_manager import (
+        ActivatedRepoManager,
+    )
 
     try:
         # Validate required parameters
@@ -2259,6 +2293,17 @@ async def handle_delete_file(params: Dict[str, Any], user: User) -> Dict[str, An
             return _mcp_response(
                 {"success": False, "error": "Missing required parameter: file_path"}
             )
+
+        # Start auto-watch before file deletion (Story #640)
+        try:
+            activated_repo_manager = ActivatedRepoManager()
+            repo_path = activated_repo_manager.get_activated_repo_path(
+                username=user.username, user_alias=repository_alias
+            )
+            auto_watch_manager.start_watch(repo_path)
+        except Exception as e:
+            # Log but don't fail - auto-watch is enhancement, not critical
+            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}")
 
         # Call file CRUD service
         result = file_crud_service.delete_file(

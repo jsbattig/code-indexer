@@ -4,7 +4,6 @@ Unit tests for AutoWatchManager - Story #640.
 Tests auto-watch lifecycle management for server file operations.
 """
 
-import pytest
 import time
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch

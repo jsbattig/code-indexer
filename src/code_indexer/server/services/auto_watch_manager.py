@@ -25,6 +25,11 @@ class AutoWatchManager:
     Automatically starts watch on file operations and stops after inactivity timeout.
     """
 
+    # Timeout checker runs every 30 seconds
+    TIMEOUT_CHECK_INTERVAL_SECONDS = 30
+    # Thread join timeout during shutdown
+    SHUTDOWN_THREAD_JOIN_TIMEOUT_SECONDS = 5
+
     def __init__(
         self,
         auto_watch_enabled: bool = True,
@@ -41,6 +46,16 @@ class AutoWatchManager:
         self.default_timeout = default_timeout
         self._watch_state: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.RLock()  # Use RLock to allow reentrant calls
+        self._shutdown_event = threading.Event()
+
+        # Start background timeout checker thread
+        self._timeout_thread = threading.Thread(
+            target=self._timeout_checker_loop,
+            daemon=True,
+            name="AutoWatchTimeoutChecker",
+        )
+        self._timeout_thread.start()
+        logger.info("AutoWatchManager timeout checker thread started")
 
     def is_watching(self, repo_path: str) -> bool:
         """
@@ -55,7 +70,8 @@ class AutoWatchManager:
         with self._lock:
             if repo_path not in self._watch_state:
                 return False
-            return self._watch_state[repo_path].get("watch_running", False)
+            watch_running: bool = self._watch_state[repo_path].get("watch_running", False)
+            return watch_running
 
     def start_watch(
         self,
@@ -211,11 +227,31 @@ class AutoWatchManager:
                 "message": "Timeout reset",
             }
 
+    def _timeout_checker_loop(self) -> None:
+        """
+        Background thread loop that checks for timeout expiration every 30 seconds.
+
+        Runs until shutdown event is set.
+        """
+        logger.info("Timeout checker loop started")
+        while not self._shutdown_event.is_set():
+            # Wait for check interval or until shutdown event
+            if self._shutdown_event.wait(timeout=self.TIMEOUT_CHECK_INTERVAL_SECONDS):
+                break  # Shutdown requested
+
+            # Check for expired timeouts
+            try:
+                self._check_timeouts()
+            except Exception as e:
+                logger.exception(f"Error in timeout checker loop: {e}")
+
+        logger.info("Timeout checker loop stopped")
+
     def _check_timeouts(self) -> None:
         """
         Check all watches for timeout expiration and stop expired ones.
 
-        Called periodically (every 30 seconds) to enforce auto-stop.
+        Called periodically by background thread (every 30 seconds) to enforce auto-stop.
         """
         with self._lock:
             repos_to_stop = []
@@ -245,6 +281,40 @@ class AutoWatchManager:
                 except Exception as e:
                     logger.exception(f"Error auto-stopping watch for {repo_path}: {e}")
 
+    def shutdown(self) -> None:
+        """
+        Shutdown AutoWatchManager and stop background timeout checker thread.
+
+        Should be called when server is shutting down to ensure clean resource cleanup.
+        """
+        logger.info("Shutting down AutoWatchManager...")
+
+        # Signal background thread to stop
+        self._shutdown_event.set()
+
+        # Wait for thread to terminate (with timeout)
+        if self._timeout_thread.is_alive():
+            self._timeout_thread.join(timeout=self.SHUTDOWN_THREAD_JOIN_TIMEOUT_SECONDS)
+            if self._timeout_thread.is_alive():
+                logger.warning(
+                    f"Timeout checker thread did not stop within "
+                    f"{self.SHUTDOWN_THREAD_JOIN_TIMEOUT_SECONDS} seconds"
+                )
+            else:
+                logger.info("Timeout checker thread stopped successfully")
+
+        # Stop all active watches
+        with self._lock:
+            repos_to_stop = list(self._watch_state.keys())
+
+        for repo_path in repos_to_stop:
+            try:
+                self.stop_watch(repo_path)
+            except Exception as e:
+                logger.exception(f"Error stopping watch during shutdown for {repo_path}: {e}")
+
+        logger.info("AutoWatchManager shutdown complete")
+
     def get_state(self, repo_path: str) -> Optional[Dict[str, Any]]:
         """
         Get current watch state for repository.
@@ -265,3 +335,7 @@ class AutoWatchManager:
                 "last_activity": state.get("last_activity"),
                 "timeout_seconds": state.get("timeout_seconds"),
             }
+
+
+# Singleton instance
+auto_watch_manager = AutoWatchManager()
