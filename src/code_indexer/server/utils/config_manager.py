@@ -377,6 +377,16 @@ class ServerConfigManager:
                 f"description_refresh_interval_hours must be greater than 0, got {config.description_refresh_interval_hours}"
             )
 
+        # Validate OIDC configuration
+        if config.oidc_provider_config.enabled:
+            if not config.oidc_provider_config.issuer_url:
+                raise ValueError("OIDC issuer_url is required when OIDC is enabled")
+            if not config.oidc_provider_config.client_id:
+                raise ValueError("OIDC client_id is required when OIDC is enabled")
+            # Validate issuer_url format
+            if not config.oidc_provider_config.issuer_url.startswith(("http://", "https://")):
+                raise ValueError(f"OIDC issuer_url must start with http:// or https://, got {config.oidc_provider_config.issuer_url}")
+
     def create_server_directories(self) -> None:
         """
         Create necessary server directories.

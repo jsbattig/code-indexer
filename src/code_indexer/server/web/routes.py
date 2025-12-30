@@ -2456,6 +2456,46 @@ def _detect_language_from_path(file_path: str) -> str:
     return ext_to_lang.get(ext, "plaintext")
 
 
+async def _reload_oidc_configuration():
+    """Reload OIDC configuration without server restart."""
+    from ..auth.oidc import routes as oidc_routes
+    from ..auth.oidc.oidc_manager import OIDCManager
+    from ..auth.oidc.state_manager import StateManager
+    from ..services.config_service import get_config_service
+
+    config_service = get_config_service()
+    config = config_service.get_config()
+
+    # Only reload if OIDC is enabled
+    if not config.oidc_provider_config.enabled:
+        logger.info("OIDC is disabled, skipping reload")
+        # Clear the existing OIDC manager
+        oidc_routes.oidc_manager = None
+        oidc_routes.state_manager = None
+        return
+
+    # Create new OIDC manager with updated configuration
+    # Reuse existing user_manager and jwt_manager from module level
+    from .. import app as app_module
+
+    state_manager = StateManager()
+    oidc_manager = OIDCManager(
+        config=config.oidc_provider_config,
+        user_manager=app_module.user_manager,
+        jwt_manager=app_module.jwt_manager
+    )
+
+    # Initialize OIDC provider (discover metadata)
+    await oidc_manager.initialize()
+
+    # Replace the old managers with new ones
+    oidc_routes.oidc_manager = oidc_manager
+    oidc_routes.state_manager = state_manager
+    oidc_routes.server_config = config
+
+    logger.info(f"OIDC configuration reloaded with provider: {config.oidc_provider_config.provider_name}")
+
+
 def _get_current_config() -> dict:
     """Get current configuration from ConfigService (persisted to ~/.cidx-server/config.json)."""
     from ..services.config_service import get_config_service
@@ -2779,6 +2819,19 @@ async def update_config_section(
         config_service = get_config_service()
         for key, value in data.items():
             config_service.update_setting(section, key, value)
+
+        # Hot reload OIDC configuration if OIDC section was updated
+        if section == "oidc":
+            try:
+                await _reload_oidc_configuration()
+                logger.info("OIDC configuration reloaded successfully")
+            except Exception as e:
+                logger.error(f"Failed to reload OIDC configuration: {e}", exc_info=True)
+                return _create_config_page_response(
+                    request,
+                    session,
+                    error_message=f"Configuration saved but failed to reload OIDC: {str(e)}",
+                )
 
         return _create_config_page_response(
             request,
