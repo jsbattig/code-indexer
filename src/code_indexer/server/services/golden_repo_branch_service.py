@@ -100,7 +100,9 @@ class GoldenRepoBranchService:
         if not golden_repo:
             raise ValueError(f"Golden repository '{repo_alias}' not found")
 
-        repo_path = Path(golden_repo.clone_path)
+        # Use canonical path resolution to handle versioned structure repos
+        actual_repo_path = self.golden_repo_manager.get_actual_repo_path(repo_alias)
+        repo_path = Path(actual_repo_path)
         if not repo_path.exists():
             raise GitOperationError(f"Repository path does not exist: {repo_path}")
 

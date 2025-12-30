@@ -348,10 +348,17 @@ class GoldenRepoManager:
             golden_repo = self.golden_repos[alias]
 
             # Perform cleanup BEFORE removing from memory
+            # Use canonical path resolution to handle versioned structure repos
             try:
-                cleanup_successful = self._cleanup_repository_files(
-                    golden_repo.clone_path
+                actual_path = self.get_actual_repo_path(alias)
+                cleanup_successful = self._cleanup_repository_files(actual_path)
+            except GoldenRepoNotFoundError:
+                # If repository doesn't exist on filesystem, nothing to clean up
+                # This can happen in test scenarios or if repo was manually deleted
+                logging.info(
+                    f"Repository '{alias}' not found on filesystem during removal - skipping cleanup"
                 )
+                cleanup_successful = True
             except GitOperationError as cleanup_error:
                 # Critical cleanup failures should prevent deletion
                 logging.error(
@@ -975,7 +982,8 @@ class GoldenRepoManager:
         def background_worker() -> Dict[str, Any]:
             """Execute refresh in background thread."""
             golden_repo = self.golden_repos[alias]
-            clone_path = golden_repo.clone_path
+            # Use canonical path resolution to handle versioned structure repos
+            clone_path = self.get_actual_repo_path(alias)
 
             # Read temporal configuration from existing golden repo
             enable_temporal = golden_repo.enable_temporal
@@ -1300,9 +1308,9 @@ class GoldenRepoManager:
                         repo_dict
                     )  # Convert to Dict[str, Any]
                     repo_dict_any["canonical_url"] = canonical_url
-                    repo_dict_any["branches"] = self._get_repository_branches(
-                        repo.clone_path
-                    )
+                    # Use canonical path resolution to handle versioned structure repos
+                    actual_path = self.get_actual_repo_path(repo.alias)
+                    repo_dict_any["branches"] = self._get_repository_branches(actual_path)
 
                     matching_repos.append(repo_dict_any)
 
@@ -1595,7 +1603,8 @@ class GoldenRepoManager:
             try:
                 # Get repository details
                 repo = self.golden_repos[alias]
-                repo_path = repo.clone_path
+                # Use canonical path resolution to handle versioned structure repos
+                repo_path = self.get_actual_repo_path(alias)
 
                 # Initialize stdout/stderr tracking (AC5, AC6, AC7)
                 captured_stdout = ""
@@ -1700,7 +1709,9 @@ class GoldenRepoManager:
         Returns:
             True if the index exists, False otherwise
         """
-        repo_dir = Path(golden_repo.clone_path)
+        # Use canonical path resolution to handle versioned structure repos
+        actual_path = self.get_actual_repo_path(golden_repo.alias)
+        repo_dir = Path(actual_path)
 
         if index_type == "semantic_fts":
             # AC3: semantic_fts requires BOTH vector index AND FTS index with actual files
@@ -1796,7 +1807,9 @@ class GoldenRepoManager:
             raise ValueError(f"Golden repository '{alias}' not found")
 
         golden_repo = self.golden_repos[alias]
-        repo_dir = Path(golden_repo.clone_path)
+        # Use canonical path resolution to handle versioned structure repos
+        actual_path = self.get_actual_repo_path(alias)
+        repo_dir = Path(actual_path)
 
         # Check each index type using helper method
         indexes = {
