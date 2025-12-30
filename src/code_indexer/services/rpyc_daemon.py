@@ -34,104 +34,9 @@ except ImportError:
 # Import socket helper for /tmp/cidx socket management
 from code_indexer.config import ConfigManager
 from code_indexer.daemon.socket_helper import create_mapping_file, cleanup_old_socket
+from code_indexer.daemon.cache import CacheEntry
 
 logger = logging.getLogger(__name__)
-
-
-class ReaderWriterLock:
-    """
-    Reader-Writer lock for true concurrent reads.
-
-    Allows multiple concurrent readers but only one writer at a time.
-    Writers have exclusive access (no readers or other writers).
-    """
-
-    def __init__(self):
-        self._read_ready = threading.Semaphore(1)
-        self._readers = 0
-        self._writers = 0
-        self._read_counter_lock = threading.Lock()
-        self._write_lock = threading.Lock()
-
-    def acquire_read(self):
-        """Acquire read lock - multiple readers allowed."""
-        self._read_ready.acquire()
-        with self._read_counter_lock:
-            self._readers += 1
-            if self._readers == 1:
-                # First reader locks out writers
-                self._write_lock.acquire()
-        self._read_ready.release()
-
-    def release_read(self):
-        """Release read lock."""
-        with self._read_counter_lock:
-            self._readers -= 1
-            if self._readers == 0:
-                # Last reader releases write lock
-                self._write_lock.release()
-
-    def acquire_write(self):
-        """Acquire write lock - exclusive access."""
-        self._read_ready.acquire()
-        self._write_lock.acquire()
-        self._writers = 1
-
-    def release_write(self):
-        """Release write lock."""
-        self._writers = 0
-        self._write_lock.release()
-        self._read_ready.release()
-
-
-class CacheEntry:
-    """Cache entry for a single project with TTL and statistics."""
-
-    def __init__(self, project_path: Path):
-        """Initialize cache entry for project."""
-        self.project_path = project_path
-
-        # Semantic index cache
-        self.hnsw_index = None
-        self.id_mapping = None
-
-        # FTS index cache
-        self.tantivy_index = None
-        self.tantivy_searcher = None
-        self.fts_available = False
-
-        # Query result cache for performance optimization
-        self.query_cache: Dict[str, Any] = {}  # Cache query results
-        self.query_cache_max_size = 100  # Limit cache size
-
-        # Shared metadata
-        self.last_accessed = datetime.now()
-        self.ttl_minutes = 10  # Default 10 minutes
-        self.rw_lock = ReaderWriterLock()  # For true concurrent reads
-        self.write_lock = Lock()  # For serialized writes
-        self.access_count = 0
-
-    def cache_query_result(self, query_key: str, result: Any) -> None:
-        """Cache query result for fast retrieval."""
-        # Limit cache size to prevent memory bloat
-        if len(self.query_cache) >= self.query_cache_max_size:
-            # Remove oldest entry (simple FIFO)
-            oldest_key = next(iter(self.query_cache))
-            del self.query_cache[oldest_key]
-
-        self.query_cache[query_key] = {"result": result, "timestamp": datetime.now()}
-
-    def get_cached_query(self, query_key: str) -> Optional[Any]:
-        """Get cached query result if available and fresh."""
-        if query_key in self.query_cache:
-            cached = self.query_cache[query_key]
-            # Cache results for 60 seconds
-            if (datetime.now() - cached["timestamp"]).total_seconds() < 60:
-                return cached["result"]
-            else:
-                # Expired, remove from cache
-                del self.query_cache[query_key]
-        return None
 
 
 class CIDXDaemonService(rpyc.Service if rpyc else object):
@@ -405,8 +310,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         # Wrap callback for safe RPC calls
         safe_callback = self._wrap_callback(callback) if callback else None
 
-        # Serialized write with Lock
-        with self.cache_entry.write_lock:
+        # Serialized write with ReaderWriterLock
+        self.cache_entry.rw_lock.acquire_write()
+        try:
             # Perform indexing with wrapped callback
             self._perform_indexing(project_path_obj, safe_callback, **kwargs)
 
@@ -417,6 +323,8 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             self.cache_entry.tantivy_searcher = None
             self.cache_entry.query_cache.clear()  # Clear query cache
             self.cache_entry.last_accessed = datetime.now()
+        finally:
+            self.cache_entry.rw_lock.release_write()
 
         return {"status": "completed", "project": str(project_path_obj)}
 

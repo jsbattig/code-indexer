@@ -306,8 +306,11 @@ class TestConcurrentQuerySupport:
             """Try to query during update"""
             update_started.wait()  # Wait for update to start
             # Try to query (should block until write completes)
-            with cache_entry.read_lock:
+            cache_entry.rw_lock.acquire_read()
+            try:
                 query_executed.append(True)
+            finally:
+                cache_entry.rw_lock.release_read()
 
         # Start update thread
         update_thread = threading.Thread(target=slow_watch_update)

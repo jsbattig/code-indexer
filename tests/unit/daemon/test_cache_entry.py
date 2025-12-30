@@ -78,50 +78,85 @@ class TestCacheEntryInitialization:
 class TestCacheEntryConcurrencyPrimitives:
     """Test CacheEntry concurrency control primitives."""
 
-    def test_cache_entry_has_read_lock(self):
-        """Test CacheEntry has RLock for concurrent reads."""
+    def test_cache_entry_has_rw_lock(self):
+        """Test CacheEntry has ReaderWriterLock for concurrent reads and exclusive writes."""
+        from code_indexer.daemon.cache import CacheEntry, ReaderWriterLock
+
+        entry = CacheEntry(Path("/tmp/test"))
+
+        # Has rw_lock attribute
+        assert hasattr(entry, "rw_lock")
+        assert isinstance(entry.rw_lock, ReaderWriterLock)
+
+    def test_rw_lock_allows_concurrent_reads(self):
+        """Test ReaderWriterLock allows multiple concurrent readers."""
         from code_indexer.daemon.cache import CacheEntry
 
         entry = CacheEntry(Path("/tmp/test"))
 
-        assert hasattr(entry, "read_lock")
-        assert isinstance(entry.read_lock, type(threading.RLock()))
+        # First read lock
+        entry.rw_lock.acquire_read()
 
-    def test_cache_entry_has_write_lock(self):
-        """Test CacheEntry has Lock for serialized writes."""
+        # Second read lock should succeed (concurrent reads allowed)
+        entry.rw_lock.acquire_read()
+
+        # Release both
+        entry.rw_lock.release_read()
+        entry.rw_lock.release_read()
+
+    def test_rw_lock_write_is_exclusive(self):
+        """Test write lock provides exclusive access (blocks reads and writes)."""
         from code_indexer.daemon.cache import CacheEntry
+        import threading
 
         entry = CacheEntry(Path("/tmp/test"))
 
-        assert hasattr(entry, "write_lock")
-        assert isinstance(entry.write_lock, type(threading.Lock()))
+        # Acquire write lock
+        entry.rw_lock.acquire_write()
 
-    def test_read_lock_allows_concurrent_acquisition(self):
-        """Test RLock allows same thread to acquire multiple times."""
+        # Try to acquire read lock in another thread (should block)
+        blocked = []
+
+        def try_read():
+            entry.rw_lock.acquire_read()
+            blocked.append(False)  # Should not reach here
+            entry.rw_lock.release_read()
+
+        thread = threading.Thread(target=try_read)
+        thread.start()
+        thread.join(timeout=0.1)  # Wait briefly
+
+        # Verify read was blocked
+        assert len(blocked) == 0
+
+        entry.rw_lock.release_write()
+
+    def test_rw_lock_reader_writer_semantics(self):
+        """Test ReaderWriterLock reader-writer semantics."""
         from code_indexer.daemon.cache import CacheEntry
+        import threading
 
         entry = CacheEntry(Path("/tmp/test"))
 
-        # RLock can be acquired multiple times by same thread
-        assert entry.read_lock.acquire(blocking=False)
-        assert entry.read_lock.acquire(blocking=False)
+        # Acquire read lock
+        entry.rw_lock.acquire_read()
 
-        entry.read_lock.release()
-        entry.read_lock.release()
+        # Try to acquire write lock in another thread (should block)
+        blocked = []
 
-    def test_write_lock_serializes_access(self):
-        """Test Lock ensures serialized write access."""
-        from code_indexer.daemon.cache import CacheEntry
+        def try_write():
+            entry.rw_lock.acquire_write()
+            blocked.append(False)  # Should not reach here
+            entry.rw_lock.release_write()
 
-        entry = CacheEntry(Path("/tmp/test"))
+        thread = threading.Thread(target=try_write)
+        thread.start()
+        thread.join(timeout=0.1)  # Wait briefly
 
-        # First acquisition succeeds
-        assert entry.write_lock.acquire(blocking=False)
+        # Verify write was blocked
+        assert len(blocked) == 0
 
-        # Second acquisition fails (Lock is not reentrant)
-        assert not entry.write_lock.acquire(blocking=False)
-
-        entry.write_lock.release()
+        entry.rw_lock.release_read()
 
 
 class TestCacheEntryAccessTracking:

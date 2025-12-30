@@ -15,6 +15,52 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+class ReaderWriterLock:
+    """
+    Reader-Writer lock for true concurrent reads.
+
+    Allows multiple concurrent readers but only one writer at a time.
+    Writers have exclusive access (no readers or other writers).
+    """
+
+    def __init__(self):
+        self._read_ready = threading.Semaphore(1)
+        self._readers = 0
+        self._writers = 0
+        self._read_counter_lock = threading.Lock()
+        self._write_lock = threading.Lock()
+
+    def acquire_read(self):
+        """Acquire read lock - multiple readers allowed."""
+        self._read_ready.acquire()
+        with self._read_counter_lock:
+            self._readers += 1
+            if self._readers == 1:
+                # First reader locks out writers
+                self._write_lock.acquire()
+        self._read_ready.release()
+
+    def release_read(self):
+        """Release read lock."""
+        with self._read_counter_lock:
+            self._readers -= 1
+            if self._readers == 0:
+                # Last reader releases write lock
+                self._write_lock.release()
+
+    def acquire_write(self):
+        """Acquire write lock - exclusive access."""
+        self._read_ready.acquire()
+        self._write_lock.acquire()
+        self._writers = 1
+
+    def release_write(self):
+        """Release write lock."""
+        self._writers = 0
+        self._write_lock.release()
+        self._read_ready.release()
+
+
 class CacheEntry:
     """In-memory cache entry for semantic and FTS indexes.
 
@@ -30,8 +76,7 @@ class CacheEntry:
         last_accessed: Timestamp of last access
         ttl_minutes: Time-to-live in minutes before eviction
         access_count: Number of times this entry has been accessed
-        read_lock: RLock for concurrent reads
-        write_lock: Lock for serialized writes
+        rw_lock: ReaderWriterLock for concurrent reads and exclusive writes
     """
 
     def __init__(self, project_path: Path, ttl_minutes: int = 10):
@@ -65,14 +110,17 @@ class CacheEntry:
         self.temporal_id_mapping: Optional[Dict[str, Any]] = None
         self.temporal_index_version: Optional[str] = None
 
+        # Query result cache for performance optimization
+        self.query_cache: Dict[str, Any] = {}  # Cache query results
+        self.query_cache_max_size: int = 100  # Limit cache size
+
         # Access tracking
         self.last_accessed: datetime = datetime.now()
         self.ttl_minutes: int = ttl_minutes
         self.access_count: int = 0
 
         # Concurrency control
-        self.read_lock: threading.RLock = threading.RLock()  # Concurrent reads
-        self.write_lock: threading.Lock = threading.Lock()  # Serialized writes
+        self.rw_lock: ReaderWriterLock = ReaderWriterLock()  # For concurrent reads and exclusive writes
 
     def update_access(self) -> None:
         """Update last accessed timestamp and increment access count.
@@ -90,6 +138,44 @@ class CacheEntry:
         """
         ttl_delta = timedelta(minutes=self.ttl_minutes)
         return datetime.now() - self.last_accessed >= ttl_delta
+
+    def cache_query_result(self, query_key: str, result: Any) -> None:
+        """Cache query result for fast retrieval.
+
+        Implements FIFO eviction when cache size exceeds query_cache_max_size.
+
+        Args:
+            query_key: Unique key identifying the query (includes query text and parameters)
+            result: Query result to cache
+        """
+        # Limit cache size to prevent memory bloat
+        if len(self.query_cache) >= self.query_cache_max_size:
+            # Remove oldest entry (simple FIFO)
+            oldest_key = next(iter(self.query_cache))
+            del self.query_cache[oldest_key]
+
+        self.query_cache[query_key] = {"result": result, "timestamp": datetime.now()}
+
+    def get_cached_query(self, query_key: str) -> Optional[Any]:
+        """Get cached query result if available and fresh.
+
+        Results are cached for 60 seconds. Expired results are automatically removed.
+
+        Args:
+            query_key: Unique key identifying the query
+
+        Returns:
+            Cached result if available and fresh, None otherwise
+        """
+        if query_key in self.query_cache:
+            cached = self.query_cache[query_key]
+            # Cache results for 60 seconds
+            if (datetime.now() - cached["timestamp"]).total_seconds() < 60:
+                return cached["result"]
+            else:
+                # Expired, remove from cache
+                del self.query_cache[query_key]
+        return None
 
     def set_semantic_indexes(self, hnsw_index: Any, id_mapping: Dict[str, Any]) -> None:
         """Set semantic search indexes.
@@ -132,6 +218,8 @@ class CacheEntry:
         self.fts_available = False
         # AC11: Clear version tracking
         self.hnsw_index_version = None
+        # Clear query cache
+        self.query_cache.clear()
 
     def load_temporal_indexes(self, collection_path: Path) -> None:
         """Load temporal HNSW index using mmap.

@@ -33,8 +33,7 @@ class CIDXDaemonService(Service):
 
     Thread Safety:
         - cache_lock: Protects cache entry loading/replacement
-        - CacheEntry.read_lock: Concurrent reads
-        - CacheEntry.write_lock: Serialized writes
+        - CacheEntry.rw_lock: ReaderWriterLock for concurrent reads and exclusive writes
     """
 
     def __init__(self):
