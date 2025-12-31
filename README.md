@@ -4,104 +4,41 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 
 **Version 8.4.46** - [Changelog](CHANGELOG.md) | [Migration Guide](docs/migration-to-v8.md) | [Architecture](docs/architecture.md)
 
-## CIDX MCP Bridge for Claude Desktop
+## Quick Navigation
 
-Connect Claude Desktop to your CIDX server for semantic code search directly in conversations.
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Key Features](#key-features)
+- [Operating Modes](#operating-modes)
+- [Common Commands](#common-commands)
+- [Documentation](#documentation)
 
-### Quick Setup (3 Steps)
+## What is CIDX?
 
-**Step 1: Run Setup Script (creates config file)**
+CIDX combines semantic embeddings with traditional search to help you find code by meaning, not just keywords. Search your codebase with natural language queries like "authentication logic" or "database connection setup", trace symbol references with SCIP code intelligence, and explore git history semantically.
 
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsbattig/code-indexer/master/scripts/setup-mcpb.sh)"
-```
-
-This will prompt you for:
-- Server URL (e.g., `https://your-server.com:8383`)
-- Username
-- Password
-
-It creates `~/.mcpb/config.json` with your authentication tokens.
-
-**Step 2: Download MCPB Binary**
-
-Download for your platform from [GitHub Releases](https://github.com/jsbattig/code-indexer/releases/latest):
-
-- macOS (Apple Silicon): `mcpb-darwin-arm64`
-- macOS (Intel): `mcpb-darwin-x64`
-- Linux: `mcpb-linux-x64`
-- Windows: `cidx-semantic-search.exe`
-
-Make executable (macOS/Linux):
-```bash
-chmod +x /path/to/mcpb-darwin-arm64
-```
-
-**Step 3: Configure Claude Desktop**
-
-Edit configuration file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-
-Add this configuration:
-```json
-{
-  "mcpServers": {
-    "cidx": {
-      "command": "/absolute/path/to/mcpb-darwin-arm64"
-    }
-  }
-}
-```
-
-Replace `/absolute/path/to/mcpb-darwin-arm64` with the actual path to your downloaded binary.
-
-**Restart Claude Desktop** to activate the MCP server.
-
-### Token Management
-
-Token refresh is fully automatic. MCPB transparently refreshes expired tokens using stored credentials - no cron jobs or manual intervention required.
-
-### Features
-- **Full Query Parity**: All 25 search_code parameters available
-- **SSE Streaming**: Progressive results for large queries
-- **Multi-Platform**: macOS (Intel/Apple Silicon), Linux, Windows
-- **Zero Dependencies**: Single binary, no Python runtime required
-- **Comprehensive Tool Docs**: All 53 MCP tools with inline TL;DR format (quick-start, use cases, troubleshooting)
-- **Complete Documentation**: 4,000+ lines covering setup, API, queries, troubleshooting
-
-### Documentation
-- [Setup Guide](docs/mcpb/setup.md) - Detailed installation and configuration
-- [API Reference](docs/mcpb/api-reference.md) - All 22 MCP tools
-- [Query Guide](docs/mcpb/query-guide.md) - Search capabilities
-- [Troubleshooting](docs/mcpb/troubleshooting.md) - Common issues
-
-## Quick Install
+## Installation
 
 ### pipx (Recommended)
+
 ```bash
-# Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v8.0.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v8.4.46
 
-# Setup global registry (required once per system)
-cidx setup-global-registry
-
-# If cidx command is not found, add pipx bin directory to PATH:
-# export PATH="$HOME/.local/bin:$PATH"
+# Verify installation
+cidx --version
 ```
 
 ### pip with virtual environment
+
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v8.0.0
-
-# Setup global registry
-cidx setup-global-registry
+pip install git+https://github.com/jsbattig/code-indexer.git@v8.4.46
 ```
 
-**Requirements**: Python 3.9+, 4GB+ RAM
+**Requirements**: Python 3.9+, 4GB+ RAM, VoyageAI API key
+
+For detailed installation instructions including Windows, configuration, and troubleshooting, see [Installation Guide](docs/installation.md).
 
 ## Quick Start
 
@@ -109,489 +46,233 @@ cidx setup-global-registry
 # Navigate to your project
 cd /path/to/your/project
 
-# Start services and index code
-cidx start     # Auto-creates config if needed
-cidx index     # Smart incremental indexing
+# Set VoyageAI API key (required for semantic search)
+export VOYAGE_API_KEY="your-api-key-here"
+
+# Index your codebase
+cidx index
 
 # Search semantically
-cidx query "authentication logic"
+cidx query "authentication logic" --limit 5
 
-# Search with filtering
+# Search with filters
 cidx query "user" --language python --min-score 0.7
-cidx query "save" --path-filter "*/models/*" --limit 20
+cidx query "save" --path-filter "*/models/*" --limit 10
 ```
+
+For comprehensive query options and search strategies, see [Query Guide](docs/query-guide.md).
 
 ## Key Features
 
-### Three Search Modes
+### Semantic Search
 
-**1. Semantic Search (Default)** - Find code by meaning using AI embeddings
+Find code by meaning using AI embeddings powered by VoyageAI. Ask natural language questions and get semantically relevant results ranked by similarity.
+
 ```bash
-cidx query "authentication logic"
-cidx query "database connection setup"
+cidx query "authentication logic" --limit 10
+cidx query "database connection setup" --language python
 ```
 
-**2. Full-Text Search (--fts)** - Fast, exact text matching (1.36x faster than grep)
+See: [Query Guide](docs/query-guide.md)
+
+### Full-Text Search (FTS)
+
+Fast exact text matching with fuzzy search, regex support, and case sensitivity options. Up to 50x faster than grep with indexed searching.
+
 ```bash
 cidx query "authenticate_user" --fts
 cidx query "ParseError" --fts --case-sensitive
-cidx query "authenticte" --fts --fuzzy  # Typo tolerant
+cidx query "test_.*" --fts --regex --language python
 ```
 
-**3. Regex Pattern Matching (--fts --regex)** - Token-based patterns (10-50x faster than grep)
-```bash
-cidx query "def" --fts --regex                    # Find function definitions
-cidx query "test_.*" --fts --regex --language python  # Find test functions
-```
+See: [Query Guide](docs/query-guide.md#full-text-search-fts)
 
-### Git History Search
+### SCIP Code Intelligence
 
-Search your entire commit history semantically:
-```bash
-# Index git history
-cidx index --index-commits
-
-# Search historical commits
-cidx query "JWT authentication" --time-range-all --quiet
-
-# Search specific time period
-cidx query "bug fix" --time-range 2024-01-01..2024-12-31 --quiet
-
-# Filter by author
-cidx query "login" --time-range-all --author "john@example.com" --quiet
-```
-
-**Use Cases**: Code archaeology, bug history, feature evolution tracking, author analysis
-
-### SCIP Code Intelligence (Precise Navigation)
-
-CIDX supports SCIP (Source Code Intelligence Protocol) for precise code navigation, cross-references, and dependency analysis. Unlike semantic search which finds similar code by meaning, SCIP provides exact symbol definitions, references, and relationships.
-
-#### Quick Start
+Precise code navigation using SCIP (Source Code Intelligence Protocol). Find symbol definitions, references, dependencies, dependents, call chains, and perform impact analysis.
 
 ```bash
-# Generate SCIP indexes for your codebase
-cidx scip generate
-
-# Check generation status
-cidx scip status
+cidx scip generate                    # Generate SCIP indexes
+cidx scip definition "UserService"    # Find definition
+cidx scip references "authenticate"   # Find all usages
+cidx scip callchain "main" "login"    # Trace execution path
+cidx scip impact "DatabaseManager"    # Impact analysis
 ```
 
-**Supported Languages**: Java, Kotlin, TypeScript, JavaScript, Python
-**Storage**: `.code-indexer/scip/` (SQLite database for fast queries)
+See: [SCIP Code Intelligence Guide](docs/scip/README.md)
 
-#### Available Commands
+### Git History Search (Temporal)
 
-**1. Find Definition** - Locate where a symbol is defined
-```bash
-cidx scip definition "ClassName"
-cidx scip definition "method_name" --exact
-cidx scip definition "MyClass" --limit 5
-```
-
-**2. Find References** - Find all places where a symbol is used
-```bash
-cidx scip references "ClassName"
-cidx scip references "authenticate" --exact
-cidx scip references "User" --limit 20
-```
-
-**3. Find Dependencies** - Show what a symbol directly depends on
-```bash
-cidx scip dependencies "MyClass"
-cidx scip dependencies "process_data"
-```
-
-**4. Find Dependents** - Show what directly depends on a symbol
-```bash
-cidx scip dependents "BaseClass"
-cidx scip dependents "core_function"
-```
-
-**5. Impact Analysis** - Multi-hop analysis of change impact
-```bash
-cidx scip impact "UserModel"
-cidx scip impact "authenticate" --max-depth 3
-```
-
-**6. Call Chain** - Trace call chains through your code
-```bash
-cidx scip callchain "login_user"
-cidx scip callchain "process_payment" --max-depth 5
-```
-
-**7. Symbol Context** - Get documentation and context for symbols
-```bash
-cidx scip context "DatabaseConnection"
-cidx scip context "API" --limit 10
-```
-
-#### Output Format
-
-All SCIP commands use compact single-line output for token efficiency:
+Search your entire commit history semantically. Find when code was added, modified, or deleted with time-range filtering, author filtering, and diff type selection.
 
 ```bash
-# Example output:
-module.path/ClassName#method() (src/module/file.py:42)
-services/AuthService#authenticate() (src/services/auth.py:156)
-models/User (src/models/user.py:12)
+cidx index --index-commits                # Index git history (one-time)
+cidx query "JWT auth" --time-range-all    # Search all history
+cidx query "bug fix" --time-range 2024-01-01..2024-12-31
+cidx query "login" --time-range-all --author "john@example.com"
 ```
 
-**Format**: `{module_path/SymbolName#method()} ({file_path}:{line})`
-
-**Benefits**:
-- 60-70% token reduction vs verbose output
-- LLM-friendly (faster processing, lower costs)
-- Human-readable module-qualified names
-- Easy to parse and navigate
-
-#### Query Parameters
-
-**Common Options (All Commands)**:
-- `--limit N` - Maximum results (default: 0 = unlimited)
-- `--exact` - Exact symbol match (no substring matching)
-
-**Impact Analysis Options**:
-- `--max-depth N` - Maximum traversal depth (default: 3)
-
-**Call Chain Options**:
-- `--max-depth N` - Maximum chain depth (default: 10)
-
-#### Performance
-
-**Query Speed** (DatabaseBackend with SQL Recursive CTEs):
-- Definition: <0.5s (FTS5-optimized symbol lookup)
-- References: <1s (indexed symbol lookups)
-- Dependencies: <1s at depth=3 (SQL CTE vs 23-77s Python recursion)
-- Dependents: <1s at depth=3 (SQL CTE vs 23-77s Python recursion)
-- Call Chain: <5s at depth=3 (bidirectional BFS with SQL CTEs)
-- Impact Analysis: <2s at depth=3 (multi-hop graph traversal)
-- Context: <2s (symbol documentation and file context)
-
-**Architecture**:
-- SQL Recursive CTEs replace Python recursion (O(1) query complexity)
-- FTS5 full-text search indexes for fast symbol name lookups
-- Bidirectional BFS for efficient call chain tracing
-- Database indexes on call_graph and symbol_references tables
-
-**Query Limits** (to ensure consistent <2s response times):
-
-| Limit | Value | What It Means |
-|-------|-------|---------------|
-| **Max Depth** | 3 | Transitive queries follow at most 3 "hops" of relationships |
-| **Max Nodes** | 3,000 | BFS exploration stops after visiting 3,000 symbols |
-
-*Understanding Depth*: When you query "what depends on ClassA?":
-- Depth 1: Direct dependents (files that import/use ClassA directly)
-- Depth 2: Dependents of dependents (files using files that use ClassA)
-- Depth 3: Third-level dependents (the ripple effect continues)
-
-For most refactoring decisions, depth=3 captures the meaningful impact. Deeper
-traversals rarely add actionable information but exponentially increase query time.
-
-*Understanding Node Limit*: In large codebases, a heavily-used utility class might
-have thousands of transitive dependents. The 3,000 node limit ensures queries
-complete quickly. If you hit this limit, the results still include the most
-directly-connected symbols (closest relationships first).
-
-**Storage Efficiency**:
-- SQLite database (30-50% smaller than raw .scip files)
-- Automatic .scip cleanup after database generation
-- Indexed lookups for fast queries
-
-#### Use Cases
-
-**Code Navigation**:
-```bash
-# Find where UserService is defined
-cidx scip definition "UserService"
-
-# Find all usages of authenticate method
-cidx scip references "authenticate"
-```
-
-**Refactoring Analysis**:
-```bash
-# See what depends on this class before refactoring
-cidx scip dependents "LegacyAuth"
-
-# Analyze impact of changing this function
-cidx scip impact "core_processor"
-```
-
-**Architecture Understanding**:
-```bash
-# What does this service depend on?
-cidx scip dependencies "PaymentService"
-
-# Trace execution flow
-cidx scip callchain "handle_request"
-```
-
-**Code Review**:
-```bash
-# Get context for unfamiliar symbol
-cidx scip context "ConfigManager"
-
-# Find all references to verify usage
-cidx scip references "deprecated_function"
-```
-
-#### Coverage Status
-
-**Available Across Interfaces**:
-- CLI: 7/7 commands (100%)
-- REST API: 7/7 endpoints (100%)
-- MCP Tools: 7/7 tools (100%)
-- Web UI: 4/7 commands (definition, references, dependencies, dependents)
-
-**Missing from Web UI**: impact, callchain, context (CLI/API/MCP only)
-
-#### Comparison: SCIP vs Semantic Search
-
-| Feature | SCIP | Semantic Search |
-|---------|------|-----------------|
-| Precision | Exact symbol matches | Similar code by meaning |
-| Speed | <200ms typical | ~20ms (HNSW) |
-| Use Case | Navigate existing code | Discover relevant code |
-| Language | Requires SCIP indexer | Any text-based language |
-| Relationships | Explicit (imports, calls) | Implicit (similarity) |
-| Cross-repo | Yes (with SCIP indexes) | Yes (with semantic indexes) |
-
-**When to Use**:
-- **SCIP**: Known symbol, need exact location/references/dependencies
-- **Semantic**: Conceptual search, find similar implementations, explore unknown code
-
-### Performance
-
-- **HNSW indexing**: 300x faster queries (~20ms vs 6+ seconds)
-- **Incremental updates**: 3.6x speedup for re-indexing
-- **Watch mode**: <20ms per file change
-- **FTS**: 1.36x faster than grep on indexed codebases
-- **Server-side caching**: 100-1800x speedup for repeated queries (277ms to <1ms)
-
-### Advanced Filtering
-
-```bash
-# Language filtering
-cidx query "authentication" --language python
-
-# Path filtering
-cidx query "models" --path-filter "*/src/*"
-
-# Exclude patterns
-cidx query "production code" --exclude-path "*/tests/*"
-
-# Exclude languages
-cidx query "api handlers" --exclude-language javascript --exclude-language css
-
-# Combine filters
-cidx query "database models" \
-  --language python \
-  --path-filter "*/src/*" \
-  --exclude-path "*/tests/*" \
-  --min-score 0.8
-```
+See: [Temporal Search Guide](docs/temporal-search.md)
 
 ### Real-Time Watch Mode
 
-```bash
-# Watch for file changes and auto-index
-cidx watch --fts
-
-# With custom debounce delay
-cidx watch --debounce 5.0
-```
-
-### AI Platform Integration
-
-**Local CLI Integration**: Teach AI assistants to use semantic search via CLI:
-```bash
-# Install instructions for Claude Code
-cidx teach-ai --claude --project    # Creates ./CLAUDE.md
-
-# Global installation
-cidx teach-ai --claude --global     # Creates ~/.claude/CLAUDE.md
-
-# Other platforms
-cidx teach-ai --gemini --project
-cidx teach-ai --codex --global
-```
-
-**Remote MCP Server Integration**: Connect AI assistants to CIDX server for team-wide semantic search:
-- **MCP Protocol 2024-11-05** - Standard Model Context Protocol implementation
-- **OAuth 2.0 Authentication** - Secure AI assistant authentication via browser flow
-- **Remote Code Search** - AI tools query centralized indexed codebases
-- **Permission Controls** - Role-based access (admin, power_user, normal_user)
-- **Golden Repository Access** - Query team's shared code repositories
+Monitor file changes and automatically re-index in real-time with daemon mode. Get ~5ms cached queries versus ~1s from disk.
 
 ```bash
-# Configure Claude Code to connect to CIDX MCP server
-# Add to Claude Code MCP settings (see docs/v5.0.0-architecture-summary.md for server setup)
+cidx config --daemon    # Enable daemon mode
+cidx start              # Start daemon
+cidx watch              # Start watch mode
+cidx query "search"     # Fast cached queries
 ```
 
-## Two Operating Modes
+See: [Operating Modes Guide](docs/operating-modes.md#daemon-mode)
+
+### AI Integration
+
+Connect AI assistants to CIDX for semantic search directly in conversations. Supports local CLI integration (Claude Code, Gemini, Codex) and remote MCP server integration (Claude Desktop).
+
+```bash
+# Local CLI integration
+cidx teach-ai --claude --project    # Creates CLAUDE.md
+
+# Remote MCP server for Claude Desktop
+# See MCP Bridge guide for setup
+```
+
+See: [AI Integration Guide](docs/ai-integration.md) | [MCP Bridge Guide](docs/mcpb/README.md)
+
+## Operating Modes
+
+CIDX operates in two modes optimized for different use cases:
 
 ### CLI Mode (Individual Developers)
 
-Direct command-line interface for local development:
-- Direct CLI commands: `cidx init`, `cidx index`, `cidx query`
-- Local project indexing in `.code-indexer/`
-- Container-free filesystem storage
-- Instant setup, no dependencies
-- Real-time progress tracking
+Direct command-line interface for local development with instant setup and no dependencies.
+
+```bash
+cidx init      # Create .code-indexer/
+cidx index     # Index codebase
+cidx query     # Search (~1s per query from disk)
+```
 
 ### Daemon Mode (Performance)
 
-Background service for faster queries:
-- In-memory index caching (~5ms queries vs ~1s from disk)
-- Watch mode for real-time file change indexing
-- Unix socket communication
-- Container-free, runs as local process
+Background service with in-memory caching for faster queries (~5ms) and real-time watch mode.
 
 ```bash
-# Enable and start daemon
-cidx config --daemon
-cidx start
-
-# Use watch mode for real-time updates
-cidx watch
+cidx config --daemon    # Enable daemon
+cidx start              # Start daemon
+cidx query "search"     # Fast cached queries
+cidx watch              # Real-time indexing
 ```
 
-### Server Mode (Team Collaboration)
-
-Multi-user server with advanced caching for team-wide semantic search:
-- **Automatic HNSW index caching**: 100-1800x speedup for repeated queries
-- **First query (cold)**: ~277ms (OS page cache benefit)
-- **Subsequent queries (warm)**: <1ms (in-memory cache)
-- **TTL-based eviction**: Configurable cache lifetime (default: 10 minutes)
-- **Per-repository isolation**: Independent cache entries for each repository
-- **Multi-user support**: Shared cache across team members
-- **OAuth 2.0 authentication**: Secure access control
-
-**Cache Configuration**:
-```bash
-# Configure cache TTL (seconds)
-export CIDX_HNSW_CACHE_TTL_SECONDS=600  # 10 minutes default
-
-# Server mode auto-enabled when running server
-```
-
-**Monitor Cache Performance**:
-```bash
-# Query cache statistics
-curl http://localhost:8000/cache/stats
-
-# Response shows hit/miss ratios and speedup metrics
-{
-  "total_hits": 1234,
-  "total_misses": 56,
-  "hit_ratio": 0.957,
-  "active_entries": 12
-}
-```
-
-See [Server Deployment Guide](docs/server-deployment.md) for detailed configuration.
+For server mode (team collaboration with centralized golden repositories), see [Operating Modes Guide](docs/operating-modes.md).
 
 ## Common Commands
 
+### Indexing
+
 ```bash
-# Service management
-cidx start                          # Start services
-cidx stop                           # Stop services
-cidx status                         # Check status
-
-# Indexing
-cidx index                          # Incremental indexing
-cidx index --fts                    # Index with full-text search
-cidx index --clear                  # Force full reindex
-cidx index --index-commits          # Index git history
-
-# Searching
-cidx query "search terms"           # Semantic search
-cidx query "text" --fts             # Full-text search
-cidx query "pattern" --fts --regex  # Regex search
-cidx query "code" --fts --semantic  # Hybrid search
-
-# For complete parameter reference (23 query parameters)
-# See: src/code_indexer/query/QUERY_PARAMETERS.md
-
-# Watch mode
-cidx watch                          # Real-time file watching
-cidx watch --fts                    # Watch with FTS updates
-
-# Data management
-cidx clean-data                     # Clear current project data
-cidx uninstall                      # Remove current project
+cidx init                    # Create .code-indexer/ config
+cidx index                   # Semantic indexing (default)
+cidx index --fts             # Add full-text search
+cidx index --index-commits   # Add git history indexing
+cidx scip generate           # Generate SCIP indexes
 ```
 
-## Supported Languages
+### Querying
 
-Python, JavaScript, TypeScript, Java, C#, C, C++, Go, Rust, Kotlin, Swift, Ruby, PHP, Lua, Groovy, Pascal/Delphi, SQL, HTML, CSS, YAML, XML, and more.
+```bash
+# Semantic search
+cidx query "search term" --limit 10
 
-See [Technical Details - Supported Languages](docs/technical-details.md#supported-languages) for complete language support details.
+# Full-text search
+cidx query "exact text" --fts
+
+# Regex pattern matching
+cidx query "pattern" --fts --regex
+
+# Git history search
+cidx query "term" --time-range-all --quiet
+
+# SCIP code intelligence
+cidx scip definition "Symbol"
+cidx scip references "function_name"
+```
+
+### Filtering
+
+```bash
+--language python           # Filter by language
+--path-filter "*/tests/*"   # Filter by path pattern
+--exclude-path "*/vendor/*" # Exclude paths
+--min-score 0.8             # Minimum similarity score
+--limit 20                  # Max results
+```
+
+### Daemon Mode
+
+```bash
+cidx config --daemon        # Enable daemon
+cidx start                  # Start daemon
+cidx stop                   # Stop daemon
+cidx status                 # Check status
+cidx watch                  # Start watch mode
+cidx watch-stop             # Stop watch mode
+```
 
 ## Configuration
 
-### Embedding Provider
+CIDX requires minimal configuration. The VoyageAI API key is the only required setting.
 
-Code-indexer uses **VoyageAI embeddings** (cloud-based API). This is the only supported embedding provider in v8.0+.
-
-```bash
-export VOYAGE_API_KEY="your-key"
-cidx init  # VoyageAI is automatically used
-```
-
-Get your API key from: https://www.voyageai.com/
-
-### Vector Storage Backend
-
-Code-indexer uses **filesystem backend** (container-free, local storage). This is the only supported backend in v8.0+.
+### VoyageAI API Key (Required)
 
 ```bash
-cidx init  # Filesystem backend is automatically used
+# Add to shell profile (~/.bashrc or ~/.zshrc)
+export VOYAGE_API_KEY="your-api-key-here"
+source ~/.bashrc
 ```
 
-Vector data is stored in `.code-indexer/index/` as optimized JSON files.
+### Project Configuration
 
-### Configuration File
+CIDX auto-creates `.code-indexer/config.json` on first run with sensible defaults. You can customize:
 
-Configuration stored in `.code-indexer/config.json`:
-- `file_extensions`: File types to index
-- `exclude_dirs`: Directories to skip
-- `embedding_provider`: "voyage-ai" (only supported provider)
-- `max_file_size`: Maximum file size (default: 1MB)
+- `file_extensions` - File types to index
+- `exclude_dirs` - Directories to skip
+- `max_file_size` - Maximum file size (default 1MB)
+
+For complete configuration reference including environment variables, daemon settings, and watch mode options, see [Configuration Guide](docs/configuration.md).
 
 ## Documentation
 
-- **[Changelog](CHANGELOG.md)** - Version history and release notes
-- **[Migration Guide](docs/migration-to-v8.md)** - Upgrading from v7.x to v8.0
-- **[Architecture](docs/architecture.md)** - System design and technical decisions
-- **[Technical Details](docs/technical-details.md)** - Deep dives into algorithms and implementation
-- **[Algorithms](docs/algorithms.md)** - Detailed algorithm descriptions and complexity analysis
+### Getting Started
+- [Installation Guide](docs/installation.md) - Complete installation for all platforms
+- [Query Guide](docs/query-guide.md) - All 23 query parameters and search strategies
+- [Configuration Guide](docs/configuration.md) - VoyageAI setup, config options, environment variables
 
-## Development
+### Features
+- [SCIP Code Intelligence](docs/scip/README.md) - Symbol navigation, dependencies, call chains
+- [Temporal Search](docs/temporal-search.md) - Git history search with time-range filtering
+- [Operating Modes](docs/operating-modes.md) - CLI, Daemon, Server modes explained
 
-```bash
-# Clone repository
-git clone https://github.com/jsbattig/code-indexer.git
-cd code-indexer
-pip install -e ".[dev]"
+### AI Integration
+- [AI Integration Guide](docs/ai-integration.md) - Connect AI assistants to CIDX
+- [MCP Bridge Guide](docs/mcpb/README.md) - Claude Desktop integration via MCP
 
-# Run tests
-./ci-github.sh              # Fast tests (~6-7 min)
-./full-automation.sh        # Comprehensive tests (~10+ min)
-
-# Linting
-./lint.sh                   # ruff, black, mypy
-```
-
-For detailed testing infrastructure and contribution guidelines, see the project documentation.
-
-## License
-
-MIT License
+### Advanced
+- [Architecture Guide](docs/architecture.md) - System design and storage architecture
+- [Migration Guide](docs/migration-to-v8.md) - Upgrading from v7.x to v8.x
+- [Changelog](CHANGELOG.md) - Version history and release notes
 
 ## Contributing
 
-Issues and pull requests welcome! Please follow the testing guidelines in the project documentation and ensure all tests pass before submitting PRs.
+Contributions welcome! Please see the [GitHub Issues](https://github.com/jsbattig/code-indexer/issues) page to report bugs or suggest features.
+
+## License
+
+MIT License - See repository for full license text.
+
+---
+
+**Support**: [GitHub Issues](https://github.com/jsbattig/code-indexer/issues)
+**Repository**: [https://github.com/jsbattig/code-indexer](https://github.com/jsbattig/code-indexer)
