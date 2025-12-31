@@ -11,6 +11,39 @@ permissions:
   actions: read    # Allow reading workflow runs
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.11
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python3 -m pip install -e ".[dev]" --break-system-packages
+
+    - name: Run parity tests
+      run: |
+        python3 -m pytest tests/integration/parity/ -v --tb=short
+
+    - name: Generate parity matrix
+      if: always()
+      run: |
+        python3 scripts/generate_parity_matrix.py || echo "Parity matrix generation failed (script may not exist yet)"
+
+    - name: Upload parity matrix
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: parity-matrix
+        path: docs/mcp-rest-parity-matrix.md
+        if-no-files-found: ignore
+
   check-version:
     runs-on: ubuntu-latest
     outputs:

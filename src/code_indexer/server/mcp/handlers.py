@@ -5150,13 +5150,6 @@ async def git_branch_list(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         result = git_operations_service.git_branch_list(Path(repo_path))
         result["success"] = True
-        # Transform result to expected format if service returns local/current format
-        if "branches" not in result and "local" in result:
-            branches = []
-            current = result.get("current", "")
-            for branch in result.get("local", []):
-                branches.append({"name": branch, "current": branch == current})
-            result["branches"] = branches
         return _mcp_response(result)
 
     except GitCommandError as e:

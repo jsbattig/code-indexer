@@ -5051,7 +5051,7 @@ TOOL_REGISTRY["edit_file"] = {
                 "type": "string",
                 "description": "Relative path to edited file (present when success=true)"
             },
-            "new_content_hash": {
+            "content_hash": {
                 "type": "string",
                 "description": "SHA-256 hash of updated file content for future edits (present when success=true)"
             },
@@ -5107,22 +5107,18 @@ TOOL_REGISTRY["delete_file"] = {
         "properties": {
             "success": {
                 "type": "boolean",
-                "description": "Whether the file deletion succeeded"
+                "description": "Operation success status"
             },
             "file_path": {
                 "type": "string",
-                "description": "Relative path to deleted file (present when success=true)"
+                "description": "Deleted file path"
             },
             "deleted_at": {
                 "type": "string",
-                "description": "ISO 8601 timestamp when file was deleted (present when success=true)"
-            },
-            "error": {
-                "type": "string",
-                "description": "Error message (present when success=false)"
+                "description": "Deletion timestamp (ISO 8601)"
             }
         },
-        "required": ["success"]
+        "required": ["success", "file_path", "deleted_at"]
     }
 }
 
@@ -5149,6 +5145,31 @@ TOOL_REGISTRY["git_status"] = {
         },
         "required": ["repository_alias"],
         "additionalProperties": False
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Operation success status"
+            },
+            "staged": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of staged files"
+            },
+            "unstaged": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of unstaged files"
+            },
+            "untracked": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of untracked files"
+            }
+        },
+        "required": ["success"]
     },
     "required_permission": "repository:read"
 }
@@ -5508,7 +5529,7 @@ TOOL_REGISTRY["git_reset"] = {
                         "type": "boolean",
                         "description": "Operation succeeded"
                     },
-                    "mode": {
+                    "reset_mode": {
                         "type": "string",
                         "description": "Reset mode used (hard/mixed/soft)"
                     },
@@ -5703,18 +5724,24 @@ TOOL_REGISTRY["git_branch_list"] = {
         "properties": {
             "success": {
                 "type": "boolean",
-                "description": "Operation succeeded"
+                "description": "Operation success status"
             },
-            "current_branch": {
+            "current": {
                 "type": "string",
-                "description": "Currently checked out branch"
+                "description": "Current branch name"
             },
-            "branches": {
+            "local": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of all branch names"
+                "description": "List of local branches"
+            },
+            "remote": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of remote branches"
             }
-        }
+        },
+        "required": ["success", "current", "local", "remote"]
     },
 
     "required_permission": "repository:read"
@@ -5908,6 +5935,39 @@ TOOL_REGISTRY["trigger_reindex"] = {
         "required": ["repository_alias", "index_types"],
         "additionalProperties": False
     },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Operation success status"
+            },
+            "job_id": {
+                "type": "string",
+                "description": "Background job ID for tracking"
+            },
+            "status": {
+                "type": "string",
+                "description": "Initial job status"
+            },
+            "index_types": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Index types being rebuilt"
+            },
+            "started_at": {
+                "type": "string",
+                "description": "Job start time (ISO 8601)"
+            },
+            "estimated_duration_minutes": {
+                "type": "integer",
+                "description": "Estimated completion time in minutes"
+            }
+        },
+        "required": ["success"]
+    },
     "required_permission": "repository:write"
 }
 
@@ -5930,6 +5990,60 @@ TOOL_REGISTRY["get_index_status"] = {
         },
         "required": ["repository_alias"],
         "additionalProperties": False
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Operation success status"
+            },
+            "repository_alias": {
+                "type": "string",
+                "description": "Repository alias"
+            },
+            "semantic": {
+                "type": "object",
+                "description": "Semantic index status",
+                "properties": {
+                    "exists": {"type": "boolean"},
+                    "last_updated": {"type": "string"},
+                    "document_count": {"type": "integer"},
+                    "size_bytes": {"type": "integer"}
+                }
+            },
+            "fts": {
+                "type": "object",
+                "description": "Full-text search index status",
+                "properties": {
+                    "exists": {"type": "boolean"},
+                    "last_updated": {"type": "string"},
+                    "document_count": {"type": "integer"},
+                    "size_bytes": {"type": "integer"}
+                }
+            },
+            "temporal": {
+                "type": "object",
+                "description": "Temporal (git history) index status",
+                "properties": {
+                    "exists": {"type": "boolean"},
+                    "last_updated": {"type": "string"},
+                    "document_count": {"type": "integer"},
+                    "size_bytes": {"type": "integer"}
+                }
+            },
+            "scip": {
+                "type": "object",
+                "description": "SCIP (call graph) index status",
+                "properties": {
+                    "exists": {"type": "boolean"},
+                    "last_updated": {"type": "string"},
+                    "document_count": {"type": "integer"},
+                    "size_bytes": {"type": "integer"}
+                }
+            }
+        },
+        "required": ["success", "repository_alias", "semantic", "fts", "temporal", "scip"]
     },
     "required_permission": "repository:read"
 }

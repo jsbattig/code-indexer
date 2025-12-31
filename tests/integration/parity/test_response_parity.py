@@ -9,9 +9,20 @@ import json
 
 
 def extract_mcp_response_schema(output_schema: dict) -> dict:
-    """Extract response schema from MCP outputSchema."""
+    """
+    Extract response schema from MCP outputSchema.
+
+    Handles both direct properties and oneOf schemas (merges all properties from all options).
+    """
     if "properties" in output_schema:
         return output_schema["properties"]
+    elif "oneOf" in output_schema:
+        # Merge properties from all oneOf options
+        merged_props = {}
+        for option in output_schema["oneOf"]:
+            if "properties" in option:
+                merged_props.update(option["properties"])
+        return merged_props
     return {}
 
 
@@ -73,6 +84,19 @@ def test_edit_file_response_parity(mcp_tool_registry):
         "edit_file",
         mcp_output,
         EditFileResponse
+    )
+
+
+def test_delete_file_response_parity(mcp_tool_registry):
+    """Verify delete_file returns identical JSON in MCP and REST."""
+    from code_indexer.server.routers.files import DeleteFileResponse
+
+    mcp_output = mcp_tool_registry["delete_file"].get("outputSchema", {})
+
+    assert_response_parity(
+        "delete_file",
+        mcp_output,
+        DeleteFileResponse
     )
 
 
@@ -157,6 +181,48 @@ def test_git_branch_create_response_parity(mcp_tool_registry):
         "git_branch_create",
         mcp_output,
         GitBranchCreateResponse
+    )
+
+
+def test_git_branch_list_response_parity(mcp_tool_registry):
+    """Verify git_branch_list returns identical JSON in MCP and REST."""
+    from code_indexer.server.routers.git_models import GitBranchListResponse
+
+    mcp_output = mcp_tool_registry["git_branch_list"].get("outputSchema", {})
+
+    assert_response_parity(
+        "git_branch_list",
+        mcp_output,
+        GitBranchListResponse
+    )
+
+
+# Indexing Operations
+
+
+def test_trigger_reindex_response_parity(mcp_tool_registry):
+    """Verify trigger_reindex returns identical JSON in MCP and REST."""
+    from code_indexer.server.routers.indexing import TriggerReindexResponse
+
+    mcp_output = mcp_tool_registry["trigger_reindex"].get("outputSchema", {})
+
+    assert_response_parity(
+        "trigger_reindex",
+        mcp_output,
+        TriggerReindexResponse
+    )
+
+
+def test_get_index_status_response_parity(mcp_tool_registry):
+    """Verify get_index_status returns identical JSON in MCP and REST."""
+    from code_indexer.server.routers.indexing import GetIndexStatusResponse
+
+    mcp_output = mcp_tool_registry["get_index_status"].get("outputSchema", {})
+
+    assert_response_parity(
+        "get_index_status",
+        mcp_output,
+        GetIndexStatusResponse
     )
 
 

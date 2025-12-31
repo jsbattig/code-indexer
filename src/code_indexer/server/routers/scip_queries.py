@@ -8,11 +8,44 @@ import logging
 from fastapi import APIRouter, Query
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
 from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scip", tags=["SCIP Queries"])
+
+
+# Response Models
+
+class ScipResultItem(BaseModel):
+    """Model for a single SCIP query result."""
+    symbol: str = Field(..., description="Full SCIP symbol identifier")
+    project: str = Field(..., description="Project path")
+    file_path: str = Field(..., description="File path relative to project root")
+    line: int = Field(..., description="Line number (1-indexed)")
+    column: int = Field(..., description="Column number (0-indexed)")
+    kind: str = Field(..., description="Symbol kind (class, function, method, reference, etc.)")
+    relationship: Optional[str] = Field(None, description="Relationship type (import, call, etc.)")
+    context: Optional[str] = Field(None, description="Code context or additional information")
+
+
+class ScipDefinitionResponse(BaseModel):
+    """Response model for SCIP definition query."""
+    success: bool = Field(..., description="Whether the operation succeeded")
+    symbol: str = Field(..., description="Symbol name that was searched for")
+    total_results: int = Field(..., description="Total number of definitions found")
+    results: List[ScipResultItem] = Field(..., description="List of definition locations")
+    error: Optional[str] = Field(None, description="Error message if operation failed")
+
+
+class ScipReferencesResponse(BaseModel):
+    """Response model for SCIP references query."""
+    success: bool = Field(..., description="Whether the operation succeeded")
+    symbol: str = Field(..., description="Symbol name that was searched for")
+    total_results: int = Field(..., description="Total number of references found")
+    results: List[ScipResultItem] = Field(..., description="List of reference locations")
+    error: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 def _query_result_to_dict(result: QueryResult) -> Dict[str, Any]:

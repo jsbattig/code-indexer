@@ -42,25 +42,25 @@ MCP_TO_REST_MAPPING = {
     "git_branch_switch": ("POST", "/api/v1/repos/{alias}/git/branches/{name}/switch"),
     "git_branch_delete": ("DELETE", "/api/v1/repos/{alias}/git/branches/{name}"),
 
-    # SCIP operations
-    "scip_definition": ("POST", "/api/v1/scip/definition"),
-    "scip_references": ("POST", "/api/v1/scip/references"),
-    "scip_dependencies": ("POST", "/api/v1/scip/dependencies"),
-    "scip_dependents": ("POST", "/api/v1/scip/dependents"),
-    "scip_callchain": ("POST", "/api/v1/scip/callchain"),
-    "scip_impact": ("POST", "/api/v1/scip/impact"),
-    "scip_context": ("POST", "/api/v1/scip/context"),
+    # SCIP operations (GET methods, /scip prefix not /api/v1/scip)
+    "scip_definition": ("GET", "/scip/definition"),
+    "scip_references": ("GET", "/scip/references"),
+    "scip_dependencies": ("GET", "/scip/dependencies"),
+    "scip_dependents": ("GET", "/scip/dependents"),
+    "scip_callchain": ("GET", "/scip/callchain"),
+    "scip_impact": ("GET", "/scip/impact"),
+    "scip_context": ("GET", "/scip/context"),
 
-    # Indexing operations
-    "trigger_reindex": ("POST", "/api/v1/repos/{alias}/index"),
-    "get_index_status": ("GET", "/api/v1/repos/{alias}/index/status"),
+    # Indexing operations (/reindex not /index, /index-status hyphenated)
+    "trigger_reindex": ("POST", "/api/v1/repos/{alias}/reindex"),
+    "get_index_status": ("GET", "/api/v1/repos/{alias}/index-status"),
 
-    # SSH Key operations
-    "cidx_ssh_key_create": ("POST", "/api/v1/ssh-keys"),
-    "cidx_ssh_key_list": ("GET", "/api/v1/ssh-keys"),
-    "cidx_ssh_key_delete": ("DELETE", "/api/v1/ssh-keys/{name}"),
-    "cidx_ssh_key_show_public": ("GET", "/api/v1/ssh-keys/{name}/public"),
-    "cidx_ssh_key_assign_host": ("POST", "/api/v1/ssh-keys/{name}/hosts"),
+    # SSH Key operations (/api/ssh-keys not /api/v1/ssh-keys)
+    "cidx_ssh_key_create": ("POST", "/api/ssh-keys"),
+    "cidx_ssh_key_list": ("GET", "/api/ssh-keys"),
+    "cidx_ssh_key_delete": ("DELETE", "/api/ssh-keys/{name}"),
+    "cidx_ssh_key_show_public": ("GET", "/api/ssh-keys/{name}/public"),
+    "cidx_ssh_key_assign_host": ("POST", "/api/ssh-keys/{name}/hosts"),
 }
 
 

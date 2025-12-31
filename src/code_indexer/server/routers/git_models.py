@@ -74,8 +74,10 @@ class GitCommitResponse(BaseModel):
     """Response model for git commit."""
     success: bool = Field(..., description="Operation success status")
     commit_hash: str = Field(..., description="SHA hash of created commit")
+    short_hash: str = Field(..., description="Short SHA hash (first 7 characters)")
     message: str = Field(..., description="Commit message")
     author: str = Field(..., description="Author email address")
+    files_committed: int = Field(..., description="Number of files committed")
 
 
 # Git Remote Models
@@ -89,7 +91,9 @@ class GitPushRequest(BaseModel):
 class GitPushResponse(BaseModel):
     """Response model for git push."""
     success: bool = Field(..., description="Operation success status")
-    pushed_commits: int = Field(..., description="Number of commits pushed")
+    branch: str = Field(..., description="Branch that was pushed")
+    remote: str = Field(..., description="Remote name")
+    commits_pushed: int = Field(..., description="Number of commits pushed")
 
 
 class GitPullRequest(BaseModel):

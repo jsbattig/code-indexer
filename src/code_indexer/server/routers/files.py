@@ -42,6 +42,7 @@ class CreateFileResponse(BaseModel):
     content_hash: str = Field(..., description="SHA-256 hash of file content")
     size_bytes: int = Field(..., description="File size in bytes")
     created_at: str = Field(..., description="Creation timestamp (ISO 8601)")
+    error: Optional[str] = Field(None, description="Error message (present when success=false)")
 
 
 class EditFileRequest(BaseModel):
@@ -59,6 +60,7 @@ class EditFileResponse(BaseModel):
     content_hash: str = Field(..., description="SHA-256 hash of new content")
     modified_at: str = Field(..., description="Modification timestamp (ISO 8601)")
     changes_made: int = Field(..., description="Number of replacements made")
+    error: Optional[str] = Field(None, description="Error message (present when success=false)")
 
 
 class DeleteFileResponse(BaseModel):
