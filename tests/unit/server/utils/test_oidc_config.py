@@ -1,6 +1,9 @@
 """Tests for OIDC configuration in ServerConfig."""
 
-from code_indexer.server.utils.config_manager import OIDCProviderConfig
+from code_indexer.server.utils.config_manager import (
+    OIDCProviderConfig,
+    ServerConfig,
+)
 
 
 class TestOIDCProviderConfig:
@@ -16,8 +19,6 @@ class TestOIDCProviderConfig:
 
     def test_server_config_includes_oidc_provider_config(self):
         """Test that ServerConfig includes oidc_provider_config field."""
-        from code_indexer.server.utils.config_manager import ServerConfig
-
         config = ServerConfig(server_dir="/tmp/test")
 
         assert hasattr(config, "oidc_provider_config")
