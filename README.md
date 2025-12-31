@@ -145,15 +145,37 @@ See: [AI Integration Guide](docs/ai-integration.md) | [MCP Bridge Guide](docs/mc
 
 CIDX operates in three modes optimized for different use cases:
 
-### CLI Mode (Individual Developers)
+### CLI Mode (Individual Developers & Remote Access)
 
-Direct command-line interface for local development with instant setup and no dependencies.
+Direct command-line interface with two operational sub-modes:
 
+**Local Mode** (default) - Direct file access with instant setup and no dependencies:
 ```bash
-cidx init      # Create .code-indexer/
-cidx index     # Index codebase
+cidx init      # Create .code-indexer/ locally
+cidx index     # Index codebase locally
 cidx query     # Search (~1s per query from disk)
 ```
+
+**Remote Mode** - Connect to CIDX server with repository linking:
+```bash
+# Initialize remote connection
+cidx init --remote https://cidx.example.com --username user --password pass
+
+# Query executes on remote server
+cidx query "search term"  # Transparent remote execution
+
+# Sync repositories with server
+cidx sync                 # Sync current repository
+cidx sync my-project     # Sync specific repository
+cidx sync --all          # Sync all repositories (multi-repo support)
+```
+
+**Remote Mode Features**:
+- Repository linking (automatic matching between local repo and server golden repo)
+- Transparent remote query execution (same CLI, server-side processing)
+- Multi-repo support (manage and sync multiple repositories)
+- OAuth 2.0 authentication with server
+- Access team's centralized indexed repositories
 
 ### Daemon Mode (Performance)
 
