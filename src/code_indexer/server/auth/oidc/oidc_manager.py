@@ -13,17 +13,41 @@ class OIDCManager:
         self.db_path = str(Path.home() / ".cidx-server" / "oauth.db")
 
     async def initialize(self):
+        """Initialize database schema (no network calls)."""
         if self.config.enabled:
-            from .oidc_provider import OIDCProvider
-
-            self.provider = OIDCProvider(self.config)
-            self.provider._metadata = await self.provider.discover_metadata()
-
             # Initialize database schema for OIDC identity links
             await self._init_db()
 
+    async def ensure_provider_initialized(self):
+        """Lazily initialize OIDC provider (discovers metadata via network call).
+
+        This is called on-demand during SSO login to avoid blocking server startup.
+        If the OIDC provider is unreachable, this will fail gracefully and log an error.
+        """
+        if self.provider is None and self.config.enabled:
+            import logging
+            from .oidc_provider import OIDCProvider
+
+            logger = logging.getLogger(__name__)
+            logger.info(f"Initializing OIDC provider: {self.config.provider_name}")
+
+            try:
+                # Create provider and discover metadata atomically
+                # Only set self.provider if both succeed
+                provider = OIDCProvider(self.config)
+                provider._metadata = await provider.discover_metadata()
+
+                # Success - now we can set self.provider
+                self.provider = provider
+                logger.info(f"OIDC provider initialized successfully: {self.config.provider_name}")
+            except Exception as e:
+                logger.error(f"Failed to initialize OIDC provider {self.config.provider_name}: {e}", exc_info=True)
+                # Don't set self.provider - leave it None so we can retry
+                raise
+
     def is_enabled(self):
-        return self.config.enabled and self.provider is not None
+        """Check if OIDC is enabled in configuration."""
+        return self.config.enabled
 
     def create_jwt_session(self, user):
         return self.jwt_manager.create_token({
@@ -62,6 +86,10 @@ class OIDCManager:
 
     async def match_or_create_user(self, user_info):
         import aiosqlite
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"match_or_create_user called with subject={user_info.subject}, email={user_info.email}, email_verified={user_info.email_verified}")
 
         # Check if OIDC subject already exists in database (fast path)
         async with aiosqlite.connect(self.db_path) as db:
@@ -74,11 +102,14 @@ class OIDCManager:
             if result:
                 # Subject exists, check if user still exists
                 username = result[0]
+                logger.info(f"Found existing OIDC link: subject={user_info.subject} -> username={username}")
                 existing_user = self.user_manager.get_user(username)
                 if existing_user:
+                    logger.info(f"Returning existing user: {username}")
                     return existing_user
                 else:
                     # Stale OIDC link (defensive check - should be cleaned up on user deletion)
+                    logger.warning(f"Stale OIDC link found for subject={user_info.subject}, deleting")
                     await db.execute(
                         "DELETE FROM oidc_identity_links WHERE subject = ?",
                         (user_info.subject,)
@@ -86,17 +117,19 @@ class OIDCManager:
                     await db.commit()
                     # Fall through to auto-link or JIT provisioning
 
-        # Check if verified email matches existing user (auto-link)
-        if user_info.email and user_info.email_verified:
-            existing_user = self.user_manager.get_user_by_email(user_info.email)
-            if existing_user:
-                # Auto-link OIDC identity to existing user
-                await self.link_oidc_identity(
-                    username=existing_user.username,
-                    subject=user_info.subject,
-                    email=user_info.email
-                )
-                return existing_user
+        # Check if email matches existing user (auto-link)
+        # Respect require_email_verification config setting
+        if user_info.email:
+            if not self.config.require_email_verification or user_info.email_verified:
+                existing_user = self.user_manager.get_user_by_email(user_info.email)
+                if existing_user:
+                    # Auto-link OIDC identity to existing user
+                    await self.link_oidc_identity(
+                        username=existing_user.username,
+                        subject=user_info.subject,
+                        email=user_info.email
+                    )
+                    return existing_user
 
         # Create new user via JIT provisioning if enabled
         if self.config.enable_jit_provisioning:
@@ -108,11 +141,23 @@ class OIDCManager:
                 # Email verification required but not verified - reject login
                 return None
 
-            # Generate username from email or subject
-            if user_info.email:
-                base_username = user_info.email.split('@')[0]
-            else:
-                base_username = user_info.subject.replace('-', '_')[:20]
+            # Extract username from configured username_claim
+            # If username_claim is configured but not present in userinfo, fail
+            if not user_info.username:
+                logger.error(f"Username claim '{self.config.username_claim}' not found in OIDC userinfo. Available claims: {list(user_info.__dict__.keys())}")
+                return None
+
+            base_username = user_info.username
+            logger.info(f"Using username from OIDC username_claim '{self.config.username_claim}': {base_username}")
+
+            # Check if username already exists (collision detection)
+            if self.user_manager.get_user(base_username):
+                logger.error(
+                    f"JIT provisioning failed: Username '{base_username}' already exists. "
+                    f"OIDC subject={user_info.subject}, email={user_info.email}. "
+                    f"Admin must manually link accounts or resolve username conflict."
+                )
+                return None
 
             # Create OIDC identity data
             oidc_identity = {

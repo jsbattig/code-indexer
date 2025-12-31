@@ -431,6 +431,7 @@ def _create_users_page_response(
                         if u.created_at
                         else "N/A"
                     ),
+                    "email": u.email,
                 }
                 for u in users
             ],
@@ -606,6 +607,47 @@ async def change_user_password(
         return _create_users_page_response(request, session, error_message=str(e))
 
 
+@web_router.post("/users/{username}/email", response_class=HTMLResponse)
+async def update_user_email(
+    request: Request,
+    username: str,
+    new_email: str = Form(""),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Update a user's email (admin only). Empty string clears the email."""
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_users_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    # Update email
+    user_manager = dependencies.user_manager
+    if not user_manager:
+        return _create_users_page_response(
+            request, session, error_message="User manager not available"
+        )
+
+    try:
+        # Allow empty email to clear it
+        email_value = new_email.strip() if new_email else None
+        user_manager.update_user(username, new_email=email_value if email_value else None)
+
+        return _create_users_page_response(
+            request,
+            session,
+            success_message=f"Email for '{username}' updated successfully",
+        )
+    except ValueError as e:
+        return _create_users_page_response(request, session, error_message=str(e))
+
+
 @web_router.post("/users/{username}/delete", response_class=HTMLResponse)
 async def delete_user(
     request: Request,
@@ -690,6 +732,7 @@ async def users_list_partial(request: Request):
                         if u.created_at
                         else "N/A"
                     ),
+                    "email": u.email,
                 }
                 for u in users
             ],
@@ -2478,6 +2521,8 @@ async def _reload_oidc_configuration():
     # Reuse existing user_manager and jwt_manager from module level
     from .. import app as app_module
 
+    logger.info(f"Creating new OIDC manager with config: email_claim={config.oidc_provider_config.email_claim}, username_claim={config.oidc_provider_config.username_claim}")
+
     state_manager = StateManager()
     oidc_manager = OIDCManager(
         config=config.oidc_provider_config,
@@ -2485,7 +2530,8 @@ async def _reload_oidc_configuration():
         jwt_manager=app_module.jwt_manager
     )
 
-    # Initialize OIDC provider (discover metadata)
+    # Initialize OIDC database schema (no network calls)
+    # Provider metadata will be discovered lazily on next SSO login attempt
     await oidc_manager.initialize()
 
     # Replace the old managers with new ones
@@ -2493,7 +2539,8 @@ async def _reload_oidc_configuration():
     oidc_routes.state_manager = state_manager
     oidc_routes.server_config = config
 
-    logger.info(f"OIDC configuration reloaded with provider: {config.oidc_provider_config.provider_name}")
+    logger.info(f"OIDC configuration reloaded for provider: {config.oidc_provider_config.provider_name} (will initialize on next login)")
+    logger.info(f"New OIDC manager config - email_claim: {oidc_manager.config.email_claim}, username_claim: {oidc_manager.config.username_claim}")
 
 
 def _get_current_config() -> dict:
@@ -2822,24 +2869,29 @@ async def update_config_section(
         for key, value in data.items():
             config_service.update_setting(section, key, value, skip_validation=True)
 
-        # Validate and save once after all updates
+        # Validate configuration
         config = config_service.get_config()
         config_service.config_manager.validate_config(config)
-        config_service.config_manager.save_config(config)
-        logger.info(f"Saved {section} configuration with {len(data)} settings")
 
-        # Hot reload OIDC configuration if OIDC section was updated
+        # For OIDC: test reload BEFORE saving to file
         if section == "oidc":
             try:
+                # Try to reload with new config (don't save yet)
                 await _reload_oidc_configuration()
-                logger.info("OIDC configuration reloaded successfully")
+                logger.info("OIDC configuration validated and reloaded successfully")
             except Exception as e:
+                # Reload failed - reload original config from file to restore working state
                 logger.error(f"Failed to reload OIDC configuration: {e}", exc_info=True)
+                config_service.load_config()  # Reload from file to undo in-memory changes
                 return _create_config_page_response(
                     request,
                     session,
-                    error_message=f"Configuration saved but failed to reload OIDC: {str(e)}",
+                    error_message=f"Invalid OIDC configuration: {str(e)}. Changes not saved.",
                 )
+
+        # Only save to file after validation and OIDC test (if applicable)
+        config_service.config_manager.save_config(config)
+        logger.info(f"Saved {section} configuration with {len(data)} settings")
 
         return _create_config_page_response(
             request,

@@ -33,14 +33,18 @@ class User(BaseModel):
     password_hash: str
     role: UserRole
     created_at: datetime
+    email: Optional[str] = None
 
     def to_dict(self) -> Dict[str, str]:
         """Convert user to dictionary (excludes password_hash)."""
-        return {
+        result = {
             "username": self.username,
             "role": self.role.value,
             "created_at": self.created_at.isoformat(),
         }
+        if self.email:
+            result["email"] = self.email
+        return result
 
     def has_permission(self, permission: str) -> bool:
         """
@@ -216,6 +220,7 @@ class UserManager:
             password_hash=user_data["password_hash"],
             role=UserRole(user_data["role"]),
             created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+            email=user_data.get("email"),
         )
 
     def get_user(self, username: str) -> Optional[User]:
@@ -240,6 +245,7 @@ class UserManager:
             password_hash=user_data["password_hash"],
             role=UserRole(user_data["role"]),
             created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+            email=user_data.get("email"),
         )
 
     def get_all_users(self) -> List[User]:
@@ -275,6 +281,7 @@ class UserManager:
                     created_at=DateTimeParser.parse_user_datetime(
                         user_data["created_at"]
                     ),
+                    email=user_data.get("email"),
                 )
                 users.append(user)
             except (KeyError, ValueError) as e:
@@ -397,7 +404,7 @@ class UserManager:
         self,
         username: str,
         new_username: Optional[str] = None,
-        new_email: Optional[str] = None,
+        **kwargs
     ) -> bool:
         """
         Update user's username or email.
@@ -405,7 +412,7 @@ class UserManager:
         Args:
             username: Current username
             new_username: New username (if changing)
-            new_email: New email (if changing)
+            **kwargs: Optional new_email to update or clear (None clears it)
 
         Returns:
             True if successful, False if user not found
@@ -433,12 +440,18 @@ class UserManager:
             # Update current username reference
             current_username = new_username
 
-        if new_email:
-            # Check for duplicate email
-            for user, data in users_data.items():
-                if user != current_username and data.get("email") == new_email:
-                    raise ValueError(f"Email already exists: {new_email}")
-            users_data[current_username]["email"] = new_email
+        # Update email if provided
+        if "new_email" in kwargs:
+            new_email = kwargs["new_email"]
+            if new_email:
+                # Setting a new email - check for duplicates
+                for user, data in users_data.items():
+                    if user != current_username and data.get("email") == new_email:
+                        raise ValueError(f"Email already exists: {new_email}")
+                users_data[current_username]["email"] = new_email
+            else:
+                # Clear email (None or empty string)
+                users_data[current_username].pop("email", None)
 
         self._save_users(users_data)
         return True
@@ -572,6 +585,7 @@ class UserManager:
                     created_at=DateTimeParser.parse_user_datetime(
                         user_data["created_at"]
                     ),
+                    email=user_data.get("email"),
                 )
 
         return None
@@ -598,6 +612,7 @@ class UserManager:
                     created_at=DateTimeParser.parse_user_datetime(
                         user_data["created_at"]
                     ),
+                    email=user_email,
                 )
 
         return None
@@ -686,4 +701,5 @@ class UserManager:
             password_hash=password_hash,
             role=role,
             created_at=created_at,
+            email=email,
         )
