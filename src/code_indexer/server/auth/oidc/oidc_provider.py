@@ -68,7 +68,7 @@ class OIDCProvider:
             "state": state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
-            "scope": "openid profile email",
+            "scope": " ".join(self.config.scopes),
         }
 
         # Build full authorization URL

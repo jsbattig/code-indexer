@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Add single OIDC provider support (e.g., Keycloak) to CIDX server for enterprise SSO integration. Simple "Sign in with SSO" button on login page with auto-redirect preference cookie. Email-based user matching and JIT provisioning defaulting to NORMAL_USER role. After OIDC authentication, use standard CIDX JWT sessions (no ongoing OIDC token validation).
+Add single OIDC provider support (e.g., Keycloak) to CIDX server for enterprise SSO integration. Simple "Sign in with SSO" button on login page. Email-based user matching and JIT provisioning defaulting to NORMAL_USER role. After OIDC authentication, use standard CIDX JWT sessions (no ongoing OIDC token validation).
 
 ## User Requirements (Confirmed)
 
@@ -10,7 +10,6 @@ Add single OIDC provider support (e.g., Keycloak) to CIDX server for enterprise 
 2. **Simple SSO Integration**: "Sign in with SSO" link on login page when enabled
 3. **JIT Provisioning**: Auto-create users with NORMAL_USER role by default
 4. **Email-Based Matching**: Auto-link external identities to existing users by verified email
-5. **SSO Preference Cookie**: Remember user's SSO choice for auto-redirect on subsequent visits
 
 ## Architecture Overview
 
@@ -26,7 +25,6 @@ Add single OIDC provider support (e.g., Keycloak) to CIDX server for enterprise 
 - Simple "Sign in with SSO" button on login page
 - Email-based auto-linking
 - JIT user provisioning
-- SSO preference cookie for auto-redirect
 
 ### Key Design Decisions
 
@@ -35,7 +33,6 @@ Add single OIDC provider support (e.g., Keycloak) to CIDX server for enterprise 
 3. **Identity Tracking**: Track external identities in SQLite for fast lookup, metadata in `users.json`
 4. **Provider Implementation**: Single generic `OIDCProvider` class (no provider-specific implementations)
 5. **Token Validation**: NO CHANGE to `dependencies.py` - uses existing JWT validation after sign-in
-6. **SSO Preference**: Cookie to remember user's SSO choice for auto-redirect
 
 **Simplified Flow**:
 ```
@@ -46,11 +43,8 @@ Add single OIDC provider support (e.g., Keycloak) to CIDX server for enterprise 
 5. Exchange code for tokens, extract user info
 6. Match or create user (email-based)
 7. Issue CIDX JWT session token (same as password login)
-8. Set cidx_session cookie + sso_preference cookie
+8. Set cidx_session cookie
 9. All subsequent requests → standard JWT validation
-
-Auto-redirect on subsequent visits:
-- If sso_preference cookie set → skip login page, redirect to SSO directly
 ```
 
 This matches standard OAuth practice: OIDC for authentication, internal JWT for sessions.
@@ -96,9 +90,6 @@ class OIDCProviderConfig:
     # JIT provisioning
     enable_jit_provisioning: bool = True
     default_role: str = "normal_user"
-
-    # SSO preference
-    enable_auto_redirect: bool = True  # Auto-redirect if sso_preference cookie set
 
 # Add to ServerConfig
 @dataclass
@@ -408,7 +399,7 @@ async def sso_callback(code: str, state: str, response: Response):
     3. Get user info from provider
     4. Match or create user (email-based)
     5. **Create CIDX JWT session token**
-    6. Set cidx_session cookie + sso_preference cookie
+    6. Set cidx_session cookie
     7. Redirect to dashboard
     """
 
@@ -441,17 +432,6 @@ async def sso_callback(code: str, state: str, response: Response):
         max_age=36000,  # 10 hours
     )
 
-    # Set SSO preference cookie for auto-redirect
-    if oidc_manager.config.enable_auto_redirect:
-        response.set_cookie(
-            key="sso_preference",
-            value="enabled",
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=2592000,  # 30 days
-        )
-
     return RedirectResponse(url=state_data.get("redirect_uri", "/admin"), status_code=302)
 ```
 
@@ -478,22 +458,14 @@ def get_current_user(
 - All existing endpoints work unchanged
 - Session management (expiration, refresh) already implemented
 
-#### 4.3 Login Page Auto-Redirect
+#### 4.3 Login Page Enhancement
 
-Update web login page to check SSO preference cookie:
+Update web login page to show SSO button:
 
 ```python
 @web_router.get("/login")
 async def login_page(request: Request):
     """Login page with SSO support."""
-
-    # Check SSO preference cookie
-    sso_preference = request.cookies.get("sso_preference")
-
-    if sso_preference == "enabled" and oidc_manager and oidc_manager.is_enabled():
-        if oidc_manager.config.enable_auto_redirect:
-            # Auto-redirect to SSO
-            return RedirectResponse(url="/auth/sso/login", status_code=302)
 
     # Show login page with SSO button
     return templates.TemplateResponse(
@@ -560,9 +532,7 @@ Features:
 
 Simple additions:
 - Show "Sign in with SSO" button (if configured)
-- Auto-redirect on subsequent visits (if sso_preference cookie set)
 - Existing username/password form remains
-- Clear SSO preference link (for manual login)
 
 ### Phase 6: Security & Auditing (Days 17-18)
 
@@ -657,8 +627,7 @@ tests/integration/server/auth/oidc/
     "use_pkce": true,
     "require_email_verification": true,
     "enable_jit_provisioning": true,
-    "default_role": "normal_user",
-    "enable_auto_redirect": true
+    "default_role": "normal_user"
   }
 }
 ```
@@ -680,7 +649,7 @@ tests/integration/server/auth/oidc/
 - `src/code_indexer/server/auth/user_manager.py` - Add OIDC identity methods
 - `src/code_indexer/server/auth/audit_logger.py` - Add OIDC audit events
 - `src/code_indexer/server/app.py` - Initialize manager, register routes
-- `src/code_indexer/server/web/routes.py` - Add SSO button to login page, auto-redirect logic
+- `src/code_indexer/server/web/routes.py` - Add SSO button to login page
 
 **NOT Modified**:
 - `src/code_indexer/server/auth/dependencies.py` - No changes! JWT validation already works for OIDC users
@@ -771,7 +740,6 @@ tests/integration/server/auth/oidc/
 
 **Web UI Integration**:
 - Login page with "Sign in with SSO" button (login.html:40-48)
-- SSO preference cookie auto-redirect logic (routes.py:133-153)
 - CSS styling for SSO button and divider (admin.css)
 
 **App Integration** (app.py:1798-1837):
@@ -787,32 +755,25 @@ tests/integration/server/auth/oidc/
 
 ### Critical Gaps Requiring Fixes
 
-**1. SSO Preference Cookie Not Set** (HIGH PRIORITY)
-- **Location**: routes.py:95 (sso_callback function)
-- **Issue**: Callback only sets `cidx_session` cookie, missing `sso_preference` cookie
-- **Expected**: Should set sso_preference=enabled cookie for auto-redirect feature
-- **Plan Reference**: Lines 444-454 specify both cookies should be set
-- **Impact**: Auto-redirect on subsequent logins won't work
-
-**2. Database Schema Not Initialized** (HIGH PRIORITY)
+**1. Database Schema Not Initialized** (HIGH PRIORITY)
 - **Location**: oidc_manager.py:15-20 (initialize method)
 - **Issue**: `_init_db()` method exists (line 32) but never called
 - **Expected**: `initialize()` should call `await self._init_db()`
 - **Impact**: OIDC identity links table never created, first login will fail
 
-**3. HTTP Error Handling Missing** (MEDIUM PRIORITY)
+**2. HTTP Error Handling Missing** (MEDIUM PRIORITY)
 - **Location**: oidc_provider.py (discover_metadata, exchange_code_for_token, get_user_info)
 - **Issue**: No error handling for HTTP failures (4xx, 5xx responses)
 - **Expected**: Proper exception handling with meaningful error messages
 - **Impact**: Cryptic errors on provider failures, poor UX
 
-**4. Token Exchange Response Validation Missing** (MEDIUM PRIORITY)
+**3. Token Exchange Response Validation Missing** (MEDIUM PRIORITY)
 - **Location**: oidc_provider.py:83 (exchange_code_for_token)
 - **Issue**: No validation that response contains required fields (access_token, id_token)
 - **Expected**: Validate response structure, handle missing fields
 - **Impact**: KeyError exceptions on malformed provider responses
 
-**5. Userinfo Response Validation Missing** (MEDIUM PRIORITY)
+**4. Userinfo Response Validation Missing** (MEDIUM PRIORITY)
 - **Location**: oidc_provider.py:104 (get_user_info)
 - **Issue**: No validation of required claims (sub, email_verified)
 - **Expected**: Validate required claims exist, handle missing fields gracefully
@@ -858,9 +819,8 @@ tests/integration/server/auth/oidc/
 
 ### Phase 1: Bug Fixes (Critical)
 1. Add `await self._init_db()` to `oidc_manager.initialize()`
-2. Set `sso_preference` cookie in `routes.sso_callback()`
-3. Add HTTP error handling to all provider methods
-4. Add response validation for token exchange and userinfo
+2. Add HTTP error handling to all provider methods
+3. Add response validation for token exchange and userinfo
 
 ### Phase 2: Integration Testing
 1. Set up test OIDC provider (Keycloak or mock)

@@ -161,6 +161,61 @@ class TestOIDCProvider:
         assert "scope=" in auth_url
 
     @pytest.mark.asyncio
+    async def test_get_authorization_url_uses_default_scopes(self):
+        """Test that get_authorization_url uses default scopes from config."""
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCMetadata,
+        )
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+
+        config = OIDCProviderConfig(
+            enabled=True,
+            provider_name="TestSSO",
+            issuer_url="https://example.com",
+        )
+
+        provider = OIDCProvider(config)
+        provider._metadata = OIDCMetadata(
+            issuer="https://example.com",
+            authorization_endpoint="https://example.com/authorize",
+            token_endpoint="https://example.com/token",
+        )
+
+        auth_url = provider.get_authorization_url("state", "https://callback", "challenge")
+
+        # Verify default scopes are used
+        assert "scope=openid+profile+email" in auth_url
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_url_uses_custom_scopes(self):
+        """Test that get_authorization_url uses custom scopes from config."""
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCMetadata,
+        )
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+
+        config = OIDCProviderConfig(
+            enabled=True,
+            provider_name="TestSSO",
+            issuer_url="https://example.com",
+            scopes=["openid", "profile", "email", "groups"],
+        )
+
+        provider = OIDCProvider(config)
+        provider._metadata = OIDCMetadata(
+            issuer="https://example.com",
+            authorization_endpoint="https://example.com/authorize",
+            token_endpoint="https://example.com/token",
+        )
+
+        auth_url = provider.get_authorization_url("state", "https://callback", "challenge")
+
+        # Verify custom scopes are used
+        assert "scope=openid+profile+email+groups" in auth_url
+
+    @pytest.mark.asyncio
     async def test_exchange_code_for_token_returns_tokens(self, monkeypatch):
         """Test that exchange_code_for_token exchanges authorization code for tokens."""
         from code_indexer.server.auth.oidc.oidc_provider import (
