@@ -130,6 +130,60 @@ COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
     "repos": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
     # System health commands - remote only since they check server-side system health
     "system": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
+    # Repository configuration commands - local only since they manage local .code-indexer/config.json
+    "config": {
+        "local": True,
+        "remote": False,
+        "proxy": False,
+        "uninitialized": False,
+    },  # Manage local repository configuration
+    # Collection management commands - work in both local and remote modes
+    "list-collections": {
+        "local": True,
+        "remote": True,
+        "proxy": False,
+        "uninitialized": False,
+    },  # List collections with metadata
+    # SCIP code intelligence commands - local only since they generate and query local SCIP indexes
+    "scip": {
+        "local": True,
+        "remote": False,
+        "proxy": False,
+        "uninitialized": False,
+    },  # SCIP index generation and code navigation
+    # Global repository commands - local only since they manage ~/.code-indexer/golden-repos
+    "global": {
+        "local": True,
+        "remote": False,
+        "proxy": False,
+        "uninitialized": False,
+    },  # Manage global repository activations
+    "set-global-refresh": {
+        "local": True,
+        "remote": False,
+        "proxy": False,
+        "uninitialized": False,
+    },  # Set global repo refresh interval
+    "show-global": {
+        "local": True,
+        "remote": False,
+        "proxy": False,
+        "uninitialized": False,
+    },  # Show global repository configuration
+    # SSH key management commands - local only since they manage ~/.ssh/ keys
+    "ssh-key": {
+        "local": True,
+        "remote": False,
+        "proxy": False,
+        "uninitialized": False,
+    },  # Manage SSH keys for private repositories
+    # Watch mode commands - local only since they control local daemon watch mode
+    "watch-stop": {
+        "local": True,
+        "remote": False,
+        "proxy": False,
+        "uninitialized": False,
+    },  # Stop watch mode in daemon
 }
 
 # Command alternatives mapping for helpful error messages
