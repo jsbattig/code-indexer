@@ -3,6 +3,7 @@
 Tests the integration between OAuth authorization flow and OIDC authentication,
 including the SSO button on authorization form and the /oauth/authorize/sso endpoint.
 """
+
 import pytest
 from pathlib import Path
 import tempfile
@@ -42,7 +43,9 @@ class TestOAuthAuthorizeViaSSO:
         from code_indexer.server.auth.oauth.oauth_manager import OAuthManager
 
         # Create test OAuth manager
-        test_oauth_manager = OAuthManager(db_path=temp_dirs["oauth_db"], issuer="http://localhost:8000")
+        test_oauth_manager = OAuthManager(
+            db_path=temp_dirs["oauth_db"], issuer="http://localhost:8000"
+        )
 
         app = FastAPI()
         app.include_router(oauth_router)
@@ -124,22 +127,24 @@ class TestOAuthAuthorizeViaSSO:
             oidc_routes.oidc_manager = mock_oidc_manager
 
             response = client.get(
-                    "/oauth/authorize/sso",
-                    params={
-                        "client_id": "invalid-client-id",
-                        "redirect_uri": "http://localhost:3000/callback",
-                        "response_type": "code",
-                        "code_challenge": code_challenge,
-                        "state": "test_state",
-                    },
-                )
+                "/oauth/authorize/sso",
+                params={
+                    "client_id": "invalid-client-id",
+                    "redirect_uri": "http://localhost:3000/callback",
+                    "response_type": "code",
+                    "code_challenge": code_challenge,
+                    "state": "test_state",
+                },
+            )
 
             assert response.status_code == 401
 
         finally:
             oidc_routes.oidc_manager = original_oidc_manager
 
-    def test_authorize_sso_validates_redirect_uri(self, test_app, registered_client, pkce_pair):
+    def test_authorize_sso_validates_redirect_uri(
+        self, test_app, registered_client, pkce_pair
+    ):
         """Test that /oauth/authorize/sso validates redirect_uri matches registered URIs."""
         from code_indexer.server.auth.oidc import routes as oidc_routes
 
@@ -158,15 +163,15 @@ class TestOAuthAuthorizeViaSSO:
             oidc_routes.oidc_manager = mock_oidc_manager
 
             response = client.get(
-                    "/oauth/authorize/sso",
-                    params={
-                        "client_id": registered_client["client_id"],
-                        "redirect_uri": "http://evil.com/callback",  # Not registered
-                        "response_type": "code",
-                        "code_challenge": code_challenge,
-                        "state": "test_state",
-                    },
-                )
+                "/oauth/authorize/sso",
+                params={
+                    "client_id": registered_client["client_id"],
+                    "redirect_uri": "http://evil.com/callback",  # Not registered
+                    "response_type": "code",
+                    "code_challenge": code_challenge,
+                    "state": "test_state",
+                },
+            )
 
             assert response.status_code == 400
             assert "Invalid redirect_uri" in response.text
@@ -174,9 +179,7 @@ class TestOAuthAuthorizeViaSSO:
         finally:
             oidc_routes.oidc_manager = original_oidc_manager
 
-    def test_authorize_sso_requires_pkce(
-        self, test_app, registered_client
-    ):
+    def test_authorize_sso_requires_pkce(self, test_app, registered_client):
         """Test that /oauth/authorize/sso requires PKCE code_challenge."""
         from code_indexer.server.auth.oidc import routes as oidc_routes
 
@@ -208,7 +211,9 @@ class TestOAuthAuthorizeViaSSO:
         finally:
             oidc_routes.oidc_manager = original_oidc_manager
 
-    def test_authorize_sso_initializes_oidc_provider(self, test_app, registered_client, pkce_pair):
+    def test_authorize_sso_initializes_oidc_provider(
+        self, test_app, registered_client, pkce_pair
+    ):
         """Test that /oauth/authorize/sso initializes OIDC provider before use."""
         from code_indexer.server.auth.oidc import routes as oidc_routes
         from code_indexer.server.auth.oidc.state_manager import StateManager
@@ -223,14 +228,18 @@ class TestOAuthAuthorizeViaSSO:
 
         # Mock provider
         mock_provider = MagicMock()
-        mock_provider.get_authorization_url.return_value = "http://oidc.example.com/authorize?state=abc"
+        mock_provider.get_authorization_url.return_value = (
+            "http://oidc.example.com/authorize?state=abc"
+        )
         mock_oidc_manager.provider = mock_provider
 
         original_oidc_manager = oidc_routes.oidc_manager
         original_state_manager = oidc_routes.state_manager
         try:
             oidc_routes.oidc_manager = mock_oidc_manager
-            oidc_routes.state_manager = StateManager()  # Need real state manager for state creation
+            oidc_routes.state_manager = (
+                StateManager()
+            )  # Need real state manager for state creation
 
             response = client.get(
                 "/oauth/authorize/sso",
@@ -255,7 +264,9 @@ class TestOAuthAuthorizeViaSSO:
             oidc_routes.oidc_manager = original_oidc_manager
             oidc_routes.state_manager = original_state_manager
 
-    def test_authorize_sso_handles_provider_initialization_error(self, test_app, registered_client, pkce_pair):
+    def test_authorize_sso_handles_provider_initialization_error(
+        self, test_app, registered_client, pkce_pair
+    ):
         """Test that /oauth/authorize/sso handles OIDC provider initialization errors."""
         from code_indexer.server.auth.oidc import routes as oidc_routes
 
@@ -289,5 +300,3 @@ class TestOAuthAuthorizeViaSSO:
 
         finally:
             oidc_routes.oidc_manager = original_oidc_manager
-
-

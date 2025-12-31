@@ -74,7 +74,8 @@ async def sso_callback(code: str, state: str, request: Request):
     if not state_data:
         # Try oauth state manager if available
         from code_indexer.server.auth import dependencies
-        if hasattr(dependencies, 'oidc_state_manager'):
+
+        if hasattr(dependencies, "oidc_state_manager"):
             state_data = dependencies.oidc_state_manager.validate_state(state)
 
         if not state_data:
@@ -84,7 +85,9 @@ async def sso_callback(code: str, state: str, request: Request):
     callback_url = str(request.url_for("sso_callback"))
 
     # Use appropriate code_verifier based on flow type
-    code_verifier = state_data.get("oidc_code_verifier") or state_data.get("code_verifier")
+    code_verifier = state_data.get("oidc_code_verifier") or state_data.get(
+        "code_verifier"
+    )
 
     tokens = await oidc_manager.provider.exchange_code_for_token(
         code, code_verifier, callback_url

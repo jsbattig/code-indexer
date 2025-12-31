@@ -218,9 +218,10 @@ async def get_authorize_form(
 
     # Check if OIDC is enabled
     from code_indexer.server.auth.oidc import routes as oidc_routes
+
     oidc_enabled = False
     oidc_provider_name = "SSO"
-    if oidc_routes.oidc_manager and hasattr(oidc_routes.oidc_manager, 'is_enabled'):
+    if oidc_routes.oidc_manager and hasattr(oidc_routes.oidc_manager, "is_enabled"):
         oidc_enabled = oidc_routes.oidc_manager.is_enabled()
 
     # Build SSO button HTML if OIDC enabled
@@ -325,7 +326,7 @@ async def oauth_authorize_via_sso(
     if not oidc_routes.oidc_manager or not oidc_routes.oidc_manager.is_enabled():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="SSO authentication not configured"
+            detail="SSO authentication not configured",
         )
 
     # Lazily initialize OIDC provider (discovers metadata)
@@ -333,18 +334,19 @@ async def oauth_authorize_via_sso(
         await oidc_routes.oidc_manager.ensure_provider_initialized()
     except Exception as e:
         import logging
+
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to initialize OIDC provider: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="SSO provider is currently unavailable. Please try again later or contact administrator."
+            detail="SSO provider is currently unavailable. Please try again later or contact administrator.",
         )
 
     # Validate OAuth parameters
     if response_type != "code":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid response_type. Must be 'code'"
+            detail="Invalid response_type. Must be 'code'",
         )
 
     # Validate client_id exists
@@ -361,19 +363,19 @@ async def oauth_authorize_via_sso(
     # Validate redirect_uri
     if redirect_uri not in client["redirect_uris"]:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid redirect_uri"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid redirect_uri"
         )
 
     # Validate PKCE
     if not code_challenge:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="code_challenge required (PKCE)"
+            detail="code_challenge required (PKCE)",
         )
 
     # Create OIDC state containing OAuth parameters
     from code_indexer.server.auth.oidc.state_manager import StateManager
+
     state_manager = StateManager()
 
     oauth_state_data = {
@@ -387,7 +389,7 @@ async def oauth_authorize_via_sso(
     oidc_state = state_manager.create_state(oauth_state_data)
 
     # Store state manager in dependencies for callback handler
-    if not hasattr(dependencies, 'oidc_state_manager'):
+    if not hasattr(dependencies, "oidc_state_manager"):
         dependencies.oidc_state_manager = state_manager
 
     # Build OIDC authorization URL
@@ -402,9 +404,11 @@ async def oauth_authorize_via_sso(
     import base64
 
     code_verifier = secrets.token_urlsafe(32)
-    code_challenge_oidc = base64.urlsafe_b64encode(
-        hashlib.sha256(code_verifier.encode()).digest()
-    ).decode().rstrip('=')
+    code_challenge_oidc = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .decode()
+        .rstrip("=")
+    )
 
     # Store code_verifier in state for callback
     oauth_state_data["oidc_code_verifier"] = code_verifier
@@ -412,9 +416,7 @@ async def oauth_authorize_via_sso(
 
     # Build OIDC authorization URL
     auth_url = oidc_provider.get_authorization_url(
-        state=oidc_state,
-        redirect_uri=callback_url,
-        code_challenge=code_challenge_oidc
+        state=oidc_state, redirect_uri=callback_url, code_challenge=code_challenge_oidc
     )
 
     return RedirectResponse(url=auth_url)
