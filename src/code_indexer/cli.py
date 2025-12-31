@@ -9927,10 +9927,23 @@ def server_auto_update_status(ctx):
     Shows timer status, last run time, and deployment result.
     """
     try:
+        import subprocess
         from pathlib import Path
 
-        # Repository path (from environment or default)
-        CIDX_SERVER_REPO_PATH = Path(os.environ.get("CIDX_SERVER_REPO_PATH", "/home/sebabattig/cidx-server"))
+        # Repository path - try to detect from current directory or environment
+        repo_path_str = os.environ.get("CIDX_SERVER_REPO_PATH")
+        if not repo_path_str:
+            try:
+                repo_path_str = subprocess.check_output(
+                    ["git", "rev-parse", "--show-toplevel"],
+                    cwd=Path.cwd(),
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+            except subprocess.CalledProcessError:
+                repo_path_str = str(Path.cwd().resolve())
+
+        CIDX_SERVER_REPO_PATH = Path(repo_path_str)
 
         console.print()
         console.print("Auto-Update Service Status", style="cyan bold")
