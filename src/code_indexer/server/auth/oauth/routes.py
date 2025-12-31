@@ -198,6 +198,7 @@ async def get_authorize_form(
     response_type: str,
     state: str,
     manager: OAuthManager = Depends(get_oauth_manager),
+    request: Request = None,
 ):
     """GET /oauth/authorize - Returns HTML login form for browser-based OAuth flow.
 
@@ -214,6 +215,26 @@ async def get_authorize_form(
                 "error_description": "Client ID not found",
             },
         )
+
+    # Check if OIDC is enabled
+    from code_indexer.server.auth.oidc import routes as oidc_routes
+    oidc_enabled = False
+    oidc_provider_name = "SSO"
+    if oidc_routes.oidc_manager and hasattr(oidc_routes.oidc_manager, 'is_enabled'):
+        oidc_enabled = oidc_routes.oidc_manager.is_enabled()
+
+    # Build SSO button HTML if OIDC enabled
+    sso_button_html = ""
+    sso_divider_html = ""
+    if oidc_enabled:
+        sso_button_html = f"""
+        <button type="button" class="sso-button" onclick="redirectToSSO()">
+            Sign in with {oidc_provider_name}
+        </button>"""
+        sso_divider_html = """
+        <div class="divider">
+            <span>or</span>
+        </div>"""
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -237,13 +258,34 @@ async def get_authorize_form(
                   border: none; border-radius: 5px; font-size: 16px; font-weight: 600;
                   cursor: pointer; margin-top: 10px; }}
         button:hover {{ background: #5568d3; }}
+        .sso-button {{ background: #4CAF50; margin-bottom: 10px; }}
+        .sso-button:hover {{ background: #45a049; }}
+        .divider {{ text-align: center; margin: 20px 0; position: relative; }}
+        .divider:before {{ content: ''; position: absolute; top: 50%; left: 0; right: 0;
+                          height: 1px; background: #ddd; }}
+        .divider span {{ background: white; padding: 0 10px; position: relative;
+                        color: #999; font-size: 14px; }}
         .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #999; }}
     </style>
+    <script>
+        function redirectToSSO() {{
+            const params = new URLSearchParams({{
+                client_id: '{client_id}',
+                redirect_uri: '{redirect_uri}',
+                code_challenge: '{code_challenge}',
+                response_type: '{response_type}',
+                state: '{state}'
+            }});
+            window.location.href = '/oauth/authorize/sso?' + params.toString();
+        }}
+    </script>
 </head>
 <body>
     <div class="container">
         <h2>CIDX Authorization</h2>
         <p>CIDX Server is requesting access to your account</p>
+        {sso_button_html}
+        {sso_divider_html}
         <form method="post" action="/oauth/authorize">
             <input type="hidden" name="client_id" value="{client_id}">
             <input type="hidden" name="redirect_uri" value="{redirect_uri}">
@@ -259,6 +301,123 @@ async def get_authorize_form(
 </body>
 </html>"""
     return HTMLResponse(content=html)
+
+
+@router.get("/authorize/sso")
+async def oauth_authorize_via_sso(
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    response_type: str,
+    state: str,
+    manager: OAuthManager = Depends(get_oauth_manager),
+):
+    """Initiate OIDC flow for OAuth authorization.
+
+    Preserves OAuth parameters through OIDC authentication flow.
+    After OIDC completes, issues OAuth authorization code and redirects
+    back to OAuth client (Claude Code).
+    """
+    from code_indexer.server.auth.oidc import routes as oidc_routes
+    from code_indexer.server.auth import dependencies
+
+    # Check if OIDC is enabled
+    if not oidc_routes.oidc_manager or not oidc_routes.oidc_manager.is_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="SSO authentication not configured"
+        )
+
+    # Lazily initialize OIDC provider (discovers metadata)
+    try:
+        await oidc_routes.oidc_manager.ensure_provider_initialized()
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to initialize OIDC provider: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SSO provider is currently unavailable. Please try again later or contact administrator."
+        )
+
+    # Validate OAuth parameters
+    if response_type != "code":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid response_type. Must be 'code'"
+        )
+
+    # Validate client_id exists
+    client = manager.get_client(client_id)
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error": "invalid_client",
+                "error_description": "Client ID not found",
+            },
+        )
+
+    # Validate redirect_uri
+    if redirect_uri not in client["redirect_uris"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid redirect_uri"
+        )
+
+    # Validate PKCE
+    if not code_challenge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="code_challenge required (PKCE)"
+        )
+
+    # Create OIDC state containing OAuth parameters
+    from code_indexer.server.auth.oidc.state_manager import StateManager
+    state_manager = StateManager()
+
+    oauth_state_data = {
+        "flow": "oauth_authorize",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "code_challenge": code_challenge,
+        "oauth_state": state,  # Preserve OAuth client's state
+    }
+
+    oidc_state = state_manager.create_state(oauth_state_data)
+
+    # Store state manager in dependencies for callback handler
+    if not hasattr(dependencies, 'oidc_state_manager'):
+        dependencies.oidc_state_manager = state_manager
+
+    # Build OIDC authorization URL
+    oidc_provider = oidc_routes.oidc_manager.provider
+
+    # Get callback URL (hardcoded to /auth/sso/callback)
+    callback_url = f"{manager.issuer}/auth/sso/callback"
+
+    # Generate PKCE for OIDC flow
+    import secrets
+    import hashlib
+    import base64
+
+    code_verifier = secrets.token_urlsafe(32)
+    code_challenge_oidc = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).decode().rstrip('=')
+
+    # Store code_verifier in state for callback
+    oauth_state_data["oidc_code_verifier"] = code_verifier
+    dependencies.oidc_state_manager._states[oidc_state]["data"] = oauth_state_data
+
+    # Build OIDC authorization URL
+    auth_url = oidc_provider.get_authorization_url(
+        state=oidc_state,
+        redirect_uri=callback_url,
+        code_challenge=code_challenge_oidc
+    )
+
+    return RedirectResponse(url=auth_url)
 
 
 @router.post("/authorize")
