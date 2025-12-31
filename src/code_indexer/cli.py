@@ -9685,6 +9685,256 @@ def server_list_indexes(ctx, alias: str, json_output: bool):
         sys.exit(1)
 
 
+@server_group.command("install-auto-update")
+@click.pass_context
+def server_install_auto_update(ctx):
+    """Install and enable auto-update service for CIDX server.
+
+    Installs systemd service and timer that automatically deploys
+    updates when changes are pushed to the master branch.
+    """
+    try:
+        import subprocess
+        from pathlib import Path
+
+        # Get template directory
+        template_dir = Path(__file__).parent / "server" / "auto_update" / "templates"
+
+        if not template_dir.exists():
+            console.print(f"❌ Error: Template directory not found: {template_dir}", style="red")
+            sys.exit(1)
+
+        service_file = template_dir / "cidx-auto-update.service"
+        timer_file = template_dir / "cidx-auto-update.timer"
+
+        if not service_file.exists() or not timer_file.exists():
+            console.print("❌ Error: Service/timer templates not found", style="red")
+            sys.exit(1)
+
+        # Copy service and timer files to systemd directory
+        console.print("Installing systemd service and timer files...", style="cyan")
+
+        subprocess.run(
+            ["sudo", "cp", str(service_file), "/etc/systemd/system/"],
+            check=True,
+        )
+        subprocess.run(
+            ["sudo", "cp", str(timer_file), "/etc/systemd/system/"],
+            check=True,
+        )
+
+        # Reload systemd daemon
+        console.print("Reloading systemd daemon...", style="cyan")
+        subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
+
+        # Enable and start timer
+        console.print("Enabling and starting auto-update timer...", style="cyan")
+        subprocess.run(
+            ["sudo", "systemctl", "enable", "cidx-auto-update.timer"],
+            check=True,
+        )
+        subprocess.run(
+            ["sudo", "systemctl", "start", "cidx-auto-update.timer"],
+            check=True,
+        )
+
+        console.print()
+        console.print("✅ Auto-update service installed and enabled", style="green bold")
+        console.print()
+        console.print("The service will check for updates every 60 seconds.", style="dim")
+        console.print("Use 'cidx server auto-update-status' to check status.", style="dim")
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"❌ Error: Installation failed: {e}", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        sys.exit(1)
+
+
+@server_group.command("uninstall-auto-update")
+@click.pass_context
+def server_uninstall_auto_update(ctx):
+    """Uninstall and disable auto-update service for CIDX server.
+
+    Stops and disables the systemd timer, removes service files.
+    """
+    try:
+        import subprocess
+
+        # Stop and disable timer
+        console.print("Stopping and disabling auto-update timer...", style="cyan")
+        subprocess.run(
+            ["sudo", "systemctl", "stop", "cidx-auto-update.timer"],
+            check=False,  # Don't fail if not running
+        )
+        subprocess.run(
+            ["sudo", "systemctl", "disable", "cidx-auto-update.timer"],
+            check=False,  # Don't fail if not enabled
+        )
+
+        # Remove service files
+        console.print("Removing systemd service files...", style="cyan")
+        subprocess.run(
+            ["sudo", "rm", "-f", "/etc/systemd/system/cidx-auto-update.service"],
+            check=True,
+        )
+        subprocess.run(
+            ["sudo", "rm", "-f", "/etc/systemd/system/cidx-auto-update.timer"],
+            check=True,
+        )
+
+        # Reload systemd daemon
+        console.print("Reloading systemd daemon...", style="cyan")
+        subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
+
+        console.print()
+        console.print("✅ Auto-update service removed", style="green bold")
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"❌ Error: Uninstallation failed: {e}", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        sys.exit(1)
+
+
+def _get_auto_update_timer_info():
+    """Get timer status information."""
+    import subprocess
+
+    result = subprocess.run(
+        ["systemctl", "is-active", "cidx-auto-update.timer"],
+        capture_output=True,
+        text=True,
+    )
+    timer_active = result.stdout.strip() == "active"
+    return {
+        "active": timer_active,
+        "status": "active" if timer_active else "inactive",
+        "style": "green" if timer_active else "red",
+    }
+
+
+def _get_auto_update_last_run():
+    """Get last run timestamp."""
+    import subprocess
+
+    result = subprocess.run(
+        ["systemctl", "show", "cidx-auto-update.service", "--property=ExecMainExitTimestamp"],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip().split("=", 1)[1] if "=" in result.stdout else "Never"
+
+
+def _get_auto_update_last_result():
+    """Get last deployment result."""
+    import subprocess
+
+    result = subprocess.run(
+        ["systemctl", "show", "cidx-auto-update.service", "--property=Result"],
+        capture_output=True,
+        text=True,
+    )
+    last_result = result.stdout.strip().split("=", 1)[1] if "=" in result.stdout else "unknown"
+    result_style = "green" if last_result == "success" else "red" if last_result == "failed" else "dim"
+    return {"result": last_result, "style": result_style}
+
+
+def _get_repository_status(repo_path):
+    """Get git repository status."""
+    import subprocess
+    from pathlib import Path
+
+    if not repo_path.exists():
+        return {"error": f"Repository not found: {repo_path}"}
+
+    # Get local ref
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    local_ref = result.stdout.strip()[:8] if result.returncode == 0 else "unknown"
+
+    # Get remote ref
+    result = subprocess.run(
+        ["git", "rev-parse", "origin/master"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    remote_ref = result.stdout.strip()[:8] if result.returncode == 0 else "unknown"
+
+    # Determine status
+    if local_ref != "unknown" and remote_ref != "unknown":
+        up_to_date = local_ref == remote_ref
+        status = "up to date" if up_to_date else "behind remote"
+        status_style = "green" if up_to_date else "yellow"
+    else:
+        status = "unknown"
+        status_style = "dim"
+
+    return {
+        "local_ref": local_ref,
+        "remote_ref": remote_ref,
+        "status": status,
+        "style": status_style,
+    }
+
+
+@server_group.command("auto-update-status")
+@click.pass_context
+def server_auto_update_status(ctx):
+    """Check status of auto-update service.
+
+    Shows timer status, last run time, and deployment result.
+    """
+    try:
+        from pathlib import Path
+
+        # Repository path (from environment or default)
+        CIDX_SERVER_REPO_PATH = Path(os.environ.get("CIDX_SERVER_REPO_PATH", "/home/sebabattig/cidx-server"))
+
+        console.print()
+        console.print("Auto-Update Service Status", style="cyan bold")
+        console.print("=" * 50, style="dim")
+        console.print()
+
+        # Timer status
+        timer_info = _get_auto_update_timer_info()
+        console.print(f"Timer Status: {timer_info['status']}", style=timer_info['style'])
+
+        # Last run
+        last_run = _get_auto_update_last_run()
+        console.print(f"Last Run: {last_run}", style="white")
+
+        # Last result
+        result_info = _get_auto_update_last_result()
+        console.print(f"Last Result: {result_info['result']}", style=result_info['style'])
+
+        # Repository status
+        console.print()
+        console.print("Repository Status", style="cyan bold")
+        console.print("-" * 50, style="dim")
+
+        repo_status = _get_repository_status(CIDX_SERVER_REPO_PATH)
+        if "error" in repo_status:
+            console.print(repo_status["error"], style="red")
+        else:
+            console.print(f"Local commit: {repo_status['local_ref']}", style="white")
+            console.print(f"Remote commit: {repo_status['remote_ref']}", style="white")
+            console.print(f"Status: {repo_status['status']}", style=repo_status['style'])
+
+        console.print()
+
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        sys.exit(1)
+
+
 # SSH Key Management commands
 @cli.group("ssh-key")
 @click.pass_context

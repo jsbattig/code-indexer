@@ -1,0 +1,20 @@
+[Unit]
+Description=CIDX Auto-Update Service
+Documentation=https://github.com/jsbattig/code-indexer
+After=network.target
+
+[Service]
+Type=oneshot
+User=sebabattig
+Environment="CIDX_SERVER_REPO_PATH=/home/sebabattig/cidx-server"
+ExecStart=/usr/bin/python3 -m code_indexer.server.auto_update.run_once
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cidx-auto-update
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

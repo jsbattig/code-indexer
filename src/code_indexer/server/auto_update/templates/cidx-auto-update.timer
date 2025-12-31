@@ -1,0 +1,13 @@
+[Unit]
+Description=CIDX Auto-Update Timer
+Documentation=https://github.com/jsbattig/code-indexer
+Requires=cidx-auto-update.service
+
+[Timer]
+# Run every 60 seconds
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
