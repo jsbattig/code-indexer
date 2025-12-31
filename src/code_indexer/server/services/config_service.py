@@ -143,7 +143,9 @@ class ConfigService:
 
         return settings
 
-    def update_setting(self, category: str, key: str, value: Any, skip_validation: bool = False) -> None:
+    def update_setting(
+        self, category: str, key: str, value: Any, skip_validation: bool = False
+    ) -> None:
         """
         Update a single setting.
 
@@ -182,7 +184,12 @@ class ConfigService:
             logger.info("Updated setting %s.%s to %s", category, key, value)
         else:
             # Just update in memory, don't validate or save yet
-            logger.debug("Updated setting %s.%s to %s (validation deferred)", category, key, value)
+            logger.debug(
+                "Updated setting %s.%s to %s (validation deferred)",
+                category,
+                key,
+                value,
+            )
 
     def _update_server_setting(
         self, config: ServerConfig, key: str, value: Any
@@ -296,9 +303,7 @@ class ConfigService:
         else:
             raise ValueError(f"Unknown claude_cli setting: {key}")
 
-    def _update_oidc_setting(
-        self, config: ServerConfig, key: str, value: Any
-    ) -> None:
+    def _update_oidc_setting(self, config: ServerConfig, key: str, value: Any) -> None:
         """Update an OIDC setting."""
         oidc = config.oidc_provider_config
         if key == "enabled":
@@ -315,7 +320,9 @@ class ConfigService:
                 oidc.client_secret = str(value)
         elif key == "scopes":
             # Convert space-separated string to list
-            oidc.scopes = str(value).split() if value else ["openid", "profile", "email"]
+            oidc.scopes = (
+                str(value).split() if value else ["openid", "profile", "email"]
+            )
         elif key == "email_claim":
             oidc.email_claim = str(value)
         elif key == "username_claim":

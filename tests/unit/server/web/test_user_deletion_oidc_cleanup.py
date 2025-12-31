@@ -1,8 +1,8 @@
 """Tests for OIDC link cleanup during user deletion."""
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock
 import aiosqlite
-from pathlib import Path
 
 
 class TestUserDeletionOIDCCleanup:
@@ -34,14 +34,19 @@ class TestUserDeletionOIDCCleanup:
         async with aiosqlite.connect(str(db_path)) as db:
             await db.execute(
                 "INSERT INTO oidc_identity_links (subject, username, email, linked_at) VALUES (?, ?, ?, ?)",
-                ("test-subject-123", "testuser", "test@example.com", datetime.now(timezone.utc).isoformat())
+                (
+                    "test-subject-123",
+                    "testuser",
+                    "test@example.com",
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             await db.commit()
 
             # Verify link exists
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM oidc_identity_links WHERE username = ?",
-                ("testuser",)
+                ("testuser",),
             )
             count = (await cursor.fetchone())[0]
             assert count == 1, "OIDC link should exist before deletion"
@@ -61,7 +66,7 @@ class TestUserDeletionOIDCCleanup:
                 async with aiosqlite.connect(oidc_routes.oidc_manager.db_path) as db:
                     await db.execute(
                         "DELETE FROM oidc_identity_links WHERE username = ?",
-                        ("testuser",)
+                        ("testuser",),
                     )
                     await db.commit()
 
@@ -69,7 +74,7 @@ class TestUserDeletionOIDCCleanup:
             async with aiosqlite.connect(str(db_path)) as db:
                 cursor = await db.execute(
                     "SELECT COUNT(*) FROM oidc_identity_links WHERE username = ?",
-                    ("testuser",)
+                    ("testuser",),
                 )
                 count = (await cursor.fetchone())[0]
                 assert count == 0, "OIDC link should be deleted after user deletion"
@@ -113,7 +118,7 @@ class TestUserDeletionOIDCCleanup:
                 async with aiosqlite.connect(oidc_routes.oidc_manager.db_path) as db:
                     await db.execute(
                         "DELETE FROM oidc_identity_links WHERE username = ?",
-                        ("nonexistent_user",)
+                        ("nonexistent_user",),
                     )
                     await db.commit()
 

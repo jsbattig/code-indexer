@@ -39,9 +39,14 @@ class OIDCManager:
 
                 # Success - now we can set self.provider
                 self.provider = provider
-                logger.info(f"OIDC provider initialized successfully: {self.config.provider_name}")
+                logger.info(
+                    f"OIDC provider initialized successfully: {self.config.provider_name}"
+                )
             except Exception as e:
-                logger.error(f"Failed to initialize OIDC provider {self.config.provider_name}: {e}", exc_info=True)
+                logger.error(
+                    f"Failed to initialize OIDC provider {self.config.provider_name}: {e}",
+                    exc_info=True,
+                )
                 # Don't set self.provider - leave it None so we can retry
                 raise
 
@@ -50,17 +55,20 @@ class OIDCManager:
         return self.config.enabled
 
     def create_jwt_session(self, user):
-        return self.jwt_manager.create_token({
-            "username": user.username,
-            "role": user.role.value,
-            "created_at": user.created_at.isoformat(),
-        })
+        return self.jwt_manager.create_token(
+            {
+                "username": user.username,
+                "role": user.role.value,
+                "created_at": user.created_at.isoformat(),
+            }
+        )
 
     async def _init_db(self):
         import aiosqlite
 
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
+            await db.execute(
+                """
                 CREATE TABLE IF NOT EXISTS oidc_identity_links (
                     username TEXT NOT NULL PRIMARY KEY,
                     subject TEXT NOT NULL UNIQUE,
@@ -68,9 +76,14 @@ class OIDCManager:
                     linked_at TEXT NOT NULL,
                     last_login TEXT
                 )
-            """)
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_oidc_subject ON oidc_identity_links (subject)")
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_oidc_email ON oidc_identity_links (email)")
+            """
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_oidc_subject ON oidc_identity_links (subject)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_oidc_email ON oidc_identity_links (email)"
+            )
             await db.commit()
 
     async def link_oidc_identity(self, username, subject, email):
@@ -78,10 +91,19 @@ class OIDCManager:
         from datetime import datetime, timezone
 
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT OR REPLACE INTO oidc_identity_links (username, subject, email, linked_at, last_login)
                 VALUES (?, ?, ?, ?, ?)
-            """, (username, subject, email, datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()))
+            """,
+                (
+                    username,
+                    subject,
+                    email,
+                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
             await db.commit()
 
     async def match_or_create_user(self, user_info):
@@ -89,30 +111,36 @@ class OIDCManager:
         import logging
 
         logger = logging.getLogger(__name__)
-        logger.info(f"match_or_create_user called with subject={user_info.subject}, email={user_info.email}, email_verified={user_info.email_verified}")
+        logger.info(
+            f"match_or_create_user called with subject={user_info.subject}, email={user_info.email}, email_verified={user_info.email_verified}"
+        )
 
         # Check if OIDC subject already exists in database (fast path)
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 "SELECT username FROM oidc_identity_links WHERE subject = ?",
-                (user_info.subject,)
+                (user_info.subject,),
             )
             result = await cursor.fetchone()
 
             if result:
                 # Subject exists, check if user still exists
                 username = result[0]
-                logger.info(f"Found existing OIDC link: subject={user_info.subject} -> username={username}")
+                logger.info(
+                    f"Found existing OIDC link: subject={user_info.subject} -> username={username}"
+                )
                 existing_user = self.user_manager.get_user(username)
                 if existing_user:
                     logger.info(f"Returning existing user: {username}")
                     return existing_user
                 else:
                     # Stale OIDC link (defensive check - should be cleaned up on user deletion)
-                    logger.warning(f"Stale OIDC link found for subject={user_info.subject}, deleting")
+                    logger.warning(
+                        f"Stale OIDC link found for subject={user_info.subject}, deleting"
+                    )
                     await db.execute(
                         "DELETE FROM oidc_identity_links WHERE subject = ?",
-                        (user_info.subject,)
+                        (user_info.subject,),
                     )
                     await db.commit()
                     # Fall through to auto-link or JIT provisioning
@@ -127,7 +155,7 @@ class OIDCManager:
                     await self.link_oidc_identity(
                         username=existing_user.username,
                         subject=user_info.subject,
-                        email=user_info.email
+                        email=user_info.email,
                     )
                     return existing_user
 
@@ -144,11 +172,15 @@ class OIDCManager:
             # Extract username from configured username_claim
             # If username_claim is configured but not present in userinfo, fail
             if not user_info.username:
-                logger.error(f"Username claim '{self.config.username_claim}' not found in OIDC userinfo. Available claims: {list(user_info.__dict__.keys())}")
+                logger.error(
+                    f"Username claim '{self.config.username_claim}' not found in OIDC userinfo. Available claims: {list(user_info.__dict__.keys())}"
+                )
                 return None
 
             base_username = user_info.username
-            logger.info(f"Using username from OIDC username_claim '{self.config.username_claim}': {base_username}")
+            logger.info(
+                f"Using username from OIDC username_claim '{self.config.username_claim}': {base_username}"
+            )
 
             # Check if username already exists (collision detection)
             if self.user_manager.get_user(base_username):
@@ -172,14 +204,14 @@ class OIDCManager:
                 username=base_username,
                 role=UserRole[self.config.default_role.upper()],
                 email=user_info.email,
-                oidc_identity=oidc_identity
+                oidc_identity=oidc_identity,
             )
 
             # Link OIDC identity in database
             await self.link_oidc_identity(
                 username=new_user.username,
                 subject=user_info.subject,
-                email=user_info.email
+                email=user_info.email,
             )
 
             return new_user

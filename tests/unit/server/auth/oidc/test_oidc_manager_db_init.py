@@ -1,9 +1,10 @@
 """Tests for OIDCManager database initialization."""
+
 import pytest
 import tempfile
 import aiosqlite
 from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
 from code_indexer.server.utils.config_manager import OIDCProviderConfig
 

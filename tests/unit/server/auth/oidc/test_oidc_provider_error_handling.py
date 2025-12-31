@@ -1,4 +1,5 @@
 """Tests for OIDC provider error handling and validation."""
+
 import pytest
 from unittest.mock import Mock, patch
 import httpx
@@ -27,11 +28,11 @@ class TestOIDCProviderErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 404
         mock_response.text = "Not Found"
-        mock_response.raise_for_status = Mock(side_effect=httpx.HTTPStatusError(
-            "404 Not Found",
-            request=Mock(),
-            response=mock_response
-        ))
+        mock_response.raise_for_status = Mock(
+            side_effect=httpx.HTTPStatusError(
+                "404 Not Found", request=Mock(), response=mock_response
+            )
+        )
 
         async def mock_get(*args, **kwargs):
             return mock_response
@@ -45,7 +46,11 @@ class TestOIDCProviderErrorHandling:
 
             # Should raise an exception with helpful error message
             error_msg = str(exc_info.value).lower()
-            assert "404" in error_msg or "not found" in error_msg or "discovery" in error_msg
+            assert (
+                "404" in error_msg
+                or "not found" in error_msg
+                or "discovery" in error_msg
+            )
 
     @pytest.mark.asyncio
     async def test_discover_metadata_handles_network_error(self):
@@ -76,12 +81,19 @@ class TestOIDCProviderErrorHandling:
 
             # Should raise an exception mentioning network/connection
             error_msg = str(exc_info.value).lower()
-            assert "connect" in error_msg or "unreachable" in error_msg or "failed" in error_msg
+            assert (
+                "connect" in error_msg
+                or "unreachable" in error_msg
+                or "failed" in error_msg
+            )
 
     @pytest.mark.asyncio
     async def test_exchange_code_for_token_handles_invalid_code(self):
         """Test that exchange_code_for_token handles invalid authorization code."""
-        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider, OIDCMetadata
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCMetadata,
+        )
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
         config = OIDCProviderConfig(
@@ -103,11 +115,11 @@ class TestOIDCProviderErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 400
         mock_response.text = '{"error": "invalid_grant"}'
-        mock_response.raise_for_status = Mock(side_effect=httpx.HTTPStatusError(
-            "400 Bad Request",
-            request=Mock(),
-            response=mock_response
-        ))
+        mock_response.raise_for_status = Mock(
+            side_effect=httpx.HTTPStatusError(
+                "400 Bad Request", request=Mock(), response=mock_response
+            )
+        )
 
         async def mock_post(*args, **kwargs):
             return mock_response
@@ -117,7 +129,9 @@ class TestOIDCProviderErrorHandling:
             mock_instance.post = mock_post
 
             with pytest.raises(Exception) as exc_info:
-                await provider.exchange_code_for_token("invalid_code", "verifier", "http://callback")
+                await provider.exchange_code_for_token(
+                    "invalid_code", "verifier", "http://callback"
+                )
 
             # Should raise exception with error details
             error_msg = str(exc_info.value).lower()
@@ -126,7 +140,10 @@ class TestOIDCProviderErrorHandling:
     @pytest.mark.asyncio
     async def test_get_user_info_handles_invalid_token(self):
         """Test that get_user_info handles invalid access token."""
-        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider, OIDCMetadata
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCMetadata,
+        )
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
         config = OIDCProviderConfig(
@@ -149,11 +166,11 @@ class TestOIDCProviderErrorHandling:
         mock_response = Mock()
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
-        mock_response.raise_for_status = Mock(side_effect=httpx.HTTPStatusError(
-            "401 Unauthorized",
-            request=Mock(),
-            response=mock_response
-        ))
+        mock_response.raise_for_status = Mock(
+            side_effect=httpx.HTTPStatusError(
+                "401 Unauthorized", request=Mock(), response=mock_response
+            )
+        )
 
         async def mock_get(*args, **kwargs):
             return mock_response
@@ -167,12 +184,17 @@ class TestOIDCProviderErrorHandling:
 
             # Should raise exception about invalid token
             error_msg = str(exc_info.value).lower()
-            assert "401" in error_msg or "unauthorized" in error_msg or "user" in error_msg
+            assert (
+                "401" in error_msg or "unauthorized" in error_msg or "user" in error_msg
+            )
 
     @pytest.mark.asyncio
     async def test_exchange_code_validates_token_response(self):
         """Test that exchange_code_for_token validates token response has access_token."""
-        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider, OIDCMetadata
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCMetadata,
+        )
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
         config = OIDCProviderConfig(
@@ -193,7 +215,9 @@ class TestOIDCProviderErrorHandling:
         # Mock HTTP client to return token response without access_token
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json = Mock(return_value={"token_type": "Bearer"})  # Missing access_token
+        mock_response.json = Mock(
+            return_value={"token_type": "Bearer"}
+        )  # Missing access_token
         mock_response.raise_for_status = Mock()
 
         async def mock_post(*args, **kwargs):
@@ -204,16 +228,25 @@ class TestOIDCProviderErrorHandling:
             mock_instance.post = mock_post
 
             with pytest.raises(Exception) as exc_info:
-                await provider.exchange_code_for_token("code", "verifier", "http://callback")
+                await provider.exchange_code_for_token(
+                    "code", "verifier", "http://callback"
+                )
 
             # Should raise exception about missing access_token
             error_msg = str(exc_info.value).lower()
-            assert "access_token" in error_msg or "invalid" in error_msg or "missing" in error_msg
+            assert (
+                "access_token" in error_msg
+                or "invalid" in error_msg
+                or "missing" in error_msg
+            )
 
     @pytest.mark.asyncio
     async def test_get_user_info_validates_userinfo_response(self):
         """Test that get_user_info validates userinfo response has required sub claim."""
-        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider, OIDCMetadata
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCMetadata,
+        )
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
         config = OIDCProviderConfig(
@@ -235,7 +268,9 @@ class TestOIDCProviderErrorHandling:
         # Mock HTTP client to return userinfo response without sub claim
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json = Mock(return_value={"email": "user@example.com"})  # Missing sub
+        mock_response.json = Mock(
+            return_value={"email": "user@example.com"}
+        )  # Missing sub
         mock_response.raise_for_status = Mock()
 
         async def mock_get(*args, **kwargs):
@@ -250,4 +285,9 @@ class TestOIDCProviderErrorHandling:
 
             # Should raise exception about missing sub claim
             error_msg = str(exc_info.value).lower()
-            assert "sub" in error_msg or "subject" in error_msg or "missing" in error_msg or "invalid" in error_msg
+            assert (
+                "sub" in error_msg
+                or "subject" in error_msg
+                or "missing" in error_msg
+                or "invalid" in error_msg
+            )

@@ -160,8 +160,7 @@ async def login_page(
     from ..auth.oidc import routes as oidc_routes
 
     sso_enabled = (
-        oidc_routes.oidc_manager is not None
-        and oidc_routes.oidc_manager.is_enabled()
+        oidc_routes.oidc_manager is not None and oidc_routes.oidc_manager.is_enabled()
     )
 
     # Generate CSRF token for the form
@@ -663,7 +662,9 @@ async def update_user_email(
     try:
         # Allow empty email to clear it
         email_value = new_email.strip() if new_email else None
-        user_manager.update_user(username, new_email=email_value if email_value else None)
+        user_manager.update_user(
+            username, new_email=email_value if email_value else None
+        )
 
         return _create_users_page_response(
             request,
@@ -711,12 +712,13 @@ async def delete_user(
 
         # Clean up OIDC identity link if OIDC manager exists
         from ..auth.oidc import routes as oidc_routes
+
         if oidc_routes.oidc_manager:
             import aiosqlite
+
             async with aiosqlite.connect(oidc_routes.oidc_manager.db_path) as db:
                 await db.execute(
-                    "DELETE FROM oidc_identity_links WHERE username = ?",
-                    (username,)
+                    "DELETE FROM oidc_identity_links WHERE username = ?", (username,)
                 )
                 await db.commit()
 
@@ -2971,13 +2973,15 @@ async def _reload_oidc_configuration():
     # Reuse existing user_manager and jwt_manager from module level
     from .. import app as app_module
 
-    logger.info(f"Creating new OIDC manager with config: email_claim={config.oidc_provider_config.email_claim}, username_claim={config.oidc_provider_config.username_claim}")
+    logger.info(
+        f"Creating new OIDC manager with config: email_claim={config.oidc_provider_config.email_claim}, username_claim={config.oidc_provider_config.username_claim}"
+    )
 
     state_manager = StateManager()
     oidc_manager = OIDCManager(
         config=config.oidc_provider_config,
         user_manager=app_module.user_manager,
-        jwt_manager=app_module.jwt_manager
+        jwt_manager=app_module.jwt_manager,
     )
 
     # Initialize OIDC database schema (no network calls)
@@ -2989,8 +2993,12 @@ async def _reload_oidc_configuration():
     oidc_routes.state_manager = state_manager
     oidc_routes.server_config = config
 
-    logger.info(f"OIDC configuration reloaded for provider: {config.oidc_provider_config.provider_name} (will initialize on next login)")
-    logger.info(f"New OIDC manager config - email_claim: {oidc_manager.config.email_claim}, username_claim: {oidc_manager.config.username_claim}")
+    logger.info(
+        f"OIDC configuration reloaded for provider: {config.oidc_provider_config.provider_name} (will initialize on next login)"
+    )
+    logger.info(
+        f"New OIDC manager config - email_claim: {oidc_manager.config.email_claim}, username_claim: {oidc_manager.config.username_claim}"
+    )
 
 
 def _get_current_config() -> dict:
@@ -3291,7 +3299,14 @@ async def update_config_section(
         )
 
     # Validate section
-    valid_sections = ["server", "cache", "reindexing", "timeouts", "password_security", "oidc"]
+    valid_sections = [
+        "server",
+        "cache",
+        "reindexing",
+        "timeouts",
+        "password_security",
+        "oidc",
+    ]
     if section not in valid_sections:
         return _create_config_page_response(
             request, session, error_message=f"Invalid section: {section}"

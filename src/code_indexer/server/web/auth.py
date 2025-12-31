@@ -24,6 +24,8 @@ def should_use_secure_cookies(config) -> bool:
     """Determine if secure cookies should be used based on server configuration."""
     localhost_hosts = ("127.0.0.1", "localhost", "::1")
     return config.host not in localhost_hosts
+
+
 CSRF_COOKIE_NAME = "csrf_token"
 
 

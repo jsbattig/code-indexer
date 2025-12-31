@@ -1,4 +1,5 @@
 """OIDC provider implementation for generic OIDC-compliant providers."""
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -10,6 +11,7 @@ class OIDCMetadata:
     token_endpoint: str
 
     userinfo_endpoint: Optional[str] = None
+
 
 @dataclass
 class OIDCUserInfo:
@@ -99,15 +101,11 @@ class OIDCProvider:
                 f"Failed to exchange authorization code for token: HTTP {e.response.status_code} - {e.response.text}"
             ) from e
         except httpx.RequestError as e:
-            raise Exception(
-                f"Failed to connect to token endpoint: {str(e)}"
-            ) from e
+            raise Exception(f"Failed to connect to token endpoint: {str(e)}") from e
 
         # Validate token response has required fields
         if "access_token" not in tokens:
-            raise Exception(
-                f"Invalid token response: missing access_token field"
-            )
+            raise Exception("Invalid token response: missing access_token field")
 
         return tokens
 
@@ -122,7 +120,9 @@ class OIDCProvider:
         if self._metadata and self._metadata.userinfo_endpoint:
             userinfo_endpoint = self._metadata.userinfo_endpoint
         else:
-            userinfo_endpoint = f"{self.config.issuer_url}/protocol/openid-connect/userinfo"
+            userinfo_endpoint = (
+                f"{self.config.issuer_url}/protocol/openid-connect/userinfo"
+            )
 
         # Fetch user info from userinfo endpoint
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -136,25 +136,29 @@ class OIDCProvider:
                 f"Failed to get user info: HTTP {e.response.status_code} - {e.response.text}"
             ) from e
         except httpx.RequestError as e:
-            raise Exception(
-                f"Failed to connect to userinfo endpoint: {str(e)}"
-            ) from e
+            raise Exception(f"Failed to connect to userinfo endpoint: {str(e)}") from e
 
         # Validate userinfo response has required fields
         if "sub" not in data or not data["sub"]:
             raise Exception(
-                f"Invalid userinfo response: missing or empty sub (subject) claim"
+                "Invalid userinfo response: missing or empty sub (subject) claim"
             )
 
         # Log claim extraction for debugging
-        logger.info(f"Extracting claims - email_claim: {self.config.email_claim}, username_claim: {self.config.username_claim}")
+        logger.info(
+            f"Extracting claims - email_claim: {self.config.email_claim}, username_claim: {self.config.username_claim}"
+        )
         logger.info(f"Available claims in userinfo: {list(data.keys())}")
 
         email_value = data.get(self.config.email_claim)
-        logger.info(f"Extracted email from '{self.config.email_claim}' claim: {email_value}")
+        logger.info(
+            f"Extracted email from '{self.config.email_claim}' claim: {email_value}"
+        )
 
         username_value = data.get(self.config.username_claim)
-        logger.info(f"Extracted username from '{self.config.username_claim}' claim: {username_value}")
+        logger.info(
+            f"Extracted username from '{self.config.username_claim}' claim: {username_value}"
+        )
 
         # Create OIDCUserInfo from response
         user_info = OIDCUserInfo(

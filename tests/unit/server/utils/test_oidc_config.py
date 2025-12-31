@@ -1,5 +1,5 @@
 """Tests for OIDC configuration in ServerConfig."""
-import pytest
+
 from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
 

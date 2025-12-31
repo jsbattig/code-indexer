@@ -1,4 +1,5 @@
 """Tests for OIDC manager implementation."""
+
 import pytest
 
 
@@ -54,6 +55,7 @@ class TestOIDCManager:
 
         # Verify database was created
         import aiosqlite
+
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='oidc_identity_links'"
@@ -176,7 +178,6 @@ class TestOIDCManager:
         """Test that link_oidc_identity() stores identity link in database."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
-        from datetime import datetime, timezone
         import aiosqlite
 
         config = OIDCProviderConfig(enabled=True)
@@ -188,16 +189,14 @@ class TestOIDCManager:
 
         # Link OIDC identity
         await manager.link_oidc_identity(
-            username="testuser",
-            subject="oidc-subject-123",
-            email="test@example.com"
+            username="testuser", subject="oidc-subject-123", email="test@example.com"
         )
 
         # Verify data was stored
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT username, subject, email FROM oidc_identity_links WHERE username = ?",
-                ("testuser",)
+                ("testuser",),
             )
             result = await cursor.fetchone()
             assert result is not None
@@ -206,7 +205,9 @@ class TestOIDCManager:
             assert result[2] == "test@example.com"
 
     @pytest.mark.asyncio
-    async def test_match_or_create_user_returns_existing_user_by_subject(self, tmp_path):
+    async def test_match_or_create_user_returns_existing_user_by_subject(
+        self, tmp_path
+    ):
         """Test that match_or_create_user() returns existing user when subject exists."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.auth.oidc.oidc_provider import OIDCUserInfo
@@ -233,9 +234,7 @@ class TestOIDCManager:
         # Initialize database and link identity
         await manager._init_db()
         await manager.link_oidc_identity(
-            username="testuser",
-            subject="oidc-subject-123",
-            email="test@example.com"
+            username="testuser", subject="oidc-subject-123", email="test@example.com"
         )
 
         # Create user info with same subject
@@ -301,7 +300,7 @@ class TestOIDCManager:
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT username, subject, email FROM oidc_identity_links WHERE subject = ?",
-                ("new-oidc-subject-456",)
+                ("new-oidc-subject-456",),
             )
             result = await cursor.fetchone()
             assert result is not None
@@ -321,9 +320,7 @@ class TestOIDCManager:
         import aiosqlite
 
         config = OIDCProviderConfig(
-            enabled=True,
-            enable_jit_provisioning=True,
-            default_role="normal_user"
+            enabled=True, enable_jit_provisioning=True, default_role="normal_user"
         )
 
         # Mock user_manager
@@ -366,7 +363,7 @@ class TestOIDCManager:
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT username, subject, email FROM oidc_identity_links WHERE subject = ?",
-                ("brand-new-subject-789",)
+                ("brand-new-subject-789",),
             )
             result = await cursor.fetchone()
             assert result is not None
@@ -433,16 +430,20 @@ class TestOIDCManager:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='oidc_identity_links'"
             )
             result = await cursor.fetchone()
-            assert result is not None, "oidc_identity_links table should exist after initialize()"
+            assert (
+                result is not None
+            ), "oidc_identity_links table should exist after initialize()"
             assert result[0] == "oidc_identity_links"
+
     @pytest.mark.asyncio
-    async def test_match_or_create_user_handles_stale_oidc_link(self, tmp_path, monkeypatch):
+    async def test_match_or_create_user_handles_stale_oidc_link(
+        self, tmp_path, monkeypatch
+    ):
         """Test that match_or_create_user handles stale OIDC links gracefully."""
         import aiosqlite
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.auth.oidc.oidc_provider import OIDCUserInfo
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
-        from code_indexer.server.auth.user_manager import UserRole
 
         # Create test config with JIT provisioning enabled
         config = OIDCProviderConfig(
@@ -470,6 +471,7 @@ class TestOIDCManager:
             def create_oidc_user(self, username, role, email, oidc_identity):
                 class MockUser:
                     pass
+
                 user = MockUser()
                 user.username = username
                 user.role = role
@@ -490,10 +492,16 @@ class TestOIDCManager:
 
         # Create a stale OIDC link (points to deleted user)
         from datetime import datetime, timezone
+
         async with aiosqlite.connect(manager.db_path) as db:
             await db.execute(
                 "INSERT INTO oidc_identity_links (subject, username, email, linked_at) VALUES (?, ?, ?, ?)",
-                ("test-subject-123", "deleteduser", "test@example.com", datetime.now(timezone.utc).isoformat())
+                (
+                    "test-subject-123",
+                    "deleteduser",
+                    "test@example.com",
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             await db.commit()
 
@@ -517,7 +525,7 @@ class TestOIDCManager:
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM oidc_identity_links WHERE username = ?",
-                ("deleteduser",)
+                ("deleteduser",),
             )
             count = (await cursor.fetchone())[0]
             assert count == 0, "Stale OIDC link should have been deleted"
@@ -526,7 +534,7 @@ class TestOIDCManager:
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT username FROM oidc_identity_links WHERE subject = ?",
-                ("test-subject-123",)
+                ("test-subject-123",),
             )
             result = await cursor.fetchone()
             assert result is not None

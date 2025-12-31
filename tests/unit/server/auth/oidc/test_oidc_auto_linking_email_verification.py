@@ -1,4 +1,5 @@
 """Tests for OIDC auto-linking with require_email_verification configuration."""
+
 import pytest
 
 
@@ -6,7 +7,9 @@ class TestOIDCAutoLinkingEmailVerification:
     """Test auto-linking behavior with different email verification settings."""
 
     @pytest.mark.asyncio
-    async def test_auto_link_with_verified_email_when_verification_required(self, tmp_path):
+    async def test_auto_link_with_verified_email_when_verification_required(
+        self, tmp_path
+    ):
         """Test auto-linking works with verified email when require_email_verification=True."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.auth.oidc.oidc_provider import OIDCUserInfo
@@ -55,14 +58,16 @@ class TestOIDCAutoLinkingEmailVerification:
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT username, subject FROM oidc_identity_links WHERE subject = ?",
-                ("new-oidc-subject",)
+                ("new-oidc-subject",),
             )
             result = await cursor.fetchone()
             assert result is not None
             assert result[0] == "existinguser"
 
     @pytest.mark.asyncio
-    async def test_auto_link_skipped_with_unverified_email_when_verification_required(self, tmp_path):
+    async def test_auto_link_skipped_with_unverified_email_when_verification_required(
+        self, tmp_path
+    ):
         """Test auto-linking is SKIPPED with unverified email when require_email_verification=True."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.auth.oidc.oidc_provider import OIDCUserInfo
@@ -108,7 +113,9 @@ class TestOIDCAutoLinkingEmailVerification:
         user_manager.get_user_by_email.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_auto_link_works_with_unverified_email_when_verification_not_required(self, tmp_path):
+    async def test_auto_link_works_with_unverified_email_when_verification_not_required(
+        self, tmp_path
+    ):
         """Test auto-linking WORKS with unverified email when require_email_verification=False."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.auth.oidc.oidc_provider import OIDCUserInfo
@@ -157,7 +164,7 @@ class TestOIDCAutoLinkingEmailVerification:
         async with aiosqlite.connect(manager.db_path) as db:
             cursor = await db.execute(
                 "SELECT username, subject FROM oidc_identity_links WHERE subject = ?",
-                ("new-oidc-subject",)
+                ("new-oidc-subject",),
             )
             result = await cursor.fetchone()
             assert result is not None

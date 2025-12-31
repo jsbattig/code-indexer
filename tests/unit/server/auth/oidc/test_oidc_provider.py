@@ -1,4 +1,5 @@
 """Tests for OIDC provider implementation."""
+
 import pytest
 
 
@@ -66,7 +67,9 @@ class TestOIDCProvider:
         assert provider._metadata is None
 
     @pytest.mark.asyncio
-    async def test_discover_metadata_fetches_from_well_known_endpoint(self, monkeypatch):
+    async def test_discover_metadata_fetches_from_well_known_endpoint(
+        self, monkeypatch
+    ):
         """Test that discover_metadata fetches OIDC metadata from well-known endpoint."""
         from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider
         from code_indexer.server.utils.config_manager import OIDCProviderConfig

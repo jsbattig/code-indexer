@@ -1,9 +1,9 @@
 """Tests for OIDCProviderConfig fields and deserialization."""
+
 import json
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from code_indexer.server.utils.config_manager import (
     OIDCProviderConfig,
@@ -59,24 +59,27 @@ class TestOIDCProviderConfigDeserialization:
                     "default_role": "normal_user",
                 },
             }
-            
+
             config_file.write_text(json.dumps(config_data))
-            
+
             config_manager = ServerConfigManager(tmpdir)
             config = config_manager.load_config()
-            
+
             assert config is not None
             assert hasattr(config, "oidc_provider_config")
             assert config.oidc_provider_config is not None
-            
+
             # Verify it's an OIDCProviderConfig object, not a dict
             assert isinstance(config.oidc_provider_config, OIDCProviderConfig)
             assert not isinstance(config.oidc_provider_config, dict)
-            
+
             # Verify all fields are accessible
             assert config.oidc_provider_config.enabled is True
             assert config.oidc_provider_config.provider_name == "Test SSO"
-            assert config.oidc_provider_config.issuer_url == "http://localhost:8180/realms/test"
+            assert (
+                config.oidc_provider_config.issuer_url
+                == "http://localhost:8180/realms/test"
+            )
             assert config.oidc_provider_config.client_id == "test-client"
             assert config.oidc_provider_config.client_secret == "test-secret"
             assert config.oidc_provider_config.scopes == ["openid", "profile", "email"]

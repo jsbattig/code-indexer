@@ -1,5 +1,5 @@
 """Tests for OIDC-related methods in UserManager."""
-import pytest
+
 import tempfile
 from pathlib import Path
 from code_indexer.server.auth.user_manager import UserManager, UserRole

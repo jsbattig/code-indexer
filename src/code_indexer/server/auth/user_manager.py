@@ -431,10 +431,7 @@ class UserManager:
         }
 
     def update_user(
-        self,
-        username: str,
-        new_username: Optional[str] = None,
-        **kwargs
+        self, username: str, new_username: Optional[str] = None, **kwargs
     ) -> bool:
         """
         Update user's username or email.

@@ -1,4 +1,5 @@
 """Tests for OIDCProvider HTTP call handling."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider

@@ -392,7 +392,12 @@ class TestOIDCConfigSettings:
         service.update_setting("oidc", "scopes", "openid profile email groups")
 
         config = service.get_config()
-        assert config.oidc_provider_config.scopes == ["openid", "profile", "email", "groups"]
+        assert config.oidc_provider_config.scopes == [
+            "openid",
+            "profile",
+            "email",
+            "groups",
+        ]
 
     def test_update_oidc_email_claim(self, tmp_path):
         """Test updating OIDC email claim."""
@@ -472,14 +477,18 @@ class TestOIDCConfigValidation:
         service.load_config()
 
         # Set required fields first
-        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
         service.update_setting("oidc", "client_id", "test-client")
 
         # Enable OIDC
         service.update_setting("oidc", "enabled", "true")
 
         # Try to clear issuer_url - should fail validation
-        with pytest.raises(ValueError, match="OIDC issuer_url is required when OIDC is enabled"):
+        with pytest.raises(
+            ValueError, match="OIDC issuer_url is required when OIDC is enabled"
+        ):
             service.update_setting("oidc", "issuer_url", "")
 
     def test_validation_rejects_invalid_issuer_url_format(self, tmp_path):
@@ -488,14 +497,18 @@ class TestOIDCConfigValidation:
         service.load_config()
 
         # Set valid fields first
-        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
         service.update_setting("oidc", "client_id", "test-client")
 
         # Enable OIDC
         service.update_setting("oidc", "enabled", "true")
 
         # Try to set invalid issuer_url - should fail validation
-        with pytest.raises(ValueError, match="OIDC issuer_url must start with http:// or https://"):
+        with pytest.raises(
+            ValueError, match="OIDC issuer_url must start with http:// or https://"
+        ):
             service.update_setting("oidc", "issuer_url", "invalid-url")
 
     def test_validation_allows_empty_issuer_url_when_disabled(self, tmp_path):
@@ -518,7 +531,9 @@ class TestOIDCConfigValidation:
         service.load_config()
 
         # Set required OIDC fields
-        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
         service.update_setting("oidc", "client_id", "test-client")
         service.update_setting("oidc", "enabled", "true")
 
@@ -526,7 +541,10 @@ class TestOIDCConfigValidation:
         service.update_setting("oidc", "enable_jit_provisioning", "true")
 
         # Try to clear email_claim - should fail validation
-        with pytest.raises(ValueError, match="OIDC email_claim is required when JIT provisioning is enabled"):
+        with pytest.raises(
+            ValueError,
+            match="OIDC email_claim is required when JIT provisioning is enabled",
+        ):
             service.update_setting("oidc", "email_claim", "")
 
     def test_validation_requires_username_claim_when_jit_enabled(self, tmp_path):
@@ -535,7 +553,9 @@ class TestOIDCConfigValidation:
         service.load_config()
 
         # Set required OIDC fields
-        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
         service.update_setting("oidc", "client_id", "test-client")
         service.update_setting("oidc", "enabled", "true")
 
@@ -543,7 +563,10 @@ class TestOIDCConfigValidation:
         service.update_setting("oidc", "enable_jit_provisioning", "true")
 
         # Try to clear username_claim - should fail validation
-        with pytest.raises(ValueError, match="OIDC username_claim is required when JIT provisioning is enabled"):
+        with pytest.raises(
+            ValueError,
+            match="OIDC username_claim is required when JIT provisioning is enabled",
+        ):
             service.update_setting("oidc", "username_claim", "")
 
     def test_validation_allows_empty_claims_when_jit_disabled(self, tmp_path):
@@ -552,7 +575,9 @@ class TestOIDCConfigValidation:
         service.load_config()
 
         # Set required OIDC fields
-        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
         service.update_setting("oidc", "client_id", "test-client")
         service.update_setting("oidc", "enabled", "true")
 

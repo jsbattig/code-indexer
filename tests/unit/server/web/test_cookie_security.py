@@ -1,5 +1,5 @@
 """Tests for cookie security helper functions."""
-import pytest
+
 from code_indexer.server.web.auth import should_use_secure_cookies
 from code_indexer.server.utils.config_manager import ServerConfig
 

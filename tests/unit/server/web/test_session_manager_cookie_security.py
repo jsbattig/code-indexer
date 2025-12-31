@@ -1,5 +1,5 @@
 """Tests for SessionManager cookie security integration."""
-import pytest
+
 from fastapi import Response
 from code_indexer.server.web.auth import SessionManager
 from code_indexer.server.utils.config_manager import ServerConfig

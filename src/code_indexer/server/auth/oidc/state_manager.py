@@ -15,7 +15,7 @@ class StateManager:
         # Store state data with expiration (5 minutes)
         self._states[state_token] = {
             "data": data,
-            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5)
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
         }
 
         return state_token

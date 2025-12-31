@@ -1,4 +1,5 @@
 """Tests for OIDC username_claim extraction and JIT provisioning."""
+
 import pytest
 
 

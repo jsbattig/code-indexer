@@ -395,15 +395,23 @@ class ServerConfigManager:
             if not config.oidc_provider_config.client_id:
                 raise ValueError("OIDC client_id is required when OIDC is enabled")
             # Validate issuer_url format
-            if not config.oidc_provider_config.issuer_url.startswith(("http://", "https://")):
-                raise ValueError(f"OIDC issuer_url must start with http:// or https://, got {config.oidc_provider_config.issuer_url}")
+            if not config.oidc_provider_config.issuer_url.startswith(
+                ("http://", "https://")
+            ):
+                raise ValueError(
+                    f"OIDC issuer_url must start with http:// or https://, got {config.oidc_provider_config.issuer_url}"
+                )
 
             # Validate JIT provisioning requirements
             if config.oidc_provider_config.enable_jit_provisioning:
                 if not config.oidc_provider_config.email_claim:
-                    raise ValueError("OIDC email_claim is required when JIT provisioning is enabled")
+                    raise ValueError(
+                        "OIDC email_claim is required when JIT provisioning is enabled"
+                    )
                 if not config.oidc_provider_config.username_claim:
-                    raise ValueError("OIDC username_claim is required when JIT provisioning is enabled")
+                    raise ValueError(
+                        "OIDC username_claim is required when JIT provisioning is enabled"
+                    )
 
     def create_server_directories(self) -> None:
         """

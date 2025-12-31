@@ -1,5 +1,4 @@
 """Tests for OIDC state manager implementation."""
-import pytest
 
 
 class TestStateManager:
@@ -18,10 +17,7 @@ class TestStateManager:
         from code_indexer.server.auth.oidc.state_manager import StateManager
 
         manager = StateManager()
-        state_data = {
-            "code_verifier": "test-verifier",
-            "redirect_uri": "/admin"
-        }
+        state_data = {"code_verifier": "test-verifier", "redirect_uri": "/admin"}
 
         state_token = manager.create_state(state_data)
 
@@ -33,10 +29,7 @@ class TestStateManager:
         from code_indexer.server.auth.oidc.state_manager import StateManager
 
         manager = StateManager()
-        state_data = {
-            "code_verifier": "test-verifier",
-            "redirect_uri": "/admin"
-        }
+        state_data = {"code_verifier": "test-verifier", "redirect_uri": "/admin"}
 
         # Create state
         state_token = manager.create_state(state_data)
