@@ -333,3 +333,4 @@ MIT License - See repository for full license text.
 
 <!-- E2E Test: Auto-deployment validation for story #657 - 2025-12-31 16:15 CST -->
 <!-- E2E Test: Final auto-deployment test after fixes deployed - 2025-12-31 16:23 CST -->
+<!-- E2E Test: Complete workflow with server restart - 2025-12-31 16:26 CST -->
