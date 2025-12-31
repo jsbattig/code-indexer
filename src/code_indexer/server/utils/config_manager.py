@@ -118,6 +118,28 @@ class AutoWatchConfig:
 
 
 @dataclass
+class OIDCProviderConfig:
+    """Single external OIDC provider configuration."""
+
+    enabled: bool = False
+    provider_name: str = "SSO"
+    issuer_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: Optional[list] = None
+    email_claim: str = "email"
+    username_claim: str = "preferred_username"
+    use_pkce: bool = True
+    require_email_verification: bool = True
+    enable_jit_provisioning: bool = True
+    default_role: str = "normal_user"
+
+    def __post_init__(self):
+        if self.scopes is None:
+            self.scopes = ["openid", "profile", "email"]
+
+
+@dataclass
 class ServerConfig:
     """
     Server configuration data structure.
@@ -138,6 +160,7 @@ class ServerConfig:
     reindexing_config: Optional[ReindexingConfig] = None
     omni_search_config: Optional[OmniSearchConfig] = None
     auto_watch_config: Optional[AutoWatchConfig] = None
+    oidc_provider_config: Optional[OIDCProviderConfig] = None
 
     # Claude CLI integration settings
     anthropic_api_key: Optional[str] = None
@@ -158,6 +181,8 @@ class ServerConfig:
             self.omni_search_config = OmniSearchConfig()
         if self.auto_watch_config is None:
             self.auto_watch_config = AutoWatchConfig()
+        if self.oidc_provider_config is None:
+            self.oidc_provider_config = OIDCProviderConfig()
 
 
 class ServerConfigManager:
@@ -266,6 +291,14 @@ class ServerConfigManager:
                     **config_dict["omni_search_config"]
                 )
 
+            # Convert nested oidc_provider_config dict to OIDCProviderConfig
+            if "oidc_provider_config" in config_dict and isinstance(
+                config_dict["oidc_provider_config"], dict
+            ):
+                config_dict["oidc_provider_config"] = OIDCProviderConfig(
+                    **config_dict["oidc_provider_config"]
+                )
+
             return ServerConfig(**config_dict)
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse configuration file: {e}")
@@ -354,6 +387,23 @@ class ServerConfigManager:
             raise ValueError(
                 f"description_refresh_interval_hours must be greater than 0, got {config.description_refresh_interval_hours}"
             )
+
+        # Validate OIDC configuration
+        if config.oidc_provider_config and config.oidc_provider_config.enabled:
+            if not config.oidc_provider_config.issuer_url:
+                raise ValueError("OIDC issuer_url is required when OIDC is enabled")
+            if not config.oidc_provider_config.client_id:
+                raise ValueError("OIDC client_id is required when OIDC is enabled")
+            # Validate issuer_url format
+            if not config.oidc_provider_config.issuer_url.startswith(("http://", "https://")):
+                raise ValueError(f"OIDC issuer_url must start with http:// or https://, got {config.oidc_provider_config.issuer_url}")
+
+            # Validate JIT provisioning requirements
+            if config.oidc_provider_config.enable_jit_provisioning:
+                if not config.oidc_provider_config.email_claim:
+                    raise ValueError("OIDC email_claim is required when JIT provisioning is enabled")
+                if not config.oidc_provider_config.username_claim:
+                    raise ValueError("OIDC username_claim is required when JIT provisioning is enabled")
 
     def create_server_directories(self) -> None:
         """

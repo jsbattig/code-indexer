@@ -112,6 +112,13 @@ function toggleEditForm(username) {
     }
 }
 
+function toggleEmailForm(username) {
+    const form = document.getElementById('email-form-' + username);
+    if (form) {
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
 function togglePasswordForm(username) {
     const form = document.getElementById('password-form-' + username);
     if (form) {

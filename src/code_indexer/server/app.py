@@ -1864,6 +1864,49 @@ def create_app() -> FastAPI:
                 exc_info=True,
             )
 
+        # Startup: Initialize OIDC authentication if configured
+        logger.info("Server startup: Checking OIDC configuration")
+        # Always register OIDC routes (routes will handle disabled/unconfigured state)
+        from code_indexer.server.auth.oidc import routes as oidc_routes
+        app.include_router(oidc_routes.router)
+
+        try:
+            from code_indexer.server.utils.config_manager import ServerConfigManager
+            from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+            from code_indexer.server.auth.oidc.state_manager import StateManager
+
+            config_manager = ServerConfigManager(server_dir_path=server_data_dir)
+            config = config_manager.load_config()
+            if config and hasattr(config, 'oidc_provider_config') and config.oidc_provider_config and config.oidc_provider_config.enabled:
+                logger.info("OIDC is enabled, initializing...")
+
+                # Use existing user_manager and jwt_manager (defined at module level below)
+                # Note: These are defined after the lifespan function, so we reference them here
+                state_manager = StateManager()
+                oidc_manager = OIDCManager(
+                    config=config.oidc_provider_config,
+                    user_manager=user_manager,  # Global from module level
+                    jwt_manager=jwt_manager     # Global from module level
+                )
+
+                # Initialize OIDC database schema (no network calls)
+                # Provider metadata will be discovered lazily on first SSO login attempt
+                await oidc_manager.initialize()
+
+                # Inject managers into routes module
+                oidc_routes.oidc_manager = oidc_manager
+                oidc_routes.state_manager = state_manager
+                oidc_routes.server_config = config
+
+                logger.info(f"OIDC configured for provider: {config.oidc_provider_config.provider_name} (will initialize on first login)")
+            else:
+                logger.info("OIDC is not enabled")
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(f"Failed to initialize OIDC: {e}", exc_info=True)
+            logger.info("OIDC routes registered but manager not initialized - SSO login will return 404 until configured")
+
         yield  # Server is now running
 
         # Shutdown: Stop global repos background services BEFORE other cleanup
@@ -6572,7 +6615,7 @@ def create_app() -> FastAPI:
     from pathlib import Path as PathLib
 
     # Initialize session manager for web UI
-    init_session_manager(secret_key)
+    init_session_manager(secret_key, server_config)
 
     # Mount static files for web UI
     web_static_dir = PathLib(__file__).parent / "web" / "static"

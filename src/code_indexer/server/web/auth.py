@@ -18,6 +18,12 @@ SESSION_TIMEOUT_SECONDS = 8 * 60 * 60
 
 # Cookie settings
 SESSION_COOKIE_NAME = "session"
+
+
+def should_use_secure_cookies(config) -> bool:
+    """Determine if secure cookies should be used based on server configuration."""
+    localhost_hosts = ("127.0.0.1", "localhost", "::1")
+    return config.host not in localhost_hosts
 CSRF_COOKIE_NAME = "csrf_token"
 
 
@@ -42,15 +48,17 @@ class SessionManager:
     - httpOnly cookies
     """
 
-    def __init__(self, secret_key: str):
+    def __init__(self, secret_key: str, config):
         """
         Initialize session manager.
 
         Args:
             secret_key: Secret key for signing cookies
+            config: Server configuration for cookie security settings
         """
         self._serializer = URLSafeTimedSerializer(secret_key)
         self._salt = "web-session"
+        self._config = config
 
     def create_session(
         self,
@@ -87,7 +95,7 @@ class SessionManager:
             key=SESSION_COOKIE_NAME,
             value=signed_value,
             httponly=True,
-            secure=False,  # Set to True in production with HTTPS
+            secure=should_use_secure_cookies(self._config),
             samesite="lax",
             max_age=SESSION_TIMEOUT_SECONDS,
         )
@@ -169,7 +177,7 @@ class SessionManager:
         response.delete_cookie(
             key=SESSION_COOKIE_NAME,
             httponly=True,
-            secure=False,  # Match creation settings
+            secure=should_use_secure_cookies(self._config),
             samesite="lax",
         )
 
@@ -215,18 +223,19 @@ def get_session_manager() -> SessionManager:
     return _session_manager
 
 
-def init_session_manager(secret_key: str) -> SessionManager:
+def init_session_manager(secret_key: str, config) -> SessionManager:
     """
     Initialize the global session manager.
 
     Args:
         secret_key: Secret key for signing cookies
+        config: Server configuration
 
     Returns:
         Initialized SessionManager
     """
     global _session_manager
-    _session_manager = SessionManager(secret_key)
+    _session_manager = SessionManager(secret_key, config)
     return _session_manager
 
 

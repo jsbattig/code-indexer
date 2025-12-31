@@ -392,3 +392,167 @@
         </form>
     </article>
 </details>
+
+<!-- SSO Authentication Settings Section -->
+<details class="config-section" id="section-oidc">
+    <summary>
+        <h2>SSO Authentication</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-oidc">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Enabled</td>
+                        <td class="config-value">{{ 'Yes' if config.oidc.enabled else 'No' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Provider Name</td>
+                        <td class="config-value">{{ config.oidc.provider_name }}</td>
+                        <td class="config-note"><small>Displayed on login button</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Issuer URL</td>
+                        <td class="config-value">{{ config.oidc.issuer_url or 'Not configured' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Client ID</td>
+                        <td class="config-value">{{ config.oidc.client_id or 'Not configured' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Client Secret</td>
+                        <td class="config-value">{{ '********' if config.oidc.client_secret else 'Not configured' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Scopes</td>
+                        <td class="config-value">{{ config.oidc.scopes | join(', ') }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Email Claim</td>
+                        <td class="config-value">{{ config.oidc.email_claim }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Username Claim</td>
+                        <td class="config-value">{{ config.oidc.username_claim }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Use PKCE</td>
+                        <td class="config-value">{{ 'Yes' if config.oidc.use_pkce else 'No' }}</td>
+                        <td class="config-note"><small>Recommended for security</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Require Email Verification</td>
+                        <td class="config-value">{{ 'Yes' if config.oidc.require_email_verification else 'No' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Enable JIT Provisioning</td>
+                        <td class="config-value">{{ 'Yes' if config.oidc.enable_jit_provisioning else 'No' }}</td>
+                        <td class="config-note"><small>Auto-create users on first login</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Default Role</td>
+                        <td class="config-value">{{ config.oidc.default_role }}</td>
+                        <td class="config-note"><small>For JIT-provisioned users</small></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('oidc')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-oidc" method="post" action="/admin/config/oidc" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.oidc %}
+            <div class="validation-error">{{ validation_errors.oidc }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="oidc-enabled">
+                    Enabled
+                    <select id="oidc-enabled" name="enabled">
+                        <option value="true" {% if config.oidc.enabled %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.oidc.enabled %}selected{% endif %}>No</option>
+                    </select>
+                </label>
+                <label for="oidc-provider-name">
+                    Provider Name
+                    <input type="text" id="oidc-provider-name" name="provider_name" value="{{ config.oidc.provider_name }}">
+                    <small>Displayed on login button (e.g., "Google", "Okta")</small>
+                </label>
+                <label for="oidc-issuer-url">
+                    Issuer URL
+                    <input type="text" id="oidc-issuer-url" name="issuer_url" value="{{ config.oidc.issuer_url }}" placeholder="https://accounts.google.com">
+                    <small>OIDC provider's issuer URL</small>
+                </label>
+                <label for="oidc-client-id">
+                    Client ID
+                    <input type="text" id="oidc-client-id" name="client_id" value="{{ config.oidc.client_id }}">
+                </label>
+                <label for="oidc-client-secret">
+                    Client Secret
+                    <input type="password" id="oidc-client-secret" name="client_secret" value="{{ config.oidc.client_secret }}" placeholder="Leave empty to keep current">
+                    <small>Leave empty to keep existing secret</small>
+                </label>
+                <label for="oidc-scopes">
+                    Scopes
+                    <input type="text" id="oidc-scopes" name="scopes" value="{{ config.oidc.scopes | join(' ') }}">
+                    <small>Space-separated (e.g., "openid profile email")</small>
+                </label>
+                <label for="oidc-email-claim">
+                    Email Claim
+                    <input type="text" id="oidc-email-claim" name="email_claim" value="{{ config.oidc.email_claim }}">
+                    <small>OIDC claim for user's email (used for auto-linking existing users and JIT user creation)</small>
+                </label>
+                <label for="oidc-username-claim">
+                    Username Claim
+                    <input type="text" id="oidc-username-claim" name="username_claim" value="{{ config.oidc.username_claim }}">
+                    <small>OIDC claim for username (used ONLY when creating new users via JIT provisioning)</small>
+                </label>
+                <label for="oidc-use-pkce">
+                    Use PKCE
+                    <select id="oidc-use-pkce" name="use_pkce">
+                        <option value="true" {% if config.oidc.use_pkce %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.oidc.use_pkce %}selected{% endif %}>No</option>
+                    </select>
+                    <small>Recommended for security</small>
+                </label>
+                <label for="oidc-require-email-verification">
+                    Require Email Verification
+                    <select id="oidc-require-email-verification" name="require_email_verification">
+                        <option value="true" {% if config.oidc.require_email_verification %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.oidc.require_email_verification %}selected{% endif %}>No</option>
+                    </select>
+                </label>
+                <label for="oidc-enable-jit-provisioning">
+                    Enable JIT Provisioning
+                    <select id="oidc-enable-jit-provisioning" name="enable_jit_provisioning">
+                        <option value="true" {% if config.oidc.enable_jit_provisioning %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.oidc.enable_jit_provisioning %}selected{% endif %}>No</option>
+                    </select>
+                    <small>Auto-create users on first login</small>
+                </label>
+                <label for="oidc-default-role">
+                    Default Role
+                    <select id="oidc-default-role" name="default_role">
+                        <option value="normal_user" {% if config.oidc.default_role == 'normal_user' %}selected{% endif %}>Normal User</option>
+                        <option value="admin" {% if config.oidc.default_role == 'admin' %}selected{% endif %}>Admin</option>
+                    </select>
+                    <small>Role assigned to JIT-provisioned users</small>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('oidc')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
