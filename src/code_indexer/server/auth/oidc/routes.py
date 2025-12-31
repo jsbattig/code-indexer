@@ -69,14 +69,28 @@ async def sso_login(request: Request, redirect_uri: Optional[str] = None):
 async def sso_callback(code: str, state: str, request: Request):
     """Handle OIDC callback."""
     # Validate state token (CSRF protection)
+    # Try both state managers (oidc_routes and oauth_routes)
     state_data = state_manager.validate_state(state)
     if not state_data:
-        raise HTTPException(status_code=400, detail="Invalid state")
+        # Try oauth state manager if available
+        from code_indexer.server.auth import dependencies
+
+        if hasattr(dependencies, "oidc_state_manager"):
+            state_data = dependencies.oidc_state_manager.validate_state(state)
+
+        if not state_data:
+            raise HTTPException(status_code=400, detail="Invalid state")
 
     # Exchange authorization code for tokens (with PKCE verifier)
     callback_url = str(request.url_for("sso_callback"))
+
+    # Use appropriate code_verifier based on flow type
+    code_verifier = state_data.get("oidc_code_verifier") or state_data.get(
+        "code_verifier"
+    )
+
     tokens = await oidc_manager.provider.exchange_code_for_token(
-        code, state_data["code_verifier"], callback_url
+        code, code_verifier, callback_url
     )
 
     # Get user info from provider
@@ -91,15 +105,38 @@ async def sso_callback(code: str, state: str, request: Request):
             status_code=403, detail="User not authorized. Please contact administrator."
         )
 
-    # Create session (same as password login)
-    session_manager = get_session_manager()
-    redirect_uri = state_data.get("redirect_uri", "/admin")
-    redirect_response = RedirectResponse(url=redirect_uri, status_code=302)
+    # Check if this is OAuth authorization flow
+    if state_data.get("flow") == "oauth_authorize":
+        # This is OAuth flow - issue OAuth authorization code
+        from code_indexer.server.auth.oauth.oauth_manager import OAuthManager
+        from pathlib import Path
 
-    session_manager.create_session(
-        redirect_response,
-        username=user.username,
-        role=user.role.value,
-    )
+        oauth_db = Path.home() / ".cidx-server" / "oauth.db"
+        oauth_manager = OAuthManager(db_path=str(oauth_db))
 
-    return redirect_response
+        # Generate OAuth authorization code
+        oauth_code = oauth_manager.generate_authorization_code(
+            client_id=state_data["client_id"],
+            user_id=user.username,
+            code_challenge=state_data["code_challenge"],
+            redirect_uri=state_data["redirect_uri"],
+            state=state_data["oauth_state"],
+        )
+
+        # Redirect back to OAuth client (Claude Code) with authorization code
+        redirect_url = f"{state_data['redirect_uri']}?code={oauth_code}&state={state_data['oauth_state']}"
+        return RedirectResponse(url=redirect_url, status_code=302)
+
+    else:
+        # This is Admin UI flow - create session
+        session_manager = get_session_manager()
+        redirect_uri = state_data.get("redirect_uri", "/admin")
+        redirect_response = RedirectResponse(url=redirect_uri, status_code=302)
+
+        session_manager.create_session(
+            redirect_response,
+            username=user.username,
+            role=user.role.value,
+        )
+
+        return redirect_response
