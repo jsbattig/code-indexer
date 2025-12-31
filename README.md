@@ -143,7 +143,7 @@ See: [AI Integration Guide](docs/ai-integration.md) | [MCP Bridge Guide](docs/mc
 
 ## Operating Modes
 
-CIDX operates in two modes optimized for different use cases:
+CIDX operates in three modes optimized for different use cases:
 
 ### CLI Mode (Individual Developers)
 
@@ -166,7 +166,39 @@ cidx query "search"     # Fast cached queries
 cidx watch              # Real-time indexing
 ```
 
-For server mode (team collaboration with centralized golden repositories), see [Operating Modes Guide](docs/operating-modes.md).
+### Server Mode (Team Collaboration)
+
+Multi-user server with centralized golden repositories for team-wide semantic search. Deploy CIDX as an HTTP/HTTPS service with OAuth 2.0 authentication, REST API, MCP interface, and web UI administration.
+
+```bash
+cidx-server start       # Start multi-user server
+# Users query via REST API or MCP
+# Admin manages repos via web UI
+```
+
+**Core Capabilities**:
+- **Multi-Repo Indexing**: Centralized golden repositories shared across team
+- **Multi-User Access**: OAuth 2.0/OIDC authentication with role-based permissions
+- **Advanced Caching**: HNSW cache with <1ms warm queries (100-1800x speedup)
+- **REST API**: Programmatic access with full query parameter support
+- **MCP Protocol**: Claude Desktop integration for AI-assisted code search
+- **Web Administration**: Manage users, repositories, and configuration via browser
+- **Repository Management**: Add, refresh, remove golden repositories
+- **User Management**: Create users, assign roles (admin/power_user/normal_user)
+- **Cache Monitoring**: Real-time cache statistics and performance metrics
+
+**Authentication & Authorization**:
+- OAuth 2.0 and OIDC (OpenID Connect) support
+- Three role levels: admin (full access), power_user (activate repos), normal_user (query only)
+- Secure token-based API access
+
+**Performance**:
+- Cold query: ~277ms (first access, loads from disk)
+- Warm query: <1ms (cached, 100-1800x faster)
+- Configurable cache TTL (default 10 minutes)
+- Per-repository cache isolation
+
+For detailed setup, deployment, and configuration, see [Operating Modes Guide](docs/operating-modes.md).
 
 ## Common Commands
 
