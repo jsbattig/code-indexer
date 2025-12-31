@@ -57,6 +57,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
 import base64
+import html
+import json
 
 from .oauth_manager import OAuthManager, OAuthError, PKCEVerificationError
 from ..user_manager import UserManager
@@ -224,6 +226,21 @@ async def get_authorize_form(
     if oidc_routes.oidc_manager and hasattr(oidc_routes.oidc_manager, "is_enabled"):
         oidc_enabled = oidc_routes.oidc_manager.is_enabled()
 
+    # Escape parameters to prevent XSS vulnerabilities
+    # Use json.dumps for JavaScript context (properly escapes quotes and special chars)
+    client_id_js = json.dumps(client_id)[1:-1]  # Remove outer quotes from JSON string
+    redirect_uri_js = json.dumps(redirect_uri)[1:-1]
+    code_challenge_js = json.dumps(code_challenge)[1:-1]
+    response_type_js = json.dumps(response_type)[1:-1]
+    state_js = json.dumps(state)[1:-1]
+
+    # Use html.escape for HTML attribute context
+    client_id_html = html.escape(client_id, quote=True)
+    redirect_uri_html = html.escape(redirect_uri, quote=True)
+    code_challenge_html = html.escape(code_challenge, quote=True)
+    response_type_html = html.escape(response_type, quote=True)
+    state_html = html.escape(state, quote=True)
+
     # Build SSO button HTML if OIDC enabled
     sso_button_html = ""
     sso_divider_html = ""
@@ -237,7 +254,7 @@ async def get_authorize_form(
             <span>or</span>
         </div>"""
 
-    html = f"""<!DOCTYPE html>
+    html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -271,11 +288,11 @@ async def get_authorize_form(
     <script>
         function redirectToSSO() {{
             const params = new URLSearchParams({{
-                client_id: '{client_id}',
-                redirect_uri: '{redirect_uri}',
-                code_challenge: '{code_challenge}',
-                response_type: '{response_type}',
-                state: '{state}'
+                client_id: '{client_id_js}',
+                redirect_uri: '{redirect_uri_js}',
+                code_challenge: '{code_challenge_js}',
+                response_type: '{response_type_js}',
+                state: '{state_js}'
             }});
             window.location.href = '/oauth/authorize/sso?' + params.toString();
         }}
@@ -288,11 +305,11 @@ async def get_authorize_form(
         {sso_button_html}
         {sso_divider_html}
         <form method="post" action="/oauth/authorize">
-            <input type="hidden" name="client_id" value="{client_id}">
-            <input type="hidden" name="redirect_uri" value="{redirect_uri}">
-            <input type="hidden" name="code_challenge" value="{code_challenge}">
-            <input type="hidden" name="response_type" value="{response_type}">
-            <input type="hidden" name="state" value="{state}">
+            <input type="hidden" name="client_id" value="{client_id_html}">
+            <input type="hidden" name="redirect_uri" value="{redirect_uri_html}">
+            <input type="hidden" name="code_challenge" value="{code_challenge_html}">
+            <input type="hidden" name="response_type" value="{response_type_html}">
+            <input type="hidden" name="state" value="{state_html}">
             <input type="text" name="username" placeholder="Username" required autofocus>
             <input type="password" name="password" placeholder="Password" required>
             <button type="submit">Authorize Access</button>
@@ -301,7 +318,7 @@ async def get_authorize_form(
     </div>
 </body>
 </html>"""
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=html_content)
 
 
 @router.get("/authorize/sso")
@@ -373,11 +390,15 @@ async def oauth_authorize_via_sso(
             detail="code_challenge required (PKCE)",
         )
 
-    # Create OIDC state containing OAuth parameters
+    # Get or create OIDC state manager singleton
     from code_indexer.server.auth.oidc.state_manager import StateManager
 
-    state_manager = StateManager()
+    if not hasattr(dependencies, "oidc_state_manager"):
+        dependencies.oidc_state_manager = StateManager()
 
+    state_manager = dependencies.oidc_state_manager
+
+    # Create OIDC state containing OAuth parameters
     oauth_state_data = {
         "flow": "oauth_authorize",
         "client_id": client_id,
@@ -387,10 +408,6 @@ async def oauth_authorize_via_sso(
     }
 
     oidc_state = state_manager.create_state(oauth_state_data)
-
-    # Store state manager in dependencies for callback handler
-    if not hasattr(dependencies, "oidc_state_manager"):
-        dependencies.oidc_state_manager = state_manager
 
     # Build OIDC authorization URL
     oidc_provider = oidc_routes.oidc_manager.provider
@@ -412,7 +429,7 @@ async def oauth_authorize_via_sso(
 
     # Store code_verifier in state for callback
     oauth_state_data["oidc_code_verifier"] = code_verifier
-    dependencies.oidc_state_manager._states[oidc_state]["data"] = oauth_state_data
+    dependencies.oidc_state_manager.update_state_data(oidc_state, oauth_state_data)
 
     # Build OIDC authorization URL
     auth_url = oidc_provider.get_authorization_url(

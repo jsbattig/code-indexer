@@ -82,8 +82,6 @@ class TestOAuthAuthorizeViaSSO:
         from code_indexer.server.auth.oidc import routes as oidc_routes
 
         client, _ = test_app
-
-        client, _ = test_app
         _, code_challenge = pkce_pair
 
         # Mock OIDC as disabled
@@ -111,8 +109,6 @@ class TestOAuthAuthorizeViaSSO:
     def test_authorize_sso_validates_client_id(self, test_app, pkce_pair):
         """Test that /oauth/authorize/sso validates client_id exists."""
         from code_indexer.server.auth.oidc import routes as oidc_routes
-
-        client, _ = test_app
 
         client, _ = test_app
         _, code_challenge = pkce_pair
@@ -147,8 +143,6 @@ class TestOAuthAuthorizeViaSSO:
     ):
         """Test that /oauth/authorize/sso validates redirect_uri matches registered URIs."""
         from code_indexer.server.auth.oidc import routes as oidc_routes
-
-        client, _ = test_app
 
         client, _ = test_app
         _, code_challenge = pkce_pair

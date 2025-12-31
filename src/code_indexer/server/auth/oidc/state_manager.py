@@ -20,6 +20,21 @@ class StateManager:
 
         return state_token
 
+    def update_state_data(self, state_token, data):
+        """Update the data associated with a state token.
+
+        Args:
+            state_token: The state token to update
+            data: The new data to associate with the token
+
+        Returns:
+            bool: True if updated successfully, False if token not found
+        """
+        if state_token in self._states:
+            self._states[state_token]["data"] = data
+            return True
+        return False
+
     def validate_state(self, state_token):
         from datetime import datetime, timezone
 
