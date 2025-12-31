@@ -36,6 +36,17 @@
 
             <button type="submit">Login</button>
         </form>
+
+        {% if sso_enabled %}
+        <div class="sso-section">
+            <div class="divider">
+                <span>OR</span>
+            </div>
+            <a href="/auth/sso/login" class="sso-button" role="button">
+                Sign in with SSO
+            </a>
+        </div>
+        {% endif %}
     </article>
 </div>
 {% endblock %}

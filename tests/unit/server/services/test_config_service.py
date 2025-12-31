@@ -304,3 +304,295 @@ class TestNewConfigDataclasses:
         config = ServerConfig(server_dir="/tmp/test")
 
         assert config.workers == 4
+
+
+class TestOIDCConfigSettings:
+    """Test OIDC configuration settings."""
+
+    def test_update_oidc_enabled_true(self, tmp_path):
+        """Test updating OIDC enabled to true."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required fields first (issuer_url and client_id)
+        service.update_setting("oidc", "issuer_url", "https://auth.example.com")
+        service.update_setting("oidc", "client_id", "test-client-id")
+
+        # Now enable OIDC
+        service.update_setting("oidc", "enabled", "true")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.enabled is True
+
+    def test_update_oidc_enabled_false(self, tmp_path):
+        """Test updating OIDC enabled to false."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "enabled", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.enabled is False
+
+    def test_update_oidc_provider_name(self, tmp_path):
+        """Test updating OIDC provider name."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "provider_name", "MySSO")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.provider_name == "MySSO"
+
+    def test_update_oidc_issuer_url(self, tmp_path):
+        """Test updating OIDC issuer URL."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "issuer_url", "https://auth.example.com")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.issuer_url == "https://auth.example.com"
+
+    def test_update_oidc_client_id(self, tmp_path):
+        """Test updating OIDC client ID."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "client_id", "my-client-id")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.client_id == "my-client-id"
+
+    def test_update_oidc_client_secret(self, tmp_path):
+        """Test updating OIDC client secret."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "client_secret", "my-secret")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.client_secret == "my-secret"
+
+    def test_update_oidc_client_secret_empty_preserves_existing(self, tmp_path):
+        """Test that empty client secret doesn't overwrite existing value."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set initial secret
+        service.update_setting("oidc", "client_secret", "original-secret")
+
+        # Try to update with empty string
+        service.update_setting("oidc", "client_secret", "")
+
+        config = service.get_config()
+        # Should still have original secret
+        assert config.oidc_provider_config.client_secret == "original-secret"
+
+    def test_update_oidc_scopes(self, tmp_path):
+        """Test updating OIDC scopes."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "scopes", "openid profile email groups")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.scopes == [
+            "openid",
+            "profile",
+            "email",
+            "groups",
+        ]
+
+    def test_update_oidc_email_claim(self, tmp_path):
+        """Test updating OIDC email claim."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "email_claim", "user_email")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.email_claim == "user_email"
+
+    def test_update_oidc_username_claim(self, tmp_path):
+        """Test updating OIDC username claim."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "username_claim", "sub")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.username_claim == "sub"
+
+    def test_update_oidc_use_pkce(self, tmp_path):
+        """Test updating OIDC use_pkce."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "use_pkce", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.use_pkce is False
+
+    def test_update_oidc_require_email_verification(self, tmp_path):
+        """Test updating OIDC require_email_verification."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "require_email_verification", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.require_email_verification is False
+
+    def test_update_oidc_enable_jit_provisioning(self, tmp_path):
+        """Test updating OIDC enable_jit_provisioning."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "enable_jit_provisioning", "false")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.enable_jit_provisioning is False
+
+    def test_update_oidc_default_role(self, tmp_path):
+        """Test updating OIDC default_role."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        service.update_setting("oidc", "default_role", "admin")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.default_role == "admin"
+
+    def test_update_unknown_oidc_setting_raises_error(self, tmp_path):
+        """Test that updating unknown OIDC setting raises ValueError."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        with pytest.raises(ValueError, match="Unknown OIDC setting: invalid_key"):
+            service.update_setting("oidc", "invalid_key", "value")
+
+
+class TestOIDCConfigValidation:
+    """Test OIDC configuration validation."""
+
+    def test_validation_rejects_empty_issuer_url_when_enabled(self, tmp_path):
+        """Test that empty issuer_url is rejected when OIDC is enabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required fields first
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
+        service.update_setting("oidc", "client_id", "test-client")
+
+        # Enable OIDC
+        service.update_setting("oidc", "enabled", "true")
+
+        # Try to clear issuer_url - should fail validation
+        with pytest.raises(
+            ValueError, match="OIDC issuer_url is required when OIDC is enabled"
+        ):
+            service.update_setting("oidc", "issuer_url", "")
+
+    def test_validation_rejects_invalid_issuer_url_format(self, tmp_path):
+        """Test that invalid issuer_url format is rejected."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set valid fields first
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
+        service.update_setting("oidc", "client_id", "test-client")
+
+        # Enable OIDC
+        service.update_setting("oidc", "enabled", "true")
+
+        # Try to set invalid issuer_url - should fail validation
+        with pytest.raises(
+            ValueError, match="OIDC issuer_url must start with http:// or https://"
+        ):
+            service.update_setting("oidc", "issuer_url", "invalid-url")
+
+    def test_validation_allows_empty_issuer_url_when_disabled(self, tmp_path):
+        """Test that empty issuer_url is allowed when OIDC is disabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Disable OIDC
+        service.update_setting("oidc", "enabled", "false")
+
+        # Clear issuer_url - should succeed because OIDC is disabled
+        service.update_setting("oidc", "issuer_url", "")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.issuer_url == ""
+
+    def test_validation_requires_email_claim_when_jit_enabled(self, tmp_path):
+        """Test that email_claim is required when JIT provisioning is enabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required OIDC fields
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
+        service.update_setting("oidc", "client_id", "test-client")
+        service.update_setting("oidc", "enabled", "true")
+
+        # Enable JIT provisioning
+        service.update_setting("oidc", "enable_jit_provisioning", "true")
+
+        # Try to clear email_claim - should fail validation
+        with pytest.raises(
+            ValueError,
+            match="OIDC email_claim is required when JIT provisioning is enabled",
+        ):
+            service.update_setting("oidc", "email_claim", "")
+
+    def test_validation_requires_username_claim_when_jit_enabled(self, tmp_path):
+        """Test that username_claim is required when JIT provisioning is enabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required OIDC fields
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
+        service.update_setting("oidc", "client_id", "test-client")
+        service.update_setting("oidc", "enabled", "true")
+
+        # Enable JIT provisioning
+        service.update_setting("oidc", "enable_jit_provisioning", "true")
+
+        # Try to clear username_claim - should fail validation
+        with pytest.raises(
+            ValueError,
+            match="OIDC username_claim is required when JIT provisioning is enabled",
+        ):
+            service.update_setting("oidc", "username_claim", "")
+
+    def test_validation_allows_empty_claims_when_jit_disabled(self, tmp_path):
+        """Test that empty email_claim and username_claim are allowed when JIT is disabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required OIDC fields
+        service.update_setting(
+            "oidc", "issuer_url", "http://localhost:8180/realms/test"
+        )
+        service.update_setting("oidc", "client_id", "test-client")
+        service.update_setting("oidc", "enabled", "true")
+
+        # Disable JIT provisioning
+        service.update_setting("oidc", "enable_jit_provisioning", "false")
+
+        # Clear email_claim and username_claim - should succeed
+        service.update_setting("oidc", "email_claim", "")
+        service.update_setting("oidc", "username_claim", "")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.email_claim == ""
+        assert config.oidc_provider_config.username_claim == ""

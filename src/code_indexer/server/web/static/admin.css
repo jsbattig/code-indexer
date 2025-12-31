@@ -85,6 +85,48 @@ nav.admin-nav a[aria-current="page"] {
     margin: 2rem auto;
 }
 
+/* SSO section */
+.sso-section {
+    margin-top: 1.5rem;
+}
+
+.sso-section .divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 1.5rem 0;
+}
+
+.sso-section .divider::before,
+.sso-section .divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.sso-section .divider span {
+    padding: 0 1rem;
+    color: var(--pico-muted-color);
+    font-size: 0.9rem;
+}
+
+.sso-button {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 0.75rem 1rem;
+    background-color: var(--pico-card-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 0.25rem;
+    text-decoration: none;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.sso-button:hover {
+    background-color: var(--pico-card-sectioning-background-color);
+    border-color: var(--pico-primary);
+}
+
 /* Dashboard grid */
 .dashboard-grid {
     display: grid;
