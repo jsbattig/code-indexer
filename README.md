@@ -330,3 +330,5 @@ MIT License - See repository for full license text.
 
 **Support**: [GitHub Issues](https://github.com/jsbattig/code-indexer/issues)
 **Repository**: [https://github.com/jsbattig/code-indexer](https://github.com/jsbattig/code-indexer)
+
+<!-- E2E Test: Auto-deployment validation for story #657 - 2025-12-31 16:15 CST -->
