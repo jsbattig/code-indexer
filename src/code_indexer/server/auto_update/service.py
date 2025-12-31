@@ -36,11 +36,11 @@ class AutoUpdateService:
         Args:
             repo_path: Path to git repository
             check_interval: Polling interval in seconds
-            lock_file: Path to lock file (default: /var/run/cidx-auto-update.lock)
+            lock_file: Path to lock file (default: /tmp/cidx-auto-update.lock)
         """
         self.repo_path = repo_path
         self.check_interval = check_interval
-        self.lock_file = lock_file or Path("/var/run/cidx-auto-update.lock")
+        self.lock_file = lock_file or Path("/tmp/cidx-auto-update.lock")
         self.current_state = ServiceState.IDLE
         self.last_deployment: Optional[datetime] = None
         self.last_error: Optional[Exception] = None
