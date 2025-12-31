@@ -4,6 +4,7 @@
     <thead>
         <tr>
             <th>Username</th>
+            <th>Email</th>
             <th>Role</th>
             <th>Created Date</th>
             <th>Actions</th>
@@ -14,10 +15,12 @@
         {% for user in users %}
         <tr>
             <td>{{ user.username }}</td>
+            <td>{{ user.email if user.email else '-' }}</td>
             <td>{{ user.role }}</td>
             <td>{{ user.created_at }}</td>
             <td class="actions-cell">
                 <button class="outline small" onclick="toggleEditForm('{{ user.username }}')">Edit Role</button>
+                <button class="outline small" onclick="toggleEmailForm('{{ user.username }}')">Change Email</button>
                 <button class="outline small" onclick="togglePasswordForm('{{ user.username }}')">Change Password</button>
                 {% if user.username != current_username %}
                 <button class="outline small danger" onclick="confirmDelete('{{ user.username }}')">Delete</button>
@@ -29,7 +32,7 @@
 
         <!-- Edit Role Form (hidden) -->
         <tr id="edit-form-{{ user.username }}" class="form-row" style="display: none;">
-            <td colspan="4">
+            <td colspan="5">
                 <article class="inline-form">
                     <form method="post" action="/admin/users/{{ user.username }}/role">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -52,9 +55,27 @@
             </td>
         </tr>
 
+        <!-- Change Email Form (hidden) -->
+        <tr id="email-form-{{ user.username }}" class="form-row" style="display: none;">
+            <td colspan="5">
+                <article class="inline-form">
+                    <form method="post" action="/admin/users/{{ user.username }}/email">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <div class="form-inline">
+                            <label>New Email:</label>
+                            <input type="email" name="new_email" placeholder="user@example.com" value="{{ user.email if user.email else '' }}" autocomplete="email">
+
+                            <button type="submit" class="primary small">Update Email</button>
+                            <button type="button" class="secondary small" onclick="toggleEmailForm('{{ user.username }}')">Cancel</button>
+                        </div>
+                    </form>
+                </article>
+            </td>
+        </tr>
+
         <!-- Change Password Form (hidden) -->
         <tr id="password-form-{{ user.username }}" class="form-row" style="display: none;">
-            <td colspan="4">
+            <td colspan="5">
                 <article class="inline-form">
                     <form method="post" action="/admin/users/{{ user.username }}/password">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -80,7 +101,7 @@
         {% endfor %}
         {% else %}
         <tr>
-            <td colspan="4" class="no-data">No users found.</td>
+            <td colspan="5" class="no-data">No users found.</td>
         </tr>
         {% endif %}
     </tbody>

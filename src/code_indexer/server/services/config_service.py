@@ -124,11 +124,28 @@ class ConfigService:
                 "max_concurrent_claude_cli": config.max_concurrent_claude_cli,
                 "description_refresh_interval_hours": config.description_refresh_interval_hours,
             },
+            # OIDC/SSO authentication
+            "oidc": {
+                "enabled": config.oidc_provider_config.enabled,
+                "provider_name": config.oidc_provider_config.provider_name,
+                "issuer_url": config.oidc_provider_config.issuer_url,
+                "client_id": config.oidc_provider_config.client_id,
+                "client_secret": config.oidc_provider_config.client_secret,
+                "scopes": config.oidc_provider_config.scopes,
+                "email_claim": config.oidc_provider_config.email_claim,
+                "username_claim": config.oidc_provider_config.username_claim,
+                "use_pkce": config.oidc_provider_config.use_pkce,
+                "require_email_verification": config.oidc_provider_config.require_email_verification,
+                "enable_jit_provisioning": config.oidc_provider_config.enable_jit_provisioning,
+                "default_role": config.oidc_provider_config.default_role,
+            },
         }
 
         return settings
 
-    def update_setting(self, category: str, key: str, value: Any) -> None:
+    def update_setting(
+        self, category: str, key: str, value: Any, skip_validation: bool = False
+    ) -> None:
         """
         Update a single setting.
 
@@ -136,6 +153,7 @@ class ConfigService:
             category: Setting category (server, cache, reindexing, timeouts, password_security)
             key: Setting key within the category
             value: New value for the setting
+            skip_validation: If True, skip validation and save (for batch updates)
 
         Raises:
             ValueError: If category or key is invalid, or value fails validation
@@ -154,13 +172,24 @@ class ConfigService:
             self._update_password_security_setting(config, key, value)
         elif category == "claude_cli":
             self._update_claude_cli_setting(config, key, value)
+        elif category == "oidc":
+            self._update_oidc_setting(config, key, value)
         else:
             raise ValueError(f"Unknown category: {category}")
 
-        # Validate and save
-        self.config_manager.validate_config(config)
-        self.config_manager.save_config(config)
-        logger.info("Updated setting %s.%s to %s", category, key, value)
+        # Validate and save (unless skipping for batch updates)
+        if not skip_validation:
+            self.config_manager.validate_config(config)
+            self.config_manager.save_config(config)
+            logger.info("Updated setting %s.%s to %s", category, key, value)
+        else:
+            # Just update in memory, don't validate or save yet
+            logger.debug(
+                "Updated setting %s.%s to %s (validation deferred)",
+                category,
+                key,
+                value,
+            )
 
     def _update_server_setting(
         self, config: ServerConfig, key: str, value: Any
@@ -273,6 +302,41 @@ class ConfigService:
             config.description_refresh_interval_hours = int(value)
         else:
             raise ValueError(f"Unknown claude_cli setting: {key}")
+
+    def _update_oidc_setting(self, config: ServerConfig, key: str, value: Any) -> None:
+        """Update an OIDC setting."""
+        oidc = config.oidc_provider_config
+        if key == "enabled":
+            oidc.enabled = value in ["true", True]
+        elif key == "provider_name":
+            oidc.provider_name = str(value)
+        elif key == "issuer_url":
+            oidc.issuer_url = str(value)
+        elif key == "client_id":
+            oidc.client_id = str(value)
+        elif key == "client_secret":
+            # Only update if value is provided (not empty)
+            if value:
+                oidc.client_secret = str(value)
+        elif key == "scopes":
+            # Convert space-separated string to list
+            oidc.scopes = (
+                str(value).split() if value else ["openid", "profile", "email"]
+            )
+        elif key == "email_claim":
+            oidc.email_claim = str(value)
+        elif key == "username_claim":
+            oidc.username_claim = str(value)
+        elif key == "use_pkce":
+            oidc.use_pkce = value in ["true", True]
+        elif key == "require_email_verification":
+            oidc.require_email_verification = value in ["true", True]
+        elif key == "enable_jit_provisioning":
+            oidc.enable_jit_provisioning = value in ["true", True]
+        elif key == "default_role":
+            oidc.default_role = str(value)
+        else:
+            raise ValueError(f"Unknown OIDC setting: {key}")
 
     def save_all_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
         """

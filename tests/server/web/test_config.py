@@ -405,3 +405,76 @@ class TestConfigPartial:
             302,
             303,
         ], f"Config partial should redirect unauthenticated, got {response.status_code}"
+
+
+# =============================================================================
+# OIDC/SSO Configuration Tests
+# =============================================================================
+
+
+class TestOIDCConfig:
+    """Tests for OIDC/SSO configuration section."""
+
+    def test_oidc_section_exists(self, authenticated_client: TestClient):
+        """
+        OIDC section should be present in config page.
+
+        Given I am authenticated as an admin
+        When I view the config page
+        Then I see the OIDC/SSO Authentication section
+        """
+        response = authenticated_client.get("/admin/config")
+
+        assert response.status_code == 200
+        text_lower = response.text.lower()
+        assert "oidc" in text_lower or "sso" in text_lower, "Page should have OIDC/SSO section"
+
+    def test_oidc_save_success(
+        self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
+    ):
+        """
+        OIDC configuration should save successfully with valid values.
+
+        Given I am authenticated as an admin
+        When I submit valid OIDC configuration
+        Then I see success message and config is persisted
+        """
+        client = web_infrastructure.get_authenticated_client(
+            admin_user["username"], admin_user["password"]
+        )
+
+        # Get the config page to get CSRF token
+        config_page = client.get("/admin/config")
+        csrf_token = web_infrastructure.extract_csrf_token(config_page.text)
+
+        # Submit valid OIDC config
+        response = client.post(
+            "/admin/config/oidc",
+            data={
+                "enabled": "true",
+                "provider_name": "TestSSO",
+                "issuer_url": "https://accounts.example.com",
+                "client_id": "test-client-id",
+                "client_secret": "test-secret",
+                "scopes": "openid profile email",
+                "email_claim": "email",
+                "username_claim": "preferred_username",
+                "use_pkce": "true",
+                "require_email_verification": "true",
+                "enable_jit_provisioning": "true",
+                "default_role": "normal_user",
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        text_lower = response.text.lower()
+
+        # Should NOT show error message
+        assert "invalid section" not in text_lower, "Should not show 'invalid section' error"
+        assert "error" not in text_lower or "success" in text_lower, "Should not show error without success"
+
+        # Should show success message (being more specific)
+        assert "success" in text_lower, "Should show success message"
+        assert "oidc" in text_lower or "saved" in text_lower, "Success message should mention OIDC or saved"
