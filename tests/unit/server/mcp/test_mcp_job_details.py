@@ -45,13 +45,19 @@ class TestGetJobDetailsTool:
         """Test handler returns error when job_id is missing."""
         from code_indexer.server.auth.user_manager import User, UserRole
 
-        user = User(username="testuser", password_hash="dummy_hash", role=UserRole.ADMIN, created_at="2025-01-01T00:00:00Z")
+        user = User(
+            username="testuser",
+            password_hash="dummy_hash",
+            role=UserRole.ADMIN,
+            created_at="2025-01-01T00:00:00Z",
+        )
         result = await handlers.get_job_details({}, user)
 
         assert "content" in result
         assert result["content"][0]["type"] == "text"
 
         import json
+
         response = json.loads(result["content"][0]["text"])
         assert response["success"] is False
         assert "job_id" in response["error"].lower()
@@ -69,11 +75,17 @@ class TestGetJobDetailsTool:
 
         monkeypatch.setattr(app_module, "background_job_manager", MockJobManager())
 
-        user = User(username="testuser", password_hash="dummy_hash", role=UserRole.ADMIN, created_at="2025-01-01T00:00:00Z")
+        user = User(
+            username="testuser",
+            password_hash="dummy_hash",
+            role=UserRole.ADMIN,
+            created_at="2025-01-01T00:00:00Z",
+        )
         result = await handlers.get_job_details({"job_id": "nonexistent"}, user)
 
         assert "content" in result
         import json
+
         response = json.loads(result["content"][0]["text"])
         assert response["success"] is False
         assert "not found" in response["error"].lower()
@@ -102,11 +114,17 @@ class TestGetJobDetailsTool:
 
         monkeypatch.setattr(app_module, "background_job_manager", MockJobManager())
 
-        user = User(username="testuser", password_hash="dummy_hash", role=UserRole.ADMIN, created_at="2025-01-01T00:00:00Z")
+        user = User(
+            username="testuser",
+            password_hash="dummy_hash",
+            role=UserRole.ADMIN,
+            created_at="2025-01-01T00:00:00Z",
+        )
         result = await handlers.get_job_details({"job_id": "test-job-123"}, user)
 
         assert "content" in result
         import json
+
         response = json.loads(result["content"][0]["text"])
         assert response["success"] is True
         assert "job" in response

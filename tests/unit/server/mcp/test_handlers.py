@@ -86,8 +86,8 @@ class TestHandlerRegistry:
         ]
 
         # Verify we have a reasonable number of handlers (at least the core set)
-        assert (
-            len(HANDLER_REGISTRY) >= len(core_handlers)
+        assert len(HANDLER_REGISTRY) >= len(
+            core_handlers
         ), f"Expected at least {len(core_handlers)} handlers, found {len(HANDLER_REGISTRY)}"
 
         # Verify all core handlers are registered

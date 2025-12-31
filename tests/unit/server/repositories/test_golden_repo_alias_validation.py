@@ -147,9 +147,7 @@ class TestGoldenRepoAliasValidationSecurity:
                     default_branch="main",
                 )
 
-    def test_validation_happens_before_filesystem_operations(
-        self, golden_repo_manager
-    ):
+    def test_validation_happens_before_filesystem_operations(self, golden_repo_manager):
         """
         Test that alias validation happens BEFORE any filesystem operations.
 
@@ -187,9 +185,7 @@ class TestGoldenRepoAliasValidationSecurity:
             # Verify background job was NEVER submitted
             assert call_count["count"] == 0
 
-    def test_validation_happens_before_git_validation(
-        self, golden_repo_manager
-    ):
+    def test_validation_happens_before_git_validation(self, golden_repo_manager):
         """
         Test that alias validation happens BEFORE git repository validation.
 
@@ -215,9 +211,7 @@ class TestGoldenRepoAliasValidationSecurity:
             # Verify _validate_git_repository was NEVER called
             mock_validate.assert_not_called()
 
-    def test_error_message_is_clear_and_security_focused(
-        self, golden_repo_manager
-    ):
+    def test_error_message_is_clear_and_security_focused(self, golden_repo_manager):
         """
         Test that error messages clearly indicate the security violation.
 
@@ -247,9 +241,7 @@ class TestGoldenRepoAliasValidationSecurity:
                 # Verify error message identifies the problematic characters
                 assert ".." in error_msg
 
-    def test_error_messages_identify_specific_violation(
-        self, golden_repo_manager
-    ):
+    def test_error_messages_identify_specific_violation(self, golden_repo_manager):
         r"""
         Test that error messages identify the specific path traversal character.
 

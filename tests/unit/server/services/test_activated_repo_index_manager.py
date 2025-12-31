@@ -208,8 +208,8 @@ class TestGetIndexStatus:
         )
 
         # Mock repo path
-        index_manager.activated_repo_manager.get_activated_repo_path.return_value = (
-            str(repo_path)
+        index_manager.activated_repo_manager.get_activated_repo_path.return_value = str(
+            repo_path
         )
 
         status = index_manager.get_index_status(
@@ -238,8 +238,8 @@ class TestGetIndexStatus:
             )
         )
 
-        index_manager.activated_repo_manager.get_activated_repo_path.return_value = (
-            str(repo_path)
+        index_manager.activated_repo_manager.get_activated_repo_path.return_value = str(
+            repo_path
         )
 
         status = index_manager.get_index_status(
@@ -257,8 +257,8 @@ class TestGetIndexStatus:
         repo_path = Path(temp_data_dir) / "activated-repos" / "testuser" / "test-repo"
         repo_path.mkdir(parents=True, exist_ok=True)
 
-        index_manager.activated_repo_manager.get_activated_repo_path.return_value = (
-            str(repo_path)
+        index_manager.activated_repo_manager.get_activated_repo_path.return_value = str(
+            repo_path
         )
 
         status = index_manager.get_index_status(
@@ -279,8 +279,8 @@ class TestGetIndexStatus:
         # Create SCIP database file
         (scip_dir / "index.scip.db").touch()
 
-        index_manager.activated_repo_manager.get_activated_repo_path.return_value = (
-            str(repo_path)
+        index_manager.activated_repo_manager.get_activated_repo_path.return_value = str(
+            repo_path
         )
 
         status = index_manager.get_index_status(
@@ -303,8 +303,8 @@ class TestGetIndexStatus:
             json.dumps({"last_indexed": old_timestamp, "commit_count": 100})
         )
 
-        index_manager.activated_repo_manager.get_activated_repo_path.return_value = (
-            str(repo_path)
+        index_manager.activated_repo_manager.get_activated_repo_path.return_value = str(
+            repo_path
         )
 
         status = index_manager.get_index_status(
@@ -349,9 +349,7 @@ class TestJobExecution:
 class TestJobTracking:
     """Tests for job status tracking."""
 
-    def test_job_status_transitions(
-        self, index_manager, mock_background_job_manager
-    ):
+    def test_job_status_transitions(self, index_manager, mock_background_job_manager):
         """Test job status transitions from queued to running to completed."""
         job_id = str(uuid.uuid4())
 

@@ -365,12 +365,14 @@ class ActivatedRepoManager:
                     f"Cloning repository {idx + 1}/{total_repos}: {alias}",
                 )
 
-                golden_repo = self.golden_repo_manager.golden_repos[alias]
+                self.golden_repo_manager.golden_repos[alias]
                 subrepo_path = composite_path / alias
 
                 try:
                     # Use canonical path resolution for versioned repos
-                    golden_repo_actual_path = self.golden_repo_manager.get_actual_repo_path(alias)
+                    golden_repo_actual_path = (
+                        self.golden_repo_manager.get_actual_repo_path(alias)
+                    )
                     # Reuse existing CoW clone method
                     success = self._clone_with_copy_on_write(
                         str(golden_repo_actual_path), str(subrepo_path)
@@ -521,7 +523,9 @@ class ActivatedRepoManager:
 
         return activated_repos
 
-    def find_repos_by_golden_alias(self, golden_repo_alias: str) -> List[Dict[str, Any]]:
+    def find_repos_by_golden_alias(
+        self, golden_repo_alias: str
+    ) -> List[Dict[str, Any]]:
         """
         Find all activated repos derived from a specific golden repo.
 
@@ -546,19 +550,25 @@ class ActivatedRepoManager:
             for repo_data in user_repos:
                 # Handle both single and composite repos
                 if repo_data.get("golden_repo_alias") == golden_repo_alias:
-                    matching_repos.append({
-                        "username": user_dir_name,
-                        "user_alias": repo_data["user_alias"],
-                        "is_composite": repo_data.get("is_composite", False),
-                    })
+                    matching_repos.append(
+                        {
+                            "username": user_dir_name,
+                            "user_alias": repo_data["user_alias"],
+                            "is_composite": repo_data.get("is_composite", False),
+                        }
+                    )
                 # For composite repos, check if any sub-repo matches
-                elif repo_data.get("is_composite") and golden_repo_alias in repo_data.get("golden_repo_aliases", []):
-                    matching_repos.append({
-                        "username": user_dir_name,
-                        "user_alias": repo_data["user_alias"],
-                        "is_composite": True,
-                        "is_partial_composite": True,
-                    })
+                elif repo_data.get(
+                    "is_composite"
+                ) and golden_repo_alias in repo_data.get("golden_repo_aliases", []):
+                    matching_repos.append(
+                        {
+                            "username": user_dir_name,
+                            "user_alias": repo_data["user_alias"],
+                            "is_composite": True,
+                            "is_partial_composite": True,
+                        }
+                    )
 
         return matching_repos
 
@@ -903,9 +913,14 @@ class ActivatedRepoManager:
                 )
 
             # Story #636: Check and migrate legacy remotes before fetch
-            if golden_repo_alias and golden_repo_alias in self.golden_repo_manager.golden_repos:
+            if (
+                golden_repo_alias
+                and golden_repo_alias in self.golden_repo_manager.golden_repos
+            ):
                 # Use canonical path resolution to handle versioned repos (Bug #3, #4 fix)
-                golden_repo_path = self.golden_repo_manager.get_actual_repo_path(golden_repo_alias)
+                golden_repo_path = self.golden_repo_manager.get_actual_repo_path(
+                    golden_repo_alias
+                )
                 self._detect_and_migrate_legacy_remotes(repo_dir, golden_repo_path)
             else:
                 self.logger.warning(
@@ -1324,7 +1339,9 @@ class ActivatedRepoManager:
             activated_repo_path = os.path.join(user_dir, user_alias)
 
             # Clone repository with CoW (use canonical path for versioned repos)
-            golden_repo_actual_path = self.golden_repo_manager.get_actual_repo_path(golden_repo_alias)
+            golden_repo_actual_path = self.golden_repo_manager.get_actual_repo_path(
+                golden_repo_alias
+            )
             update_progress(40, f"Cloning repository from {golden_repo_actual_path}")
             success = self._clone_with_copy_on_write(
                 golden_repo_actual_path, activated_repo_path
@@ -1364,14 +1381,18 @@ class ActivatedRepoManager:
             update_progress(82, "Resolving git committer email via SSH key")
             git_config = GitServiceConfig()
             committer_service = CommitterResolutionService()
-            git_committer_email, ssh_key_used = committer_service.resolve_committer_email(
-                golden_repo_url=golden_repo.repo_url,
-                default_email=git_config.default_committer_email
+            git_committer_email, ssh_key_used = (
+                committer_service.resolve_committer_email(
+                    golden_repo_url=golden_repo.repo_url,
+                    default_email=git_config.default_committer_email,
+                )
             )
 
             # Set git config user.email and user.name in activated repository
             if git_committer_email:
-                update_progress(85, f"Setting git config user.email to {git_committer_email}")
+                update_progress(
+                    85, f"Setting git config user.email to {git_committer_email}"
+                )
                 result = subprocess.run(
                     ["git", "config", "user.email", git_committer_email],
                     cwd=activated_repo_path,
@@ -2020,7 +2041,9 @@ class ActivatedRepoManager:
                         f"git checkout -f HEAD failed (non-fatal): {result.stderr}"
                     )
 
-                self.logger.info(f"Successfully converted bare repo to non-bare: {dest_path}")
+                self.logger.info(
+                    f"Successfully converted bare repo to non-bare: {dest_path}"
+                )
 
             # Step 3: Fix git status for CoW cloned files (only if git repo)
             git_dir = os.path.join(dest_path, ".git")
@@ -2181,9 +2204,7 @@ class ActivatedRepoManager:
         except Exception as e:
             self.logger.warning(f"Error setting up git remote: {str(e)}")
 
-    def _add_or_update_remote(
-        self, repo_path: str, remote_name: str, url: str
-    ) -> None:
+    def _add_or_update_remote(self, repo_path: str, remote_name: str, url: str) -> None:
         """
         Add or update a git remote (helper method to eliminate duplication).
 

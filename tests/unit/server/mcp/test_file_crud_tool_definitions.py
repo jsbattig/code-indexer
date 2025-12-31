@@ -37,7 +37,7 @@ class TestCreateFileTool:
         valid_input = {
             "repository_alias": "test-repo",
             "file_path": "src/new_file.py",
-            "content": "print('hello')"
+            "content": "print('hello')",
         }
 
         # Should not raise ValidationError
@@ -51,7 +51,7 @@ class TestCreateFileTool:
         # Missing content
         invalid_input = {
             "repository_alias": "test-repo",
-            "file_path": "src/new_file.py"
+            "file_path": "src/new_file.py",
         }
 
         with pytest.raises(ValidationError):
@@ -95,7 +95,7 @@ class TestEditFileTool:
             "file_path": "src/existing.py",
             "old_string": "def old_func():",
             "new_string": "def new_func():",
-            "content_hash": "abc123def456"
+            "content_hash": "abc123def456",
         }
 
         validate(instance=valid_input, schema=schema)
@@ -111,7 +111,7 @@ class TestEditFileTool:
             "old_string": "old_name",
             "new_string": "new_name",
             "content_hash": "abc123",
-            "replace_all": True
+            "replace_all": True,
         }
 
         validate(instance=valid_input, schema=schema)
@@ -125,7 +125,7 @@ class TestEditFileTool:
             "repository_alias": "test-repo",
             "file_path": "src/existing.py",
             "old_string": "old",
-            "new_string": "new"
+            "new_string": "new",
             # Missing content_hash
         }
 
@@ -165,10 +165,7 @@ class TestDeleteFileTool:
         tool = TOOL_REGISTRY["delete_file"]
         schema = tool["inputSchema"]
 
-        valid_input = {
-            "repository_alias": "test-repo",
-            "file_path": "src/old_file.py"
-        }
+        valid_input = {"repository_alias": "test-repo", "file_path": "src/old_file.py"}
 
         validate(instance=valid_input, schema=schema)
 
@@ -180,7 +177,7 @@ class TestDeleteFileTool:
         valid_input = {
             "repository_alias": "test-repo",
             "file_path": "src/old_file.py",
-            "content_hash": "xyz789"
+            "content_hash": "xyz789",
         }
 
         validate(instance=valid_input, schema=schema)

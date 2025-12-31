@@ -76,7 +76,11 @@ class TestHandleCreateFileAutoWatch:
 
     @pytest.mark.asyncio
     async def test_create_file_starts_auto_watch(
-        self, mock_user, mock_auto_watch_manager, mock_file_crud_service, mock_activated_repo_manager
+        self,
+        mock_user,
+        mock_auto_watch_manager,
+        mock_file_crud_service,
+        mock_activated_repo_manager,
     ):
         """Test that creating a file triggers auto-watch start."""
         from code_indexer.server.mcp.handlers import handle_create_file
@@ -88,15 +92,19 @@ class TestHandleCreateFileAutoWatch:
         }
 
         # Patch dependencies at their source modules
-        with patch(
-            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
-            mock_auto_watch_manager,
-        ), patch(
-            "code_indexer.server.services.file_crud_service.file_crud_service",
-            mock_file_crud_service,
-        ), patch(
-            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
-        ) as MockActivatedRepoManager:
+        with (
+            patch(
+                "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+                mock_auto_watch_manager,
+            ),
+            patch(
+                "code_indexer.server.services.file_crud_service.file_crud_service",
+                mock_file_crud_service,
+            ),
+            patch(
+                "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+            ) as MockActivatedRepoManager,
+        ):
             MockActivatedRepoManager.return_value = mock_activated_repo_manager
             result = await handle_create_file(params, mock_user)
 
@@ -114,7 +122,11 @@ class TestHandleCreateFileAutoWatch:
 
     @pytest.mark.asyncio
     async def test_create_file_auto_watch_called_before_creation(
-        self, mock_user, mock_auto_watch_manager, mock_file_crud_service, mock_activated_repo_manager
+        self,
+        mock_user,
+        mock_auto_watch_manager,
+        mock_file_crud_service,
+        mock_activated_repo_manager,
     ):
         """Test that auto-watch is started BEFORE file creation."""
         from code_indexer.server.mcp.handlers import handle_create_file
@@ -143,15 +155,19 @@ class TestHandleCreateFileAutoWatch:
             "content": "print('hello')",
         }
 
-        with patch(
-            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
-            mock_auto_watch_manager,
-        ), patch(
-            "code_indexer.server.services.file_crud_service.file_crud_service",
-            mock_file_crud_service,
-        ), patch(
-            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
-        ) as MockActivatedRepoManager:
+        with (
+            patch(
+                "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+                mock_auto_watch_manager,
+            ),
+            patch(
+                "code_indexer.server.services.file_crud_service.file_crud_service",
+                mock_file_crud_service,
+            ),
+            patch(
+                "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+            ) as MockActivatedRepoManager,
+        ):
             MockActivatedRepoManager.return_value = mock_activated_repo_manager
             await handle_create_file(params, mock_user)
 
@@ -164,7 +180,11 @@ class TestHandleEditFileAutoWatch:
 
     @pytest.mark.asyncio
     async def test_edit_file_starts_auto_watch(
-        self, mock_user, mock_auto_watch_manager, mock_file_crud_service, mock_activated_repo_manager
+        self,
+        mock_user,
+        mock_auto_watch_manager,
+        mock_file_crud_service,
+        mock_activated_repo_manager,
     ):
         """Test that editing a file triggers auto-watch start."""
         from code_indexer.server.mcp.handlers import handle_edit_file
@@ -177,15 +197,19 @@ class TestHandleEditFileAutoWatch:
             "content_hash": "abc123",
         }
 
-        with patch(
-            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
-            mock_auto_watch_manager,
-        ), patch(
-            "code_indexer.server.services.file_crud_service.file_crud_service",
-            mock_file_crud_service,
-        ), patch(
-            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
-        ) as MockActivatedRepoManager:
+        with (
+            patch(
+                "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+                mock_auto_watch_manager,
+            ),
+            patch(
+                "code_indexer.server.services.file_crud_service.file_crud_service",
+                mock_file_crud_service,
+            ),
+            patch(
+                "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+            ) as MockActivatedRepoManager,
+        ):
             MockActivatedRepoManager.return_value = mock_activated_repo_manager
             result = await handle_edit_file(params, mock_user)
 
@@ -207,7 +231,11 @@ class TestHandleDeleteFileAutoWatch:
 
     @pytest.mark.asyncio
     async def test_delete_file_starts_auto_watch(
-        self, mock_user, mock_auto_watch_manager, mock_file_crud_service, mock_activated_repo_manager
+        self,
+        mock_user,
+        mock_auto_watch_manager,
+        mock_file_crud_service,
+        mock_activated_repo_manager,
     ):
         """Test that deleting a file triggers auto-watch start."""
         from code_indexer.server.mcp.handlers import handle_delete_file
@@ -217,15 +245,19 @@ class TestHandleDeleteFileAutoWatch:
             "file_path": "test.py",
         }
 
-        with patch(
-            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
-            mock_auto_watch_manager,
-        ), patch(
-            "code_indexer.server.services.file_crud_service.file_crud_service",
-            mock_file_crud_service,
-        ), patch(
-            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
-        ) as MockActivatedRepoManager:
+        with (
+            patch(
+                "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+                mock_auto_watch_manager,
+            ),
+            patch(
+                "code_indexer.server.services.file_crud_service.file_crud_service",
+                mock_file_crud_service,
+            ),
+            patch(
+                "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+            ) as MockActivatedRepoManager,
+        ):
             MockActivatedRepoManager.return_value = mock_activated_repo_manager
             result = await handle_delete_file(params, mock_user)
 
@@ -247,10 +279,17 @@ class TestAutoWatchMultipleOperations:
 
     @pytest.mark.asyncio
     async def test_multiple_file_operations_reset_timeout(
-        self, mock_user, mock_auto_watch_manager, mock_file_crud_service, mock_activated_repo_manager
+        self,
+        mock_user,
+        mock_auto_watch_manager,
+        mock_file_crud_service,
+        mock_activated_repo_manager,
     ):
         """Test that multiple file operations reset auto-watch timeout."""
-        from code_indexer.server.mcp.handlers import handle_create_file, handle_edit_file
+        from code_indexer.server.mcp.handlers import (
+            handle_create_file,
+            handle_edit_file,
+        )
 
         # Configure mock to show watching after first operation
         mock_auto_watch_manager.is_watching = Mock(side_effect=[False, True])
@@ -262,15 +301,19 @@ class TestAutoWatchMultipleOperations:
             "content": "print('hello')",
         }
 
-        with patch(
-            "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
-            mock_auto_watch_manager,
-        ), patch(
-            "code_indexer.server.services.file_crud_service.file_crud_service",
-            mock_file_crud_service,
-        ), patch(
-            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
-        ) as MockActivatedRepoManager:
+        with (
+            patch(
+                "code_indexer.server.services.auto_watch_manager.auto_watch_manager",
+                mock_auto_watch_manager,
+            ),
+            patch(
+                "code_indexer.server.services.file_crud_service.file_crud_service",
+                mock_file_crud_service,
+            ),
+            patch(
+                "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+            ) as MockActivatedRepoManager,
+        ):
             MockActivatedRepoManager.return_value = mock_activated_repo_manager
             await handle_create_file(create_params, mock_user)
 

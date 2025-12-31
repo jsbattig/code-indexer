@@ -83,7 +83,9 @@ class TestGitStage:
 
     def test_git_stage_repo_not_found(self, client, mock_git_service):
         """Test staging with non-existent repository."""
-        mock_git_service.stage_files.side_effect = FileNotFoundError("Repository not found")
+        mock_git_service.stage_files.side_effect = FileNotFoundError(
+            "Repository not found"
+        )
 
         response = client.post(
             "/api/v1/repos/nonexistent/git/stage",
@@ -131,7 +133,9 @@ class TestGitUnstage:
 
     def test_git_unstage_repo_not_found(self, client, mock_git_service):
         """Test unstaging with non-existent repository."""
-        mock_git_service.unstage_files.side_effect = FileNotFoundError("Repository not found")
+        mock_git_service.unstage_files.side_effect = FileNotFoundError(
+            "Repository not found"
+        )
 
         response = client.post(
             "/api/v1/repos/nonexistent/git/unstage",
@@ -184,7 +188,9 @@ class TestGitCommit:
 
     def test_git_commit_empty_message(self, client, mock_git_service):
         """Test commit with empty message (should fail validation)."""
-        mock_git_service.create_commit.side_effect = ValueError("Commit message cannot be empty")
+        mock_git_service.create_commit.side_effect = ValueError(
+            "Commit message cannot be empty"
+        )
 
         response = client.post(
             "/api/v1/repos/test-repo/git/commit",

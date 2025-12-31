@@ -101,9 +101,7 @@ class TestCreateFileHandler:
         assert "file_path" in response_data["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_create_file_already_exists(
-        self, test_user, mock_file_crud_service
-    ):
+    async def test_create_file_already_exists(self, test_user, mock_file_crud_service):
         """Test create_file when file already exists."""
         from code_indexer.server.mcp.handlers import create_file
         import json
@@ -319,9 +317,7 @@ class TestDeleteFileHandler:
         )
 
     @pytest.mark.asyncio
-    async def test_delete_file_without_hash(
-        self, test_user, mock_file_crud_service
-    ):
+    async def test_delete_file_without_hash(self, test_user, mock_file_crud_service):
         """Test delete_file without content_hash (optional parameter)."""
         from code_indexer.server.mcp.handlers import delete_file
         import json
@@ -373,9 +369,7 @@ class TestDeleteFileHandler:
         assert "not found" in response_data["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_delete_file_hash_mismatch(
-        self, test_user, mock_file_crud_service
-    ):
+    async def test_delete_file_hash_mismatch(self, test_user, mock_file_crud_service):
         """Test delete_file with hash mismatch."""
         from code_indexer.server.mcp.handlers import delete_file
         from code_indexer.server.services.file_crud_service import HashMismatchError

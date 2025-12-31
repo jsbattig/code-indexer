@@ -372,9 +372,7 @@ class ActivatedRepoIndexManager:
         else:
             return {"success": False, "error": f"Unknown index type: {index_type}"}
 
-    def _execute_semantic_indexing(
-        self, repo_path: str, clear: bool
-    ) -> Dict[str, Any]:
+    def _execute_semantic_indexing(self, repo_path: str, clear: bool) -> Dict[str, Any]:
         """Execute semantic indexing using SmartIndexer."""
         try:
             repo_path_obj = Path(repo_path)
@@ -435,9 +433,7 @@ class ActivatedRepoIndexManager:
         except Exception as e:
             return {"success": False, "error": f"FTS indexing error: {str(e)}"}
 
-    def _execute_temporal_indexing(
-        self, repo_path: str, clear: bool
-    ) -> Dict[str, Any]:
+    def _execute_temporal_indexing(self, repo_path: str, clear: bool) -> Dict[str, Any]:
         """Execute temporal indexing using GitCommitIndexer."""
         try:
             args = ["cidx", "index", "--index-commits"]
@@ -561,9 +557,7 @@ class ActivatedRepoIndexManager:
 
     def _get_temporal_status(self, repo_path: Path) -> Dict[str, Any]:
         """Get temporal index status."""
-        temporal_dir = (
-            repo_path / ".code-indexer" / "index" / "code-indexer-temporal"
-        )
+        temporal_dir = repo_path / ".code-indexer" / "index" / "code-indexer-temporal"
 
         if not temporal_dir.exists():
             return {"status": "not_indexed"}

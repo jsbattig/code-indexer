@@ -83,7 +83,9 @@ def run_ssh_migration_on_startup(
                     f"during key testing (timeouts or connection failures)"
                 )
         else:
-            logger.warning(f"SSH key migration: Completed with issues - {result.reason}")
+            logger.warning(
+                f"SSH key migration: Completed with issues - {result.reason}"
+            )
 
         return result
 

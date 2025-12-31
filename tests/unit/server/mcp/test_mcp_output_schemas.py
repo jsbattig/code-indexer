@@ -363,7 +363,7 @@ class TestOutputSchemaCompleteness:
             response_data = json.loads(result["content"][0]["text"])
 
             # Get schema
-            schema = TOOL_REGISTRY["search_code"]["outputSchema"]
+            TOOL_REGISTRY["search_code"]["outputSchema"]
 
             # Verify response matches schema structure
             assert "success" in response_data

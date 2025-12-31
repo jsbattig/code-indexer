@@ -10,13 +10,11 @@ Validates that both HNSWIndexCache and FTSIndexCache enforce max_cache_size_mb l
 These tests verify AC3A: Cache size limits prevent unbounded memory growth.
 """
 
-import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Tuple
 from unittest.mock import MagicMock
 
-import pytest
 
 from code_indexer.server.cache.fts_index_cache import (
     FTSIndexCache,

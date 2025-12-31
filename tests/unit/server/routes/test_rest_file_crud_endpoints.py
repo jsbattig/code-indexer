@@ -11,11 +11,10 @@ import pytest
 from datetime import datetime, timezone
 from fastapi import status
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 from code_indexer.server.app import create_app
 from code_indexer.server.auth.user_manager import User, UserRole
-from code_indexer.server.services.file_crud_service import HashMismatchError
 
 
 @pytest.fixture
@@ -37,7 +36,7 @@ def mock_user():
         username="testuser",
         password_hash="hash",
         role=UserRole.NORMAL_USER,
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
 
 
@@ -48,7 +47,7 @@ def mock_admin_user():
         username="admin",
         password_hash="hash",
         role=UserRole.ADMIN,
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
 
 
@@ -63,7 +62,9 @@ class TestCreateFileEndpoint:
         app.dependency_overrides[get_current_user] = lambda: mock_user
 
         try:
-            with patch("code_indexer.server.routers.files.FileCRUDService") as MockService:
+            with patch(
+                "code_indexer.server.routers.files.FileCRUDService"
+            ) as MockService:
                 # Mock service response
                 mock_service = MockService.return_value
                 mock_service.create_file.return_value = {
@@ -71,13 +72,13 @@ class TestCreateFileEndpoint:
                     "file_path": "src/test.py",
                     "content_hash": "abc123",
                     "size_bytes": 100,
-                    "created_at": "2025-12-27T12:00:00Z"
+                    "created_at": "2025-12-27T12:00:00Z",
                 }
 
                 # Make request
                 response = client.post(
                     "/api/v1/repos/test-repo/files",
-                    json={"file_path": "src/test.py", "content": "print('hello')"}
+                    json={"file_path": "src/test.py", "content": "print('hello')"},
                 )
 
                 # Assertions
@@ -93,7 +94,7 @@ class TestCreateFileEndpoint:
                     repo_alias="test-repo",
                     file_path="src/test.py",
                     content="print('hello')",
-                    username="testuser"
+                    username="testuser",
                 )
         finally:
             # Clean up dependency override
@@ -103,7 +104,7 @@ class TestCreateFileEndpoint:
         """Test create file without authentication returns 401."""
         response = client.post(
             "/api/v1/repos/test-repo/files",
-            json={"file_path": "src/test.py", "content": "print('hello')"}
+            json={"file_path": "src/test.py", "content": "print('hello')"},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -116,13 +117,17 @@ class TestCreateFileEndpoint:
         app.dependency_overrides[get_current_user] = lambda: mock_user
 
         try:
-            with patch("code_indexer.server.routers.files.FileCRUDService") as MockService:
+            with patch(
+                "code_indexer.server.routers.files.FileCRUDService"
+            ) as MockService:
                 mock_service = MockService.return_value
-                mock_service.create_file.side_effect = PermissionError("Cannot modify .git/ directory")
+                mock_service.create_file.side_effect = PermissionError(
+                    "Cannot modify .git/ directory"
+                )
 
                 response = client.post(
                     "/api/v1/repos/test-repo/files",
-                    json={"file_path": ".git/config", "content": "bad"}
+                    json={"file_path": ".git/config", "content": "bad"},
                 )
 
                 assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -137,13 +142,17 @@ class TestCreateFileEndpoint:
         app.dependency_overrides[get_current_user] = lambda: mock_user
 
         try:
-            with patch("code_indexer.server.routers.files.FileCRUDService") as MockService:
+            with patch(
+                "code_indexer.server.routers.files.FileCRUDService"
+            ) as MockService:
                 mock_service = MockService.return_value
-                mock_service.create_file.side_effect = FileExistsError("File already exists")
+                mock_service.create_file.side_effect = FileExistsError(
+                    "File already exists"
+                )
 
                 response = client.post(
                     "/api/v1/repos/test-repo/files",
-                    json={"file_path": "src/existing.py", "content": "code"}
+                    json={"file_path": "src/existing.py", "content": "code"},
                 )
 
                 assert response.status_code == status.HTTP_409_CONFLICT
@@ -160,8 +169,7 @@ class TestCreateFileEndpoint:
         try:
             # Missing content field
             response = client.post(
-                "/api/v1/repos/test-repo/files",
-                json={"file_path": "src/test.py"}
+                "/api/v1/repos/test-repo/files", json={"file_path": "src/test.py"}
             )
 
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -175,13 +183,17 @@ class TestCreateFileEndpoint:
         app.dependency_overrides[get_current_user] = lambda: mock_user
 
         try:
-            with patch("code_indexer.server.routers.files.FileCRUDService") as MockService:
+            with patch(
+                "code_indexer.server.routers.files.FileCRUDService"
+            ) as MockService:
                 mock_service = MockService.return_value
-                mock_service.create_file.side_effect = FileNotFoundError("Repository not found")
+                mock_service.create_file.side_effect = FileNotFoundError(
+                    "Repository not found"
+                )
 
                 response = client.post(
                     "/api/v1/repos/nonexistent/files",
-                    json={"file_path": "src/test.py", "content": "code"}
+                    json={"file_path": "src/test.py", "content": "code"},
                 )
 
                 assert response.status_code == status.HTTP_404_NOT_FOUND

@@ -588,15 +588,11 @@ class TestGoldenRepoManager:
         golden_repo_manager.golden_repos["test-repo"] = test_repo
 
         # Mock index existence check to return False (no existing index)
-        with patch.object(
-            golden_repo_manager, "_index_exists"
-        ) as mock_index_exists:
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
             mock_index_exists.return_value = False
 
             result = golden_repo_manager.add_index_to_golden_repo(
-                alias="test-repo",
-                index_type="temporal",
-                submitter_username="admin"
+                alias="test-repo", index_type="temporal", submitter_username="admin"
             )
 
             # Should return job_id string
@@ -622,11 +618,12 @@ class TestGoldenRepoManager:
         )
         golden_repo_manager.golden_repos["test-repo"] = test_repo
 
-        with pytest.raises(ValueError, match="Invalid index_type: invalid_type. Must be one of: semantic_fts, temporal, scip"):
+        with pytest.raises(
+            ValueError,
+            match="Invalid index_type: invalid_type. Must be one of: semantic_fts, temporal, scip",
+        ):
             golden_repo_manager.add_index_to_golden_repo(
-                alias="test-repo",
-                index_type="invalid_type",
-                submitter_username="admin"
+                alias="test-repo", index_type="invalid_type", submitter_username="admin"
             )
 
         # No job should be created on validation failure
@@ -634,11 +631,11 @@ class TestGoldenRepoManager:
 
     def test_add_index_to_golden_repo_nonexistent_alias(self, golden_repo_manager):
         """Test adding index to non-existent alias raises ValueError (AC4)."""
-        with pytest.raises(ValueError, match="Golden repository 'nonexistent' not found"):
+        with pytest.raises(
+            ValueError, match="Golden repository 'nonexistent' not found"
+        ):
             golden_repo_manager.add_index_to_golden_repo(
-                alias="nonexistent",
-                index_type="temporal",
-                submitter_username="admin"
+                alias="nonexistent", index_type="temporal", submitter_username="admin"
             )
 
         # No job should be created on validation failure
@@ -657,16 +654,15 @@ class TestGoldenRepoManager:
         golden_repo_manager.golden_repos["test-repo"] = test_repo
 
         # Mock index existence check to return True (index already exists)
-        with patch.object(
-            golden_repo_manager, "_index_exists"
-        ) as mock_index_exists:
+        with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
             mock_index_exists.return_value = True
 
-            with pytest.raises(ValueError, match="Index type 'temporal' already exists for golden repo 'test-repo'"):
+            with pytest.raises(
+                ValueError,
+                match="Index type 'temporal' already exists for golden repo 'test-repo'",
+            ):
                 golden_repo_manager.add_index_to_golden_repo(
-                    alias="test-repo",
-                    index_type="temporal",
-                    submitter_username="admin"
+                    alias="test-repo", index_type="temporal", submitter_username="admin"
                 )
 
             # No job should be created when index already exists
@@ -689,10 +685,8 @@ class TestGoldenRepoManager:
             mock_index_exists.return_value = False
 
             # Call add_index_to_golden_repo
-            job_id = golden_repo_manager.add_index_to_golden_repo(
-                alias="test-repo",
-                index_type="semantic_fts",
-                submitter_username="admin"
+            golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo", index_type="semantic_fts", submitter_username="admin"
             )
 
             # Get the background worker function
@@ -725,7 +719,11 @@ class TestGoldenRepoManager:
             clone_path=os.path.join(golden_repo_manager.golden_repos_dir, "test-repo"),
             created_at="2023-01-01T00:00:00Z",
             enable_temporal=True,
-            temporal_options={"max_commits": 500, "since_date": "2024-01-01", "diff_context": 10}
+            temporal_options={
+                "max_commits": 500,
+                "since_date": "2024-01-01",
+                "diff_context": 10,
+            },
         )
         golden_repo_manager.golden_repos["test-repo"] = test_repo
 
@@ -734,10 +732,8 @@ class TestGoldenRepoManager:
             mock_index_exists.return_value = False
 
             # Call add_index_to_golden_repo
-            job_id = golden_repo_manager.add_index_to_golden_repo(
-                alias="test-repo",
-                index_type="temporal",
-                submitter_username="admin"
+            golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo", index_type="temporal", submitter_username="admin"
             )
 
             # Get the background worker function
@@ -785,10 +781,8 @@ class TestGoldenRepoManager:
             mock_index_exists.return_value = False
 
             # Call add_index_to_golden_repo
-            job_id = golden_repo_manager.add_index_to_golden_repo(
-                alias="test-repo",
-                index_type="scip",
-                submitter_username="admin"
+            golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo", index_type="scip", submitter_username="admin"
             )
 
             # Get the background worker function
@@ -811,7 +805,9 @@ class TestGoldenRepoManager:
                 assert cwd == test_repo.clone_path
                 assert result["success"] is True
 
-    def test_background_worker_no_timeout_for_long_operations(self, golden_repo_manager):
+    def test_background_worker_no_timeout_for_long_operations(
+        self, golden_repo_manager
+    ):
         """Test that subprocess calls do NOT include timeout parameter for long-running operations.
 
         Background jobs should run without timeout limits:
@@ -832,19 +828,21 @@ class TestGoldenRepoManager:
             mock_index_exists.return_value = False
 
             for index_type in ["semantic_fts", "temporal", "scip"]:
-                job_id = golden_repo_manager.add_index_to_golden_repo(
-                    alias="test-repo",
-                    index_type=index_type,
-                    submitter_username="admin"
+                golden_repo_manager.add_index_to_golden_repo(
+                    alias="test-repo", index_type=index_type, submitter_username="admin"
                 )
 
                 # Get the background worker function
-                call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+                call_args = (
+                    golden_repo_manager.background_job_manager.submit_job.call_args
+                )
                 background_worker = call_args[1]["func"]
 
                 # Execute and verify NO timeout parameter
                 with patch("subprocess.run") as mock_run:
-                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    mock_run.return_value = MagicMock(
+                        returncode=0, stdout="", stderr=""
+                    )
                     background_worker()
 
                     # Verify timeout parameter is NOT present or is None
@@ -869,10 +867,8 @@ class TestGoldenRepoManager:
         with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
             mock_index_exists.return_value = False
 
-            job_id = golden_repo_manager.add_index_to_golden_repo(
-                alias="test-repo",
-                index_type="semantic_fts",
-                submitter_username="admin"
+            golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo", index_type="semantic_fts", submitter_username="admin"
             )
 
             # Get the background worker function
@@ -884,7 +880,7 @@ class TestGoldenRepoManager:
                 mock_run.return_value = MagicMock(
                     returncode=0,
                     stdout="Index created successfully",
-                    stderr="Processing 100 files..."
+                    stderr="Processing 100 files...",
                 )
 
                 result = background_worker()
@@ -912,10 +908,8 @@ class TestGoldenRepoManager:
         with patch.object(golden_repo_manager, "_index_exists") as mock_index_exists:
             mock_index_exists.return_value = False
 
-            job_id = golden_repo_manager.add_index_to_golden_repo(
-                alias="test-repo",
-                index_type="temporal",
-                submitter_username="admin"
+            golden_repo_manager.add_index_to_golden_repo(
+                alias="test-repo", index_type="temporal", submitter_username="admin"
             )
 
             # Get the background worker function
@@ -941,7 +935,9 @@ class TestGoldenRepoManager:
                 assert "--diff-context" in command
                 assert "5" in command
 
-    def test_index_exists_semantic_fts_validates_actual_files(self, golden_repo_manager, temp_data_dir):
+    def test_index_exists_semantic_fts_validates_actual_files(
+        self, golden_repo_manager, temp_data_dir
+    ):
         """Test that _index_exists checks for actual index files, not just directories (CRITICAL ISSUE #9)."""
         # Create test repository
         test_repo = GoldenRepo(

@@ -56,7 +56,7 @@ class TestMCPFTSSearchModeBugFix:
                 "limit": 3,
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             # Verify query_user_repositories was called with search_mode parameter
             mock_app.semantic_query_manager.query_user_repositories.assert_called_once()
@@ -92,7 +92,7 @@ class TestMCPFTSSearchModeBugFix:
                 # No search_mode specified
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             call_kwargs = (
                 mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs
@@ -121,7 +121,7 @@ class TestMCPFTSSearchModeBugFix:
                 "search_mode": "hybrid",
             }
 
-            result = await search_code(params, mock_user)
+            await search_code(params, mock_user)
 
             call_kwargs = (
                 mock_app.semantic_query_manager.query_user_repositories.call_args.kwargs

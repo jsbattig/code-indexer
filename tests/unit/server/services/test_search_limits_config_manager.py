@@ -128,15 +128,11 @@ class TestSearchLimitsConfigManager:
 
         # Invalid config (timeout too low)
         with pytest.raises(ValidationError):
-            invalid_config = SearchLimitsConfig(
-                max_result_size_mb=10, timeout_seconds=1
-            )
+            SearchLimitsConfig(max_result_size_mb=10, timeout_seconds=1)
 
         # Invalid config (size too high)
         with pytest.raises(ValidationError):
-            invalid_config = SearchLimitsConfig(
-                max_result_size_mb=101, timeout_seconds=30
-            )
+            SearchLimitsConfig(max_result_size_mb=101, timeout_seconds=30)
 
     def test_database_recovery_from_empty(self):
         """Test database initializes with defaults if empty."""

@@ -129,7 +129,9 @@ def authenticate_user(username, password):
         )
         mock.golden_repos = {"test-repo": golden_repo}
         # Mock get_actual_repo_path() to return the real path (for canonical path resolution)
-        mock.get_actual_repo_path = MagicMock(return_value=str(golden_repo_with_indexes))
+        mock.get_actual_repo_path = MagicMock(
+            return_value=str(golden_repo_with_indexes)
+        )
         return mock
 
     @pytest.fixture

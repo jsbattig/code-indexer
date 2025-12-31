@@ -714,7 +714,9 @@ class UserManager:
         self._save_users(users_data)
         return True
 
-    def update_mcp_credential_last_used(self, username: str, credential_id: str) -> bool:
+    def update_mcp_credential_last_used(
+        self, username: str, credential_id: str
+    ) -> bool:
         """
         Update last_used_at timestamp for an MCP credential.
 
@@ -738,7 +740,9 @@ class UserManager:
 
         return False
 
-    def list_all_mcp_credentials(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    def list_all_mcp_credentials(
+        self, limit: int = 100, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         """
         List MCP credentials across all users with pagination.
 
@@ -771,14 +775,18 @@ class UserManager:
                 if count >= limit + offset:
                     break
 
-                all_credentials.append({
-                    "username": username,
-                    "credential_id": cred["credential_id"],
-                    "name": cred.get("name"),
-                    "client_id_prefix": cred.get("client_id_prefix", cred.get("client_id", "")[:8]),
-                    "created_at": cred["created_at"],
-                    "last_used_at": cred.get("last_used_at")
-                })
+                all_credentials.append(
+                    {
+                        "username": username,
+                        "credential_id": cred["credential_id"],
+                        "name": cred.get("name"),
+                        "client_id_prefix": cred.get(
+                            "client_id_prefix", cred.get("client_id", "")[:8]
+                        ),
+                        "created_at": cred["created_at"],
+                        "last_used_at": cred.get("last_used_at"),
+                    }
+                )
                 count += 1
 
         return all_credentials

@@ -49,7 +49,7 @@ class GitCommandError(Exception):
         stderr: str = "",
         returncode: int = 1,
         command: Optional[List[str]] = None,
-        cwd: Optional[Path] = None
+        cwd: Optional[Path] = None,
     ):
         """
         Initialize GitCommandError.
@@ -101,7 +101,9 @@ class GitOperationsService:
         # maxsize=10000: Reasonable limit for concurrent users
         # ttl=TOKEN_EXPIRY: Automatic cleanup after 5 minutes
         # timer=time.time: Use time.time() for testability (allows mocking)
-        self._tokens: TTLCache = TTLCache(maxsize=10000, ttl=TOKEN_EXPIRY, timer=time.time)
+        self._tokens: TTLCache = TTLCache(
+            maxsize=10000, ttl=TOKEN_EXPIRY, timer=time.time
+        )
         self._tokens_lock = threading.RLock()
 
         # Create ConfigManager internally if not provided (for REST router compatibility)
@@ -115,11 +117,14 @@ class GitOperationsService:
         # Import ActivatedRepoManager for resolving repo aliases to paths
         # (import here to avoid circular imports)
         from ..repositories.activated_repo_manager import ActivatedRepoManager
+
         self.activated_repo_manager = ActivatedRepoManager()
 
     # REST API Wrapper Methods (resolve repo_alias to repo_path)
 
-    def _trigger_migration_if_needed(self, repo_path: str, username: str, repo_alias: str) -> None:
+    def _trigger_migration_if_needed(
+        self, repo_path: str, username: str, repo_alias: str
+    ) -> None:
         """
         Trigger legacy remote migration if needed (Story #636).
 
@@ -159,16 +164,25 @@ class GitOperationsService:
                 return
 
             # Get golden repo path from golden repo manager
-            if golden_repo_alias not in self.activated_repo_manager.golden_repo_manager.golden_repos:
+            if (
+                golden_repo_alias
+                not in self.activated_repo_manager.golden_repo_manager.golden_repos
+            ):
                 logger.warning(
                     f"Cannot trigger migration: golden repo '{golden_repo_alias}' not found for {username}/{repo_alias}"
                 )
                 return
 
-            golden_repo = self.activated_repo_manager.golden_repo_manager.golden_repos[golden_repo_alias]
+            self.activated_repo_manager.golden_repo_manager.golden_repos[
+                golden_repo_alias
+            ]
 
             # Use canonical path resolution to handle versioned repos (Bug #3, #4 fix)
-            golden_repo_path = self.activated_repo_manager.golden_repo_manager.get_actual_repo_path(golden_repo_alias)
+            golden_repo_path = (
+                self.activated_repo_manager.golden_repo_manager.get_actual_repo_path(
+                    golden_repo_alias
+                )
+            )
 
             # Trigger migration via ActivatedRepoManager
             migrated = self.activated_repo_manager._detect_and_migrate_legacy_remotes(
@@ -208,12 +222,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def get_diff(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def get_diff(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Get git diff for an activated repository (REST API wrapper).
 
@@ -240,12 +249,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def get_log(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def get_log(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Get git log for an activated repository (REST API wrapper).
 
@@ -279,12 +283,7 @@ class GitOperationsService:
 
     # F3: Staging/Commit Wrapper Methods
 
-    def stage_files(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def stage_files(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Stage files for commit (REST API wrapper).
 
@@ -308,12 +307,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def unstage_files(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def unstage_files(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Unstage files (REST API wrapper).
 
@@ -337,12 +331,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def create_commit(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def create_commit(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Create a git commit (REST API wrapper).
 
@@ -374,16 +363,12 @@ class GitOperationsService:
             try:
                 if not user_email:
                     user_email = subprocess.check_output(
-                        ["git", "config", "user.email"],
-                        cwd=repo_path,
-                        text=True
+                        ["git", "config", "user.email"], cwd=repo_path, text=True
                     ).strip()
                     logger.debug(f"Using git config user.email: {user_email}")
                 if not user_name:
                     user_name = subprocess.check_output(
-                        ["git", "config", "user.name"],
-                        cwd=repo_path,
-                        text=True
+                        ["git", "config", "user.name"], cwd=repo_path, text=True
                     ).strip()
                     logger.debug(f"Using git config user.name: {user_name}")
             except subprocess.CalledProcessError as e:
@@ -396,7 +381,7 @@ class GitOperationsService:
             Path(repo_path),
             message=message,
             user_email=user_email or "",
-            user_name=user_name
+            user_name=user_name,
         )
         result["success"] = True
         return result
@@ -404,10 +389,7 @@ class GitOperationsService:
     # F4: Remote Operations Wrapper Methods
 
     def push_to_remote(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
+        self, repo_alias: str, username: str, **kwargs
     ) -> Dict[str, Any]:
         """
         Push commits to remote repository (REST API wrapper).
@@ -439,10 +421,7 @@ class GitOperationsService:
         return result
 
     def pull_from_remote(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
+        self, repo_alias: str, username: str, **kwargs
     ) -> Dict[str, Any]:
         """
         Pull updates from remote repository (REST API wrapper).
@@ -474,10 +453,7 @@ class GitOperationsService:
         return result
 
     def fetch_from_remote(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
+        self, repo_alias: str, username: str, **kwargs
     ) -> Dict[str, Any]:
         """
         Fetch updates from remote repository (REST API wrapper).
@@ -510,10 +486,7 @@ class GitOperationsService:
     # F5: Recovery Operations Wrapper Methods
 
     def reset_repository(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
+        self, repo_alias: str, username: str, **kwargs
     ) -> Dict[str, Any]:
         """
         Reset repository to a specific commit (REST API wrapper).
@@ -542,17 +515,14 @@ class GitOperationsService:
             Path(repo_path),
             mode=mode,
             commit_hash=commit_hash,
-            confirmation_token=confirmation_token
+            confirmation_token=confirmation_token,
         )
         # Note: result already contains success field from git_reset
         # or requires_confirmation/token for hard reset
         return result
 
     def clean_repository(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
+        self, repo_alias: str, username: str, **kwargs
     ) -> Dict[str, Any]:
         """
         Remove untracked files and directories (REST API wrapper).
@@ -575,19 +545,12 @@ class GitOperationsService:
         repo_path = self.activated_repo_manager.get_activated_repo_path(
             username=username, user_alias=repo_alias
         )
-        result = self.git_clean(
-            Path(repo_path),
-            confirmation_token=confirmation_token
-        )
+        result = self.git_clean(Path(repo_path), confirmation_token=confirmation_token)
         # Note: result already contains success field from git_clean
         # or requires_confirmation/token
         return result
 
-    def abort_merge(
-        self,
-        repo_alias: str,
-        username: str
-    ) -> Dict[str, Any]:
+    def abort_merge(self, repo_alias: str, username: str) -> Dict[str, Any]:
         """
         Abort an in-progress merge (REST API wrapper).
 
@@ -609,12 +572,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def checkout_file(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def checkout_file(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Restore file(s) to HEAD state (REST API wrapper).
 
@@ -647,11 +605,7 @@ class GitOperationsService:
 
     # F6: Branch Management Wrapper Methods
 
-    def list_branches(
-        self,
-        repo_alias: str,
-        username: str
-    ) -> Dict[str, Any]:
+    def list_branches(self, repo_alias: str, username: str) -> Dict[str, Any]:
         """
         List all branches (REST API wrapper).
 
@@ -673,12 +627,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def create_branch(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def create_branch(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Create a new branch (REST API wrapper).
 
@@ -703,12 +652,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def switch_branch(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def switch_branch(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Switch to a different branch (REST API wrapper).
 
@@ -733,12 +677,7 @@ class GitOperationsService:
         result["success"] = True
         return result
 
-    def delete_branch(
-        self,
-        repo_alias: str,
-        username: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    def delete_branch(self, repo_alias: str, username: str, **kwargs) -> Dict[str, Any]:
         """
         Delete a branch (REST API wrapper).
 
@@ -764,7 +703,7 @@ class GitOperationsService:
         result = self.git_branch_delete(
             Path(repo_path),
             branch_name=branch_name,
-            confirmation_token=confirmation_token
+            confirmation_token=confirmation_token,
         )
         # Note: result already contains success field from git_branch_delete
         # or requires_confirmation/token
@@ -788,10 +727,7 @@ class GitOperationsService:
         try:
             cmd = ["git", "status", "--porcelain=v1"]
             result = run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=DEFAULT_TIMEOUT,
-                check=True
+                cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True
             )
 
             # Parse porcelain v1 format: XY PATH
@@ -808,37 +744,33 @@ class GitOperationsService:
                 file_path = line[3:]
 
                 # Staged files (first character)
-                if status_code[0] in 'MADRC':
+                if status_code[0] in "MADRC":
                     staged.append(file_path)
 
                 # Unstaged files (second character)
-                if status_code[1] in 'MADRC':
+                if status_code[1] in "MADRC":
                     unstaged.append(file_path)
 
                 # Untracked files
-                if status_code == '??':
+                if status_code == "??":
                     untracked.append(file_path)
 
-            return {
-                "staged": staged,
-                "unstaged": unstaged,
-                "untracked": untracked
-            }
+            return {"staged": staged, "unstaged": unstaged, "untracked": untracked}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git status failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
+                stderr=getattr(e, "stderr", ""),
                 returncode=e.returncode,
                 command=cmd,
-                cwd=repo_path
+                cwd=repo_path,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
                 f"git status timed out after {e.timeout}s",
                 stderr="",
                 command=cmd,
-                cwd=repo_path
+                cwd=repo_path,
             )
 
     def git_diff(
@@ -849,7 +781,7 @@ class GitOperationsService:
         from_revision: Optional[str] = None,
         to_revision: Optional[str] = None,
         path: Optional[str] = None,
-        stat_only: Optional[bool] = None
+        stat_only: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Get git diff output.
@@ -895,34 +827,28 @@ class GitOperationsService:
                 cmd.extend(file_paths)
 
             result = run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=DEFAULT_TIMEOUT,
-                check=True
+                cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True
             )
 
             diff_text = result.stdout
             files_changed = diff_text.count("diff --git")
 
-            return {
-                "diff_text": diff_text,
-                "files_changed": files_changed
-            }
+            return {"diff_text": diff_text, "files_changed": files_changed}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git diff failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
+                stderr=getattr(e, "stderr", ""),
                 returncode=e.returncode,
                 command=["git", "diff"],
-                cwd=repo_path
+                cwd=repo_path,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
                 f"git diff timed out after {e.timeout}s",
                 stderr="",
                 command=["git", "diff"],
-                cwd=repo_path
+                cwd=repo_path,
             )
 
     def git_log(
@@ -935,7 +861,7 @@ class GitOperationsService:
         branch: Optional[str] = None,
         path: Optional[str] = None,
         aggregation_mode: Optional[str] = None,
-        response_format: Optional[str] = None
+        response_format: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Get git commit history.
@@ -958,7 +884,9 @@ class GitOperationsService:
             GitCommandError: If git log fails
         """
         try:
-            format_str = '{"commit_hash": "%H", "author": "%an", "date": "%ai", "message": "%s"}'
+            format_str = (
+                '{"commit_hash": "%H", "author": "%an", "date": "%ai", "message": "%s"}'
+            )
             cmd = ["git", "log", f"--format={format_str}", f"-n{limit}"]
 
             # Add date filters
@@ -981,10 +909,7 @@ class GitOperationsService:
                 cmd.append(path)
 
             result = run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=DEFAULT_TIMEOUT,
-                check=True
+                cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True
             )
 
             commits = []
@@ -1005,17 +930,17 @@ class GitOperationsService:
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git log failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
+                stderr=getattr(e, "stderr", ""),
                 returncode=e.returncode,
                 command=["git", "log"],
-                cwd=repo_path
+                cwd=repo_path,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
                 f"git log timed out after {e.timeout}s",
                 stderr="",
                 command=["git", "log"],
-                cwd=repo_path
+                cwd=repo_path,
             )
 
     # F3: Staging/Commit Operations
@@ -1037,29 +962,18 @@ class GitOperationsService:
         try:
             cmd = ["git", "add"] + file_paths
 
-            run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=DEFAULT_TIMEOUT,
-                check=True
-            )
+            run_git_command(cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True)
 
-            return {
-                "success": True,
-                "staged_files": file_paths
-            }
+            return {"success": True, "staged_files": file_paths}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git add failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git add timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git add timed out after {e.timeout}s", stderr="")
 
     def git_unstage(self, repo_path: Path, file_paths: List[str]) -> Dict[str, Any]:
         """
@@ -1078,36 +992,25 @@ class GitOperationsService:
         try:
             cmd = ["git", "reset", "HEAD"] + file_paths
 
-            run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=DEFAULT_TIMEOUT,
-                check=True
-            )
+            run_git_command(cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True)
 
-            return {
-                "success": True,
-                "unstaged_files": file_paths
-            }
+            return {"success": True, "unstaged_files": file_paths}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git reset HEAD failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git reset timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git reset timed out after {e.timeout}s", stderr="")
 
     def git_commit(
         self,
         repo_path: Path,
         message: str,
         user_email: str,
-        user_name: Optional[str] = None
+        user_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a git commit with dual attribution (Story #641).
@@ -1133,20 +1036,25 @@ class GitOperationsService:
         try:
             # Story #641 AC #3: Validate co_author_email parameter is MANDATORY
             if user_email is None or user_email == "":
-                raise ValueError("co_author_email parameter is required and cannot be None or empty")
+                raise ValueError(
+                    "co_author_email parameter is required and cannot be None or empty"
+                )
 
             # Story #641 AC #4: Validate user_email format (RFC 5322 basic format)
             import re
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+            email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
             if not re.match(email_pattern, user_email):
-                raise ValueError(f"Invalid email format for co_author_email: {user_email}")
+                raise ValueError(
+                    f"Invalid email format for co_author_email: {user_email}"
+                )
 
             # Derive author name from email if not provided
             if not user_name:
                 user_name = user_email.split("@")[0]
 
             # Validate user_name (alphanumeric + space, hyphen, underscore only)
-            name_pattern = r'^[a-zA-Z0-9 _-]+$'
+            name_pattern = r"^[a-zA-Z0-9 _-]+$"
             if not re.match(name_pattern, user_name):
                 raise ValueError(f"Invalid user name format: {user_name}")
 
@@ -1155,7 +1063,9 @@ class GitOperationsService:
             sanitized_lines = []
             for line in message.split("\n"):
                 # Strip lines that start with our reserved trailer keys
-                if not line.startswith("Actual-Author:") and not line.startswith("Committed-Via:"):
+                if not line.startswith("Actual-Author:") and not line.startswith(
+                    "Committed-Via:"
+                ):
                     sanitized_lines.append(line)
             sanitized_message = "\n".join(sanitized_lines)
 
@@ -1173,12 +1083,8 @@ class GitOperationsService:
 
             cmd = ["git", "commit", "-m", attributed_message]
 
-            result = run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=DEFAULT_TIMEOUT,
-                check=True,
-                env=env
+            run_git_command(
+                cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True, env=env
             )
 
             # Get full commit hash using git rev-parse HEAD
@@ -1187,7 +1093,7 @@ class GitOperationsService:
                 ["git", "rev-parse", "HEAD"],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
             commit_hash = hash_result.stdout.strip()
 
@@ -1196,7 +1102,7 @@ class GitOperationsService:
                 ["git", "show", "-s", "--format=%ce", "HEAD"],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
             actual_committer = committer_result.stdout.strip()
 
@@ -1205,28 +1111,22 @@ class GitOperationsService:
                 "commit_hash": commit_hash,
                 "message": message,
                 "author": user_email,
-                "committer": actual_committer
+                "committer": actual_committer,
             }
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git commit failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git commit timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git commit timed out after {e.timeout}s", stderr="")
 
     # F4: Remote Operations
 
     def git_push(
-        self,
-        repo_path: Path,
-        remote: str = "origin",
-        branch: Optional[str] = None
+        self, repo_path: Path, remote: str = "origin", branch: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Push commits to remote repository.
@@ -1248,53 +1148,39 @@ class GitOperationsService:
                 cmd.append(branch)
 
             result = run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=REMOTE_TIMEOUT,
-                check=True
+                cmd, cwd=repo_path, timeout=REMOTE_TIMEOUT, check=True
             )
 
             pushed_commits = 0
             if ".." in result.stdout:
                 pushed_commits = 1
 
-            return {
-                "success": True,
-                "pushed_commits": pushed_commits
-            }
+            return {"success": True, "pushed_commits": pushed_commits}
 
         except subprocess.CalledProcessError as e:
-            stderr = getattr(e, 'stderr', '')
+            stderr = getattr(e, "stderr", "")
 
             if "Authentication" in stderr or "Permission denied" in stderr:
                 raise GitCommandError(
                     f"git push authentication failed: {stderr}",
                     stderr=stderr,
-                    returncode=e.returncode
+                    returncode=e.returncode,
                 )
             elif "Could not resolve host" in stderr or "Network" in stderr:
                 raise GitCommandError(
                     f"git push network error: {stderr}",
                     stderr=stderr,
-                    returncode=e.returncode
+                    returncode=e.returncode,
                 )
             else:
                 raise GitCommandError(
-                    f"git push failed: {e}",
-                    stderr=stderr,
-                    returncode=e.returncode
+                    f"git push failed: {e}", stderr=stderr, returncode=e.returncode
                 )
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git push timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git push timed out after {e.timeout}s", stderr="")
 
     def git_pull(
-        self,
-        repo_path: Path,
-        remote: str = "origin",
-        branch: Optional[str] = None
+        self, repo_path: Path, remote: str = "origin", branch: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Pull updates from remote repository.
@@ -1316,43 +1202,33 @@ class GitOperationsService:
                 cmd.append(branch)
 
             result = run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=REMOTE_TIMEOUT,
-                check=False
+                cmd, cwd=repo_path, timeout=REMOTE_TIMEOUT, check=False
             )
 
             conflicts = []
             if result.returncode != 0 or "CONFLICT" in result.stdout:
                 for line in result.stdout.splitlines():
                     if "CONFLICT" in line:
-                        match = re.search(r'Merge conflict in (.+)', line)
+                        match = re.search(r"Merge conflict in (.+)", line)
                         if match:
                             conflicts.append(match.group(1))
 
             updated_files = 0
             if "file changed" in result.stdout or "files changed" in result.stdout:
-                match = re.search(r'(\d+) files? changed', result.stdout)
+                match = re.search(r"(\d+) files? changed", result.stdout)
                 if match:
                     updated_files = int(match.group(1))
 
             return {
                 "success": result.returncode == 0 and not conflicts,
                 "updated_files": updated_files,
-                "conflicts": conflicts
+                "conflicts": conflicts,
             }
 
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git pull timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git pull timed out after {e.timeout}s", stderr="")
 
-    def git_fetch(
-        self,
-        repo_path: Path,
-        remote: str = "origin"
-    ) -> Dict[str, Any]:
+    def git_fetch(self, repo_path: Path, remote: str = "origin") -> Dict[str, Any]:
         """
         Fetch updates from remote repository.
 
@@ -1371,7 +1247,7 @@ class GitOperationsService:
                 ["git", "fetch", remote],
                 cwd=repo_path,
                 timeout=REMOTE_TIMEOUT,
-                check=True
+                check=True,
             )
 
             fetched_refs = []
@@ -1379,22 +1255,16 @@ class GitOperationsService:
                 if " -> " in line or "FETCH_HEAD" in line:
                     fetched_refs.append(line.strip())
 
-            return {
-                "success": True,
-                "fetched_refs": fetched_refs
-            }
+            return {"success": True, "fetched_refs": fetched_refs}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git fetch failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git fetch timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git fetch timed out after {e.timeout}s", stderr="")
 
     # F5: Recovery Operations
 
@@ -1403,7 +1273,7 @@ class GitOperationsService:
         repo_path: Path,
         mode: str,
         commit_hash: Optional[str] = None,
-        confirmation_token: Optional[str] = None
+        confirmation_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Reset repository to a specific commit.
@@ -1424,47 +1294,32 @@ class GitOperationsService:
         if mode == "hard":
             if not confirmation_token:
                 token = self._generate_confirmation_token("git_reset_hard")
-                return {
-                    "requires_confirmation": True,
-                    "token": token
-                }
+                return {"requires_confirmation": True, "token": token}
 
-            if not self._validate_confirmation_token("git_reset_hard", confirmation_token):
+            if not self._validate_confirmation_token(
+                "git_reset_hard", confirmation_token
+            ):
                 raise ValueError("Invalid or expired confirmation token")
 
         try:
             target = commit_hash or "HEAD"
             cmd = ["git", "reset", f"--{mode}", target]
 
-            run_git_command(
-                cmd,
-                cwd=repo_path,
-                timeout=DEFAULT_TIMEOUT,
-                check=True
-            )
+            run_git_command(cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True)
 
-            return {
-                "success": True,
-                "reset_mode": mode,
-                "target_commit": target
-            }
+            return {"success": True, "reset_mode": mode, "target_commit": target}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git reset failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git reset timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git reset timed out after {e.timeout}s", stderr="")
 
     def git_clean(
-        self,
-        repo_path: Path,
-        confirmation_token: Optional[str] = None
+        self, repo_path: Path, confirmation_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Remove untracked files and directories.
@@ -1482,10 +1337,7 @@ class GitOperationsService:
         """
         if not confirmation_token:
             token = self._generate_confirmation_token("git_clean")
-            return {
-                "requires_confirmation": True,
-                "token": token
-            }
+            return {"requires_confirmation": True, "token": token}
 
         if not self._validate_confirmation_token("git_clean", confirmation_token):
             raise ValueError("Invalid or expired confirmation token")
@@ -1495,7 +1347,7 @@ class GitOperationsService:
                 ["git", "clean", "-fd"],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
 
             removed_files = []
@@ -1504,22 +1356,16 @@ class GitOperationsService:
                     file_path = line.replace("Removing ", "").strip()
                     removed_files.append(file_path)
 
-            return {
-                "success": True,
-                "removed_files": removed_files
-            }
+            return {"success": True, "removed_files": removed_files}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git clean failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
-                f"git clean timed out after {e.timeout}s",
-                stderr=""
-            )
+            raise GitCommandError(f"git clean timed out after {e.timeout}s", stderr="")
 
     def git_merge_abort(self, repo_path: Path) -> Dict[str, Any]:
         """
@@ -1539,31 +1385,23 @@ class GitOperationsService:
                 ["git", "merge", "--abort"],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
 
-            return {
-                "success": True,
-                "aborted": True
-            }
+            return {"success": True, "aborted": True}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git merge --abort failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
-                f"git merge --abort timed out after {e.timeout}s",
-                stderr=""
+                f"git merge --abort timed out after {e.timeout}s", stderr=""
             )
 
-    def git_checkout_file(
-        self,
-        repo_path: Path,
-        file_path: str
-    ) -> Dict[str, Any]:
+    def git_checkout_file(self, repo_path: Path, file_path: str) -> Dict[str, Any]:
         """
         Restore a file to its HEAD state.
 
@@ -1582,24 +1420,20 @@ class GitOperationsService:
                 ["git", "checkout", "HEAD", "--", file_path],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
 
-            return {
-                "success": True,
-                "restored_file": file_path
-            }
+            return {"success": True, "restored_file": file_path}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git checkout file failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
-                f"git checkout timed out after {e.timeout}s",
-                stderr=""
+                f"git checkout timed out after {e.timeout}s", stderr=""
             )
 
     # F6: Branch Management Operations
@@ -1622,7 +1456,7 @@ class GitOperationsService:
                 ["git", "branch", "-a"],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
 
             current_branch = ""
@@ -1646,26 +1480,21 @@ class GitOperationsService:
             return {
                 "current": current_branch,
                 "local": local_branches,
-                "remote": remote_branches
+                "remote": remote_branches,
             }
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git branch list failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
-                f"git branch list timed out after {e.timeout}s",
-                stderr=""
+                f"git branch list timed out after {e.timeout}s", stderr=""
             )
 
-    def git_branch_create(
-        self,
-        repo_path: Path,
-        branch_name: str
-    ) -> Dict[str, Any]:
+    def git_branch_create(self, repo_path: Path, branch_name: str) -> Dict[str, Any]:
         """
         Create a new branch.
 
@@ -1684,31 +1513,23 @@ class GitOperationsService:
                 ["git", "branch", branch_name],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
 
-            return {
-                "success": True,
-                "created_branch": branch_name
-            }
+            return {"success": True, "created_branch": branch_name}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git branch create failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
-                f"git branch create timed out after {e.timeout}s",
-                stderr=""
+                f"git branch create timed out after {e.timeout}s", stderr=""
             )
 
-    def git_branch_switch(
-        self,
-        repo_path: Path,
-        branch_name: str
-    ) -> Dict[str, Any]:
+    def git_branch_switch(self, repo_path: Path, branch_name: str) -> Dict[str, Any]:
         """
         Switch to a different branch.
 
@@ -1728,7 +1549,7 @@ class GitOperationsService:
                 ["git", "branch", "--show-current"],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
             previous_branch = current_result.stdout.strip()
 
@@ -1737,32 +1558,31 @@ class GitOperationsService:
                 ["git", "checkout", branch_name],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
 
             return {
                 "success": True,
                 "current_branch": branch_name,
-                "previous_branch": previous_branch
+                "previous_branch": previous_branch,
             }
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git branch switch failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
-                f"git branch switch timed out after {e.timeout}s",
-                stderr=""
+                f"git branch switch timed out after {e.timeout}s", stderr=""
             )
 
     def git_branch_delete(
         self,
         repo_path: Path,
         branch_name: str,
-        confirmation_token: Optional[str] = None
+        confirmation_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Delete a branch.
@@ -1781,12 +1601,11 @@ class GitOperationsService:
         """
         if not confirmation_token:
             token = self._generate_confirmation_token("git_branch_delete")
-            return {
-                "requires_confirmation": True,
-                "token": token
-            }
+            return {"requires_confirmation": True, "token": token}
 
-        if not self._validate_confirmation_token("git_branch_delete", confirmation_token):
+        if not self._validate_confirmation_token(
+            "git_branch_delete", confirmation_token
+        ):
             raise ValueError("Invalid or expired confirmation token")
 
         try:
@@ -1794,24 +1613,20 @@ class GitOperationsService:
                 ["git", "branch", "-d", branch_name],
                 cwd=repo_path,
                 timeout=DEFAULT_TIMEOUT,
-                check=True
+                check=True,
             )
 
-            return {
-                "success": True,
-                "deleted_branch": branch_name
-            }
+            return {"success": True, "deleted_branch": branch_name}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
                 f"git branch delete failed: {e}",
-                stderr=getattr(e, 'stderr', ''),
-                returncode=e.returncode
+                stderr=getattr(e, "stderr", ""),
+                returncode=e.returncode,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
-                f"git branch delete timed out after {e.timeout}s",
-                stderr=""
+                f"git branch delete timed out after {e.timeout}s", stderr=""
             )
 
     # Confirmation Token System
@@ -1828,8 +1643,8 @@ class GitOperationsService:
         """
         # Generate 6-character token using uppercase letters and digits
         # Excluding ambiguous characters: 0, O, I, 1
-        chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-        token = ''.join(secrets.choice(chars) for _ in range(6))
+        chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        token = "".join(secrets.choice(chars) for _ in range(6))
 
         # Thread-safe token storage (TTLCache handles expiration automatically)
         with self._tokens_lock:

@@ -44,9 +44,7 @@ def mock_git_service():
 @pytest.fixture
 def mock_repo_manager():
     """Create mock ActivatedRepoManager."""
-    with patch(
-        "code_indexer.server.mcp.handlers.ActivatedRepoManager"
-    ) as MockClass:
+    with patch("code_indexer.server.mcp.handlers.ActivatedRepoManager") as MockClass:
         mock_instance = MockClass.return_value
         mock_instance.get_activated_repo_path.return_value = Path("/tmp/test-repo")
         yield mock_instance
@@ -84,7 +82,10 @@ class TestGitResetHandler:
         assert data["success"] is True
         assert data["mode"] == "soft"
         mock_git_service.git_reset.assert_called_once_with(
-            Path("/tmp/test-repo"), mode="soft", target="HEAD~1", confirmation_token=None
+            Path("/tmp/test-repo"),
+            mode="soft",
+            target="HEAD~1",
+            confirmation_token=None,
         )
 
     @pytest.mark.asyncio
@@ -233,9 +234,7 @@ class TestGitMergeAbortHandler:
 
         assert data["success"] is True
         assert "aborted" in data["message"].lower()
-        mock_git_service.git_merge_abort.assert_called_once_with(
-            Path("/tmp/test-repo")
-        )
+        mock_git_service.git_merge_abort.assert_called_once_with(Path("/tmp/test-repo"))
 
     @pytest.mark.asyncio
     async def test_git_merge_abort_no_merge_in_progress(

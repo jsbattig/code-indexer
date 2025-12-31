@@ -37,26 +37,30 @@ class TestSCIPQueryExecution:
         scip_file = scip_dir / "index.scip"
         scip_file.touch()
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes.validate_login_csrf_token",
-            return_value=True,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.server.web.routes._create_query_page_response"
-        ) as mock_response, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             # Call query_submit with SCIP parameters
@@ -116,28 +120,33 @@ class TestSCIPQueryExecution:
             kind="definition",
         )
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes.validate_login_csrf_token",
-            return_value=True,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine"
-        ) as mock_engine_class, patch(
-            "code_indexer.server.web.routes._create_query_page_response"
-        ) as mock_response, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             # Setup mock engine
@@ -198,26 +207,30 @@ class TestSCIPQueryExecution:
 
         # No SCIP index exists at tmp_path
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes.validate_login_csrf_token",
-            return_value=True,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.server.web.routes._create_query_page_response"
-        ) as mock_response, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             try:
@@ -247,7 +260,10 @@ class TestSCIPQueryExecution:
                 assert call_args is not None
                 error_message = call_args[1].get("error_message")
                 assert error_message is not None
-                assert "SCIP index" in error_message or "not found" in error_message.lower()
+                assert (
+                    "SCIP index" in error_message
+                    or "not found" in error_message.lower()
+                )
 
             except (TypeError, AttributeError) as e:
                 # Expected to fail - implementation doesn't exist yet
@@ -278,28 +294,31 @@ class TestSCIPQueryExecution:
         ]
 
         for query_type, method_name in query_types:
-            with patch(
-                "code_indexer.server.web.routes._require_admin_session",
-                return_value=mock_session,
-            ), patch(
-                "code_indexer.server.web.routes.validate_login_csrf_token",
-                return_value=True,
-            ), patch(
-                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-                return_value=[
-                    {
-                        "user_alias": "test-repo",
-                        "username": "testuser",
-                        "is_global": False,
-                        "path": str(tmp_path),
-                    }
-                ],
-            ), patch(
-                "code_indexer.scip.query.primitives.SCIPQueryEngine"
-            ) as mock_engine_class, patch(
-                "code_indexer.server.web.routes._create_query_page_response"
-            ), patch(
-                "code_indexer.server.web.routes._add_to_query_history"
+            with (
+                patch(
+                    "code_indexer.server.web.routes._require_admin_session",
+                    return_value=mock_session,
+                ),
+                patch(
+                    "code_indexer.server.web.routes.validate_login_csrf_token",
+                    return_value=True,
+                ),
+                patch(
+                    "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                    return_value=[
+                        {
+                            "user_alias": "test-repo",
+                            "username": "testuser",
+                            "is_global": False,
+                            "path": str(tmp_path),
+                        }
+                    ],
+                ),
+                patch(
+                    "code_indexer.scip.query.primitives.SCIPQueryEngine"
+                ) as mock_engine_class,
+                patch("code_indexer.server.web.routes._create_query_page_response"),
+                patch("code_indexer.server.web.routes._add_to_query_history"),
             ):
 
                 # Setup mock engine
@@ -359,33 +378,40 @@ class TestSCIPQueryExecution:
         scip_file = scip_dir / "index.scip"
         scip_file.touch()
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes.validate_login_csrf_token",
-            return_value=True,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine"
-        ) as mock_engine_class, patch(
-            "code_indexer.server.web.routes._create_query_page_response"
-        ) as mock_response, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             # Setup mock engine to raise exception
             mock_engine = MagicMock()
-            mock_engine.find_definition.side_effect = FileNotFoundError("SCIP index file corrupted")
+            mock_engine.find_definition.side_effect = FileNotFoundError(
+                "SCIP index file corrupted"
+            )
             mock_engine_class.return_value = mock_engine
 
             try:
@@ -436,28 +462,33 @@ class TestSCIPQueryExecution:
         scip_file = scip_dir / "index.scip"
         scip_file.touch()
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes.validate_login_csrf_token",
-            return_value=True,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine"
-        ) as mock_engine_class, patch(
-            "code_indexer.server.web.routes._create_query_page_response"
-        ) as mock_response, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             # Setup mock engine to raise exception
@@ -496,14 +527,18 @@ class TestSCIPQueryExecution:
                 # Error message should mention SCIP and provide guidance
                 # (This test will initially fail if we need to improve the message)
                 assert "SCIP" in error_message
-                assert "cidx scip generate" in error_message or "cidx scip index" in error_message, \
-                    f"Error message should include guidance to run 'cidx scip generate': {error_message}"
+                assert (
+                    "cidx scip generate" in error_message
+                    or "cidx scip index" in error_message
+                ), f"Error message should include guidance to run 'cidx scip generate': {error_message}"
 
             except (TypeError, AttributeError) as e:
                 # Expected to fail - implementation doesn't exist yet
                 pytest.fail(f"Test setup failed: {e}")
 
-    async def test_scip_query_handles_file_not_found_exception(self, mock_session, tmp_path):
+    async def test_scip_query_handles_file_not_found_exception(
+        self, mock_session, tmp_path
+    ):
         """query_submit() should handle FileNotFoundError exceptions with specific error message."""
         from code_indexer.server.web.routes import query_submit
         from fastapi import Request
@@ -518,33 +553,40 @@ class TestSCIPQueryExecution:
         scip_file = scip_dir / "index.scip"
         scip_file.touch()
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes.validate_login_csrf_token",
-            return_value=True,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine"
-        ) as mock_engine_class, patch(
-            "code_indexer.server.web.routes._create_query_page_response"
-        ) as mock_response, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             # Setup mock engine to raise FileNotFoundError
             mock_engine = MagicMock()
-            mock_engine.find_definition.side_effect = FileNotFoundError("Index file missing")
+            mock_engine.find_definition.side_effect = FileNotFoundError(
+                "Index file missing"
+            )
             mock_engine_class.return_value = mock_engine
 
             try:
@@ -575,7 +617,10 @@ class TestSCIPQueryExecution:
                 error_message = call_args[1].get("error_message")
                 assert error_message is not None
                 assert "SCIP" in error_message
-                assert "corrupted" in error_message.lower() or "not found" in error_message.lower()
+                assert (
+                    "corrupted" in error_message.lower()
+                    or "not found" in error_message.lower()
+                )
                 assert "cidx scip generate" in error_message
 
             except (TypeError, AttributeError) as e:
@@ -586,7 +631,10 @@ class TestSCIPQueryExecution:
         """query_submit() should execute SCIP impact analysis when scip_query_type='impact'."""
         from code_indexer.server.web.routes import query_submit
         from fastapi import Request
-        from code_indexer.scip.query.composites import ImpactAnalysisResult, AffectedSymbol
+        from code_indexer.scip.query.composites import (
+            ImpactAnalysisResult,
+            AffectedSymbol,
+        )
 
         request = MagicMock(spec=Request)
         request.cookies = {}
@@ -598,25 +646,72 @@ class TestSCIPQueryExecution:
             target_symbol="UserService",
             target_location="src/user.py:10",
             depth_analyzed=2,
-            affected_symbols=[AffectedSymbol(symbol="AuthHandler", file_path="src/auth.py", line=25, column=0, depth=1, relationship="call")],
+            affected_symbols=[
+                AffectedSymbol(
+                    symbol="AuthHandler",
+                    file_path="src/auth.py",
+                    line=25,
+                    column=0,
+                    depth=1,
+                    relationship="call",
+                )
+            ],
             affected_files=[],
             truncated=False,
             total_affected=1,
         )
 
-        with patch("code_indexer.server.web.routes._require_admin_session", return_value=mock_session), \
-             patch("code_indexer.server.web.routes.validate_login_csrf_token", return_value=True), \
-             patch("code_indexer.server.web.routes._get_all_activated_repos_for_query",
-                   return_value=[{"user_alias": "test-repo", "username": "testuser", "is_global": False, "path": str(tmp_path)}]), \
-             patch("code_indexer.scip.query.composites.analyze_impact", return_value=mock_result) as mock_impact, \
-             patch("code_indexer.server.web.routes._create_query_page_response") as mock_response, \
-             patch("code_indexer.server.web.routes._add_to_query_history"):
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.composites.analyze_impact",
+                return_value=mock_result,
+            ) as mock_impact,
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
+        ):
 
             try:
-                _ = await query_submit(request=request, query_text="UserService", repository="test-repo", search_mode="scip",
-                                      limit=10, language="", path_pattern="", min_score="", csrf_token="valid_token",
-                                      time_range_all=False, time_range="", at_commit="", include_removed=False,
-                                      case_sensitive=False, fuzzy=False, regex=False, scip_query_type="impact", scip_exact=False)
+                _ = await query_submit(
+                    request=request,
+                    query_text="UserService",
+                    repository="test-repo",
+                    search_mode="scip",
+                    limit=10,
+                    language="",
+                    path_pattern="",
+                    min_score="",
+                    csrf_token="valid_token",
+                    time_range_all=False,
+                    time_range="",
+                    at_commit="",
+                    include_removed=False,
+                    case_sensitive=False,
+                    fuzzy=False,
+                    regex=False,
+                    scip_query_type="impact",
+                    scip_exact=False,
+                )
 
                 mock_impact.assert_called_once()
                 assert mock_impact.call_args[0][0] == "UserService"
@@ -637,32 +732,75 @@ class TestSCIPQueryExecution:
         scip_dir.mkdir(parents=True)
         (scip_dir / "index.scip").touch()
 
-        with patch("code_indexer.server.web.routes._require_admin_session", return_value=mock_session), \
-             patch("code_indexer.server.web.routes.validate_login_csrf_token", return_value=True), \
-             patch("code_indexer.server.web.routes._get_all_activated_repos_for_query",
-                   return_value=[{"user_alias": "test-repo", "username": "testuser", "is_global": False, "path": str(tmp_path)}]), \
-             patch("code_indexer.scip.query.primitives.SCIPQueryEngine") as mock_engine_class, \
-             patch("code_indexer.server.web.routes._create_query_page_response") as mock_response, \
-             patch("code_indexer.server.web.routes._add_to_query_history"):
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
+        ):
 
             mock_engine = MagicMock()
-            mock_chain = CallChain(path=["main", "run", "UserService"], length=2, has_cycle=False)
+            mock_chain = CallChain(
+                path=["main", "run", "UserService"], length=2, has_cycle=False
+            )
             mock_engine.trace_call_chain.return_value = [mock_chain]
             mock_engine_class.return_value = mock_engine
 
             try:
-                _ = await query_submit(request=request, query_text="main UserService", repository="test-repo", search_mode="scip",
-                                      limit=10, language="", path_pattern="", min_score="", csrf_token="valid_token",
-                                      time_range_all=False, time_range="", at_commit="", include_removed=False,
-                                      case_sensitive=False, fuzzy=False, regex=False, scip_query_type="callchain", scip_exact=False)
+                _ = await query_submit(
+                    request=request,
+                    query_text="main UserService",
+                    repository="test-repo",
+                    search_mode="scip",
+                    limit=10,
+                    language="",
+                    path_pattern="",
+                    min_score="",
+                    csrf_token="valid_token",
+                    time_range_all=False,
+                    time_range="",
+                    at_commit="",
+                    include_removed=False,
+                    case_sensitive=False,
+                    fuzzy=False,
+                    regex=False,
+                    scip_query_type="callchain",
+                    scip_exact=False,
+                )
 
-                mock_engine.trace_call_chain.assert_called_once_with("main", "UserService", max_depth=5)
+                mock_engine.trace_call_chain.assert_called_once_with(
+                    "main", "UserService", max_depth=5
+                )
                 assert mock_response.called
 
             except (TypeError, AttributeError) as e:
                 pytest.fail(f"Test setup failed: {e}")
 
-    async def test_scip_query_callchain_validates_input_format(self, mock_session, tmp_path):
+    async def test_scip_query_callchain_validates_input_format(
+        self, mock_session, tmp_path
+    ):
         """query_submit() should return error message for invalid callchain input (single symbol)."""
         from code_indexer.server.web.routes import query_submit
         from fastapi import Request
@@ -673,12 +811,31 @@ class TestSCIPQueryExecution:
         scip_dir.mkdir(parents=True)
         (scip_dir / "index.scip").touch()
 
-        with patch("code_indexer.server.web.routes._require_admin_session", return_value=mock_session), \
-             patch("code_indexer.server.web.routes.validate_login_csrf_token", return_value=True), \
-             patch("code_indexer.server.web.routes._get_all_activated_repos_for_query",
-                   return_value=[{"user_alias": "test-repo", "username": "testuser", "is_global": False, "path": str(tmp_path)}]), \
-             patch("code_indexer.server.web.routes._create_query_page_response") as mock_response, \
-             patch("code_indexer.server.web.routes._add_to_query_history"):
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
+        ):
 
             # Execute query with invalid input (single symbol, no space)
             await query_submit(
@@ -728,22 +885,68 @@ class TestSCIPQueryExecution:
             total_files=1,
             total_symbols=5,
             avg_relevance=1.0,
-            files=[ContextFile(path=PathLib("src/user.py"), project=str(tmp_path), relevance_score=1.0, symbols=[], read_priority=1)],
+            files=[
+                ContextFile(
+                    path=PathLib("src/user.py"),
+                    project=str(tmp_path),
+                    relevance_score=1.0,
+                    symbols=[],
+                    read_priority=1,
+                )
+            ],
         )
 
-        with patch("code_indexer.server.web.routes._require_admin_session", return_value=mock_session), \
-             patch("code_indexer.server.web.routes.validate_login_csrf_token", return_value=True), \
-             patch("code_indexer.server.web.routes._get_all_activated_repos_for_query",
-                   return_value=[{"user_alias": "test-repo", "username": "testuser", "is_global": False, "path": str(tmp_path)}]), \
-             patch("code_indexer.scip.query.composites.get_smart_context", return_value=mock_result) as mock_context, \
-             patch("code_indexer.server.web.routes._create_query_page_response") as mock_response, \
-             patch("code_indexer.server.web.routes._add_to_query_history"):
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes.validate_login_csrf_token",
+                return_value=True,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.composites.get_smart_context",
+                return_value=mock_result,
+            ) as mock_context,
+            patch(
+                "code_indexer.server.web.routes._create_query_page_response"
+            ) as mock_response,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
+        ):
 
             try:
-                _ = await query_submit(request=request, query_text="UserService", repository="test-repo", search_mode="scip",
-                                      limit=10, language="", path_pattern="", min_score="", csrf_token="valid_token",
-                                      time_range_all=False, time_range="", at_commit="", include_removed=False,
-                                      case_sensitive=False, fuzzy=False, regex=False, scip_query_type="context", scip_exact=False)
+                _ = await query_submit(
+                    request=request,
+                    query_text="UserService",
+                    repository="test-repo",
+                    search_mode="scip",
+                    limit=10,
+                    language="",
+                    path_pattern="",
+                    min_score="",
+                    csrf_token="valid_token",
+                    time_range_all=False,
+                    time_range="",
+                    at_commit="",
+                    include_removed=False,
+                    case_sensitive=False,
+                    fuzzy=False,
+                    regex=False,
+                    scip_query_type="context",
+                    scip_exact=False,
+                )
 
                 mock_context.assert_called_once()
                 assert mock_context.call_args[0][0] == "UserService"

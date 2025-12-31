@@ -69,7 +69,9 @@ class TestGitStatus:
 
     def test_git_status_repo_not_found(self, client, mock_git_service):
         """Test git status with non-existent repository."""
-        mock_git_service.get_status.side_effect = FileNotFoundError("Repository not found")
+        mock_git_service.get_status.side_effect = FileNotFoundError(
+            "Repository not found"
+        )
 
         response = client.get("/api/v1/repos/nonexistent/git/status")
 
@@ -111,13 +113,17 @@ class TestGitDiff:
             "files_changed": 1,
         }
 
-        response = client.get("/api/v1/repos/test-repo/git/diff?file_paths=file1.py,file2.py")
+        response = client.get(
+            "/api/v1/repos/test-repo/git/diff?file_paths=file1.py,file2.py"
+        )
 
         assert response.status_code == status.HTTP_200_OK
 
     def test_git_diff_repo_not_found(self, client, mock_git_service):
         """Test git diff with non-existent repository."""
-        mock_git_service.get_diff.side_effect = FileNotFoundError("Repository not found")
+        mock_git_service.get_diff.side_effect = FileNotFoundError(
+            "Repository not found"
+        )
 
         response = client.get("/api/v1/repos/nonexistent/git/diff")
 

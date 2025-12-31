@@ -2113,7 +2113,10 @@ async def handle_create_file(params: Dict[str, Any], user: User) -> Dict[str, An
 
         if not repository_alias:
             return _mcp_response(
-                {"success": False, "error": "Missing required parameter: repository_alias"}
+                {
+                    "success": False,
+                    "error": "Missing required parameter: repository_alias",
+                }
             )
         if not file_path:
             return _mcp_response(
@@ -2195,7 +2198,10 @@ async def handle_edit_file(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
         if not repository_alias:
             return _mcp_response(
-                {"success": False, "error": "Missing required parameter: repository_alias"}
+                {
+                    "success": False,
+                    "error": "Missing required parameter: repository_alias",
+                }
             )
         if not file_path:
             return _mcp_response(
@@ -2239,7 +2245,9 @@ async def handle_edit_file(params: Dict[str, Any], user: User) -> Dict[str, Any]
         return _mcp_response(result)
 
     except HashMismatchError as e:
-        logger.warning(f"File edit failed - hash mismatch (concurrent modification): {e}")
+        logger.warning(
+            f"File edit failed - hash mismatch (concurrent modification): {e}"
+        )
         return _mcp_response({"success": False, "error": str(e)})
     except FileNotFoundError as e:
         logger.warning(f"File edit failed - file not found: {e}")
@@ -2287,7 +2295,10 @@ async def handle_delete_file(params: Dict[str, Any], user: User) -> Dict[str, An
 
         if not repository_alias:
             return _mcp_response(
-                {"success": False, "error": "Missing required parameter: repository_alias"}
+                {
+                    "success": False,
+                    "error": "Missing required parameter: repository_alias",
+                }
             )
         if not file_path:
             return _mcp_response(
@@ -4136,7 +4147,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                     "error": f"Invalid parameters: {from_symbol_error}",
                     "from_symbol": from_symbol,
                     "to_symbol": to_symbol,
-                    "chains": []
+                    "chains": [],
                 }
             )
 
@@ -4148,7 +4159,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                     "error": f"Invalid parameters: {to_symbol_error}",
                     "from_symbol": from_symbol,
                     "to_symbol": to_symbol,
-                    "chains": []
+                    "chains": [],
                 }
             )
 
@@ -4479,22 +4490,26 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 }
             )
 
-        return _mcp_response({
-            "success": True,
-            "total_tools": len(tools_summary),
-            "category_filter": category_filter,
-            "tools": tools_summary,
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "total_tools": len(tools_summary),
+                "category_filter": category_filter,
+                "tools": tools_summary,
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Error in quick_reference: {e}")
-        return _mcp_response({
-            "success": False,
-            "total_tools": 0,
-            "category_filter": category_filter,
-            "tools": [],
-            "error": str(e),
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "total_tools": 0,
+                "category_filter": category_filter,
+                "tools": [],
+                "error": str(e),
+            }
+        )
 
 
 async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -4526,16 +4541,20 @@ async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         clear = params.get("clear", False)
 
         if not repo_alias:
-            return _mcp_response({
-                "success": False,
-                "error": "repository_alias is required",
-            })
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "repository_alias is required",
+                }
+            )
 
         if not index_types:
-            return _mcp_response({
-                "success": False,
-                "error": "index_types is required",
-            })
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "index_types is required",
+                }
+            )
 
         # Create index manager and trigger reindex
         index_manager = ActivatedRepoIndexManager()
@@ -4554,9 +4573,7 @@ async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             "temporal": 5,
             "scip": 2,
         }
-        estimated_minutes = sum(
-            duration_estimates.get(t, 5) for t in index_types
-        )
+        estimated_minutes = sum(duration_estimates.get(t, 5) for t in index_types)
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         logger.info(
@@ -4564,36 +4581,44 @@ async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             f"job_id={job_id}, repo={repo_alias}, types={index_types}"
         )
 
-        return _mcp_response({
-            "success": True,
-            "job_id": job_id,
-            "status": "queued",
-            "index_types": index_types,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "estimated_duration_minutes": estimated_minutes,
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "job_id": job_id,
+                "status": "queued",
+                "index_types": index_types,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "estimated_duration_minutes": estimated_minutes,
+            }
+        )
 
     except ValueError as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
         logger.warning(f"trigger_reindex validation error in {elapsed_ms}ms: {e}")
-        return _mcp_response({
-            "success": False,
-            "error": str(e),
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error": str(e),
+            }
+        )
     except FileNotFoundError as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
         logger.warning(f"trigger_reindex repo not found in {elapsed_ms}ms: {e}")
-        return _mcp_response({
-            "success": False,
-            "error": str(e),
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error": str(e),
+            }
+        )
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
         logger.exception(f"trigger_reindex error in {elapsed_ms}ms: {e}")
-        return _mcp_response({
-            "success": False,
-            "error": str(e),
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error": str(e),
+            }
+        )
 
 
 async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -4620,10 +4645,12 @@ async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]
         repo_alias = params.get("repository_alias")
 
         if not repo_alias:
-            return _mcp_response({
-                "success": False,
-                "error": "repository_alias is required",
-            })
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "repository_alias is required",
+                }
+            )
 
         # Create index manager and get status
         index_manager = ActivatedRepoIndexManager()
@@ -4633,9 +4660,7 @@ async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.info(
-            f"get_index_status completed in {elapsed_ms}ms - repo={repo_alias}"
-        )
+        logger.info(f"get_index_status completed in {elapsed_ms}ms - repo={repo_alias}")
 
         # Build response with all index types
         response = {
@@ -4649,17 +4674,21 @@ async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]
     except FileNotFoundError as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
         logger.warning(f"get_index_status repo not found in {elapsed_ms}ms: {e}")
-        return _mcp_response({
-            "success": False,
-            "error": str(e),
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error": str(e),
+            }
+        )
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
         logger.exception(f"get_index_status error in {elapsed_ms}ms: {e}")
-        return _mcp_response({
-            "success": False,
-            "error": str(e),
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error": str(e),
+            }
+        )
 
 
 # Register the quick_reference handler
@@ -4673,6 +4702,7 @@ HANDLER_REGISTRY["get_index_status"] = get_index_status
 # =============================================================================
 # Git Write Operations MCP Handlers (Story #626)
 # =============================================================================
+
 
 async def git_status(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Handler for git_status tool - get repository working tree status."""
@@ -4694,13 +4724,15 @@ async def git_status(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_status failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -4733,13 +4765,15 @@ async def git_stage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_stage failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -4772,13 +4806,15 @@ async def git_unstage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_unstage failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -4817,13 +4853,15 @@ async def git_commit(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_commit failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except ValueError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except FileNotFoundError as e:
@@ -4849,19 +4887,21 @@ async def git_push(args: Dict[str, Any], user: User) -> Dict[str, Any]:
             repo_alias=repository_alias,
             username=user.username,
             remote=remote,
-            branch=branch
+            branch=branch,
         )
         return _mcp_response(result)
 
     except GitCommandError as e:
         logger.error(f"git_push failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -4885,19 +4925,21 @@ async def git_pull(args: Dict[str, Any], user: User) -> Dict[str, Any]:
             repo_alias=repository_alias,
             username=user.username,
             remote=remote,
-            branch=branch
+            branch=branch,
         )
         return _mcp_response(result)
 
     except GitCommandError as e:
         logger.error(f"git_pull failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -4917,21 +4959,21 @@ async def git_fetch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         # Bug #639: Call fetch_from_remote wrapper to trigger migration if needed
         remote = args.get("remote", "origin")
         result = git_operations_service.fetch_from_remote(
-            repo_alias=repository_alias,
-            username=user.username,
-            remote=remote
+            repo_alias=repository_alias, username=user.username, remote=remote
         )
         return _mcp_response(result)
 
     except GitCommandError as e:
         logger.error(f"git_fetch failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -4966,36 +5008,42 @@ async def git_reset(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         # Handle confirmation token requirement
         if result.get("requires_confirmation"):
-            return _mcp_response({
-                "success": False,
-                "confirmation_token_required": {
-                    "token": result["token"],
-                    "message": f"Hard reset requires confirmation. "
-                               f"Call again with confirmation_token='{result['token']}'",
-                },
-            })
+            return _mcp_response(
+                {
+                    "success": False,
+                    "confirmation_token_required": {
+                        "token": result["token"],
+                        "message": f"Hard reset requires confirmation. "
+                        f"Call again with confirmation_token='{result['token']}'",
+                    },
+                }
+            )
 
         return _mcp_response(result)
 
     except ValueError as e:
         # Token validation failed - generate new token
         token = git_operations_service.generate_confirmation_token("git_reset_hard")
-        return _mcp_response({
-            "success": False,
-            "confirmation_token_required": {
-                "token": token,
-                "message": str(e),
-            },
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "confirmation_token_required": {
+                    "token": token,
+                    "message": str(e),
+                },
+            }
+        )
     except GitCommandError as e:
         logger.error(f"git_reset failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5025,36 +5073,42 @@ async def git_clean(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         # Handle confirmation token requirement
         if result.get("requires_confirmation"):
-            return _mcp_response({
-                "success": False,
-                "confirmation_token_required": {
-                    "token": result["token"],
-                    "message": f"Git clean requires confirmation. "
-                               f"Call again with confirmation_token='{result['token']}'",
-                },
-            })
+            return _mcp_response(
+                {
+                    "success": False,
+                    "confirmation_token_required": {
+                        "token": result["token"],
+                        "message": f"Git clean requires confirmation. "
+                        f"Call again with confirmation_token='{result['token']}'",
+                    },
+                }
+            )
 
         return _mcp_response(result)
 
     except ValueError as e:
         # Token validation failed - generate new token
         token = git_operations_service.generate_confirmation_token("git_clean")
-        return _mcp_response({
-            "success": False,
-            "confirmation_token_required": {
-                "token": token,
-                "message": str(e),
-            },
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "confirmation_token_required": {
+                    "token": token,
+                    "message": str(e),
+                },
+            }
+        )
     except GitCommandError as e:
         logger.error(f"git_clean failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5081,13 +5135,15 @@ async def git_merge_abort(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_merge_abort failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5120,13 +5176,15 @@ async def git_checkout_file(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_checkout_file failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5154,13 +5212,15 @@ async def git_branch_list(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_branch_list failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5196,13 +5256,15 @@ async def git_branch_create(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_branch_create failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5238,13 +5300,15 @@ async def git_branch_switch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_branch_switch failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5280,36 +5344,42 @@ async def git_branch_delete(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         # Handle confirmation token requirement
         if result.get("requires_confirmation"):
-            return _mcp_response({
-                "success": False,
-                "confirmation_token_required": {
-                    "token": result["token"],
-                    "message": f"Branch deletion requires confirmation. "
-                               f"Call again with confirmation_token='{result['token']}'",
-                },
-            })
+            return _mcp_response(
+                {
+                    "success": False,
+                    "confirmation_token_required": {
+                        "token": result["token"],
+                        "message": f"Branch deletion requires confirmation. "
+                        f"Call again with confirmation_token='{result['token']}'",
+                    },
+                }
+            )
 
         return _mcp_response(result)
 
     except ValueError as e:
         # Token validation failed - generate new token
         token = git_operations_service.generate_confirmation_token("git_branch_delete")
-        return _mcp_response({
-            "success": False,
-            "confirmation_token_required": {
-                "token": token,
-                "message": str(e),
-            },
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "confirmation_token_required": {
+                    "token": token,
+                    "message": str(e),
+                },
+            }
+        )
     except GitCommandError as e:
         logger.error(f"git_branch_delete failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5356,13 +5426,15 @@ async def git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_diff failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5397,13 +5469,15 @@ async def git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except GitCommandError as e:
         logger.error(f"git_log failed: {e}")
-        return _mcp_response({
-            "success": False,
-            "error_type": "GitCommandError",
-            "error": str(e),
-            "stderr": e.stderr,
-            "command": e.command,
-        })
+        return _mcp_response(
+            {
+                "success": False,
+                "error_type": "GitCommandError",
+                "error": str(e),
+                "stderr": e.stderr,
+                "command": e.command,
+            }
+        )
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
@@ -5609,11 +5683,11 @@ async def get_tool_categories(args: Dict[str, Any], user: User) -> Dict[str, Any
             tldr_start = description.index("TL;DR:") + 6
             tldr_end = description.find(".", tldr_start)
             if tldr_end > tldr_start:
-                return description[tldr_start:tldr_end + 1].strip()
+                return description[tldr_start : tldr_end + 1].strip()
         # Fall back to first sentence
         first_sentence_end = description.find(".")
         if first_sentence_end > 0:
-            return description[:first_sentence_end + 1].strip()
+            return description[: first_sentence_end + 1].strip()
         return description[:100].strip() if description else "No description available"
 
     # Build categorized response
@@ -5630,11 +5704,13 @@ async def get_tool_categories(args: Dict[str, Any], user: User) -> Dict[str, Any
         if category_tools:
             categories[category_name] = category_tools
 
-    return _mcp_response({
-        "success": True,
-        "categories": categories,
-        "total_tools": total_tools,
-    })
+    return _mcp_response(
+        {
+            "success": True,
+            "categories": categories,
+            "total_tools": total_tools,
+        }
+    )
 
 
 HANDLER_REGISTRY["get_tool_categories"] = get_tool_categories

@@ -4,7 +4,6 @@ Unit tests for AutoWatchConfig - Story #640.
 Tests configuration for auto-watch functionality.
 """
 
-import pytest
 from code_indexer.server.utils.config_manager import AutoWatchConfig, ServerConfig
 
 

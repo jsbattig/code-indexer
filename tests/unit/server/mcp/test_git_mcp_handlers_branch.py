@@ -44,9 +44,7 @@ def mock_git_service():
 @pytest.fixture
 def mock_repo_manager():
     """Create mock ActivatedRepoManager."""
-    with patch(
-        "code_indexer.server.mcp.handlers.ActivatedRepoManager"
-    ) as MockClass:
+    with patch("code_indexer.server.mcp.handlers.ActivatedRepoManager") as MockClass:
         mock_instance = MockClass.return_value
         mock_instance.get_activated_repo_path.return_value = Path("/tmp/test-repo")
         yield mock_instance
@@ -82,9 +80,7 @@ class TestGitBranchListHandler:
         assert data["success"] is True
         assert len(data["branches"]) == 3
         assert data["branches"][0]["current"] is True
-        mock_git_service.git_branch_list.assert_called_once_with(
-            Path("/tmp/test-repo")
-        )
+        mock_git_service.git_branch_list.assert_called_once_with(Path("/tmp/test-repo"))
 
     @pytest.mark.asyncio
     async def test_git_branch_list_missing_repository(self, mock_user):

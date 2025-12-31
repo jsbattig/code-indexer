@@ -4396,7 +4396,7 @@ TOOL_REGISTRY["scip_callchain"] = {
         "SUPPORTED SYMBOL FORMATS:\n"
         '- Simple names: "chat", "invoke", "CustomChain", "BaseClient"\n'
         '- Class#method: "CustomChain#chat", "BaseClient#invoke"\n'
-        "- Full SCIP identifiers: \"scip-python python . hash `module`/Class#method().\"\n"
+        '- Full SCIP identifiers: "scip-python python . hash `module`/Class#method()."\n'
         "\n\n"
         "USAGE EXAMPLES:\n"
         '- Method to method: from_symbol="chat", to_symbol="invoke"\n'
@@ -4797,11 +4797,7 @@ RELATED TOOLS:
 - cidx_quick_reference: Decision guide for choosing tools
 - first_time_user_guide: Step-by-step getting started guide
 """,
-    "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "required": []
-    },
+    "inputSchema": {"type": "object", "properties": {}, "required": []},
     "required_permission": None,
     "outputSchema": {
         "type": "object",
@@ -4809,17 +4805,14 @@ RELATED TOOLS:
             "categories": {
                 "type": "object",
                 "description": "Tools organized by category",
-                "additionalProperties": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                }
+                "additionalProperties": {"type": "array", "items": {"type": "string"}},
             },
             "total_tools": {
                 "type": "integer",
-                "description": "Total number of tools available"
-            }
-        }
-    }
+                "description": "Total number of tools available",
+            },
+        },
+    },
 }
 
 TOOL_REGISTRY["first_time_user_guide"] = {
@@ -4883,11 +4876,7 @@ A: search_code uses pre-built indexes (fast, approximate). regex_search scans fi
 Q: Why can't I edit files in global repos?
 A: Global repos are read-only. Activate them first to get your personal writable copy.
 """,
-    "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "required": []
-    },
+    "inputSchema": {"type": "object", "properties": {}, "required": []},
     "required_permission": None,
     "outputSchema": {
         "type": "object",
@@ -4904,14 +4893,14 @@ A: Global repos are read-only. Activate them first to get your personal writable
                                 "title": {"type": "string"},
                                 "description": {"type": "string"},
                                 "example_call": {"type": "string"},
-                                "expected_result": {"type": "string"}
-                            }
-                        }
+                                "expected_result": {"type": "string"},
+                            },
+                        },
                     },
                     "quick_start_summary": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "One-line summary of each step for quick reference"
+                        "description": "One-line summary of each step for quick reference",
                     },
                     "common_errors": {
                         "type": "array",
@@ -4919,14 +4908,14 @@ A: Global repos are read-only. Activate them first to get your personal writable
                             "type": "object",
                             "properties": {
                                 "error": {"type": "string"},
-                                "solution": {"type": "string"}
-                            }
-                        }
-                    }
-                }
+                                "solution": {"type": "string"},
+                            },
+                        },
+                    },
+                },
             }
-        }
-    }
+        },
+    },
 }
 
 # =============================================================================
@@ -4941,27 +4930,24 @@ TOOL_REGISTRY["create_file"] = {
         "REQUIREMENTS: Repository must be activated via activate_global_repo. File must not exist. "
         "RETURNS: File metadata including content_hash for future edits (optimistic locking). "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"file_path\": \"src/new_module.py\", \"content\": \"def hello():\\n    return 'world'\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "file_path": "src/new_module.py", "content": "def hello():\\n    return \'world\'"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "repository_alias": {
                 "type": "string",
-                "description": "Repository alias (user workspace identifier)"
+                "description": "Repository alias (user workspace identifier)",
             },
             "file_path": {
                 "type": "string",
                 "description": "Path to new file within repository (relative path)",
-                "pattern": "^(?!.*\\.git/).*$"  # Block .git/ paths
+                "pattern": "^(?!.*\\.git/).*$",  # Block .git/ paths
             },
-            "content": {
-                "type": "string",
-                "description": "File content (UTF-8 text)"
-            }
+            "content": {"type": "string", "description": "File content (UTF-8 text)"},
         },
         "required": ["repository_alias", "file_path", "content"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "required_permission": "repository:write",
     "outputSchema": {
@@ -4969,31 +4955,31 @@ TOOL_REGISTRY["create_file"] = {
         "properties": {
             "success": {
                 "type": "boolean",
-                "description": "Whether the file creation succeeded"
+                "description": "Whether the file creation succeeded",
             },
             "file_path": {
                 "type": "string",
-                "description": "Relative path to created file (present when success=true)"
+                "description": "Relative path to created file (present when success=true)",
             },
             "content_hash": {
                 "type": "string",
-                "description": "SHA-256 hash of file content for optimistic locking in future edits (present when success=true)"
+                "description": "SHA-256 hash of file content for optimistic locking in future edits (present when success=true)",
             },
             "size_bytes": {
                 "type": "integer",
-                "description": "File size in bytes (present when success=true)"
+                "description": "File size in bytes (present when success=true)",
             },
             "created_at": {
                 "type": "string",
-                "description": "ISO 8601 timestamp when file was created (present when success=true)"
+                "description": "ISO 8601 timestamp when file was created (present when success=true)",
             },
             "error": {
                 "type": "string",
-                "description": "Error message (present when success=false)"
-            }
+                "description": "Error message (present when success=false)",
+            },
         },
-        "required": ["success"]
-    }
+        "required": ["success"],
+    },
 }
 
 TOOL_REGISTRY["edit_file"] = {
@@ -5005,39 +4991,39 @@ TOOL_REGISTRY["edit_file"] = {
         "STRING REPLACEMENT: old_string must match exactly (including whitespace). Use replace_all=true to replace all occurrences. "
         "REQUIREMENTS: File must exist, content_hash must match current state. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"file_path\": \"src/auth.py\", \"old_string\": \"def old_func():\", \"new_string\": \"def new_func():\", \"content_hash\": \"abc123def456\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "file_path": "src/auth.py", "old_string": "def old_func():", "new_string": "def new_func():", "content_hash": "abc123def456"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "file_path": {
                 "type": "string",
-                "description": "Path to file within repository"
+                "description": "Path to file within repository",
             },
             "old_string": {
                 "type": "string",
-                "description": "Exact string to replace (must match exactly including whitespace)"
+                "description": "Exact string to replace (must match exactly including whitespace)",
             },
-            "new_string": {
-                "type": "string",
-                "description": "Replacement string"
-            },
+            "new_string": {"type": "string", "description": "Replacement string"},
             "content_hash": {
                 "type": "string",
-                "description": "SHA-256 hash for optimistic locking (from get_file_content or previous edit)"
+                "description": "SHA-256 hash for optimistic locking (from get_file_content or previous edit)",
             },
             "replace_all": {
                 "type": "boolean",
                 "description": "Replace all occurrences of old_string (default: false - replace first only)",
-                "default": False
-            }
+                "default": False,
+            },
         },
-        "required": ["repository_alias", "file_path", "old_string", "new_string", "content_hash"],
-        "additionalProperties": False
+        "required": [
+            "repository_alias",
+            "file_path",
+            "old_string",
+            "new_string",
+            "content_hash",
+        ],
+        "additionalProperties": False,
     },
     "required_permission": "repository:write",
     "outputSchema": {
@@ -5045,31 +5031,31 @@ TOOL_REGISTRY["edit_file"] = {
         "properties": {
             "success": {
                 "type": "boolean",
-                "description": "Whether the file edit succeeded"
+                "description": "Whether the file edit succeeded",
             },
             "file_path": {
                 "type": "string",
-                "description": "Relative path to edited file (present when success=true)"
+                "description": "Relative path to edited file (present when success=true)",
             },
             "content_hash": {
                 "type": "string",
-                "description": "SHA-256 hash of updated file content for future edits (present when success=true)"
+                "description": "SHA-256 hash of updated file content for future edits (present when success=true)",
             },
             "modified_at": {
                 "type": "string",
-                "description": "ISO 8601 timestamp when file was modified (present when success=true)"
+                "description": "ISO 8601 timestamp when file was modified (present when success=true)",
             },
             "changes_made": {
                 "type": "integer",
-                "description": "Number of replacements made (1 if replace_all=false, N if replace_all=true) (present when success=true)"
+                "description": "Number of replacements made (1 if replace_all=false, N if replace_all=true) (present when success=true)",
             },
             "error": {
                 "type": "string",
-                "description": "Error message (present when success=false)"
-            }
+                "description": "Error message (present when success=false)",
+            },
         },
-        "required": ["success"]
-    }
+        "required": ["success"],
+    },
 }
 
 TOOL_REGISTRY["delete_file"] = {
@@ -5080,46 +5066,34 @@ TOOL_REGISTRY["delete_file"] = {
         "SAFETY: Optional content_hash validation prevents accidental deletion of modified files. "
         "REQUIREMENTS: File must exist. Repository must be activated. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"file_path\": \"src/old_module.py\", \"content_hash\": \"xyz789\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "file_path": "src/old_module.py", "content_hash": "xyz789"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
-            "file_path": {
-                "type": "string",
-                "description": "Path to file to delete"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
+            "file_path": {"type": "string", "description": "Path to file to delete"},
             "content_hash": {
                 "type": "string",
-                "description": "Optional SHA-256 hash for validation before delete (prevents accidental deletion of modified files)"
-            }
+                "description": "Optional SHA-256 hash for validation before delete (prevents accidental deletion of modified files)",
+            },
         },
         "required": ["repository_alias", "file_path"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "required_permission": "repository:write",
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation success status"
-            },
-            "file_path": {
-                "type": "string",
-                "description": "Deleted file path"
-            },
+            "success": {"type": "boolean", "description": "Operation success status"},
+            "file_path": {"type": "string", "description": "Deleted file path"},
             "deleted_at": {
                 "type": "string",
-                "description": "Deletion timestamp (ISO 8601)"
-            }
+                "description": "Deletion timestamp (ISO 8601)",
+            },
         },
-        "required": ["success", "file_path", "deleted_at"]
-    }
+        "required": ["success", "file_path", "deleted_at"],
+    },
 }
 
 # =============================================================================
@@ -5133,45 +5107,39 @@ TOOL_REGISTRY["git_status"] = {
         "USE CASES: (1) Check modified/staged/untracked files, (2) Verify working tree state before commits, (3) Identify conflicts. "
         "RETURNS: Staged files, unstaged changes, untracked files, current branch, merge conflicts. "
         "PERMISSIONS: Requires repository:read. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\"}"
+        'EXAMPLE: {"repository_alias": "my-repo"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            }
+            "repository_alias": {"type": "string", "description": "Repository alias"}
         },
         "required": ["repository_alias"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation success status"
-            },
+            "success": {"type": "boolean", "description": "Operation success status"},
             "staged": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of staged files"
+                "description": "List of staged files",
             },
             "unstaged": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of unstaged files"
+                "description": "List of unstaged files",
             },
             "untracked": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of untracked files"
-            }
+                "description": "List of untracked files",
+            },
         },
-        "required": ["success"]
+        "required": ["success"],
     },
-    "required_permission": "repository:read"
+    "required_permission": "repository:read",
 }
 
 TOOL_REGISTRY["git_stage"] = {
@@ -5181,39 +5149,33 @@ TOOL_REGISTRY["git_stage"] = {
         "USE CASES: (1) Stage modified files, (2) Stage new files, (3) Prepare files for commit. "
         "REQUIREMENTS: Files must exist and have changes. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"file_paths\": [\"src/file1.py\", \"src/file2.py\"]}"
+        'EXAMPLE: {"repository_alias": "my-repo", "file_paths": ["src/file1.py", "src/file2.py"]}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "file_paths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Array of file paths to stage (relative to repository root)"
-            }
+                "description": "Array of file paths to stage (relative to repository root)",
+            },
         },
         "required": ["repository_alias", "file_paths"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
             "staged_files": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of file paths that were staged"
-            }
-        }
+                "description": "List of file paths that were staged",
+            },
+        },
     },
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_unstage"] = {
@@ -5223,40 +5185,33 @@ TOOL_REGISTRY["git_unstage"] = {
         "USE CASES: (1) Remove files from staging area, (2) Un-stage accidentally staged files. "
         "REQUIREMENTS: Files must be currently staged. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"file_paths\": [\"src/file1.py\"]}"
+        'EXAMPLE: {"repository_alias": "my-repo", "file_paths": ["src/file1.py"]}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "file_paths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Array of file paths to unstage"
-            }
+                "description": "Array of file paths to unstage",
+            },
         },
         "required": ["repository_alias", "file_paths"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
             "unstaged_files": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of file paths that were unstaged"
-            }
-        }
+                "description": "List of file paths that were unstaged",
+            },
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_commit"] = {
@@ -5267,63 +5222,47 @@ TOOL_REGISTRY["git_commit"] = {
         "REQUIREMENTS: Must have staged files. "
         "OPTIONAL: author_name and author_email for custom commit attribution. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"message\": \"Fix authentication bug\", \"author_name\": \"John Doe\", \"author_email\": \"john@example.com\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "message": "Fix authentication bug", "author_name": "John Doe", "author_email": "john@example.com"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
-            "message": {
-                "type": "string",
-                "description": "Commit message"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
+            "message": {"type": "string", "description": "Commit message"},
             "author_name": {
                 "type": "string",
-                "description": "Optional author name for commit attribution"
+                "description": "Optional author name for commit attribution",
             },
             "author_email": {
                 "type": "string",
-                "description": "Optional author email for commit attribution"
-            }
+                "description": "Optional author email for commit attribution",
+            },
         },
         "required": ["repository_alias", "message"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
             "commit_hash": {
                 "type": "string",
-                "description": "Full 40-character commit SHA"
+                "description": "Full 40-character commit SHA",
             },
             "short_hash": {
                 "type": "string",
-                "description": "7-character short commit SHA"
+                "description": "7-character short commit SHA",
             },
-            "message": {
-                "type": "string",
-                "description": "Commit message"
-            },
-            "author": {
-                "type": "string",
-                "description": "Commit author"
-            },
+            "message": {"type": "string", "description": "Commit message"},
+            "author": {"type": "string", "description": "Commit author"},
             "files_committed": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of files included in commit"
-            }
-        }
+                "description": "List of files included in commit",
+            },
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_push"] = {
@@ -5333,51 +5272,38 @@ TOOL_REGISTRY["git_push"] = {
         "USE CASES: (1) Push committed changes, (2) Sync local commits to remote, (3) Share work with team. "
         "OPTIONAL: Specify remote (default: origin) and branch (default: current). "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"remote\": \"origin\", \"branch\": \"main\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "remote": "origin", "branch": "main"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "remote": {
                 "type": "string",
                 "description": "Remote name (default: origin)",
-                "default": "origin"
+                "default": "origin",
             },
             "branch": {
                 "type": "string",
-                "description": "Branch name (default: current branch)"
-            }
+                "description": "Branch name (default: current branch)",
+            },
         },
         "required": ["repository_alias"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
-            "remote": {
-                "type": "string",
-                "description": "Remote name (e.g., 'origin')"
-            },
-            "branch": {
-                "type": "string",
-                "description": "Branch name pushed"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
+            "remote": {"type": "string", "description": "Remote name (e.g., 'origin')"},
+            "branch": {"type": "string", "description": "Branch name pushed"},
             "commits_pushed": {
                 "type": "integer",
-                "description": "Number of commits pushed"
-            }
-        }
+                "description": "Number of commits pushed",
+            },
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_pull"] = {
@@ -5387,55 +5313,42 @@ TOOL_REGISTRY["git_pull"] = {
         "USE CASES: (1) Fetch and merge remote changes, (2) Update local branch, (3) Sync with team changes. "
         "OPTIONAL: Specify remote (default: origin) and branch (default: current). "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"remote\": \"origin\", \"branch\": \"main\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "remote": "origin", "branch": "main"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "remote": {
                 "type": "string",
                 "description": "Remote name (default: origin)",
-                "default": "origin"
+                "default": "origin",
             },
             "branch": {
                 "type": "string",
-                "description": "Branch name (default: current branch)"
-            }
+                "description": "Branch name (default: current branch)",
+            },
         },
         "required": ["repository_alias"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
-            "remote": {
-                "type": "string",
-                "description": "Remote name"
-            },
-            "branch": {
-                "type": "string",
-                "description": "Branch name"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
+            "remote": {"type": "string", "description": "Remote name"},
+            "branch": {"type": "string", "description": "Branch name"},
             "files_changed": {
                 "type": "integer",
-                "description": "Number of files changed"
+                "description": "Number of files changed",
             },
             "commits_pulled": {
                 "type": "integer",
-                "description": "Number of new commits"
-            }
-        }
+                "description": "Number of new commits",
+            },
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_fetch"] = {
@@ -5445,44 +5358,34 @@ TOOL_REGISTRY["git_fetch"] = {
         "USE CASES: (1) Download remote updates, (2) Check remote changes before merge, (3) Update remote-tracking branches. "
         "OPTIONAL: Specify remote (default: origin). "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"remote\": \"origin\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "remote": "origin"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "remote": {
                 "type": "string",
                 "description": "Remote name (default: origin)",
-                "default": "origin"
-            }
+                "default": "origin",
+            },
         },
         "required": ["repository_alias"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
-            "remote": {
-                "type": "string",
-                "description": "Remote name"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
+            "remote": {"type": "string", "description": "Remote name"},
             "refs_fetched": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of refs/branches fetched"
-            }
-        }
+                "description": "List of refs/branches fetched",
+            },
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_reset"] = {
@@ -5493,31 +5396,28 @@ TOOL_REGISTRY["git_reset"] = {
         "MODES: soft (keep changes staged), mixed (keep changes unstaged), hard (discard all changes). "
         "SAFETY: Requires explicit mode. Optional commit_hash and confirmation_token for destructive operations. "
         "PERMISSIONS: Requires repository:admin (destructive operation). "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"mode\": \"hard\", \"commit_hash\": \"abc123\", \"confirmation_token\": \"CONFIRM_RESET\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "mode": "hard", "commit_hash": "abc123", "confirmation_token": "CONFIRM_RESET"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "mode": {
                 "type": "string",
                 "enum": ["soft", "mixed", "hard"],
-                "description": "Reset mode: soft (keep staged), mixed (keep unstaged), hard (discard all)"
+                "description": "Reset mode: soft (keep staged), mixed (keep unstaged), hard (discard all)",
             },
             "commit_hash": {
                 "type": "string",
-                "description": "Optional commit hash to reset to (default: HEAD)"
+                "description": "Optional commit hash to reset to (default: HEAD)",
             },
             "confirmation_token": {
                 "type": "string",
-                "description": "Confirmation token for destructive modes (required for hard reset)"
-            }
+                "description": "Confirmation token for destructive modes (required for hard reset)",
+            },
         },
         "required": ["repository_alias", "mode"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "oneOf": [
@@ -5527,17 +5427,17 @@ TOOL_REGISTRY["git_reset"] = {
                 "properties": {
                     "success": {
                         "type": "boolean",
-                        "description": "Operation succeeded"
+                        "description": "Operation succeeded",
                     },
                     "reset_mode": {
                         "type": "string",
-                        "description": "Reset mode used (hard/mixed/soft)"
+                        "description": "Reset mode used (hard/mixed/soft)",
                     },
                     "target_commit": {
                         "type": "string",
-                        "description": "Commit reset to"
-                    }
-                }
+                        "description": "Commit reset to",
+                    },
+                },
             },
             {
                 "type": "object",
@@ -5545,18 +5445,17 @@ TOOL_REGISTRY["git_reset"] = {
                 "properties": {
                     "requires_confirmation": {
                         "type": "boolean",
-                        "description": "Confirmation required"
+                        "description": "Confirmation required",
                     },
                     "token": {
                         "type": "string",
-                        "description": "Confirmation token to use in next call"
-                    }
-                }
-            }
+                        "description": "Confirmation token to use in next call",
+                    },
+                },
+            },
         ]
     },
-
-    "required_permission": "repository:admin"
+    "required_permission": "repository:admin",
 }
 
 TOOL_REGISTRY["git_clean"] = {
@@ -5566,22 +5465,19 @@ TOOL_REGISTRY["git_clean"] = {
         "USE CASES: (1) Remove build artifacts, (2) Clean untracked files, (3) Restore clean state. "
         "SAFETY: Requires confirmation_token to prevent accidental deletion. "
         "PERMISSIONS: Requires repository:admin (destructive operation). "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"confirmation_token\": \"CONFIRM_DELETE_UNTRACKED\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "confirmation_token": "CONFIRM_DELETE_UNTRACKED"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "confirmation_token": {
                 "type": "string",
-                "description": "Confirmation token (must be 'CONFIRM_DELETE_UNTRACKED')"
-            }
+                "description": "Confirmation token (must be 'CONFIRM_DELETE_UNTRACKED')",
+            },
         },
         "required": ["repository_alias", "confirmation_token"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "oneOf": [
@@ -5591,14 +5487,14 @@ TOOL_REGISTRY["git_clean"] = {
                 "properties": {
                     "success": {
                         "type": "boolean",
-                        "description": "Operation succeeded"
+                        "description": "Operation succeeded",
                     },
                     "removed_files": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of untracked files/directories removed"
-                    }
-                }
+                        "description": "List of untracked files/directories removed",
+                    },
+                },
             },
             {
                 "type": "object",
@@ -5606,18 +5502,17 @@ TOOL_REGISTRY["git_clean"] = {
                 "properties": {
                     "requires_confirmation": {
                         "type": "boolean",
-                        "description": "Confirmation required"
+                        "description": "Confirmation required",
                     },
                     "token": {
                         "type": "string",
-                        "description": "Confirmation token to use in next call"
-                    }
-                }
-            }
+                        "description": "Confirmation token to use in next call",
+                    },
+                },
+            },
         ]
     },
-
-    "required_permission": "repository:admin"
+    "required_permission": "repository:admin",
 }
 
 TOOL_REGISTRY["git_merge_abort"] = {
@@ -5627,34 +5522,24 @@ TOOL_REGISTRY["git_merge_abort"] = {
         "USE CASES: (1) Cancel merge with conflicts, (2) Restore pre-merge state, (3) Abandon merge attempt. "
         "REQUIREMENTS: Must have merge in progress. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\"}"
+        'EXAMPLE: {"repository_alias": "my-repo"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            }
+            "repository_alias": {"type": "string", "description": "Repository alias"}
         },
         "required": ["repository_alias"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
-            "message": {
-                "type": "string",
-                "description": "Confirmation message"
-            }
-        }
+            "success": {"type": "boolean", "description": "Operation succeeded"},
+            "message": {"type": "string", "description": "Confirmation message"},
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_checkout_file"] = {
@@ -5664,39 +5549,32 @@ TOOL_REGISTRY["git_checkout_file"] = {
         "USE CASES: (1) Discard unwanted changes, (2) Restore deleted file, (3) Reset file to last commit. "
         "SAFETY: This discards local modifications to the file. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"file_path\": \"src/file.py\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "file_path": "src/file.py"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "file_path": {
                 "type": "string",
-                "description": "File path to restore (relative to repository root)"
-            }
+                "description": "File path to restore (relative to repository root)",
+            },
         },
         "required": ["repository_alias", "file_path"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
             "restored_files": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of files restored to HEAD state"
-            }
-        }
+                "description": "List of files restored to HEAD state",
+            },
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_branch_list"] = {
@@ -5706,45 +5584,35 @@ TOOL_REGISTRY["git_branch_list"] = {
         "USE CASES: (1) View available branches, (2) Check current branch, (3) Identify remote branches. "
         "RETURNS: Local and remote branches with current branch indicator. "
         "PERMISSIONS: Requires repository:read. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\"}"
+        'EXAMPLE: {"repository_alias": "my-repo"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            }
+            "repository_alias": {"type": "string", "description": "Repository alias"}
         },
         "required": ["repository_alias"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation success status"
-            },
-            "current": {
-                "type": "string",
-                "description": "Current branch name"
-            },
+            "success": {"type": "boolean", "description": "Operation success status"},
+            "current": {"type": "string", "description": "Current branch name"},
             "local": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of local branches"
+                "description": "List of local branches",
             },
             "remote": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of remote branches"
-            }
+                "description": "List of remote branches",
+            },
         },
-        "required": ["success", "current", "local", "remote"]
+        "required": ["success", "current", "local", "remote"],
     },
-
-    "required_permission": "repository:read"
+    "required_permission": "repository:read",
 }
 
 TOOL_REGISTRY["git_branch_create"] = {
@@ -5754,38 +5622,28 @@ TOOL_REGISTRY["git_branch_create"] = {
         "USE CASES: (1) Create feature branch, (2) Create bugfix branch, (3) Isolate work in new branch. "
         "REQUIREMENTS: Branch name must be unique. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"branch_name\": \"feature/new-feature\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "branch_name": "feature/new-feature"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
-            "branch_name": {
-                "type": "string",
-                "description": "Name for new branch"
-            }
+            "repository_alias": {"type": "string", "description": "Repository alias"},
+            "branch_name": {"type": "string", "description": "Name for new branch"},
         },
         "required": ["repository_alias", "branch_name"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
+            "success": {"type": "boolean", "description": "Operation succeeded"},
             "created_branch": {
                 "type": "string",
-                "description": "Name of newly created branch"
-            }
-        }
+                "description": "Name of newly created branch",
+            },
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_branch_switch"] = {
@@ -5795,42 +5653,29 @@ TOOL_REGISTRY["git_branch_switch"] = {
         "USE CASES: (1) Switch to existing branch, (2) Change working context, (3) Review different branch. "
         "REQUIREMENTS: Branch must exist, working tree must be clean. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"branch_name\": \"main\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "branch_name": "main"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "branch_name": {
                 "type": "string",
-                "description": "Branch name to switch to"
-            }
+                "description": "Branch name to switch to",
+            },
         },
         "required": ["repository_alias", "branch_name"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation succeeded"
-            },
-            "from_branch": {
-                "type": "string",
-                "description": "Previous branch"
-            },
-            "to_branch": {
-                "type": "string",
-                "description": "New current branch"
-            }
-        }
+            "success": {"type": "boolean", "description": "Operation succeeded"},
+            "from_branch": {"type": "string", "description": "Previous branch"},
+            "to_branch": {"type": "string", "description": "New current branch"},
+        },
     },
-
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["git_branch_delete"] = {
@@ -5840,26 +5685,20 @@ TOOL_REGISTRY["git_branch_delete"] = {
         "USE CASES: (1) Delete merged feature branch, (2) Remove obsolete branch, (3) Clean up branches. "
         "SAFETY: Requires confirmation_token to prevent accidental deletion. Cannot delete current branch. "
         "PERMISSIONS: Requires repository:admin (destructive operation). "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"branch_name\": \"old-feature\", \"confirmation_token\": \"CONFIRM_DELETE_BRANCH\"}"
+        'EXAMPLE: {"repository_alias": "my-repo", "branch_name": "old-feature", "confirmation_token": "CONFIRM_DELETE_BRANCH"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
-            "branch_name": {
-                "type": "string",
-                "description": "Branch name to delete"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
+            "branch_name": {"type": "string", "description": "Branch name to delete"},
             "confirmation_token": {
                 "type": "string",
-                "description": "Confirmation token (must be 'CONFIRM_DELETE_BRANCH')"
-            }
+                "description": "Confirmation token (must be 'CONFIRM_DELETE_BRANCH')",
+            },
         },
         "required": ["repository_alias", "branch_name", "confirmation_token"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "oneOf": [
@@ -5869,13 +5708,13 @@ TOOL_REGISTRY["git_branch_delete"] = {
                 "properties": {
                     "success": {
                         "type": "boolean",
-                        "description": "Operation succeeded"
+                        "description": "Operation succeeded",
                     },
                     "deleted_branch": {
                         "type": "string",
-                        "description": "Name of deleted branch"
-                    }
-                }
+                        "description": "Name of deleted branch",
+                    },
+                },
             },
             {
                 "type": "object",
@@ -5883,18 +5722,17 @@ TOOL_REGISTRY["git_branch_delete"] = {
                 "properties": {
                     "requires_confirmation": {
                         "type": "boolean",
-                        "description": "Confirmation required"
+                        "description": "Confirmation required",
                     },
                     "token": {
                         "type": "string",
-                        "description": "Confirmation token to use in next call"
-                    }
-                }
-            }
+                        "description": "Confirmation token to use in next call",
+                    },
+                },
+            },
         ]
     },
-
-    "required_permission": "repository:admin"
+    "required_permission": "repository:admin",
 }
 
 # =============================================================================
@@ -5909,66 +5747,55 @@ TOOL_REGISTRY["trigger_reindex"] = {
         "INDEX TYPES: semantic (embedding vectors), fts (full-text search), temporal (git history), scip (code intelligence). "
         "CLEAR FLAG: When clear=true, completely rebuilds from scratch (slower but thorough). When false, performs incremental update. "
         "PERMISSIONS: Requires repository:write. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\", \"index_types\": [\"semantic\", \"fts\"], \"clear\": false}"
+        'EXAMPLE: {"repository_alias": "my-repo", "index_types": ["semantic", "fts"], "clear": false}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "index_types": {
                 "type": "array",
                 "items": {
                     "type": "string",
-                    "enum": ["semantic", "fts", "temporal", "scip"]
+                    "enum": ["semantic", "fts", "temporal", "scip"],
                 },
-                "description": "Array of index types to rebuild: semantic (embeddings), fts (full-text), temporal (git history), scip (call graphs)"
+                "description": "Array of index types to rebuild: semantic (embeddings), fts (full-text), temporal (git history), scip (call graphs)",
             },
             "clear": {
                 "type": "boolean",
                 "description": "Rebuild from scratch (true) or incremental update (false). Default: false",
-                "default": False
-            }
+                "default": False,
+            },
         },
         "required": ["repository_alias", "index_types"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation success status"
-            },
+            "success": {"type": "boolean", "description": "Operation success status"},
             "job_id": {
                 "type": "string",
-                "description": "Background job ID for tracking"
+                "description": "Background job ID for tracking",
             },
-            "status": {
-                "type": "string",
-                "description": "Initial job status"
-            },
+            "status": {"type": "string", "description": "Initial job status"},
             "index_types": {
                 "type": "array",
-                "items": {
-                    "type": "string"
-                },
-                "description": "Index types being rebuilt"
+                "items": {"type": "string"},
+                "description": "Index types being rebuilt",
             },
             "started_at": {
                 "type": "string",
-                "description": "Job start time (ISO 8601)"
+                "description": "Job start time (ISO 8601)",
             },
             "estimated_duration_minutes": {
                 "type": "integer",
-                "description": "Estimated completion time in minutes"
-            }
+                "description": "Estimated completion time in minutes",
+            },
         },
-        "required": ["success"]
+        "required": ["success"],
     },
-    "required_permission": "repository:write"
+    "required_permission": "repository:write",
 }
 
 TOOL_REGISTRY["get_index_status"] = {
@@ -5978,30 +5805,21 @@ TOOL_REGISTRY["get_index_status"] = {
         "USE CASES: (1) Check if indexes exist before querying, (2) Verify index freshness, (3) Monitor index health. "
         "RETURNS: Status for each index type (semantic, fts, temporal, scip) including: existence, file count, last updated timestamp, size. "
         "PERMISSIONS: Requires repository:read. "
-        "EXAMPLE: {\"repository_alias\": \"my-repo\"}"
+        'EXAMPLE: {"repository_alias": "my-repo"}'
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            }
+            "repository_alias": {"type": "string", "description": "Repository alias"}
         },
         "required": ["repository_alias"],
-        "additionalProperties": False
+        "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation success status"
-            },
-            "repository_alias": {
-                "type": "string",
-                "description": "Repository alias"
-            },
+            "success": {"type": "boolean", "description": "Operation success status"},
+            "repository_alias": {"type": "string", "description": "Repository alias"},
             "semantic": {
                 "type": "object",
                 "description": "Semantic index status",
@@ -6009,8 +5827,8 @@ TOOL_REGISTRY["get_index_status"] = {
                     "exists": {"type": "boolean"},
                     "last_updated": {"type": "string"},
                     "document_count": {"type": "integer"},
-                    "size_bytes": {"type": "integer"}
-                }
+                    "size_bytes": {"type": "integer"},
+                },
             },
             "fts": {
                 "type": "object",
@@ -6019,8 +5837,8 @@ TOOL_REGISTRY["get_index_status"] = {
                     "exists": {"type": "boolean"},
                     "last_updated": {"type": "string"},
                     "document_count": {"type": "integer"},
-                    "size_bytes": {"type": "integer"}
-                }
+                    "size_bytes": {"type": "integer"},
+                },
             },
             "temporal": {
                 "type": "object",
@@ -6029,8 +5847,8 @@ TOOL_REGISTRY["get_index_status"] = {
                     "exists": {"type": "boolean"},
                     "last_updated": {"type": "string"},
                     "document_count": {"type": "integer"},
-                    "size_bytes": {"type": "integer"}
-                }
+                    "size_bytes": {"type": "integer"},
+                },
             },
             "scip": {
                 "type": "object",
@@ -6039,11 +5857,18 @@ TOOL_REGISTRY["get_index_status"] = {
                     "exists": {"type": "boolean"},
                     "last_updated": {"type": "string"},
                     "document_count": {"type": "integer"},
-                    "size_bytes": {"type": "integer"}
-                }
-            }
+                    "size_bytes": {"type": "integer"},
+                },
+            },
         },
-        "required": ["success", "repository_alias", "semantic", "fts", "temporal", "scip"]
+        "required": [
+            "success",
+            "repository_alias",
+            "semantic",
+            "fts",
+            "temporal",
+            "scip",
+        ],
     },
-    "required_permission": "repository:read"
+    "required_permission": "repository:read",
 }

@@ -7,7 +7,6 @@ Tests credential generation, storage, verification, and revocation.
 import pytest
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
 from code_indexer.server.auth.user_manager import UserManager, UserRole
 
@@ -75,7 +74,9 @@ class TestGenerateCredential:
         stored_cred = stored_creds[0]
 
         assert "client_secret_hash" in stored_cred
-        assert stored_cred["client_secret_hash"].startswith("$2b$")  # bcrypt hash prefix
+        assert stored_cred["client_secret_hash"].startswith(
+            "$2b$"
+        )  # bcrypt hash prefix
         assert "client_secret" not in stored_cred  # Plain secret not stored
 
     def test_generate_credential_with_optional_name(self, mcp_manager, user_manager):
@@ -134,7 +135,9 @@ class TestGenerateCredential:
         # Verify last_used_at is initially None
         assert stored_cred["last_used_at"] is None
 
-    def test_generate_credential_returns_plain_secret_once(self, mcp_manager, user_manager):
+    def test_generate_credential_returns_plain_secret_once(
+        self, mcp_manager, user_manager
+    ):
         """AC3: Full client_secret shown only during generation"""
         result = mcp_manager.generate_credential("testuser")
 
@@ -154,7 +157,9 @@ class TestGenerateCredential:
         internal_cred = users_data["testuser"]["mcp_credentials"][0]
         assert "client_secret_hash" in internal_cred
 
-    def test_generate_multiple_credentials_for_same_user(self, mcp_manager, user_manager):
+    def test_generate_multiple_credentials_for_same_user(
+        self, mcp_manager, user_manager
+    ):
         """User can have multiple credentials"""
         result1 = mcp_manager.generate_credential("testuser", name="Laptop")
         result2 = mcp_manager.generate_credential("testuser", name="Desktop")
@@ -268,7 +273,10 @@ class TestVerifyCredential:
         client_id = result["client_id"]
 
         # Try with wrong secret
-        user_id = mcp_manager.verify_credential(client_id, "mcp_sec_wrong_secret_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+        user_id = mcp_manager.verify_credential(
+            client_id,
+            "mcp_sec_wrong_secret_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
 
         assert user_id is None
 
@@ -278,7 +286,9 @@ class TestVerifyCredential:
         client_secret = result["client_secret"]
 
         # Try with wrong client_id
-        user_id = mcp_manager.verify_credential("mcp_wrong_client_id_12345678", client_secret)
+        user_id = mcp_manager.verify_credential(
+            "mcp_wrong_client_id_12345678", client_secret
+        )
 
         assert user_id is None
 
@@ -309,7 +319,9 @@ class TestVerifyCredential:
         time_diff = (now - last_used).total_seconds()
         assert time_diff < 60
 
-    def test_verify_credential_bcrypt_hash_cannot_be_reversed(self, mcp_manager, user_manager):
+    def test_verify_credential_bcrypt_hash_cannot_be_reversed(
+        self, mcp_manager, user_manager
+    ):
         """AC3: client_secret_hash cannot be reversed to obtain secret"""
         result = mcp_manager.generate_credential("testuser", name="Test")
 
@@ -394,10 +406,14 @@ class TestGetCredentialByClientId:
         found = mcp_manager.get_credential_by_client_id("mcp_nonexistent_12345678")
         assert found is None
 
-    def test_get_credential_by_client_id_across_multiple_users(self, mcp_manager, user_manager):
+    def test_get_credential_by_client_id_across_multiple_users(
+        self, mcp_manager, user_manager
+    ):
         """Find credential across all users"""
         # Create another user
-        user_manager.create_user("otheruser", "Test123!@#Password", UserRole.NORMAL_USER)
+        user_manager.create_user(
+            "otheruser", "Test123!@#Password", UserRole.NORMAL_USER
+        )
 
         # Create credentials for both users
         result1 = mcp_manager.generate_credential("testuser", name="Test1")
@@ -438,7 +454,9 @@ class TestErrorPathCoverage:
         found = mcp_manager.get_credential_by_client_id("mcp_test12345678")
         assert found is None
 
-    def test_get_credential_by_client_id_user_data_not_found(self, mcp_manager, user_manager):
+    def test_get_credential_by_client_id_user_data_not_found(
+        self, mcp_manager, user_manager
+    ):
         """Line 132: Continue when user_data is None (defensive check)"""
         from unittest.mock import MagicMock
 

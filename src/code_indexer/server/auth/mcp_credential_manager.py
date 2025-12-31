@@ -26,9 +26,7 @@ class MCPCredentialManager:
         self.user_manager = user_manager
         self.password_manager = PasswordManager()
 
-    def generate_credential(
-        self, user_id: str, name: Optional[str] = None
-    ) -> dict:
+    def generate_credential(self, user_id: str, name: Optional[str] = None) -> dict:
         """
         Generate a new MCP client credential and store it for the user.
 
@@ -150,13 +148,16 @@ class MCPCredentialManager:
             Username if valid, None otherwise
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         # Find credential by client_id
         result = self.get_credential_by_client_id(client_id)
-        logger.debug(f"[verify_credential] client_id={client_id[:20]}... result={result is not None}")
+        logger.debug(
+            f"[verify_credential] client_id={client_id[:20]}... result={result is not None}"
+        )
         if not result:
-            logger.debug(f"[verify_credential] Credential not found for client_id")
+            logger.debug("[verify_credential] Credential not found for client_id")
             return None
 
         user_id, credential = result

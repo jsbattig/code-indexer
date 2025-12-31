@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 def test_app():
     """Create a test FastAPI app with minimal setup."""
     from code_indexer.server.app import app
+
     return app
 
 
@@ -50,8 +51,10 @@ def mock_auth_admin():
     from datetime import datetime, timezone
     from code_indexer.server.auth.user_manager import User, UserRole
 
-    with patch("code_indexer.server.auth.dependencies.jwt_manager") as mock_jwt, \
-         patch("code_indexer.server.auth.dependencies.user_manager") as mock_user_mgr:
+    with (
+        patch("code_indexer.server.auth.dependencies.jwt_manager") as mock_jwt,
+        patch("code_indexer.server.auth.dependencies.user_manager") as mock_user_mgr,
+    ):
 
         mock_jwt.validate_token.return_value = {
             "username": "admin",
@@ -70,9 +73,7 @@ def mock_auth_admin():
         yield {"Authorization": "Bearer fake_admin_token"}
 
 
-def test_post_add_index_success(
-    test_client, mock_golden_repo_manager, mock_auth_admin
-):
+def test_post_add_index_success(test_client, mock_golden_repo_manager, mock_auth_admin):
     """
     AC1: POST endpoint returns 202 with job_id on success.
 
@@ -87,7 +88,7 @@ def test_post_add_index_success(
         response = test_client.post(
             "/api/admin/golden-repos/test-repo/indexes",
             json={"index_type": "temporal"},
-            headers=mock_auth_admin
+            headers=mock_auth_admin,
         )
 
     # Assert
@@ -103,9 +104,7 @@ def test_post_add_index_success(
 
     # Verify manager was called correctly
     mock_golden_repo_manager.add_index_to_golden_repo.assert_called_once_with(
-        alias="test-repo",
-        index_type="temporal",
-        submitter_username="admin"
+        alias="test-repo", index_type="temporal", submitter_username="admin"
     )
 
 
@@ -118,6 +117,7 @@ def test_get_index_status_success(
     Test that GET /api/admin/golden-repos/{alias}/indexes returns
     structured JSON showing presence of all index types.
     """
+
     # Arrange - mock _index_exists to return True for semantic_fts only
     def mock_index_exists(golden_repo, index_type):
         if index_type == "semantic_fts":
@@ -129,8 +129,7 @@ def test_get_index_status_success(
     with patch("code_indexer.server.app.golden_repo_manager", mock_golden_repo_manager):
         # Act
         response = test_client.get(
-            "/api/admin/golden-repos/test-repo/indexes",
-            headers=mock_auth_admin
+            "/api/admin/golden-repos/test-repo/indexes", headers=mock_auth_admin
         )
 
     # Assert
@@ -164,7 +163,7 @@ def test_post_unknown_alias_returns_404(
         response = test_client.post(
             "/api/admin/golden-repos/non-existent/indexes",
             json={"index_type": "temporal"},
-            headers=mock_auth_admin
+            headers=mock_auth_admin,
         )
 
     # Assert
@@ -192,7 +191,7 @@ def test_post_invalid_index_type_returns_400(
         response = test_client.post(
             "/api/admin/golden-repos/test-repo/indexes",
             json={"index_type": "invalid"},
-            headers=mock_auth_admin
+            headers=mock_auth_admin,
         )
 
     # Assert
@@ -219,7 +218,7 @@ def test_post_existing_index_returns_409(
         response = test_client.post(
             "/api/admin/golden-repos/test-repo/indexes",
             json={"index_type": "semantic_fts"},
-            headers=mock_auth_admin
+            headers=mock_auth_admin,
         )
 
     # Assert
@@ -237,8 +236,7 @@ def test_post_without_auth_returns_401(test_client, mock_golden_repo_manager):
     with patch("code_indexer.server.app.golden_repo_manager", mock_golden_repo_manager):
         # Act
         response = test_client.post(
-            "/api/admin/golden-repos/test-repo/indexes",
-            json={"index_type": "temporal"}
+            "/api/admin/golden-repos/test-repo/indexes", json={"index_type": "temporal"}
         )
 
     # Assert

@@ -22,10 +22,7 @@ def bare_golden_repo(tmp_path):
 
     # Initialize as bare repo with origin remote
     subprocess.run(
-        ["git", "init", "--bare"],
-        cwd=repo_path,
-        check=True,
-        capture_output=True
+        ["git", "init", "--bare"], cwd=repo_path, check=True, capture_output=True
     )
 
     # Add origin remote (simulating GitHub)
@@ -33,7 +30,7 @@ def bare_golden_repo(tmp_path):
         ["git", "remote", "add", "origin", "git@github.com:test/repo.git"],
         cwd=repo_path,
         check=True,
-        capture_output=True
+        capture_output=True,
     )
 
     return str(repo_path)
@@ -59,7 +56,7 @@ def test_cow_clone_converts_bare_to_nonbare(bare_golden_repo, tmp_path):
             ["git", "config", "core.bare"],
             cwd=dest_path,
             capture_output=True,
-            text=True
+            text=True,
         )
         # Should return empty or "false", not "true"
         assert result.stdout.strip() != "true", "Activated repo should not be bare"
@@ -83,11 +80,7 @@ def test_cow_clone_configures_dual_remotes_for_bare_repo(bare_golden_repo, tmp_p
 
     # Check remotes
     result = subprocess.run(
-        ["git", "remote"],
-        cwd=dest_path,
-        capture_output=True,
-        text=True,
-        check=True
+        ["git", "remote"], cwd=dest_path, capture_output=True, text=True, check=True
     )
 
     remotes = result.stdout.strip().split("\n")
@@ -100,7 +93,7 @@ def test_cow_clone_configures_dual_remotes_for_bare_repo(bare_golden_repo, tmp_p
         cwd=dest_path,
         capture_output=True,
         text=True,
-        check=True
+        check=True,
     )
     origin_url = result.stdout.strip()
     assert "github.com" in origin_url, "Origin should point to GitHub"
@@ -111,7 +104,7 @@ def test_cow_clone_configures_dual_remotes_for_bare_repo(bare_golden_repo, tmp_p
         cwd=dest_path,
         capture_output=True,
         text=True,
-        check=True
+        check=True,
     )
     golden_url = result.stdout.strip()
     assert golden_url == bare_golden_repo, "Golden should point to golden repo path"
@@ -130,10 +123,7 @@ def test_git_status_works_after_cow_clone(bare_golden_repo, tmp_path):
 
     # git status should work without errors
     result = subprocess.run(
-        ["git", "status"],
-        cwd=dest_path,
-        capture_output=True,
-        text=True
+        ["git", "status"], cwd=dest_path, capture_output=True, text=True
     )
 
     assert result.returncode == 0, f"git status should succeed, got: {result.stderr}"

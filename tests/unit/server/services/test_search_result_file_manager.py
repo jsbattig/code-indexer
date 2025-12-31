@@ -136,7 +136,9 @@ class TestSearchResultFileManager:
         content = "0123456789" * 100  # 1000 bytes
         test_file.write_text(content)
 
-        limited_content = self.manager.read_limited_content(str(test_file), max_bytes=50)
+        limited_content = self.manager.read_limited_content(
+            str(test_file), max_bytes=50
+        )
 
         assert len(limited_content) == 50
         assert limited_content == content[:50]

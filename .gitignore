@@ -63,6 +63,7 @@ venv.bak/
 *.swp
 *.swo
 *~
+*.serena/
 
 # TDD Guard runtime data (session-specific)
 .claude/tdd-guard/data/test.json

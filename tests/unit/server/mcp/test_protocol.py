@@ -277,7 +277,9 @@ class TestToolsCallHandler:
 
         with (
             patch("code_indexer.server.app.activated_repo_manager") as mock_mgr,
-            patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_get_dir,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+            ) as mock_get_dir,
             patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_registry,
         ):
             mock_mgr.list_activated_repositories = Mock(return_value=[])
@@ -313,7 +315,9 @@ class TestToolsCallHandler:
 
         with (
             patch("code_indexer.server.app.activated_repo_manager") as mock_mgr,
-            patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_get_dir,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+            ) as mock_get_dir,
             patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_registry,
         ):
             mock_mgr.list_activated_repositories = Mock(return_value=[])
@@ -655,7 +659,9 @@ class TestInitializeMethod:
 class TestStreamableHTTPTransport:
     """Test Streamable HTTP transport features (GET, DELETE, Mcp-Session-Id)."""
 
-    @pytest.mark.skip(reason="Hangs indefinitely - TestClient blocks on infinite SSE stream")
+    @pytest.mark.skip(
+        reason="Hangs indefinitely - TestClient blocks on infinite SSE stream"
+    )
     @pytest.mark.slow
     def test_get_mcp_returns_sse_stream_with_auth(self):
         """Test GET /mcp returns SSE event stream when authenticated.

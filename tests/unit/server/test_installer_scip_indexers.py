@@ -568,9 +568,7 @@ class TestIsGoSdkAvailable:
 
     def test_returns_false_on_timeout(self, installer):
         """Test returns False when go command times out."""
-        with patch(
-            "subprocess.run", side_effect=subprocess.TimeoutExpired("go", 10)
-        ):
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("go", 10)):
             result = installer._is_go_sdk_available()
 
         assert result is False
@@ -653,9 +651,7 @@ class TestInstallScipGo:
     def test_skips_installation_when_go_sdk_not_available(self, installer):
         """Test skips installation and logs warning when Go SDK not found."""
         with patch.object(installer, "_is_scip_go_installed", return_value=False):
-            with patch.object(
-                installer, "_is_go_sdk_available", return_value=False
-            ):
+            with patch.object(installer, "_is_go_sdk_available", return_value=False):
                 result = installer.install_scip_go()
 
         assert result is False

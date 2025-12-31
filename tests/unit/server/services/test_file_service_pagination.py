@@ -19,7 +19,6 @@ This file tests FileService.get_file_content() and get_file_content_by_path() pa
 """
 
 import pytest
-from pathlib import Path
 
 from src.code_indexer.server.services.file_service import FileListingService
 
@@ -72,8 +71,7 @@ class TestFileContentPagination:
 
         # Call without offset/limit parameters (new behavior: token-limited chunk)
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path
+            repo_path=str(temp_repo), file_path=file_path
         )
 
         # Verify token-limited chunk returned (not full file)
@@ -81,18 +79,28 @@ class TestFileContentPagination:
         # File has 5000 lines * 9 chars/line = 45,000 chars total
         # Expected: ~1759 lines (20,000 chars / 9 chars per line + overhead)
         content_lines = result["content"].strip().split("\n")
-        assert 1700 < len(content_lines) < 1800, f"Should return ~1759 lines (token-limited chunk), got {len(content_lines)}"
+        assert (
+            1700 < len(content_lines) < 1800
+        ), f"Should return ~1759 lines (token-limited chunk), got {len(content_lines)}"
         assert content_lines[0] == "# Line 1", "First line should be Line 1"
 
         # Verify metadata shows pagination required
         metadata = result["metadata"]
         assert metadata["total_lines"] == 5000, "total_lines should be 5000"
-        assert 1700 < metadata["returned_lines"] < 1800, f"returned_lines should be ~1759 (token-limited), got {metadata['returned_lines']}"
-        assert metadata["requires_pagination"] is True, "requires_pagination should be True for large file"
-        assert metadata["truncated"] is True, "truncated should be True when token limit hit"
+        assert (
+            1700 < metadata["returned_lines"] < 1800
+        ), f"returned_lines should be ~1759 (token-limited), got {metadata['returned_lines']}"
+        assert (
+            metadata["requires_pagination"] is True
+        ), "requires_pagination should be True for large file"
+        assert (
+            metadata["truncated"] is True
+        ), "truncated should be True when token limit hit"
         assert metadata["offset"] == 1, "offset should default to 1"
         assert metadata["limit"] is None, "limit should be None when not provided"
-        assert metadata["has_more"] is True, "has_more should be True when more content exists"
+        assert (
+            metadata["has_more"] is True
+        ), "has_more should be True when more content exists"
 
     # -------------------------------------------------------------------------
     # AC2: First Page (Token-Limited Even With Explicit Limit)
@@ -102,26 +110,31 @@ class TestFileContentPagination:
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=1,
-            limit=2000
+            repo_path=str(temp_repo), file_path=file_path, offset=1, limit=2000
         )
 
         # Verify token truncation happened (limit=2000 requested, but token limit hit first)
         # Token limit: 20,000 chars = ~1759 lines of "# Line N\n" (9 chars each)
         content_lines = result["content"].strip().split("\n")
-        assert 1700 < len(content_lines) < 1800, f"Should return ~1759 lines (token-limited), got {len(content_lines)}"
+        assert (
+            1700 < len(content_lines) < 1800
+        ), f"Should return ~1759 lines (token-limited), got {len(content_lines)}"
         assert content_lines[0] == "# Line 1", "First line should be Line 1"
 
         # Verify metadata shows truncation
         metadata = result["metadata"]
         assert metadata["total_lines"] == 5000
-        assert 1700 < metadata["returned_lines"] < 1800, f"returned_lines should be ~1759 (token-limited), got {metadata['returned_lines']}"
+        assert (
+            1700 < metadata["returned_lines"] < 1800
+        ), f"returned_lines should be ~1759 (token-limited), got {metadata['returned_lines']}"
         assert metadata["offset"] == 1
         assert metadata["limit"] == 2000
-        assert metadata["truncated"] is True, "truncated should be True when token limit hit"
-        assert metadata["requires_pagination"] is True, "requires_pagination should be True"
+        assert (
+            metadata["truncated"] is True
+        ), "truncated should be True when token limit hit"
+        assert (
+            metadata["requires_pagination"] is True
+        ), "requires_pagination should be True"
         assert metadata["has_more"] is True, "Should have more lines after truncation"
 
     # -------------------------------------------------------------------------
@@ -132,28 +145,35 @@ class TestFileContentPagination:
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=2001,
-            limit=2000
+            repo_path=str(temp_repo), file_path=file_path, offset=2001, limit=2000
         )
 
         # Verify token truncation happened
         # Lines 2001+ have 12 chars each ("# Line 2001\n")
         # 20,000 char limit / 12 chars per line = ~1666 lines
         content_lines = result["content"].strip().split("\n")
-        assert 1650 < len(content_lines) < 1700, f"Should return ~1666 lines (token-limited), got {len(content_lines)}"
+        assert (
+            1650 < len(content_lines) < 1700
+        ), f"Should return ~1666 lines (token-limited), got {len(content_lines)}"
         assert content_lines[0] == "# Line 2001", "First line should be Line 2001"
 
         # Verify metadata
         metadata = result["metadata"]
         assert metadata["total_lines"] == 5000
-        assert 1650 < metadata["returned_lines"] < 1700, f"returned_lines should be ~1666 (token-limited), got {metadata['returned_lines']}"
+        assert (
+            1650 < metadata["returned_lines"] < 1700
+        ), f"returned_lines should be ~1666 (token-limited), got {metadata['returned_lines']}"
         assert metadata["offset"] == 2001
         assert metadata["limit"] == 2000
-        assert metadata["truncated"] is True, "truncated should be True when token limit hit"
-        assert metadata["requires_pagination"] is True, "requires_pagination should be True"
-        assert metadata["has_more"] is True, "Should have more lines after token-limited chunk"
+        assert (
+            metadata["truncated"] is True
+        ), "truncated should be True when token limit hit"
+        assert (
+            metadata["requires_pagination"] is True
+        ), "requires_pagination should be True"
+        assert (
+            metadata["has_more"] is True
+        ), "Should have more lines after token-limited chunk"
 
     # -------------------------------------------------------------------------
     # AC4: Targeted Navigation
@@ -163,10 +183,7 @@ class TestFileContentPagination:
         file_path = "src/huge_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=8500,
-            limit=100
+            repo_path=str(temp_repo), file_path=file_path, offset=8500, limit=100
         )
 
         # Verify correct lines returned
@@ -191,10 +208,7 @@ class TestFileContentPagination:
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=4500,
-            limit=2000
+            repo_path=str(temp_repo), file_path=file_path, offset=4500, limit=2000
         )
 
         # Verify correct lines returned (partial last page)
@@ -219,14 +233,13 @@ class TestFileContentPagination:
         file_path = "src/medium_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=200,
-            limit=50
+            repo_path=str(temp_repo), file_path=file_path, offset=200, limit=50
         )
 
         # Verify empty content
-        assert result["content"] == "", "Content should be empty when offset beyond file"
+        assert (
+            result["content"] == ""
+        ), "Content should be empty when offset beyond file"
 
         # Verify metadata
         metadata = result["metadata"]
@@ -244,10 +257,7 @@ class TestFileContentPagination:
         file_path = "src/small_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=1,
-            limit=2000
+            repo_path=str(temp_repo), file_path=file_path, offset=1, limit=2000
         )
 
         # Verify all lines returned
@@ -274,7 +284,7 @@ class TestFileContentPagination:
         result = service.get_file_content_by_path(
             repo_path=str(temp_repo),
             file_path=file_path,
-            limit=100  # No offset parameter
+            limit=100,  # No offset parameter
         )
 
         # Verify lines 1-100 returned
@@ -299,10 +309,7 @@ class TestFileContentPagination:
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=5000,
-            limit=100
+            repo_path=str(temp_repo), file_path=file_path, offset=5000, limit=100
         )
 
         # Verify just the last line
@@ -319,10 +326,7 @@ class TestFileContentPagination:
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=5001,
-            limit=100
+            repo_path=str(temp_repo), file_path=file_path, offset=5001, limit=100
         )
 
         assert result["content"] == ""
@@ -334,10 +338,7 @@ class TestFileContentPagination:
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=4001,
-            limit=1000
+            repo_path=str(temp_repo), file_path=file_path, offset=4001, limit=1000
         )
 
         content_lines = result["content"].strip().split("\n")
@@ -378,10 +379,7 @@ class TestGetFileContentByPathPagination:
         file_path = "src/test.py"
 
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path=file_path,
-            offset=100,
-            limit=50
+            repo_path=str(temp_repo), file_path=file_path, offset=100, limit=50
         )
 
         content_lines = result["content"].strip().split("\n")
@@ -416,10 +414,7 @@ class TestMetadataFields:
     def test_metadata_includes_all_pagination_fields(self, temp_repo, service):
         """Verify metadata includes total_lines, returned_lines, offset, limit, has_more."""
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path="test.txt",
-            offset=1,
-            limit=2
+            repo_path=str(temp_repo), file_path="test.txt", offset=1, limit=2
         )
 
         metadata = result["metadata"]
@@ -448,27 +443,20 @@ class TestMetadataFields:
         """Test metadata accuracy across different pagination scenarios."""
         # Scenario 1: First page with more data
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path="test.txt",
-            offset=1,
-            limit=2
+            repo_path=str(temp_repo), file_path="test.txt", offset=1, limit=2
         )
         assert result["metadata"]["has_more"] is True
 
         # Scenario 2: Last page (partial)
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path="test.txt",
-            offset=2,
-            limit=5
+            repo_path=str(temp_repo), file_path="test.txt", offset=2, limit=5
         )
         assert result["metadata"]["returned_lines"] == 2  # Only 2 lines left
         assert result["metadata"]["has_more"] is False
 
         # Scenario 3: Full file (no pagination)
         result = service.get_file_content_by_path(
-            repo_path=str(temp_repo),
-            file_path="test.txt"
+            repo_path=str(temp_repo), file_path="test.txt"
         )
         assert result["metadata"]["returned_lines"] == 3
         assert result["metadata"]["total_lines"] == 3

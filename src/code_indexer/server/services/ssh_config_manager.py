@@ -106,7 +106,9 @@ class SSHConfigManager:
         if cidx_start_found and not cidx_end_found:
             # Create backup before raising error
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = config_path.parent / f"{config_path.name}.cidx-backup-{timestamp}"
+            backup_path = (
+                config_path.parent / f"{config_path.name}.cidx-backup-{timestamp}"
+            )
             shutil.copy2(config_path, backup_path)
             raise CorruptedConfigError(
                 f"Missing end marker in CIDX section. Backup created at {backup_path}"
