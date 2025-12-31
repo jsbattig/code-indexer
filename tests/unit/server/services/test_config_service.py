@@ -314,6 +314,11 @@ class TestOIDCConfigSettings:
         service = ConfigService(server_dir_path=str(tmp_path))
         service.load_config()
 
+        # Set required fields first (issuer_url and client_id)
+        service.update_setting("oidc", "issuer_url", "https://auth.example.com")
+        service.update_setting("oidc", "client_id", "test-client-id")
+
+        # Now enable OIDC
         service.update_setting("oidc", "enabled", "true")
 
         config = service.get_config()

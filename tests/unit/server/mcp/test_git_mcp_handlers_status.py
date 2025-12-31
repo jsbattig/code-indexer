@@ -32,6 +32,7 @@ def mock_user():
         role=UserRole.NORMAL_USER,
         password_hash="dummy_hash",
         created_at=datetime.now(),
+        email="testuser@example.com",
     )
 
 
@@ -422,36 +423,31 @@ class TestGitCommitHandler:
     ):
         """Test successful git commit with email extracted from User object."""
         from code_indexer.server.mcp import handlers
-        from unittest.mock import patch
 
-        # Mock User with email attribute using patch.object to add dynamic attribute
-        with patch.object(
-            type(mock_user), "email", new="testuser@example.com", create=True
-        ):
-            mock_git_service.git_commit.return_value = {
-                "success": True,
-                "commit_hash": "abc123",
-                "message": "Test commit",
-                "author": "testuser@example.com",
-                "committer": "service@cidx.local",
-            }
+        mock_git_service.git_commit.return_value = {
+            "success": True,
+            "commit_hash": "abc123",
+            "message": "Test commit",
+            "author": "testuser@example.com",
+            "committer": "service@cidx.local",
+        }
 
-            params = {"repository_alias": "test-repo", "message": "Test commit"}
+        params = {"repository_alias": "test-repo", "message": "Test commit"}
 
-            mcp_response = await handlers.git_commit(params, mock_user)
-            data = _extract_response_data(mcp_response)
+        mcp_response = await handlers.git_commit(params, mock_user)
+        data = _extract_response_data(mcp_response)
 
-            assert data["success"] is True
-            assert data["commit_hash"] == "abc123"
-            assert data["author"] == "testuser@example.com"
+        assert data["success"] is True
+        assert data["commit_hash"] == "abc123"
+        assert data["author"] == "testuser@example.com"
 
-            # Verify service was called with extracted email
-            mock_git_service.git_commit.assert_called_once_with(
-                Path("/tmp/test-repo"),
-                "Test commit",
-                "testuser@example.com",
-                "testuser",  # Derived from username
-            )
+        # Verify service was called with extracted email
+        mock_git_service.git_commit.assert_called_once_with(
+            Path("/tmp/test-repo"),
+            "Test commit",
+            "testuser@example.com",
+            "testuser",  # Derived from username
+        )
 
     @pytest.mark.asyncio
     async def test_git_commit_missing_parameters(self, mock_user):
@@ -471,25 +467,20 @@ class TestGitCommitHandler:
     ):
         """Test git commit with GitCommandError."""
         from code_indexer.server.mcp import handlers
-        from unittest.mock import patch
 
-        # Mock User with email attribute using patch.object
-        with patch.object(
-            type(mock_user), "email", new="testuser@example.com", create=True
-        ):
-            error = GitCommandError(
-                message="git commit failed",
-                stderr="fatal: nothing to commit",
-                returncode=1,
-                command=["git", "commit", "-m", "Empty commit"],
-            )
-            mock_git_service.git_commit.side_effect = error
+        error = GitCommandError(
+            message="git commit failed",
+            stderr="fatal: nothing to commit",
+            returncode=1,
+            command=["git", "commit", "-m", "Empty commit"],
+        )
+        mock_git_service.git_commit.side_effect = error
 
-            params = {"repository_alias": "test-repo", "message": "Empty commit"}
+        params = {"repository_alias": "test-repo", "message": "Empty commit"}
 
-            mcp_response = await handlers.git_commit(params, mock_user)
-            data = _extract_response_data(mcp_response)
+        mcp_response = await handlers.git_commit(params, mock_user)
+        data = _extract_response_data(mcp_response)
 
-            assert data["success"] is False
-            assert data["error_type"] == "GitCommandError"
-            assert "nothing to commit" in data["stderr"]
+        assert data["success"] is False
+        assert data["error_type"] == "GitCommandError"
+        assert "nothing to commit" in data["stderr"]
