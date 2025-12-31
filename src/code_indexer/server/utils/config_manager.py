@@ -118,7 +118,7 @@ class OIDCProviderConfig:
     issuer_url: str = ""
     client_id: str = ""
     client_secret: str = ""
-    scopes: list = None
+    scopes: Optional[list] = None
     email_claim: str = "email"
     username_claim: str = "preferred_username"
     use_pkce: bool = True
@@ -378,7 +378,7 @@ class ServerConfigManager:
             )
 
         # Validate OIDC configuration
-        if config.oidc_provider_config.enabled:
+        if config.oidc_provider_config and config.oidc_provider_config.enabled:
             if not config.oidc_provider_config.issuer_url:
                 raise ValueError("OIDC issuer_url is required when OIDC is enabled")
             if not config.oidc_provider_config.client_id:
