@@ -1797,11 +1797,14 @@ def create_app() -> FastAPI:
 
         # Startup: Initialize OIDC authentication if configured
         logger.info("Server startup: Checking OIDC configuration")
+        # Always register OIDC routes (routes will handle disabled/unconfigured state)
+        from code_indexer.server.auth.oidc import routes as oidc_routes
+        app.include_router(oidc_routes.router)
+
         try:
             from code_indexer.server.utils.config_manager import ServerConfigManager
             from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
             from code_indexer.server.auth.oidc.state_manager import StateManager
-            from code_indexer.server.auth.oidc import routes as oidc_routes
 
             config_manager = ServerConfigManager(server_dir_path=server_data_dir)
             config = config_manager.load_config()
@@ -1817,7 +1820,8 @@ def create_app() -> FastAPI:
                     jwt_manager=jwt_manager     # Global from module level
                 )
 
-                # Initialize OIDC provider (discover metadata)
+                # Initialize OIDC database schema (no network calls)
+                # Provider metadata will be discovered lazily on first SSO login attempt
                 await oidc_manager.initialize()
 
                 # Inject managers into routes module
@@ -1825,16 +1829,14 @@ def create_app() -> FastAPI:
                 oidc_routes.state_manager = state_manager
                 oidc_routes.server_config = config
 
-                # Register OIDC routes
-                app.include_router(oidc_routes.router)
-
-                logger.info(f"OIDC initialized successfully with provider: {config.oidc_provider_config.provider_name}")
+                logger.info(f"OIDC configured for provider: {config.oidc_provider_config.provider_name} (will initialize on first login)")
             else:
                 logger.info("OIDC is not enabled")
 
         except Exception as e:
             # Log error but don't block server startup
             logger.error(f"Failed to initialize OIDC: {e}", exc_info=True)
+            logger.info("OIDC routes registered but manager not initialized - SSO login will return 404 until configured")
 
         yield  # Server is now running
 

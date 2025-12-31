@@ -30,8 +30,8 @@ class TestOIDCManager:
         assert manager.provider is None  # Not initialized yet
 
     @pytest.mark.asyncio
-    async def test_oidc_manager_initialize_creates_provider(self, monkeypatch):
-        """Test that initialize() creates and initializes OIDC provider when enabled."""
+    async def test_oidc_manager_initialize_only_creates_database(self, tmp_path):
+        """Test that initialize() only creates database schema (lazy initialization - no network calls)."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
@@ -44,52 +44,26 @@ class TestOIDCManager:
         )
 
         manager = OIDCManager(config, None, None)
+        manager.db_path = str(tmp_path / "test_oidc.db")
 
-        # Mock HTTP response for discovery
-        mock_response = {
-            "issuer": "https://example.com",
-            "authorization_endpoint": "https://example.com/authorize",
-            "token_endpoint": "https://example.com/token",
-        }
-
-        async def mock_get(*args, **kwargs):
-            class MockResponse:
-                def json(self):
-                    return mock_response
-
-                def raise_for_status(self):
-                    pass  # No error for success case
-
-            return MockResponse()
-
-        # Mock httpx.AsyncClient
-        import httpx
-
-        class MockAsyncClient:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def get(self, *args, **kwargs):
-                return await mock_get(*args, **kwargs)
-
-        monkeypatch.setattr(httpx, "AsyncClient", lambda: MockAsyncClient())
-
-        # Initialize manager
+        # Initialize manager (should only create database, not provider)
         await manager.initialize()
 
-        # Verify provider was created and initialized
-        assert manager.provider is not None
-        assert manager.provider.config == config
-        assert manager.provider._metadata is not None
-        assert manager.provider._metadata.issuer == "https://example.com"
+        # Verify provider is NOT created (lazy initialization)
+        assert manager.provider is None
+
+        # Verify database was created
+        import aiosqlite
+        async with aiosqlite.connect(manager.db_path) as db:
+            cursor = await db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='oidc_identity_links'"
+            )
+            result = await cursor.fetchone()
+            assert result is not None  # Table exists
 
     def test_is_enabled_returns_true_when_configured(self):
-        """Test that is_enabled() returns True when OIDC is enabled and provider initialized."""
+        """Test that is_enabled() returns True when config.enabled=True."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
-        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
         config = OIDCProviderConfig(
@@ -99,7 +73,6 @@ class TestOIDCManager:
         )
 
         manager = OIDCManager(config, None, None)
-        manager.provider = OIDCProvider(config)
 
         assert manager.is_enabled() is True
 
@@ -114,8 +87,8 @@ class TestOIDCManager:
 
         assert manager.is_enabled() is False
 
-    def test_is_enabled_returns_false_when_provider_not_initialized(self):
-        """Test that is_enabled() returns False when provider is None."""
+    def test_is_enabled_only_checks_config_not_provider_state(self):
+        """Test that is_enabled() only checks config.enabled, not provider state (lazy initialization)."""
         from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
         from code_indexer.server.utils.config_manager import OIDCProviderConfig
 
@@ -123,7 +96,10 @@ class TestOIDCManager:
 
         manager = OIDCManager(config, None, None)
 
-        assert manager.is_enabled() is False
+        # Provider is None (not yet initialized), but is_enabled should still return True
+        # because config.enabled=True (lazy initialization means provider initialized on demand)
+        assert manager.provider is None
+        assert manager.is_enabled() is True
 
     def test_create_jwt_session_returns_token(self):
         """Test that create_jwt_session() creates a JWT token for the user."""
@@ -352,6 +328,7 @@ class TestOIDCManager:
 
         # Mock user_manager
         user_manager = Mock()
+        user_manager.get_user.return_value = None  # No existing user with this username
         user_manager.get_user_by_email.return_value = None  # No existing user by email
 
         # Mock create_oidc_user to return a new user
@@ -374,6 +351,7 @@ class TestOIDCManager:
             subject="brand-new-subject-789",
             email="newuser@example.com",
             email_verified=True,
+            username="newuser",  # From username_claim
         )
 
         # Create user via JIT provisioning
@@ -524,6 +502,7 @@ class TestOIDCManager:
             subject="test-subject-123",
             email="test@example.com",
             email_verified=True,
+            username="test",  # From username_claim
         )
 
         # Call match_or_create_user - should handle stale link gracefully

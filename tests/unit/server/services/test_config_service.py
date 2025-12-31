@@ -514,3 +514,58 @@ class TestOIDCConfigValidation:
 
         config = service.get_config()
         assert config.oidc_provider_config.issuer_url == ""
+
+    def test_validation_requires_email_claim_when_jit_enabled(self, tmp_path):
+        """Test that email_claim is required when JIT provisioning is enabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required OIDC fields
+        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting("oidc", "client_id", "test-client")
+        service.update_setting("oidc", "enabled", "true")
+
+        # Enable JIT provisioning
+        service.update_setting("oidc", "enable_jit_provisioning", "true")
+
+        # Try to clear email_claim - should fail validation
+        with pytest.raises(ValueError, match="OIDC email_claim is required when JIT provisioning is enabled"):
+            service.update_setting("oidc", "email_claim", "")
+
+    def test_validation_requires_username_claim_when_jit_enabled(self, tmp_path):
+        """Test that username_claim is required when JIT provisioning is enabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required OIDC fields
+        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting("oidc", "client_id", "test-client")
+        service.update_setting("oidc", "enabled", "true")
+
+        # Enable JIT provisioning
+        service.update_setting("oidc", "enable_jit_provisioning", "true")
+
+        # Try to clear username_claim - should fail validation
+        with pytest.raises(ValueError, match="OIDC username_claim is required when JIT provisioning is enabled"):
+            service.update_setting("oidc", "username_claim", "")
+
+    def test_validation_allows_empty_claims_when_jit_disabled(self, tmp_path):
+        """Test that empty email_claim and username_claim are allowed when JIT is disabled."""
+        service = ConfigService(server_dir_path=str(tmp_path))
+        service.load_config()
+
+        # Set required OIDC fields
+        service.update_setting("oidc", "issuer_url", "http://localhost:8180/realms/test")
+        service.update_setting("oidc", "client_id", "test-client")
+        service.update_setting("oidc", "enabled", "true")
+
+        # Disable JIT provisioning
+        service.update_setting("oidc", "enable_jit_provisioning", "false")
+
+        # Clear email_claim and username_claim - should succeed
+        service.update_setting("oidc", "email_claim", "")
+        service.update_setting("oidc", "username_claim", "")
+
+        config = service.get_config()
+        assert config.oidc_provider_config.email_claim == ""
+        assert config.oidc_provider_config.username_claim == ""

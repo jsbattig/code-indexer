@@ -30,6 +30,7 @@ class MockOIDCServer:
             "sub": "test-user-123",
             "email": "test@example.com",
             "email_verified": True,
+            "preferred_username": "testuser",  # Default username
         }
         
         self.token_response = {
@@ -135,13 +136,20 @@ class MockOIDCServer:
         if self.thread:
             self.thread.join(timeout=2.0)
     
-    def set_userinfo(self, sub: str, email: Optional[str] = None, email_verified: bool = False):
+    def set_userinfo(self, sub: str, email: Optional[str] = None, email_verified: bool = False, preferred_username: Optional[str] = None):
         """Configure userinfo response for testing."""
         self.userinfo_response = {
             "sub": sub,
             "email": email,
             "email_verified": email_verified,
         }
+
+        # Add preferred_username if provided (or derive from email)
+        if preferred_username:
+            self.userinfo_response["preferred_username"] = preferred_username
+        elif email:
+            # Default: use email prefix as username
+            self.userinfo_response["preferred_username"] = email.split('@')[0]
     
     def set_token(self, access_token: str):
         """Configure token response for testing."""

@@ -21,13 +21,25 @@ async def sso_login(request: Request, redirect_uri: Optional[str] = None):
     if not oidc_manager or not oidc_manager.is_enabled():
         raise HTTPException(status_code=404, detail="SSO not configured")
 
+    # Lazily initialize OIDC provider (discovers metadata)
+    try:
+        await oidc_manager.ensure_provider_initialized()
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to initialize OIDC provider: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="SSO provider is currently unavailable. Please try again later or contact administrator."
+        )
+
     # Generate PKCE code verifier
     import secrets
     import hashlib
     import base64
-    
+
     code_verifier = secrets.token_urlsafe(32)
-    
+
     # Generate PKCE code challenge (S256 method)
     code_challenge = base64.urlsafe_b64encode(
         hashlib.sha256(code_verifier.encode()).digest()

@@ -16,6 +16,7 @@ class OIDCUserInfo:
     subject: str
     email: Optional[str] = None
     email_verified: bool = False
+    username: Optional[str] = None
 
 
 class OIDCProvider:
@@ -112,6 +113,9 @@ class OIDCProvider:
 
     async def get_user_info(self, access_token):
         import httpx
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         # Construct userinfo endpoint (typically from discovery, but fallback to standard path)
         # Use userinfo endpoint from discovery metadata (preferred) or fallback
@@ -142,11 +146,22 @@ class OIDCProvider:
                 f"Invalid userinfo response: missing or empty sub (subject) claim"
             )
 
+        # Log claim extraction for debugging
+        logger.info(f"Extracting claims - email_claim: {self.config.email_claim}, username_claim: {self.config.username_claim}")
+        logger.info(f"Available claims in userinfo: {list(data.keys())}")
+
+        email_value = data.get(self.config.email_claim)
+        logger.info(f"Extracted email from '{self.config.email_claim}' claim: {email_value}")
+
+        username_value = data.get(self.config.username_claim)
+        logger.info(f"Extracted username from '{self.config.username_claim}' claim: {username_value}")
+
         # Create OIDCUserInfo from response
         user_info = OIDCUserInfo(
             subject=data.get("sub", ""),
-            email=data.get(self.config.email_claim),
+            email=email_value,
             email_verified=data.get("email_verified", False),
+            username=username_value,
         )
 
         return user_info
