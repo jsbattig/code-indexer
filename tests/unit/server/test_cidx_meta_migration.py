@@ -254,7 +254,7 @@ class TestBootstrapCidxMeta:
             mock_activator_class.return_value = mock_activator
 
             # Mock subprocess to avoid actual cidx calls
-            with patch("subprocess.run") as mock_subprocess:
+            with patch("subprocess.run"):
                 # Execute bootstrap
                 from code_indexer.server.app import bootstrap_cidx_meta
 
@@ -365,8 +365,6 @@ class TestBootstrapCidxMeta:
                 from code_indexer.server.app import bootstrap_cidx_meta
 
                 bootstrap_cidx_meta(mock_manager, str(golden_repos_dir))
-
-                first_call_count = mock_subprocess.call_count
 
                 # Second call: golden_repo_exists returns True (already exists)
                 mock_manager.golden_repo_exists = Mock(return_value=True)

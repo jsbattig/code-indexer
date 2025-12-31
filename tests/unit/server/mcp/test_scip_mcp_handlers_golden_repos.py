@@ -139,9 +139,7 @@ class TestFindScipFilesGoldenRepos:
             assert len(scip_files) == 1
             assert str(scip_files[0]) == str(scip_file)
 
-    def test_find_scip_files_filters_by_repository_alias(
-        self, tmp_path: Path
-    ) -> None:
+    def test_find_scip_files_filters_by_repository_alias(self, tmp_path: Path) -> None:
         """Verify _find_scip_files(repository_alias) only returns SCIP files from specified repo."""
         # Setup: Create mock golden repos structure with multiple repos
         golden_repos_dir = tmp_path / "golden-repos"
@@ -207,7 +205,7 @@ class TestScipHandlersErrorHandling:
             mock_find.return_value = []
             mock_user = MagicMock()
             params = {"symbol": "some_function", "repository_alias": "test-repo"}
-            result = await scip_definition(params, mock_user)
+            await scip_definition(params, mock_user)
 
             # Verify _find_scip_files was called with repository_alias
             mock_find.assert_called_once_with(repository_alias="test-repo")
@@ -238,7 +236,7 @@ class TestScipHandlersErrorHandling:
             mock_find.return_value = []
             mock_user = MagicMock()
             params = {"symbol": "some_function", "repository_alias": "test-repo"}
-            result = await scip_references(params, mock_user)
+            await scip_references(params, mock_user)
 
             # Verify _find_scip_files was called with repository_alias
             mock_find.assert_called_once_with(repository_alias="test-repo")
@@ -269,7 +267,7 @@ class TestScipHandlersErrorHandling:
             mock_find.return_value = []
             mock_user = MagicMock()
             params = {"symbol": "some_function", "repository_alias": "test-repo"}
-            result = await scip_dependencies(params, mock_user)
+            await scip_dependencies(params, mock_user)
 
             # Verify _find_scip_files was called with repository_alias
             mock_find.assert_called_once_with(repository_alias="test-repo")
@@ -300,7 +298,7 @@ class TestScipHandlersErrorHandling:
             mock_find.return_value = []
             mock_user = MagicMock()
             params = {"symbol": "some_function", "repository_alias": "test-repo"}
-            result = await scip_dependents(params, mock_user)
+            await scip_dependents(params, mock_user)
 
             # Verify _find_scip_files was called with repository_alias
             mock_find.assert_called_once_with(repository_alias="test-repo")
@@ -347,8 +345,12 @@ class TestScipHandlersErrorHandling:
         with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
             mock_find.return_value = []
             mock_user = MagicMock()
-            params = {"from_symbol": "func1", "to_symbol": "func2", "repository_alias": "test-repo"}
-            result = await scip_callchain(params, mock_user)
+            params = {
+                "from_symbol": "func1",
+                "to_symbol": "func2",
+                "repository_alias": "test-repo",
+            }
+            await scip_callchain(params, mock_user)
 
             # Verify _find_scip_files was called with repository_alias
             mock_find.assert_called_once_with(repository_alias="test-repo")
@@ -375,7 +377,9 @@ class TestScipCompositeHandlersGoldenReposDirectory:
     """Tests verifying composite handlers pass golden repos directory to composite functions."""
 
     @pytest.mark.asyncio
-    async def test_scip_impact_uses_golden_repos_directory(self, tmp_path: Path) -> None:
+    async def test_scip_impact_uses_golden_repos_directory(
+        self, tmp_path: Path
+    ) -> None:
         """Verify scip_impact passes golden repos directory to analyze_impact()."""
         from code_indexer.server.mcp.handlers import scip_impact
 
@@ -409,7 +413,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
 
                 # Execute
                 mock_user = MagicMock()
-                result = await scip_impact({"symbol": "test", "depth": 2}, mock_user)
+                await scip_impact({"symbol": "test", "depth": 2}, mock_user)
 
                 # Verify analyze_impact was called with golden_repos_dir
                 assert mock_analyze.called
@@ -436,9 +440,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
         repo1_scip.mkdir(parents=True)
         scip_file = repo1_scip / "index.scip.db"
 
-        with patch(
-            "code_indexer.server.mcp.handlers._find_scip_files"
-        ) as mock_find:
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
             # Mock _find_scip_files to return our test file
             mock_find.return_value = [scip_file]
 
@@ -454,7 +456,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
 
                 # Execute
                 mock_user = MagicMock()
-                result = await scip_callchain(
+                await scip_callchain(
                     {"from_symbol": "func1", "to_symbol": "func2"}, mock_user
                 )
 
@@ -470,9 +472,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 assert mock_backend.trace_call_chain.called
 
     @pytest.mark.asyncio
-    async def test_scip_callchain_clamps_max_depth_to_10(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_scip_callchain_clamps_max_depth_to_10(self, tmp_path: Path) -> None:
         """Verify scip_callchain clamps max_depth to 10 when user passes value > 10.
 
         Bug: User passes max_depth=15 via MCP, handler passes it unclamped to
@@ -489,9 +489,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
         repo1_scip.mkdir(parents=True)
         scip_file = repo1_scip / "index.scip.db"
 
-        with patch(
-            "code_indexer.server.mcp.handlers._find_scip_files"
-        ) as mock_find:
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
             # Mock _find_scip_files to return our test file
             mock_find.return_value = [scip_file]
 
@@ -509,7 +507,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 mock_user = MagicMock()
                 result = await scip_callchain(
                     {"from_symbol": "func1", "to_symbol": "func2", "max_depth": 15},
-                    mock_user
+                    mock_user,
                 )
 
                 # Should succeed (no exception)
@@ -522,7 +520,9 @@ class TestScipCompositeHandlersGoldenReposDirectory:
                 assert mock_backend.trace_call_chain.called
                 call_args = mock_backend.trace_call_chain.call_args
                 max_depth_arg = call_args[1].get("max_depth")  # Keyword arg
-                assert max_depth_arg <= 10, f"Expected max_depth <= 10, got {max_depth_arg}"
+                assert (
+                    max_depth_arg <= 10
+                ), f"Expected max_depth <= 10, got {max_depth_arg}"
 
     @pytest.mark.asyncio
     async def test_scip_context_uses_golden_repos_directory(
@@ -560,7 +560,7 @@ class TestScipCompositeHandlersGoldenReposDirectory:
 
                 # Execute
                 mock_user = MagicMock()
-                result = await scip_context({"symbol": "test"}, mock_user)
+                await scip_context({"symbol": "test"}, mock_user)
 
                 # Verify get_smart_context was called with golden_repos_dir
                 assert mock_context.called
@@ -592,7 +592,10 @@ class TestScipCallchainSymbolValidation:
         data = json.loads(content[0]["text"])
         assert data["success"] is False
         assert "from_symbol" in data["error"].lower()
-        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+        assert (
+            "empty" in data["error"].lower()
+            or "cannot be empty" in data["error"].lower()
+        )
 
     @pytest.mark.asyncio
     async def test_scip_callchain_validates_empty_to_symbol(self) -> None:
@@ -608,7 +611,10 @@ class TestScipCallchainSymbolValidation:
         data = json.loads(content[0]["text"])
         assert data["success"] is False
         assert "to_symbol" in data["error"].lower()
-        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+        assert (
+            "empty" in data["error"].lower()
+            or "cannot be empty" in data["error"].lower()
+        )
 
     @pytest.mark.asyncio
     async def test_scip_callchain_validates_whitespace_from_symbol(self) -> None:
@@ -624,7 +630,10 @@ class TestScipCallchainSymbolValidation:
         data = json.loads(content[0]["text"])
         assert data["success"] is False
         assert "from_symbol" in data["error"].lower()
-        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+        assert (
+            "empty" in data["error"].lower()
+            or "cannot be empty" in data["error"].lower()
+        )
 
     @pytest.mark.asyncio
     async def test_scip_callchain_validates_whitespace_to_symbol(self) -> None:
@@ -640,7 +649,10 @@ class TestScipCallchainSymbolValidation:
         data = json.loads(content[0]["text"])
         assert data["success"] is False
         assert "to_symbol" in data["error"].lower()
-        assert "empty" in data["error"].lower() or "cannot be empty" in data["error"].lower()
+        assert (
+            "empty" in data["error"].lower()
+            or "cannot be empty" in data["error"].lower()
+        )
 
 
 class TestScipCallchainEnhancedResponse:
@@ -659,9 +671,7 @@ class TestScipCallchainEnhancedResponse:
         repo1_scip.mkdir(parents=True)
         scip_file = repo1_scip / "index.scip.db"
 
-        with patch(
-            "code_indexer.server.mcp.handlers._find_scip_files"
-        ) as mock_find:
+        with patch("code_indexer.server.mcp.handlers._find_scip_files") as mock_find:
             mock_find.return_value = [scip_file]
 
             with patch(
@@ -718,5 +728,9 @@ class TestScipHandlerRegistration:
         ]
 
         for handler_name in expected_handlers:
-            assert handler_name in HANDLER_REGISTRY, f"Handler '{handler_name}' not registered in HANDLER_REGISTRY"
-            assert callable(HANDLER_REGISTRY[handler_name]), f"Handler '{handler_name}' is not callable"
+            assert (
+                handler_name in HANDLER_REGISTRY
+            ), f"Handler '{handler_name}' not registered in HANDLER_REGISTRY"
+            assert callable(
+                HANDLER_REGISTRY[handler_name]
+            ), f"Handler '{handler_name}' is not callable"

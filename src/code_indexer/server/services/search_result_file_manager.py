@@ -8,7 +8,6 @@ enforcement and cleanup.
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -45,9 +44,7 @@ class SearchResultFileManager:
     - Safe file operations
     """
 
-    def parse_with_size_limit(
-        self, file_path: str, max_size_bytes: int
-    ) -> ParseResult:
+    def parse_with_size_limit(self, file_path: str, max_size_bytes: int) -> ParseResult:
         """
         Parse search output file with size limit check.
 
@@ -79,7 +76,10 @@ class SearchResultFileManager:
                 content = f.read()
 
             return ParseResult(
-                exceeded=False, file_size=file_size, limit=max_size_bytes, content=content
+                exceeded=False,
+                file_size=file_size,
+                limit=max_size_bytes,
+                content=content,
             )
 
     def check_size(self, file_path: str, max_size_bytes: int) -> SizeCheckResult:

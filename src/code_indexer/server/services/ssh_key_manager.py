@@ -20,16 +20,19 @@ from .key_discovery_service import KeyDiscoveryService, KeyInfo
 
 class KeyNotFoundError(Exception):
     """Raised when requested key does not exist."""
+
     pass
 
 
 class HostConflictError(Exception):
     """Raised when host already exists in user section of SSH config."""
+
     pass
 
 
 class PublicKeyNotFoundError(Exception):
     """Raised when public key file is missing."""
+
     pass
 
 
@@ -283,9 +286,7 @@ class SSHKeyManager:
         if public_path.exists():
             return public_path.read_text().strip()
 
-        raise PublicKeyNotFoundError(
-            f"Public key file missing: {metadata.public_path}"
-        )
+        raise PublicKeyNotFoundError(f"Public key file missing: {metadata.public_path}")
 
     def _update_ssh_config(self) -> None:
         """Update SSH config with all managed key-host mappings."""
@@ -294,11 +295,13 @@ class SSHKeyManager:
         entries: List[HostEntry] = []
         for metadata in all_keys.managed:
             for hostname in metadata.hosts:
-                entries.append(HostEntry(
-                    host=hostname,
-                    hostname=hostname,
-                    key_path=metadata.private_path,
-                ))
+                entries.append(
+                    HostEntry(
+                        host=hostname,
+                        hostname=hostname,
+                        key_path=metadata.private_path,
+                    )
+                )
 
         # Parse existing config to preserve user section
         parsed = self.config_manager.parse_config(self.config_path)

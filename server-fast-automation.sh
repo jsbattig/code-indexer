@@ -54,7 +54,7 @@ print_success "Python version checked"
 
 # 1. Install dependencies
 print_step "Installing dependencies"
-python3 -m pip install -e ".[dev]"
+python3 -m pip install --break-system-packages -e ".[dev]"
 print_success "Dependencies installed"
 
 # 2. Lint server code with ruff

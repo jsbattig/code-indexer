@@ -2091,6 +2091,7 @@ async def query_submit(
                 # For global repos, resolve path from GlobalRegistry
                 if not repo_path and target_repo.get("is_global"):
                     try:
+                        import os
                         from code_indexer.global_repos.global_registry import (
                             GlobalRegistry,
                         )
@@ -3947,7 +3948,7 @@ async def create_ssh_key(
         )
 
         manager = SSHKeyManager()
-        metadata = manager.create_key(
+        manager.create_key(
             name=key_name,
             key_type=key_type,
             email=email if email else None,

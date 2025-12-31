@@ -35,7 +35,7 @@ class TestTriggerReindexTool:
 
         valid_input = {
             "repository_alias": "test-repo",
-            "index_types": ["semantic", "fts"]
+            "index_types": ["semantic", "fts"],
         }
         validate(instance=valid_input, schema=schema)
 
@@ -46,7 +46,7 @@ class TestTriggerReindexTool:
 
         valid_input = {
             "repository_alias": "test-repo",
-            "index_types": ["semantic", "fts", "temporal", "scip"]
+            "index_types": ["semantic", "fts", "temporal", "scip"],
         }
         validate(instance=valid_input, schema=schema)
 
@@ -57,7 +57,7 @@ class TestTriggerReindexTool:
 
         invalid_input = {
             "repository_alias": "test-repo",
-            "index_types": ["semantic", "invalid_type"]
+            "index_types": ["semantic", "invalid_type"],
         }
 
         with pytest.raises(ValidationError):
@@ -71,7 +71,7 @@ class TestTriggerReindexTool:
         valid_input = {
             "repository_alias": "test-repo",
             "index_types": ["semantic"],
-            "clear": True
+            "clear": True,
         }
         validate(instance=valid_input, schema=schema)
 

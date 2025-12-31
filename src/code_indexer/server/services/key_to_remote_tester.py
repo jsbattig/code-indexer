@@ -49,10 +49,14 @@ class KeyToRemoteTester:
         command = [
             "ssh",
             "-T",
-            "-o", "BatchMode=yes",
-            "-o", f"ConnectTimeout={self.timeout_seconds}",
-            "-o", "StrictHostKeyChecking=accept-new",
-            "-i", str(key_path),
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            f"ConnectTimeout={self.timeout_seconds}",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-i",
+            str(key_path),
             f"git@{hostname}",
         ]
 

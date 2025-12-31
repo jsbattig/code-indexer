@@ -83,7 +83,9 @@ class TestClientCredentialsGrant:
 
         # Should include client authentication methods
         assert "token_endpoint_auth_methods_supported" in metadata
-        assert "client_secret_basic" in metadata["token_endpoint_auth_methods_supported"]
+        assert (
+            "client_secret_basic" in metadata["token_endpoint_auth_methods_supported"]
+        )
         assert "client_secret_post" in metadata["token_endpoint_auth_methods_supported"]
 
     def test_handle_client_credentials_grant_success(
@@ -182,12 +184,16 @@ class TestClientCredentialsGrant:
         # Override dependencies
         app.dependency_overrides[get_oauth_manager] = lambda: oauth_manager
         app.dependency_overrides[get_user_manager] = lambda: user_manager
-        app.dependency_overrides[get_mcp_credential_manager] = lambda: mcp_credential_manager
+        app.dependency_overrides[get_mcp_credential_manager] = (
+            lambda: mcp_credential_manager
+        )
 
         client = TestClient(app)
 
         # Create Basic Auth header
-        credentials = f"{test_credential['client_id']}:{test_credential['client_secret']}"
+        credentials = (
+            f"{test_credential['client_id']}:{test_credential['client_secret']}"
+        )
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
         auth_header = f"Basic {encoded_credentials}"
 
@@ -227,7 +233,9 @@ class TestClientCredentialsGrant:
         # Override dependencies
         app.dependency_overrides[get_oauth_manager] = lambda: oauth_manager
         app.dependency_overrides[get_user_manager] = lambda: user_manager
-        app.dependency_overrides[get_mcp_credential_manager] = lambda: mcp_credential_manager
+        app.dependency_overrides[get_mcp_credential_manager] = (
+            lambda: mcp_credential_manager
+        )
 
         client = TestClient(app)
 
@@ -270,7 +278,9 @@ class TestClientCredentialsGrant:
         # Override dependencies
         app.dependency_overrides[get_oauth_manager] = lambda: oauth_manager
         app.dependency_overrides[get_user_manager] = lambda: user_manager
-        app.dependency_overrides[get_mcp_credential_manager] = lambda: mcp_credential_manager
+        app.dependency_overrides[get_mcp_credential_manager] = (
+            lambda: mcp_credential_manager
+        )
 
         client = TestClient(app)
 
@@ -307,7 +317,9 @@ class TestClientCredentialsGrant:
         # Override dependencies
         app.dependency_overrides[get_oauth_manager] = lambda: oauth_manager
         app.dependency_overrides[get_user_manager] = lambda: user_manager
-        app.dependency_overrides[get_mcp_credential_manager] = lambda: mcp_credential_manager
+        app.dependency_overrides[get_mcp_credential_manager] = (
+            lambda: mcp_credential_manager
+        )
 
         client = TestClient(app)
 
@@ -364,7 +376,9 @@ class TestClientCredentialsGrant:
         assert "token_type" in result
         assert result["token_type"] == "Bearer"
         assert "expires_in" in result
-        assert "refresh_token" in result  # authorization_code DOES include refresh_token
+        assert (
+            "refresh_token" in result
+        )  # authorization_code DOES include refresh_token
 
         # Token should be valid
         token_info = oauth_manager.validate_token(result["access_token"])

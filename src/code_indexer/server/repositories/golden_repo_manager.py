@@ -371,7 +371,9 @@ class GoldenRepoManager:
             # Step 1: Cascade delete all activated repos
             if hasattr(self, "activated_repo_manager") and self.activated_repo_manager:
                 try:
-                    activated_repos = self.activated_repo_manager.find_repos_by_golden_alias(alias)
+                    activated_repos = (
+                        self.activated_repo_manager.find_repos_by_golden_alias(alias)
+                    )
 
                     for repo_info in activated_repos:
                         username = repo_info["username"]
@@ -386,16 +388,24 @@ class GoldenRepoManager:
                             cascade_results["activated_repos_deleted"].append(
                                 f"{username}/{user_alias}"
                             )
-                            logging.info(f"Cascade deleted activated repo: {username}/{user_alias}")
+                            logging.info(
+                                f"Cascade deleted activated repo: {username}/{user_alias}"
+                            )
                         except Exception as e:
-                            cascade_results["activated_repos_failed"].append({
-                                "repo": f"{username}/{user_alias}",
-                                "error": str(e),
-                            })
-                            logging.error(f"Failed to cascade delete {username}/{user_alias}: {e}")
+                            cascade_results["activated_repos_failed"].append(
+                                {
+                                    "repo": f"{username}/{user_alias}",
+                                    "error": str(e),
+                                }
+                            )
+                            logging.error(
+                                f"Failed to cascade delete {username}/{user_alias}: {e}"
+                            )
 
                 except Exception as e:
-                    logging.error(f"Failed to find activated repos for cascade deletion: {e}")
+                    logging.error(
+                        f"Failed to find activated repos for cascade deletion: {e}"
+                    )
 
             # Get repository info before removal
             golden_repo = self.golden_repos[alias]
@@ -484,7 +494,9 @@ class GoldenRepoManager:
                 if activated_count > 0:
                     message += f" (cascade deleted {activated_count} activated repos)"
                 if failed_count > 0:
-                    message += f" (WARNING: {failed_count} activated repos failed to delete)"
+                    message += (
+                        f" (WARNING: {failed_count} activated repos failed to delete)"
+                    )
 
                 return {
                     "success": True,
@@ -1377,7 +1389,9 @@ class GoldenRepoManager:
                     repo_dict_any["canonical_url"] = canonical_url
                     # Use canonical path resolution to handle versioned structure repos
                     actual_path = self.get_actual_repo_path(repo.alias)
-                    repo_dict_any["branches"] = self._get_repository_branches(actual_path)
+                    repo_dict_any["branches"] = self._get_repository_branches(
+                        actual_path
+                    )
 
                     matching_repos.append(repo_dict_any)
 
@@ -1795,7 +1809,9 @@ class GoldenRepoManager:
 
             if fts_index.exists():
                 # Check for meta.json or any index files
-                has_fts_files = (fts_index / "meta.json").exists() or any(fts_index.rglob("*.json"))
+                has_fts_files = (fts_index / "meta.json").exists() or any(
+                    fts_index.rglob("*.json")
+                )
 
             return has_vector_files and has_fts_files
 
@@ -1880,17 +1896,18 @@ class GoldenRepoManager:
 
         # Check each index type using helper method
         indexes = {
-            "semantic_fts": self._get_index_status(repo_dir, "semantic_fts", golden_repo),
+            "semantic_fts": self._get_index_status(
+                repo_dir, "semantic_fts", golden_repo
+            ),
             "temporal": self._get_index_status(repo_dir, "temporal", golden_repo),
-            "scip": self._get_index_status(repo_dir, "scip", golden_repo)
+            "scip": self._get_index_status(repo_dir, "scip", golden_repo),
         }
 
-        return {
-            "alias": alias,
-            "indexes": indexes
-        }
+        return {"alias": alias, "indexes": indexes}
 
-    def _get_index_status(self, repo_dir: Path, index_type: str, golden_repo: GoldenRepo) -> Dict[str, Any]:
+    def _get_index_status(
+        self, repo_dir: Path, index_type: str, golden_repo: GoldenRepo
+    ) -> Dict[str, Any]:
         """
         Get status dictionary for a single index type.
 
@@ -1905,7 +1922,7 @@ class GoldenRepoManager:
         path_map = {
             "semantic_fts": "tantivy_index",
             "temporal": "index",
-            "scip": "scip"
+            "scip": "scip",
         }
 
         exists = self._index_exists(golden_repo, index_type)
@@ -1914,7 +1931,7 @@ class GoldenRepoManager:
             return {
                 "exists": True,
                 "path": str(index_path),
-                "last_updated": self._get_directory_last_modified(index_path)
+                "last_updated": self._get_directory_last_modified(index_path),
             }
         return {"exists": False, "path": None, "last_updated": None}
 

@@ -7,7 +7,9 @@ Tests configuration model for file content token limits and character-to-token r
 import pytest
 from pydantic import ValidationError
 
-from code_indexer.server.models.file_content_limits_config import FileContentLimitsConfig
+from code_indexer.server.models.file_content_limits_config import (
+    FileContentLimitsConfig,
+)
 
 
 class TestFileContentLimitsConfig:
@@ -22,7 +24,9 @@ class TestFileContentLimitsConfig:
 
     def test_create_with_custom_values(self):
         """Test creating config with custom values."""
-        config = FileContentLimitsConfig(max_tokens_per_request=10000, chars_per_token=4)
+        config = FileContentLimitsConfig(
+            max_tokens_per_request=10000, chars_per_token=4
+        )
 
         assert config.max_tokens_per_request == 10000
         assert config.chars_per_token == 4
@@ -86,7 +90,9 @@ class TestFileContentLimitsConfig:
         config = FileContentLimitsConfig(max_tokens_per_request=5000, chars_per_token=4)
         assert config.max_chars_per_request == 20000
 
-        config = FileContentLimitsConfig(max_tokens_per_request=10000, chars_per_token=3)
+        config = FileContentLimitsConfig(
+            max_tokens_per_request=10000, chars_per_token=3
+        )
         assert config.max_chars_per_request == 30000
 
         config = FileContentLimitsConfig(max_tokens_per_request=2000, chars_per_token=5)
@@ -94,7 +100,9 @@ class TestFileContentLimitsConfig:
 
     def test_to_dict(self):
         """Test converting config to dictionary."""
-        config = FileContentLimitsConfig(max_tokens_per_request=10000, chars_per_token=4)
+        config = FileContentLimitsConfig(
+            max_tokens_per_request=10000, chars_per_token=4
+        )
 
         config_dict = config.to_dict()
 

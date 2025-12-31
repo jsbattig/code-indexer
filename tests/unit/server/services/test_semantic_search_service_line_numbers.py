@@ -7,7 +7,6 @@ and line_end from vector store metadata.
 CLAUDE.md Foundation #1: Real semantic search with actual vector store data.
 """
 
-
 from src.code_indexer.server.services.search_service import SemanticSearchService
 from src.code_indexer.server.models.api_models import (
     SearchResultItem,
@@ -25,7 +24,7 @@ class TestSemanticSearchServiceLineNumbers:
         which was always 0. Should use payload.get('line_start', 0).
         """
         # Arrange
-        service = SemanticSearchService()
+        SemanticSearchService()
 
         # Mock the vector store search to return results with line_start metadata
         mock_results = [

@@ -16,32 +16,38 @@ from code_indexer.server.auth.user_manager import User
 logger = logging.getLogger(__name__)
 
 # Create router with prefix and tags
-router = APIRouter(
-    prefix="/api/v1/repos/{alias}",
-    tags=["indexing"]
-)
+router = APIRouter(prefix="/api/v1/repos/{alias}", tags=["indexing"])
 
 
 # Request/Response Models
 
+
 class TriggerReindexRequest(BaseModel):
     """Request model for triggering re-indexing."""
-    index_types: List[str] = Field(..., description="List of index types to rebuild (semantic, fts, temporal, scip)")
+
+    index_types: List[str] = Field(
+        ...,
+        description="List of index types to rebuild (semantic, fts, temporal, scip)",
+    )
     clear: bool = Field(False, description="Clear existing indexes before rebuilding")
 
 
 class TriggerReindexResponse(BaseModel):
     """Response model for trigger re-index."""
+
     success: bool = Field(..., description="Operation success status")
     job_id: str = Field(..., description="Background job ID for tracking")
     status: str = Field(..., description="Initial job status")
     index_types: List[str] = Field(..., description="Index types being rebuilt")
     started_at: str = Field(..., description="Job start time (ISO 8601)")
-    estimated_duration_minutes: Optional[int] = Field(None, description="Estimated completion time in minutes")
+    estimated_duration_minutes: Optional[int] = Field(
+        None, description="Estimated completion time in minutes"
+    )
 
 
 class IndexTypeStatus(BaseModel):
     """Status information for a single index type."""
+
     exists: bool = Field(..., description="Whether index exists")
     last_updated: Optional[str] = Field(None, description="Last update time (ISO 8601)")
     document_count: int = Field(0, description="Number of indexed documents")
@@ -50,15 +56,19 @@ class IndexTypeStatus(BaseModel):
 
 class GetIndexStatusResponse(BaseModel):
     """Response model for index status query."""
+
     success: bool = Field(..., description="Operation success status")
     repository_alias: str = Field(..., description="Repository alias")
     semantic: IndexTypeStatus = Field(..., description="Semantic index status")
     fts: IndexTypeStatus = Field(..., description="Full-text search index status")
-    temporal: IndexTypeStatus = Field(..., description="Temporal (git history) index status")
+    temporal: IndexTypeStatus = Field(
+        ..., description="Temporal (git history) index status"
+    )
     scip: IndexTypeStatus = Field(..., description="SCIP (call graph) index status")
 
 
 # Endpoints
+
 
 @router.post(
     "/reindex",
@@ -68,21 +78,19 @@ class GetIndexStatusResponse(BaseModel):
         202: {"description": "Re-indexing job accepted"},
         400: {"description": "Invalid parameters"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Trigger re-indexing",
-    description="Trigger a background re-indexing job for specified index types"
+    description="Trigger a background re-indexing job for specified index types",
 )
 async def trigger_reindex(
-    alias: str,
-    request: TriggerReindexRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: TriggerReindexRequest, user: User = Depends(get_current_user)
 ) -> TriggerReindexResponse:
     """Trigger re-indexing for specified index types."""
     try:
         # Import here to avoid circular dependencies
         from code_indexer.server.services.activated_repo_index_manager import (
-            ActivatedRepoIndexManager
+            ActivatedRepoIndexManager,
         )
 
         service = ActivatedRepoIndexManager()
@@ -90,7 +98,7 @@ async def trigger_reindex(
             repo_alias=alias,
             index_types=request.index_types,
             clear=request.clear,
-            username=user.username
+            username=user.username,
         )
         return TriggerReindexResponse(**result)
     except FileNotFoundError as e:
@@ -103,7 +111,7 @@ async def trigger_reindex(
         logger.error(f"Trigger reindex failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -114,27 +122,23 @@ async def trigger_reindex(
     responses={
         200: {"description": "Index status retrieved successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Get index status",
-    description="Get the status of all index types for the repository"
+    description="Get the status of all index types for the repository",
 )
 async def get_index_status(
-    alias: str,
-    user: User = Depends(get_current_user)
+    alias: str, user: User = Depends(get_current_user)
 ) -> GetIndexStatusResponse:
     """Get index status for all index types."""
     try:
         # Import here to avoid circular dependencies
         from code_indexer.server.services.activated_repo_index_manager import (
-            ActivatedRepoIndexManager
+            ActivatedRepoIndexManager,
         )
 
         service = ActivatedRepoIndexManager()
-        result = service.get_index_status(
-            repo_alias=alias,
-            username=user.username
-        )
+        result = service.get_index_status(repo_alias=alias, username=user.username)
 
         # Transform service output to match response model
         # Service returns {"status": "not_indexed"} or {"status": "up_to_date", ...}
@@ -152,9 +156,9 @@ async def get_index_status(
 
             # Get last updated timestamp (try different field names)
             last_updated = (
-                status_data.get("last_updated") or
-                status_data.get("last_indexed") or
-                status_data.get("last_generated")
+                status_data.get("last_updated")
+                or status_data.get("last_indexed")
+                or status_data.get("last_generated")
             )
 
             # Get document count (try different field names, handle zero correctly)
@@ -163,18 +167,20 @@ async def get_index_status(
                 status_data.get("file_count"),
                 status_data.get("commit_count"),
                 status_data.get("project_count"),
-                default=0
+                default=0,
             )
 
             # Calculate size in bytes (handle zero correctly)
             index_size_mb = status_data.get("index_size_mb")
-            size_bytes = int(index_size_mb * 1024 * 1024) if index_size_mb is not None else None
+            size_bytes = (
+                int(index_size_mb * 1024 * 1024) if index_size_mb is not None else None
+            )
 
             return IndexTypeStatus(
                 exists=exists,
                 last_updated=last_updated,
                 document_count=document_count,
-                size_bytes=size_bytes
+                size_bytes=size_bytes,
             )
 
         return GetIndexStatusResponse(
@@ -183,7 +189,7 @@ async def get_index_status(
             semantic=transform_index_status(result["semantic"]),
             fts=transform_index_status(result["fts"]),
             temporal=transform_index_status(result["temporal"]),
-            scip=transform_index_status(result["scip"])
+            scip=transform_index_status(result["scip"]),
         )
     except FileNotFoundError as e:
         logger.warning(f"Repository not found: {alias}")
@@ -192,5 +198,5 @@ async def get_index_status(
         logger.error(f"Get index status failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )

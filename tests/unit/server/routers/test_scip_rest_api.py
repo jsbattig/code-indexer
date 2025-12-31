@@ -51,7 +51,9 @@ def mock_query_results():
 class TestDefinitionEndpoint:
     """Tests for /scip/definition endpoint."""
 
-    def test_definition_endpoint_returns_results(self, mock_scip_dir, mock_query_results):
+    def test_definition_endpoint_returns_results(
+        self, mock_scip_dir, mock_query_results
+    ):
         """Should query all .scip files and return aggregated definition results."""
         # Import here to avoid circular imports during test collection
         from code_indexer.server.app import app
@@ -62,14 +64,21 @@ class TestDefinitionEndpoint:
         client = TestClient(app)
 
         # Mock SCIPQueryEngine to return test results
-        with patch("code_indexer.server.routers.scip_queries.SCIPQueryEngine") as MockEngine:
+        with patch(
+            "code_indexer.server.routers.scip_queries.SCIPQueryEngine"
+        ) as MockEngine:
             mock_engine_instance = Mock()
             mock_engine_instance.find_definition.return_value = mock_query_results[:1]
             MockEngine.return_value = mock_engine_instance
 
             # Mock _find_scip_files to return our test .scip files
-            mock_scip_files = [mock_scip_dir / "project1.scip", mock_scip_dir / "project2.scip"]
-            with patch("code_indexer.server.routers.scip_queries._find_scip_files") as mock_find:
+            mock_scip_files = [
+                mock_scip_dir / "project1.scip",
+                mock_scip_dir / "project2.scip",
+            ]
+            with patch(
+                "code_indexer.server.routers.scip_queries._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 # Make request
@@ -120,13 +129,17 @@ class TestReferencesEndpoint:
             )
         ]
 
-        with patch("code_indexer.server.routers.scip_queries.SCIPQueryEngine") as MockEngine:
+        with patch(
+            "code_indexer.server.routers.scip_queries.SCIPQueryEngine"
+        ) as MockEngine:
             mock_engine_instance = Mock()
             mock_engine_instance.find_references.return_value = mock_refs
             MockEngine.return_value = mock_engine_instance
 
             mock_scip_files = [mock_scip_dir / "project1.scip"]
-            with patch("code_indexer.server.routers.scip_queries._find_scip_files") as mock_find:
+            with patch(
+                "code_indexer.server.routers.scip_queries._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 response = client.get("/scip/references?symbol=UserService&limit=100")
@@ -165,13 +178,17 @@ class TestDependenciesEndpoint:
             )
         ]
 
-        with patch("code_indexer.server.routers.scip_queries.SCIPQueryEngine") as MockEngine:
+        with patch(
+            "code_indexer.server.routers.scip_queries.SCIPQueryEngine"
+        ) as MockEngine:
             mock_engine_instance = Mock()
             mock_engine_instance.get_dependencies.return_value = mock_deps
             MockEngine.return_value = mock_engine_instance
 
             mock_scip_files = [mock_scip_dir / "project1.scip"]
-            with patch("code_indexer.server.routers.scip_queries._find_scip_files") as mock_find:
+            with patch(
+                "code_indexer.server.routers.scip_queries._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 response = client.get("/scip/dependencies?symbol=UserService&depth=1")
@@ -210,13 +227,17 @@ class TestDependentsEndpoint:
             )
         ]
 
-        with patch("code_indexer.server.routers.scip_queries.SCIPQueryEngine") as MockEngine:
+        with patch(
+            "code_indexer.server.routers.scip_queries.SCIPQueryEngine"
+        ) as MockEngine:
             mock_engine_instance = Mock()
             mock_engine_instance.get_dependents.return_value = mock_dependents
             MockEngine.return_value = mock_engine_instance
 
             mock_scip_files = [mock_scip_dir / "project1.scip"]
-            with patch("code_indexer.server.routers.scip_queries._find_scip_files") as mock_find:
+            with patch(
+                "code_indexer.server.routers.scip_queries._find_scip_files"
+            ) as mock_find:
                 mock_find.return_value = mock_scip_files
 
                 response = client.get("/scip/dependents?symbol=UserService&depth=1")
@@ -238,7 +259,11 @@ class TestImpactEndpoint:
         """Should return impact analysis results for a symbol."""
         from code_indexer.server.app import app
         from code_indexer.server.routers.scip_queries import router
-        from code_indexer.scip.query.composites import ImpactAnalysisResult, AffectedSymbol, AffectedFile
+        from code_indexer.scip.query.composites import (
+            ImpactAnalysisResult,
+            AffectedSymbol,
+            AffectedFile,
+        )
 
         app.include_router(router)
         client = TestClient(app)
@@ -255,7 +280,7 @@ class TestImpactEndpoint:
                     column=5,
                     depth=1,
                     relationship="call",
-                    chain=["com.example.UserService", "com.example.AuthHandler"]
+                    chain=["com.example.UserService", "com.example.AuthHandler"],
                 )
             ],
             affected_files=[
@@ -264,11 +289,11 @@ class TestImpactEndpoint:
                     project="project1",
                     affected_symbol_count=1,
                     min_depth=1,
-                    max_depth=1
+                    max_depth=1,
                 )
             ],
             truncated=False,
-            total_affected=1
+            total_affected=1,
         )
 
         with patch("code_indexer.scip.query.composites.analyze_impact") as mock_analyze:
@@ -296,7 +321,11 @@ class TestCallChainEndpoint:
         """Should return call chain tracing results between two symbols."""
         from code_indexer.server.app import app
         from code_indexer.server.routers.scip_queries import router
-        from code_indexer.scip.query.composites import CallChainResult, CallChain, CallStep
+        from code_indexer.scip.query.composites import (
+            CallChainResult,
+            CallChain,
+            CallStep,
+        )
 
         app.include_router(router)
         client = TestClient(app)
@@ -312,28 +341,30 @@ class TestCallChainEndpoint:
                             file_path=Path("src/services/service.py"),
                             line=15,
                             column=10,
-                            call_type="call"
+                            call_type="call",
                         ),
                         CallStep(
                             symbol="com.example.Database",
                             file_path=Path("src/db/database.py"),
                             line=50,
                             column=5,
-                            call_type="call"
-                        )
+                            call_type="call",
+                        ),
                     ],
-                    length=2
+                    length=2,
                 )
             ],
             total_chains_found=1,
             truncated=False,
-            max_depth_reached=False
+            max_depth_reached=False,
         )
 
         with patch("code_indexer.scip.query.composites.trace_call_chain") as mock_trace:
             mock_trace.return_value = mock_callchain_result
 
-            response = client.get("/scip/callchain?from_symbol=Controller&to_symbol=Database&max_depth=10")
+            response = client.get(
+                "/scip/callchain?from_symbol=Controller&to_symbol=Database&max_depth=10"
+            )
 
             assert response.status_code == 200
             data = response.json()
@@ -355,7 +386,11 @@ class TestContextEndpoint:
         """Should return smart context results for a symbol."""
         from code_indexer.server.app import app
         from code_indexer.server.routers.scip_queries import router
-        from code_indexer.scip.query.composites import SmartContextResult, ContextFile, ContextSymbol
+        from code_indexer.scip.query.composites import (
+            SmartContextResult,
+            ContextFile,
+            ContextSymbol,
+        )
 
         app.include_router(router)
         client = TestClient(app)
@@ -375,18 +410,20 @@ class TestContextEndpoint:
                             relationship="definition",
                             line=10,
                             column=5,
-                            relevance=1.0
+                            relevance=1.0,
                         )
                     ],
-                    read_priority=1
+                    read_priority=1,
                 )
             ],
             total_files=1,
             total_symbols=1,
-            avg_relevance=0.9
+            avg_relevance=0.9,
         )
 
-        with patch("code_indexer.scip.query.composites.get_smart_context") as mock_context:
+        with patch(
+            "code_indexer.scip.query.composites.get_smart_context"
+        ) as mock_context:
             mock_context.return_value = mock_context_result
 
             response = client.get("/scip/context?symbol=UserService&limit=20")

@@ -45,7 +45,7 @@ class TestGitStagingTools:
 
         valid_input = {
             "repository_alias": "test-repo",
-            "file_paths": ["src/file1.py", "src/file2.py"]
+            "file_paths": ["src/file1.py", "src/file2.py"],
         }
         validate(instance=valid_input, schema=schema)
 
@@ -73,10 +73,7 @@ class TestGitStagingTools:
         tool = TOOL_REGISTRY["git_unstage"]
         schema = tool["inputSchema"]
 
-        valid_input = {
-            "repository_alias": "test-repo",
-            "file_paths": ["src/file1.py"]
-        }
+        valid_input = {"repository_alias": "test-repo", "file_paths": ["src/file1.py"]}
         validate(instance=valid_input, schema=schema)
 
     def test_git_unstage_permission(self):
@@ -99,7 +96,7 @@ class TestGitCommitPushPullTools:
 
         valid_input = {
             "repository_alias": "test-repo",
-            "message": "Fix bug in authentication"
+            "message": "Fix bug in authentication",
         }
         validate(instance=valid_input, schema=schema)
 
@@ -112,7 +109,7 @@ class TestGitCommitPushPullTools:
             "repository_alias": "test-repo",
             "message": "Add feature",
             "author_name": "John Doe",
-            "author_email": "john@example.com"
+            "author_email": "john@example.com",
         }
         validate(instance=valid_input, schema=schema)
 
@@ -133,7 +130,7 @@ class TestGitCommitPushPullTools:
         valid_input = {
             "repository_alias": "test-repo",
             "remote": "origin",
-            "branch": "main"
+            "branch": "main",
         }
         validate(instance=valid_input, schema=schema)
 
@@ -173,10 +170,7 @@ class TestGitResetCleanTools:
         tool = TOOL_REGISTRY["git_reset"]
         schema = tool["inputSchema"]
 
-        valid_input = {
-            "repository_alias": "test-repo",
-            "mode": "soft"
-        }
+        valid_input = {"repository_alias": "test-repo", "mode": "soft"}
         validate(instance=valid_input, schema=schema)
 
     def test_git_reset_schema_mode_enum_validation(self):
@@ -186,10 +180,7 @@ class TestGitResetCleanTools:
 
         # Valid modes
         for mode in ["soft", "mixed", "hard"]:
-            valid_input = {
-                "repository_alias": "test-repo",
-                "mode": mode
-            }
+            valid_input = {"repository_alias": "test-repo", "mode": mode}
             validate(instance=valid_input, schema=schema)
 
     def test_git_reset_permission(self):
@@ -208,7 +199,7 @@ class TestGitResetCleanTools:
 
         valid_input = {
             "repository_alias": "test-repo",
-            "confirmation_token": "CONFIRM_DELETE_UNTRACKED"
+            "confirmation_token": "CONFIRM_DELETE_UNTRACKED",
         }
         validate(instance=valid_input, schema=schema)
 
@@ -235,10 +226,7 @@ class TestGitResetCleanTools:
         tool = TOOL_REGISTRY["git_checkout_file"]
         schema = tool["inputSchema"]
 
-        valid_input = {
-            "repository_alias": "test-repo",
-            "file_path": "src/file.py"
-        }
+        valid_input = {"repository_alias": "test-repo", "file_path": "src/file.py"}
         validate(instance=valid_input, schema=schema)
 
     def test_git_checkout_file_permission(self):
@@ -270,7 +258,7 @@ class TestGitBranchTools:
 
         valid_input = {
             "repository_alias": "test-repo",
-            "branch_name": "feature/new-feature"
+            "branch_name": "feature/new-feature",
         }
         validate(instance=valid_input, schema=schema)
 
@@ -288,10 +276,7 @@ class TestGitBranchTools:
         tool = TOOL_REGISTRY["git_branch_switch"]
         schema = tool["inputSchema"]
 
-        valid_input = {
-            "repository_alias": "test-repo",
-            "branch_name": "main"
-        }
+        valid_input = {"repository_alias": "test-repo", "branch_name": "main"}
         validate(instance=valid_input, schema=schema)
 
     def test_git_branch_switch_permission(self):
@@ -311,7 +296,7 @@ class TestGitBranchTools:
         valid_input = {
             "repository_alias": "test-repo",
             "branch_name": "old-feature",
-            "confirmation_token": "CONFIRM_DELETE_BRANCH"
+            "confirmation_token": "CONFIRM_DELETE_BRANCH",
         }
         validate(instance=valid_input, schema=schema)
 

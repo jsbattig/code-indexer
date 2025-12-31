@@ -70,7 +70,9 @@ class AutoWatchManager:
         with self._lock:
             if repo_path not in self._watch_state:
                 return False
-            watch_running: bool = self._watch_state[repo_path].get("watch_running", False)
+            watch_running: bool = self._watch_state[repo_path].get(
+                "watch_running", False
+            )
             return watch_running
 
     def start_watch(
@@ -167,9 +169,9 @@ class AutoWatchManager:
         """
         with self._lock:
             # Check if watch exists
-            if repo_path not in self._watch_state or not self._watch_state[repo_path].get(
-                "watch_running", False
-            ):
+            if repo_path not in self._watch_state or not self._watch_state[
+                repo_path
+            ].get("watch_running", False):
                 logger.warning(f"No watch running for {repo_path}")
                 return {
                     "status": "error",
@@ -209,10 +211,12 @@ class AutoWatchManager:
             Status dictionary with success/error status
         """
         with self._lock:
-            if repo_path not in self._watch_state or not self._watch_state[repo_path].get(
-                "watch_running", False
-            ):
-                logger.warning(f"No watch running for {repo_path}, cannot reset timeout")
+            if repo_path not in self._watch_state or not self._watch_state[
+                repo_path
+            ].get("watch_running", False):
+                logger.warning(
+                    f"No watch running for {repo_path}, cannot reset timeout"
+                )
                 return {
                     "status": "error",
                     "message": "Watch not running",
@@ -311,7 +315,9 @@ class AutoWatchManager:
             try:
                 self.stop_watch(repo_path)
             except Exception as e:
-                logger.exception(f"Error stopping watch during shutdown for {repo_path}: {e}")
+                logger.exception(
+                    f"Error stopping watch during shutdown for {repo_path}: {e}"
+                )
 
         logger.info("AutoWatchManager shutdown complete")
 

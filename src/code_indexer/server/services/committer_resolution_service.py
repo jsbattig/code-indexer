@@ -43,7 +43,9 @@ class CommitterResolutionService:
         # Initialize dependencies with defaults if not provided
         self.ssh_key_manager = ssh_key_manager or SSHKeyManager()
         self.key_to_remote_tester = key_to_remote_tester or KeyToRemoteTester()
-        self.remote_discovery_service = remote_discovery_service or RemoteDiscoveryService()
+        self.remote_discovery_service = (
+            remote_discovery_service or RemoteDiscoveryService()
+        )
 
     def resolve_committer_email(
         self,

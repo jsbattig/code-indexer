@@ -1647,7 +1647,6 @@ class SemanticQueryManager:
             Merged and deduplicated list of QueryResult objects
         """
         # Use file_path + line_number as key for deduplication
-        seen_keys = set()
         merged_results = []
         rrf_scores = {}
 

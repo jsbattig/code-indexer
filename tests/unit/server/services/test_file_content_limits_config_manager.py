@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from code_indexer.server.models.file_content_limits_config import FileContentLimitsConfig
+from code_indexer.server.models.file_content_limits_config import (
+    FileContentLimitsConfig,
+)
 from code_indexer.server.services.file_content_limits_config_manager import (
     FileContentLimitsConfigManager,
 )
@@ -53,7 +55,9 @@ class TestFileContentLimitsConfigManager:
     def test_update_config_persists_changes(self):
         """Test updating config persists to database."""
         # Update config
-        new_config = FileContentLimitsConfig(max_tokens_per_request=10000, chars_per_token=3)
+        new_config = FileContentLimitsConfig(
+            max_tokens_per_request=10000, chars_per_token=3
+        )
         self.manager.update_config(new_config)
 
         # Retrieve and verify
@@ -65,7 +69,9 @@ class TestFileContentLimitsConfigManager:
     def test_config_persists_across_instances(self):
         """Test config persists across manager instances."""
         # Update config
-        new_config = FileContentLimitsConfig(max_tokens_per_request=15000, chars_per_token=5)
+        new_config = FileContentLimitsConfig(
+            max_tokens_per_request=15000, chars_per_token=5
+        )
         self.manager.update_config(new_config)
 
         # Create new manager instance with same db
@@ -98,7 +104,9 @@ class TestFileContentLimitsConfigManager:
         results = []
 
         def update_and_read():
-            config = FileContentLimitsConfig(max_tokens_per_request=8000, chars_per_token=4)
+            config = FileContentLimitsConfig(
+                max_tokens_per_request=8000, chars_per_token=4
+            )
             self.manager.update_config(config)
             retrieved = self.manager.get_config()
             results.append(retrieved)
@@ -117,7 +125,9 @@ class TestFileContentLimitsConfigManager:
 
     def test_get_instance_singleton(self):
         """Test get_instance returns singleton."""
-        instance1 = FileContentLimitsConfigManager.get_instance(db_path=str(self.db_path))
+        instance1 = FileContentLimitsConfigManager.get_instance(
+            db_path=str(self.db_path)
+        )
         instance2 = FileContentLimitsConfigManager.get_instance()
 
         assert instance1 is instance2
@@ -128,27 +138,19 @@ class TestFileContentLimitsConfigManager:
 
         # Invalid config (tokens too low)
         with pytest.raises(ValidationError):
-            invalid_config = FileContentLimitsConfig(
-                max_tokens_per_request=500, chars_per_token=4
-            )
+            FileContentLimitsConfig(max_tokens_per_request=500, chars_per_token=4)
 
         # Invalid config (tokens too high)
         with pytest.raises(ValidationError):
-            invalid_config = FileContentLimitsConfig(
-                max_tokens_per_request=50000, chars_per_token=4
-            )
+            FileContentLimitsConfig(max_tokens_per_request=50000, chars_per_token=4)
 
         # Invalid config (chars_per_token too low)
         with pytest.raises(ValidationError):
-            invalid_config = FileContentLimitsConfig(
-                max_tokens_per_request=5000, chars_per_token=2
-            )
+            FileContentLimitsConfig(max_tokens_per_request=5000, chars_per_token=2)
 
         # Invalid config (chars_per_token too high)
         with pytest.raises(ValidationError):
-            invalid_config = FileContentLimitsConfig(
-                max_tokens_per_request=5000, chars_per_token=6
-            )
+            FileContentLimitsConfig(max_tokens_per_request=5000, chars_per_token=6)
 
     def test_database_recovery_from_empty(self):
         """Test database initializes with defaults if empty."""

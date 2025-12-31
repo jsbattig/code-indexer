@@ -105,7 +105,9 @@ def get_ssh_key_manager() -> SSHKeyManager:
         # Allow override via environment variables for testing
         ssh_dir = os.environ.get("CIDX_SSH_DIR")
         metadata_dir_env = os.environ.get("CIDX_SSH_METADATA_DIR")
-        server_data_dir = os.environ.get("CIDX_SERVER_DATA_DIR", str(Path.home() / ".code-indexer-server"))
+        server_data_dir = os.environ.get(
+            "CIDX_SERVER_DATA_DIR", str(Path.home() / ".code-indexer-server")
+        )
 
         # Use server data dir for metadata if not explicitly overridden
         if metadata_dir_env:
@@ -269,6 +271,8 @@ async def api_get_public_key(name: str) -> Response:
 
 
 @router.post("/{name}/hosts", response_model=KeyWithHostsResponse)
-async def api_assign_host(name: str, request: AssignHostRequest) -> KeyWithHostsResponse:
+async def api_assign_host(
+    name: str, request: AssignHostRequest
+) -> KeyWithHostsResponse:
     """Assign a host to an SSH key."""
     return assign_host(name, request)

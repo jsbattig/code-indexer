@@ -43,25 +43,27 @@ class TestSCIPQueryExecutionInPartialEndpoint:
             kind="definition",
         )
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine"
-        ) as mock_engine_class, patch(
-            "code_indexer.server.web.routes.templates"
-        ) as mock_templates, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
+            patch("code_indexer.server.web.routes.templates") as mock_templates,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             # Setup mock engine
@@ -93,7 +95,9 @@ class TestSCIPQueryExecutionInPartialEndpoint:
 
             # Verify SCIPQueryEngine was called
             mock_engine_class.assert_called_once()
-            mock_engine.find_definition.assert_called_once_with("CacheEntry", exact=False)
+            mock_engine.find_definition.assert_called_once_with(
+                "CacheEntry", exact=False
+            )
 
             # Verify template was rendered with SCIP results
             call_args = mock_templates.TemplateResponse.call_args
@@ -119,23 +123,24 @@ class TestSCIPQueryExecutionInPartialEndpoint:
 
         # No SCIP index exists
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.server.web.routes.templates"
-        ) as mock_templates, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch("code_indexer.server.web.routes.templates") as mock_templates,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             await query_results_partial_post(
@@ -179,25 +184,27 @@ class TestSCIPQueryExecutionInPartialEndpoint:
         scip_dir.mkdir(parents=True)
         (scip_dir / "index.scip").touch()
 
-        with patch(
-            "code_indexer.server.web.routes._require_admin_session",
-            return_value=mock_session,
-        ), patch(
-            "code_indexer.server.web.routes._get_all_activated_repos_for_query",
-            return_value=[
-                {
-                    "user_alias": "test-repo",
-                    "username": "testuser",
-                    "is_global": False,
-                    "path": str(tmp_path),
-                }
-            ],
-        ), patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine"
-        ) as mock_engine_class, patch(
-            "code_indexer.server.web.routes.templates"
-        ) as mock_templates, patch(
-            "code_indexer.server.web.routes._add_to_query_history"
+        with (
+            patch(
+                "code_indexer.server.web.routes._require_admin_session",
+                return_value=mock_session,
+            ),
+            patch(
+                "code_indexer.server.web.routes._get_all_activated_repos_for_query",
+                return_value=[
+                    {
+                        "user_alias": "test-repo",
+                        "username": "testuser",
+                        "is_global": False,
+                        "path": str(tmp_path),
+                    }
+                ],
+            ),
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine"
+            ) as mock_engine_class,
+            patch("code_indexer.server.web.routes.templates") as mock_templates,
+            patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
 
             # Setup mock engine to raise exception
@@ -234,5 +241,8 @@ class TestSCIPQueryExecutionInPartialEndpoint:
             error_message = template_context.get("error_message")
             assert error_message is not None
             assert "SCIP" in error_message
-            assert "corrupted" in error_message.lower() or "not found" in error_message.lower()
+            assert (
+                "corrupted" in error_message.lower()
+                or "not found" in error_message.lower()
+            )
             assert "cidx scip generate" in error_message

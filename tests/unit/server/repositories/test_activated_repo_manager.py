@@ -304,7 +304,11 @@ class TestActivatedRepoManager:
             if args[0][0] == "git" and args[0][1] == "rev-parse":
                 # Return "false" for bare repository check (non-bare repo)
                 result.stdout = "false"
-            elif args[0][0] == "git" and args[0][1] == "remote" and args[0][2] == "get-url":
+            elif (
+                args[0][0] == "git"
+                and args[0][1] == "remote"
+                and args[0][2] == "get-url"
+            ):
                 # Return GitHub URL for origin remote
                 result.stdout = "git@github.com:example/repo.git"
             else:

@@ -91,7 +91,7 @@ class FileListingService:
 
     def _get_config_manager(self):
         """Get config manager instance (lazy initialization)."""
-        if not hasattr(self, '_config_manager') or self._config_manager is None:
+        if not hasattr(self, "_config_manager") or self._config_manager is None:
             self._config_manager = FileContentLimitsConfigManager.get_instance()
         return self._config_manager
 
@@ -487,7 +487,7 @@ class FileListingService:
             truncated = True
 
             # Calculate which line we truncated at
-            lines_before_truncation = actual_content.count('\n')
+            lines_before_truncation = actual_content.count("\n")
             truncated_at_line = effective_offset + lines_before_truncation
 
             # Recalculate estimated tokens for truncated content
@@ -498,7 +498,9 @@ class FileListingService:
         # Has more if last_returned_line < total_lines, which simplifies to:
         # effective_offset + returned_lines - 1 < total_lines
         # OR: effective_offset + returned_lines <= total_lines
-        returned_lines = actual_content.count('\n') + (1 if actual_content and not actual_content.endswith('\n') else 0)
+        returned_lines = actual_content.count("\n") + (
+            1 if actual_content and not actual_content.endswith("\n") else 0
+        )
         last_returned_line = effective_offset + returned_lines - 1
         requires_pagination = truncated or (last_returned_line < total_lines)
 
@@ -584,12 +586,10 @@ class FileListingService:
         if limit is None:
             # No user-specified limit: read from offset to end, will be token-limited
             selected_lines = all_lines[start_index:]
-            has_more = False  # Will be updated by token enforcement
         else:
             # User specified limit: respect it but still apply token limits
             end_index = start_index + limit
             selected_lines = all_lines[start_index:end_index]
-            has_more = end_index < total_lines
 
         # Build content string
         content = "".join(selected_lines)
@@ -610,10 +610,13 @@ class FileListingService:
             "path": file_path,
             # Original pagination metadata
             "total_lines": total_lines,
-            "returned_lines": enforced_content.count('\n') + (1 if enforced_content and not enforced_content.endswith('\n') else 0),
+            "returned_lines": enforced_content.count("\n")
+            + (1 if enforced_content and not enforced_content.endswith("\n") else 0),
             "offset": effective_offset,
             "limit": limit,
-            "has_more": token_metadata["requires_pagination"],  # Updated by token enforcement
+            "has_more": token_metadata[
+                "requires_pagination"
+            ],  # Updated by token enforcement
         }
 
         # Merge token enforcement metadata
@@ -686,12 +689,10 @@ class FileListingService:
         if limit is None:
             # No user-specified limit: read from offset to end, will be token-limited
             selected_lines = all_lines[start_index:]
-            has_more = False  # Will be updated by token enforcement
         else:
             # User specified limit: respect it but still apply token limits
             end_index = start_index + limit
             selected_lines = all_lines[start_index:end_index]
-            has_more = end_index < total_lines
 
         # Build content string
         content = "".join(selected_lines)
@@ -712,10 +713,13 @@ class FileListingService:
             "path": file_path,
             # Original pagination metadata
             "total_lines": total_lines,
-            "returned_lines": enforced_content.count('\n') + (1 if enforced_content and not enforced_content.endswith('\n') else 0),
+            "returned_lines": enforced_content.count("\n")
+            + (1 if enforced_content and not enforced_content.endswith("\n") else 0),
             "offset": effective_offset,
             "limit": limit,
-            "has_more": token_metadata["requires_pagination"],  # Updated by token enforcement
+            "has_more": token_metadata[
+                "requires_pagination"
+            ],  # Updated by token enforcement
         }
 
         # Merge token enforcement metadata

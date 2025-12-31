@@ -18,33 +18,47 @@ router = APIRouter(prefix="/scip", tags=["SCIP Queries"])
 
 # Response Models
 
+
 class ScipResultItem(BaseModel):
     """Model for a single SCIP query result."""
+
     symbol: str = Field(..., description="Full SCIP symbol identifier")
     project: str = Field(..., description="Project path")
     file_path: str = Field(..., description="File path relative to project root")
     line: int = Field(..., description="Line number (1-indexed)")
     column: int = Field(..., description="Column number (0-indexed)")
-    kind: str = Field(..., description="Symbol kind (class, function, method, reference, etc.)")
-    relationship: Optional[str] = Field(None, description="Relationship type (import, call, etc.)")
-    context: Optional[str] = Field(None, description="Code context or additional information")
+    kind: str = Field(
+        ..., description="Symbol kind (class, function, method, reference, etc.)"
+    )
+    relationship: Optional[str] = Field(
+        None, description="Relationship type (import, call, etc.)"
+    )
+    context: Optional[str] = Field(
+        None, description="Code context or additional information"
+    )
 
 
 class ScipDefinitionResponse(BaseModel):
     """Response model for SCIP definition query."""
+
     success: bool = Field(..., description="Whether the operation succeeded")
     symbol: str = Field(..., description="Symbol name that was searched for")
     total_results: int = Field(..., description="Total number of definitions found")
-    results: List[ScipResultItem] = Field(..., description="List of definition locations")
+    results: List[ScipResultItem] = Field(
+        ..., description="List of definition locations"
+    )
     error: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ScipReferencesResponse(BaseModel):
     """Response model for SCIP references query."""
+
     success: bool = Field(..., description="Whether the operation succeeded")
     symbol: str = Field(..., description="Symbol name that was searched for")
     total_results: int = Field(..., description="Total number of references found")
-    results: List[ScipResultItem] = Field(..., description="List of reference locations")
+    results: List[ScipResultItem] = Field(
+        ..., description="List of reference locations"
+    )
     error: Optional[str] = Field(None, description="Error message if operation failed")
 
 
@@ -266,7 +280,9 @@ async def get_dependents(
 @router.get("/impact")
 async def get_impact(
     symbol: str = Query(..., description="Symbol name to analyze"),
-    depth: int = Query(3, ge=1, le=10, description="Maximum traversal depth (default 3, max 10)"),
+    depth: int = Query(
+        3, ge=1, le=10, description="Maximum traversal depth (default 3, max 10)"
+    ),
     project: Optional[str] = Query(None, description="Filter by specific project"),
 ) -> Dict[str, Any]:
     """
@@ -324,7 +340,9 @@ async def get_impact(
 async def get_callchain(
     from_symbol: str = Query(..., description="Starting symbol"),
     to_symbol: str = Query(..., description="Target symbol"),
-    max_depth: int = Query(10, ge=1, le=20, description="Maximum chain length (default 10, max 20)"),
+    max_depth: int = Query(
+        10, ge=1, le=20, description="Maximum chain length (default 10, max 20)"
+    ),
     project: Optional[str] = Query(None, description="Filter by specific project"),
 ) -> Dict[str, Any]:
     """
@@ -343,7 +361,9 @@ async def get_callchain(
 
     try:
         scip_dir = Path.cwd() / ".code-indexer" / "scip"
-        result = trace_call_chain(from_symbol, to_symbol, scip_dir, max_depth=max_depth, project=project)
+        result = trace_call_chain(
+            from_symbol, to_symbol, scip_dir, max_depth=max_depth, project=project
+        )
 
         return {
             "success": True,
@@ -377,8 +397,15 @@ async def get_callchain(
 @router.get("/context")
 async def get_context(
     symbol: str = Query(..., description="Symbol name to analyze"),
-    limit: int = Query(20, ge=1, le=100, description="Maximum files to return (default 20, max 100)"),
-    min_score: float = Query(0.0, ge=0.0, le=1.0, description="Minimum relevance score (default 0.0, range 0.0-1.0)"),
+    limit: int = Query(
+        20, ge=1, le=100, description="Maximum files to return (default 20, max 100)"
+    ),
+    min_score: float = Query(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Minimum relevance score (default 0.0, range 0.0-1.0)",
+    ),
     project: Optional[str] = Query(None, description="Filter by specific project"),
 ) -> Dict[str, Any]:
     """
@@ -397,7 +424,9 @@ async def get_context(
 
     try:
         scip_dir = Path.cwd() / ".code-indexer" / "scip"
-        result = get_smart_context(symbol, scip_dir, limit=limit, min_score=min_score, project=project)
+        result = get_smart_context(
+            symbol, scip_dir, limit=limit, min_score=min_score, project=project
+        )
 
         return {
             "success": True,

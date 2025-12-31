@@ -18,7 +18,9 @@ class TestAutoWatchManagerBasicLifecycle:
         manager = AutoWatchManager()
         repo_path = str(tmp_path)
 
-        with patch('code_indexer.server.services.auto_watch_manager.DaemonWatchManager') as mock_daemon:
+        with patch(
+            "code_indexer.server.services.auto_watch_manager.DaemonWatchManager"
+        ) as mock_daemon:
             mock_watch_instance = Mock()
             mock_watch_instance.start_watch.return_value = {"status": "success"}
             mock_daemon.return_value = mock_watch_instance
@@ -34,7 +36,9 @@ class TestAutoWatchManagerBasicLifecycle:
         manager = AutoWatchManager()
         repo_path = str(tmp_path)
 
-        with patch('code_indexer.server.services.auto_watch_manager.DaemonWatchManager') as mock_daemon:
+        with patch(
+            "code_indexer.server.services.auto_watch_manager.DaemonWatchManager"
+        ) as mock_daemon:
             mock_watch_instance = Mock()
             mock_watch_instance.start_watch.return_value = {"status": "success"}
             mock_daemon.return_value = mock_watch_instance
@@ -60,10 +64,15 @@ class TestAutoWatchManagerBasicLifecycle:
         manager = AutoWatchManager()
         repo_path = str(tmp_path)
 
-        with patch('code_indexer.server.services.auto_watch_manager.DaemonWatchManager') as mock_daemon:
+        with patch(
+            "code_indexer.server.services.auto_watch_manager.DaemonWatchManager"
+        ) as mock_daemon:
             mock_watch_instance = Mock()
             mock_watch_instance.start_watch.return_value = {"status": "success"}
-            mock_watch_instance.stop_watch.return_value = {"status": "success", "stats": {}}
+            mock_watch_instance.stop_watch.return_value = {
+                "status": "success",
+                "stats": {},
+            }
             mock_daemon.return_value = mock_watch_instance
 
             # Start then stop
@@ -93,7 +102,9 @@ class TestAutoWatchManagerTimeout:
         manager = AutoWatchManager()
         repo_path = str(tmp_path)
 
-        with patch('code_indexer.server.services.auto_watch_manager.DaemonWatchManager') as mock_daemon:
+        with patch(
+            "code_indexer.server.services.auto_watch_manager.DaemonWatchManager"
+        ) as mock_daemon:
             mock_watch_instance = Mock()
             mock_watch_instance.start_watch.return_value = {"status": "success"}
             mock_watch_instance.stop_watch.return_value = {"status": "success"}
@@ -103,7 +114,9 @@ class TestAutoWatchManagerTimeout:
             manager.start_watch(repo_path, timeout=1)
 
             # Manually set last_activity to 2 seconds ago
-            manager._watch_state[repo_path]["last_activity"] = datetime.now() - timedelta(seconds=2)
+            manager._watch_state[repo_path][
+                "last_activity"
+            ] = datetime.now() - timedelta(seconds=2)
 
             # Run timeout check
             manager._check_timeouts()
@@ -117,7 +130,9 @@ class TestAutoWatchManagerTimeout:
         manager = AutoWatchManager()
         repo_path = str(tmp_path)
 
-        with patch('code_indexer.server.services.auto_watch_manager.DaemonWatchManager') as mock_daemon:
+        with patch(
+            "code_indexer.server.services.auto_watch_manager.DaemonWatchManager"
+        ) as mock_daemon:
             mock_watch_instance = Mock()
             mock_watch_instance.start_watch.return_value = {"status": "success"}
             mock_daemon.return_value = mock_watch_instance
@@ -137,7 +152,9 @@ class TestAutoWatchManagerTimeout:
         manager = AutoWatchManager()
         repo_path = str(tmp_path)
 
-        with patch('code_indexer.server.services.auto_watch_manager.DaemonWatchManager') as mock_daemon:
+        with patch(
+            "code_indexer.server.services.auto_watch_manager.DaemonWatchManager"
+        ) as mock_daemon:
             mock_watch_instance = Mock()
             mock_watch_instance.start_watch.return_value = {"status": "success"}
             mock_daemon.return_value = mock_watch_instance

@@ -43,9 +43,7 @@ def mock_git_service():
 @pytest.fixture
 def mock_repo_manager():
     """Create mock ActivatedRepoManager."""
-    with patch(
-        "code_indexer.server.mcp.handlers.ActivatedRepoManager"
-    ) as MockClass:
+    with patch("code_indexer.server.mcp.handlers.ActivatedRepoManager") as MockClass:
         mock_instance = MockClass.return_value
         mock_instance.get_activated_repo_path.return_value = Path("/tmp/test-repo")
         yield mock_instance
@@ -61,7 +59,9 @@ class TestGitPushHandler:
     """Test git_push MCP handler (F4: Remote Operations)."""
 
     @pytest.mark.asyncio
-    async def test_git_push_success(self, mock_user, mock_git_service, mock_repo_manager):
+    async def test_git_push_success(
+        self, mock_user, mock_git_service, mock_repo_manager
+    ):
         """Test successful git push operation."""
         # Bug #639: Mock wrapper method instead of low-level git_push
         mock_git_service.push_to_remote.return_value = {
@@ -84,10 +84,7 @@ class TestGitPushHandler:
         assert data["pushed_commits"] == 3
         assert data["remote"] == "origin"
         mock_git_service.push_to_remote.assert_called_once_with(
-            repo_alias="test-repo",
-            username="testuser",
-            remote="origin",
-            branch="main"
+            repo_alias="test-repo", username="testuser", remote="origin", branch="main"
         )
 
     @pytest.mark.asyncio
@@ -149,7 +146,9 @@ class TestGitPullHandler:
     """Test git_pull MCP handler (F4: Remote Operations)."""
 
     @pytest.mark.asyncio
-    async def test_git_pull_success(self, mock_user, mock_git_service, mock_repo_manager):
+    async def test_git_pull_success(
+        self, mock_user, mock_git_service, mock_repo_manager
+    ):
         """Test successful git pull operation."""
         # Bug #639: Mock wrapper method instead of low-level git_pull
         mock_git_service.pull_from_remote.return_value = {
@@ -171,10 +170,7 @@ class TestGitPullHandler:
         assert data["success"] is True
         assert data["fetched_commits"] == 2
         mock_git_service.pull_from_remote.assert_called_once_with(
-            repo_alias="test-repo",
-            username="testuser",
-            remote="origin",
-            branch="main"
+            repo_alias="test-repo", username="testuser", remote="origin", branch="main"
         )
 
     @pytest.mark.asyncio
@@ -234,7 +230,9 @@ class TestGitFetchHandler:
     """Test git_fetch MCP handler (F4: Remote Operations)."""
 
     @pytest.mark.asyncio
-    async def test_git_fetch_success(self, mock_user, mock_git_service, mock_repo_manager):
+    async def test_git_fetch_success(
+        self, mock_user, mock_git_service, mock_repo_manager
+    ):
         """Test successful git fetch operation."""
         # Bug #639: Mock wrapper method instead of low-level git_fetch
         mock_git_service.fetch_from_remote.return_value = {
@@ -254,9 +252,7 @@ class TestGitFetchHandler:
         assert data["success"] is True
         assert data["refs_updated"] == 5
         mock_git_service.fetch_from_remote.assert_called_once_with(
-            repo_alias="test-repo",
-            username="testuser",
-            remote="origin"
+            repo_alias="test-repo", username="testuser", remote="origin"
         )
 
     @pytest.mark.asyncio

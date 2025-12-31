@@ -104,10 +104,11 @@ class TestGitServiceConfiguration:
 
             # Create minimal config with git_service
             import json
+
             config_data = {
                 "git_service": {
                     "service_committer_name": "Test Service",
-                    "service_committer_email": "test@example.com"
+                    "service_committer_email": "test@example.com",
                 }
             }
             config_path.write_text(json.dumps(config_data))
@@ -126,7 +127,7 @@ class TestGitServiceConfiguration:
         mock_config = MagicMock()
         mock_git_service = GitServiceConfig(
             service_committer_name="Test Committer",
-            service_committer_email="committer@test.com"
+            service_committer_email="committer@test.com",
         )
         mock_config.git_service = mock_git_service
         mock_config_manager.load.return_value = mock_config
@@ -148,11 +149,7 @@ class TestGitStatusAndInspection:
 
         # Mock subprocess to return empty status
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             result = service.git_status(Path("/tmp/repo"))
 
@@ -172,11 +169,7 @@ A  added_file.py
  D deleted_file.py"""
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=status_output,
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout=status_output, stderr="")
 
             result = service.git_status(Path("/tmp/repo"))
 
@@ -199,11 +192,7 @@ index abc123..def456 100644
 +new line"""
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=diff_output,
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout=diff_output, stderr="")
 
             result = service.git_diff(Path("/tmp/repo"))
 
@@ -217,15 +206,10 @@ index abc123..def456 100644
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=0,
-                stdout="diff --git a/specific.py b/specific.py",
-                stderr=""
+                returncode=0, stdout="diff --git a/specific.py b/specific.py", stderr=""
             )
 
-            result = service.git_diff(
-                Path("/tmp/repo"),
-                file_paths=["specific.py"]
-            )
+            result = service.git_diff(Path("/tmp/repo"), file_paths=["specific.py"])
 
             assert "specific.py" in result["diff_text"]
             # Verify git diff was called with file paths
@@ -242,11 +226,7 @@ index abc123..def456 100644
 {"commit_hash": "def456", "author": "Jane Smith", "date": "2025-01-02", "message": "Add feature"}"""
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=log_output,
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout=log_output, stderr="")
 
             result = service.git_log(Path("/tmp/repo"), limit=2)
 
@@ -262,13 +242,10 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout='{"commit_hash": "abc123", "author": "John", "date": "2025-01-15", "message": "Recent"}',
-                stderr=""
+                stderr="",
             )
 
-            result = service.git_log(
-                Path("/tmp/repo"),
-                since_date="2025-01-10"
-            )
+            service.git_log(Path("/tmp/repo"), since_date="2025-01-10")
 
             # Verify --since flag was passed
             call_args = mock_run.call_args[0][0]
@@ -278,15 +255,10 @@ index abc123..def456 100644
         """Test git diff with custom context lines."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=0,
-                stdout="diff --git a/file.py b/file.py",
-                stderr=""
+                returncode=0, stdout="diff --git a/file.py b/file.py", stderr=""
             )
 
-            result = service.git_diff(
-                Path("/tmp/repo"),
-                context_lines=5
-            )
+            service.git_diff(Path("/tmp/repo"), context_lines=5)
 
             # Verify -U5 flag was passed
             call_args = mock_run.call_args[0][0]
@@ -296,15 +268,11 @@ index abc123..def456 100644
         """Test git diff with from_revision and to_revision."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=0,
-                stdout="diff --git a/file.py b/file.py",
-                stderr=""
+                returncode=0, stdout="diff --git a/file.py b/file.py", stderr=""
             )
 
-            result = service.git_diff(
-                Path("/tmp/repo"),
-                from_revision="abc123",
-                to_revision="def456"
+            service.git_diff(
+                Path("/tmp/repo"), from_revision="abc123", to_revision="def456"
             )
 
             # Verify revision range was passed
@@ -315,15 +283,10 @@ index abc123..def456 100644
         """Test git diff with only from_revision (diff from revision to working tree)."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=0,
-                stdout="diff --git a/file.py b/file.py",
-                stderr=""
+                returncode=0, stdout="diff --git a/file.py b/file.py", stderr=""
             )
 
-            result = service.git_diff(
-                Path("/tmp/repo"),
-                from_revision="abc123"
-            )
+            service.git_diff(Path("/tmp/repo"), from_revision="abc123")
 
             # Verify single revision was passed
             call_args = mock_run.call_args[0][0]
@@ -336,13 +299,10 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout="diff --git a/src/module.py b/src/module.py",
-                stderr=""
+                stderr="",
             )
 
-            result = service.git_diff(
-                Path("/tmp/repo"),
-                path="src/module.py"
-            )
+            service.git_diff(Path("/tmp/repo"), path="src/module.py")
 
             # Verify -- path was passed
             call_args = mock_run.call_args[0][0]
@@ -353,15 +313,10 @@ index abc123..def456 100644
         """Test git diff with stat_only flag."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=0,
-                stdout=" file.py | 5 +++--",
-                stderr=""
+                returncode=0, stdout=" file.py | 5 +++--", stderr=""
             )
 
-            result = service.git_diff(
-                Path("/tmp/repo"),
-                stat_only=True
-            )
+            service.git_diff(Path("/tmp/repo"), stat_only=True)
 
             # Verify --stat flag was passed
             call_args = mock_run.call_args[0][0]
@@ -373,13 +328,10 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout='{"commit_hash": "abc123", "author": "John", "date": "2025-01-05", "message": "Old"}',
-                stderr=""
+                stderr="",
             )
 
-            result = service.git_log(
-                Path("/tmp/repo"),
-                until="2025-01-10"
-            )
+            service.git_log(Path("/tmp/repo"), until="2025-01-10")
 
             # Verify --until flag was passed
             call_args = mock_run.call_args[0][0]
@@ -391,13 +343,10 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout='{"commit_hash": "abc123", "author": "John Doe", "date": "2025-01-10", "message": "Fix"}',
-                stderr=""
+                stderr="",
             )
 
-            result = service.git_log(
-                Path("/tmp/repo"),
-                author="John Doe"
-            )
+            service.git_log(Path("/tmp/repo"), author="John Doe")
 
             # Verify --author flag was passed
             call_args = mock_run.call_args[0][0]
@@ -409,13 +358,10 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout='{"commit_hash": "abc123", "author": "John", "date": "2025-01-10", "message": "Feature"}',
-                stderr=""
+                stderr="",
             )
 
-            result = service.git_log(
-                Path("/tmp/repo"),
-                branch="feature-branch"
-            )
+            service.git_log(Path("/tmp/repo"), branch="feature-branch")
 
             # Verify branch was passed
             call_args = mock_run.call_args[0][0]
@@ -427,13 +373,10 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout='{"commit_hash": "abc123", "author": "John", "date": "2025-01-10", "message": "Fix"}',
-                stderr=""
+                stderr="",
             )
 
-            result = service.git_log(
-                Path("/tmp/repo"),
-                path="src/module.py"
-            )
+            service.git_log(Path("/tmp/repo"), path="src/module.py")
 
             # Verify -- path was passed
             call_args = mock_run.call_args[0][0]
@@ -446,12 +389,11 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout='{"commit_hash": "abc123", "author": "John", "date": "2025-01-10", "message": "Fix"}',
-                stderr=""
+                stderr="",
             )
 
             result = service.git_log(
-                Path("/tmp/repo"),
-                aggregation_mode="chronological"
+                Path("/tmp/repo"), aggregation_mode="chronological"
             )
 
             # Note: aggregation_mode affects response formatting, not git command
@@ -464,13 +406,10 @@ index abc123..def456 100644
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout='{"commit_hash": "abc123", "author": "John", "date": "2025-01-10", "message": "Fix"}',
-                stderr=""
+                stderr="",
             )
 
-            result = service.git_log(
-                Path("/tmp/repo"),
-                response_format="grouped"
-            )
+            result = service.git_log(Path("/tmp/repo"), response_format="grouped")
 
             # Note: response_format affects response structure, not git command
             # It should be accepted but not modify git command flags
@@ -483,11 +422,7 @@ class TestGitStagingAndCommit:
     def test_git_stage_files(self, service):
         """Test staging multiple files."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             files = ["file1.py", "file2.py"]
             result = service.git_stage(Path("/tmp/repo"), files)
@@ -502,11 +437,7 @@ class TestGitStagingAndCommit:
     def test_git_unstage_files(self, service):
         """Test unstaging multiple files."""
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             files = ["file1.py", "file2.py"]
             result = service.git_unstage(Path("/tmp/repo"), files)
@@ -528,15 +459,19 @@ class TestGitStagingAndCommit:
             # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
             mock_run.side_effect = [
                 Mock(returncode=0, stdout="[master abc1234] Test commit", stderr=""),
-                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
-                Mock(returncode=0, stdout="test@example.com", stderr="")
+                Mock(
+                    returncode=0,
+                    stdout="abc1234567890abcdef1234567890abcdef12345",
+                    stderr="",
+                ),
+                Mock(returncode=0, stdout="test@example.com", stderr=""),
             ]
 
             result = service.git_commit(
                 Path("/tmp/repo"),
                 message="Add new feature",
                 user_email="user@claude.ai",
-                user_name="Claude User"
+                user_name="Claude User",
             )
 
             assert result["success"] is True
@@ -555,15 +490,19 @@ class TestGitStagingAndCommit:
             # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
             mock_run.side_effect = [
                 Mock(returncode=0, stdout="[master abc1234] Test commit", stderr=""),
-                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
-                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+                Mock(
+                    returncode=0,
+                    stdout="abc1234567890abcdef1234567890abcdef12345",
+                    stderr="",
+                ),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr=""),
             ]
 
             service.git_commit(
                 Path("/tmp/repo"),
                 message="Test commit",
                 user_email="user@example.com",
-                user_name="Test User"
+                user_name="Test User",
             )
 
             # Verify first call (git commit) was called with GIT_AUTHOR_* env vars only
@@ -583,14 +522,18 @@ class TestGitStagingAndCommit:
             # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
             mock_run.side_effect = [
                 Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
-                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
-                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+                Mock(
+                    returncode=0,
+                    stdout="abc1234567890abcdef1234567890abcdef12345",
+                    stderr="",
+                ),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr=""),
             ]
 
             service.git_commit(
                 Path("/tmp/repo"),
                 message="User's actual message",
-                user_email="user@test.com"
+                user_email="user@test.com",
             )
 
             # Extract the commit message from the first git command (git commit)
@@ -609,14 +552,18 @@ class TestGitStagingAndCommit:
             # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
             mock_run.side_effect = [
                 Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
-                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
-                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+                Mock(
+                    returncode=0,
+                    stdout="abc1234567890abcdef1234567890abcdef12345",
+                    stderr="",
+                ),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr=""),
             ]
 
             service.git_commit(
                 Path("/tmp/repo"),
                 message="Test",
-                user_email="testuser@example.com"
+                user_email="testuser@example.com",
                 # No user_name provided
             )
 
@@ -637,7 +584,7 @@ class TestGitRemoteOperations:
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout="To github.com:user/repo.git\n   abc1234..def5678  master -> master",
-                stderr=""
+                stderr="",
             )
 
             result = service.git_push(Path("/tmp/repo"))
@@ -651,9 +598,7 @@ class TestGitRemoteOperations:
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(
-                returncode=128,
-                cmd=["git", "push"],
-                stderr="Authentication failed"
+                returncode=128, cmd=["git", "push"], stderr="Authentication failed"
             )
 
             with pytest.raises(GitCommandError) as exc_info:
@@ -667,9 +612,7 @@ class TestGitRemoteOperations:
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(
-                returncode=128,
-                cmd=["git", "push"],
-                stderr="Could not resolve host"
+                returncode=128, cmd=["git", "push"], stderr="Could not resolve host"
             )
 
             with pytest.raises(GitCommandError) as exc_info:
@@ -685,7 +628,7 @@ class TestGitRemoteOperations:
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout="Updating abc1234..def5678\nFast-forward\n file.py | 2 +-\n 1 file changed",
-                stderr=""
+                stderr="",
             )
 
             result = service.git_pull(Path("/tmp/repo"))
@@ -704,9 +647,7 @@ Automatic merge failed; fix conflicts and then commit the result."""
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=1,
-                stdout=conflict_output,
-                stderr=""
+                returncode=1, stdout=conflict_output, stderr=""
             )
 
             result = service.git_pull(Path("/tmp/repo"))
@@ -722,7 +663,7 @@ Automatic merge failed; fix conflicts and then commit the result."""
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout="From github.com:user/repo\n * branch master -> FETCH_HEAD",
-                stderr=""
+                stderr="",
             )
 
             result = service.git_fetch(Path("/tmp/repo"))
@@ -739,16 +680,10 @@ class TestGitRecovery:
         pass  # Use service fixture
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             result = service.git_reset(
-                Path("/tmp/repo"),
-                mode="soft",
-                commit_hash="HEAD~1"
+                Path("/tmp/repo"), mode="soft", commit_hash="HEAD~1"
             )
 
             assert result["success"] is True
@@ -760,16 +695,10 @@ class TestGitRecovery:
         pass  # Use service fixture
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             result = service.git_reset(
-                Path("/tmp/repo"),
-                mode="mixed",
-                commit_hash="abc1234"
+                Path("/tmp/repo"), mode="mixed", commit_hash="abc1234"
             )
 
             assert result["success"] is True
@@ -779,11 +708,7 @@ class TestGitRecovery:
         """Test hard reset requires confirmation token."""
         pass  # Use service fixture
 
-        result = service.git_reset(
-            Path("/tmp/repo"),
-            mode="hard",
-            commit_hash="HEAD~1"
-        )
+        result = service.git_reset(Path("/tmp/repo"), mode="hard", commit_hash="HEAD~1")
 
         assert result["requires_confirmation"] is True
         assert "token" in result
@@ -798,7 +723,7 @@ class TestGitRecovery:
                 Path("/tmp/repo"),
                 mode="hard",
                 commit_hash="HEAD~1",
-                confirmation_token="INVALID"
+                confirmation_token="INVALID",
             )
 
         assert "Invalid or expired" in str(exc_info.value)
@@ -809,25 +734,21 @@ class TestGitRecovery:
 
         # First, generate a token
         result1 = service.git_reset(
-            Path("/tmp/repo"),
-            mode="hard",
-            commit_hash="HEAD~1"
+            Path("/tmp/repo"), mode="hard", commit_hash="HEAD~1"
         )
         token = result1["token"]
 
         # Then use the token
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=0,
-                stdout="HEAD is now at abc1234",
-                stderr=""
+                returncode=0, stdout="HEAD is now at abc1234", stderr=""
             )
 
             result2 = service.git_reset(
                 Path("/tmp/repo"),
                 mode="hard",
                 commit_hash="HEAD~1",
-                confirmation_token=token
+                confirmation_token=token,
             )
 
             assert result2["success"] is True
@@ -856,13 +777,10 @@ class TestGitRecovery:
             mock_run.return_value = Mock(
                 returncode=0,
                 stdout="Removing untracked_file.py\nRemoving temp_dir/",
-                stderr=""
+                stderr="",
             )
 
-            result2 = service.git_clean(
-                Path("/tmp/repo"),
-                confirmation_token=token
-            )
+            result2 = service.git_clean(Path("/tmp/repo"), confirmation_token=token)
 
             assert result2["success"] is True
             assert "untracked_file.py" in result2["removed_files"]
@@ -872,11 +790,7 @@ class TestGitRecovery:
         pass  # Use service fixture
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             result = service.git_merge_abort(Path("/tmp/repo"))
 
@@ -888,15 +802,10 @@ class TestGitRecovery:
         pass  # Use service fixture
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             result = service.git_checkout_file(
-                Path("/tmp/repo"),
-                file_path="modified_file.py"
+                Path("/tmp/repo"), file_path="modified_file.py"
             )
 
             assert result["success"] is True
@@ -916,11 +825,7 @@ class TestGitBranchManagement:
   remotes/origin/develop"""
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=branch_output,
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout=branch_output, stderr="")
 
             result = service.git_branch_list(Path("/tmp/repo"))
 
@@ -935,15 +840,10 @@ class TestGitBranchManagement:
         pass  # Use service fixture
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="",
-                stderr=""
-            )
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
 
             result = service.git_branch_create(
-                Path("/tmp/repo"),
-                branch_name="new-feature"
+                Path("/tmp/repo"), branch_name="new-feature"
             )
 
             assert result["success"] is True
@@ -957,13 +857,12 @@ class TestGitBranchManagement:
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.side_effect = [
                 Mock(returncode=0, stdout="master", stderr=""),  # Current branch
-                Mock(returncode=0, stdout="Switched to branch 'feature'", stderr="")  # Switch
+                Mock(
+                    returncode=0, stdout="Switched to branch 'feature'", stderr=""
+                ),  # Switch
             ]
 
-            result = service.git_branch_switch(
-                Path("/tmp/repo"),
-                branch_name="feature"
-            )
+            result = service.git_branch_switch(Path("/tmp/repo"), branch_name="feature")
 
             assert result["success"] is True
             assert result["current_branch"] == "feature"
@@ -973,10 +872,7 @@ class TestGitBranchManagement:
         """Test branch deletion requires confirmation token."""
         pass  # Use service fixture
 
-        result = service.git_branch_delete(
-            Path("/tmp/repo"),
-            branch_name="old-feature"
-        )
+        result = service.git_branch_delete(Path("/tmp/repo"), branch_name="old-feature")
 
         assert result["requires_confirmation"] is True
         assert "token" in result
@@ -988,23 +884,18 @@ class TestGitBranchManagement:
 
         # Generate token
         result1 = service.git_branch_delete(
-            Path("/tmp/repo"),
-            branch_name="old-feature"
+            Path("/tmp/repo"), branch_name="old-feature"
         )
         token = result1["token"]
 
         # Use token
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.return_value = Mock(
-                returncode=0,
-                stdout="Deleted branch old-feature",
-                stderr=""
+                returncode=0, stdout="Deleted branch old-feature", stderr=""
             )
 
             result2 = service.git_branch_delete(
-                Path("/tmp/repo"),
-                branch_name="old-feature",
-                confirmation_token=token
+                Path("/tmp/repo"), branch_name="old-feature", confirmation_token=token
             )
 
             assert result2["success"] is True
@@ -1083,7 +974,7 @@ class TestErrorHandling:
             mock_run.side_effect = subprocess.CalledProcessError(
                 returncode=1,
                 cmd=["git", "status"],
-                stderr="fatal: not a git repository"
+                stderr="fatal: not a git repository",
             )
 
             with pytest.raises(GitCommandError) as exc_info:
@@ -1099,7 +990,7 @@ class TestErrorHandling:
             mock_run.side_effect = subprocess.CalledProcessError(
                 returncode=1,
                 cmd=["git", "checkout", "nonexistent"],
-                stderr="error: pathspec 'nonexistent' did not match any file(s) known to git"
+                stderr="error: pathspec 'nonexistent' did not match any file(s) known to git",
             )
 
             with pytest.raises(GitCommandError) as exc_info:
@@ -1113,8 +1004,7 @@ class TestErrorHandling:
 
         with patch("code_indexer.utils.git_runner.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(
-                cmd=["git", "push"],
-                timeout=30
+                cmd=["git", "push"], timeout=30
             )
 
             with pytest.raises(GitCommandError):
@@ -1122,6 +1012,7 @@ class TestErrorHandling:
 
 
 # Integration Tests (Real Git Operations)
+
 
 class TestGitIntegration:
     """Integration tests with real git operations on test repositories."""
@@ -1134,22 +1025,17 @@ class TestGitIntegration:
 
             # Initialize git repo
             subprocess.run(
-                ["git", "init"],
-                cwd=repo_path,
-                check=True,
-                capture_output=True
+                ["git", "init"], cwd=repo_path, check=True, capture_output=True
             )
 
             # Configure git user
             subprocess.run(
-                ["git", "config", "user.name", "Test User"],
-                cwd=repo_path,
-                check=True
+                ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
             )
             subprocess.run(
                 ["git", "config", "user.email", "test@example.com"],
                 cwd=repo_path,
-                check=True
+                check=True,
             )
 
             yield repo_path
@@ -1179,7 +1065,7 @@ class TestGitIntegration:
             test_repo,
             "Initial commit",
             user_email="testuser@example.com",
-            user_name="Test User"
+            user_name="Test User",
         )
         assert result["success"] is True
         assert "commit_hash" in result
@@ -1211,7 +1097,7 @@ class TestGitIntegration:
             test_repo,
             "Test dual attribution",
             user_email="claude@claude.ai",
-            user_name="Claude AI"
+            user_name="Claude AI",
         )
 
         assert result["success"] is True
@@ -1223,7 +1109,7 @@ class TestGitIntegration:
             cwd=test_repo,
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
 
         output = git_log_result.stdout.strip()
@@ -1239,7 +1125,9 @@ class TestGitIntegration:
         assert author_name == "Claude AI"
         assert author_email == "claude@claude.ai"
         assert committer_name == "Test User"  # From repo git config (test_repo fixture)
-        assert committer_email == "test@example.com"  # From repo git config (test_repo fixture)
+        assert (
+            committer_email == "test@example.com"
+        )  # From repo git config (test_repo fixture)
         assert author_email != committer_email
 
         # Verify commit message format (Git trailers format)
@@ -1259,11 +1147,7 @@ class TestGitIntegration:
         test_file = test_repo / "test.py"
         test_file.write_text("print('hello')")
         subprocess.run(["git", "add", "test.py"], cwd=test_repo, check=True)
-        subprocess.run(
-            ["git", "commit", "-m", "Initial"],
-            cwd=test_repo,
-            check=True
-        )
+        subprocess.run(["git", "commit", "-m", "Initial"], cwd=test_repo, check=True)
 
         # List branches
         result = service.git_branch_list(test_repo)
@@ -1279,7 +1163,11 @@ class TestGitIntegration:
         assert result["current_branch"] == "feature"
 
         # Switch back to master/main
-        main_branch = "master" if "master" in service.git_branch_list(test_repo)["local"] else "main"
+        main_branch = (
+            "master"
+            if "master" in service.git_branch_list(test_repo)["local"]
+            else "main"
+        )
         service.git_branch_switch(test_repo, main_branch)
 
         # Delete feature branch (requires token)
@@ -1319,10 +1207,7 @@ class TestGitIntegration:
         token = result1["token"]
 
         result2 = service.git_reset(
-            test_repo,
-            mode="hard",
-            commit_hash="HEAD",
-            confirmation_token=token
+            test_repo, mode="hard", commit_hash="HEAD", confirmation_token=token
         )
         assert result2["success"] is True
 
@@ -1345,14 +1230,18 @@ Malicious content"""
             # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
             mock_run.side_effect = [
                 Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
-                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
-                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+                Mock(
+                    returncode=0,
+                    stdout="abc1234567890abcdef1234567890abcdef12345",
+                    stderr="",
+                ),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr=""),
             ]
 
             service.git_commit(
                 Path("/tmp/repo"),
                 message=malicious_message,
-                user_email="attacker@hacker.com"
+                user_email="attacker@hacker.com",
             )
 
             # Extract commit message from first call (git commit)
@@ -1363,9 +1252,15 @@ Malicious content"""
             lines = actual_message.split("\n")
             author_lines = [line for line in lines if line.startswith("Actual-Author:")]
 
-            assert len(author_lines) == 1, "Multiple Actual-Author lines detected - injection vulnerability!"
-            assert "attacker@hacker.com" in author_lines[0], "Wrong author in Actual-Author line"
-            assert "admin@victim.com" not in author_lines[0], "Injected Actual-Author line accepted!"
+            assert (
+                len(author_lines) == 1
+            ), "Multiple Actual-Author lines detected - injection vulnerability!"
+            assert (
+                "attacker@hacker.com" in author_lines[0]
+            ), "Wrong author in Actual-Author line"
+            assert (
+                "admin@victim.com" not in author_lines[0]
+            ), "Injected Actual-Author line accepted!"
 
     def test_commit_uses_git_trailers_format(self, service):
         """Test commit message uses RFC Git trailers format (not custom AUTHOR prefix)."""
@@ -1373,14 +1268,16 @@ Malicious content"""
             # Three calls: git commit, git rev-parse HEAD, git show -s --format=%ce HEAD
             mock_run.side_effect = [
                 Mock(returncode=0, stdout="[master abc1234] Test", stderr=""),
-                Mock(returncode=0, stdout="abc1234567890abcdef1234567890abcdef12345", stderr=""),
-                Mock(returncode=0, stdout="repo-committer@example.com", stderr="")
+                Mock(
+                    returncode=0,
+                    stdout="abc1234567890abcdef1234567890abcdef12345",
+                    stderr="",
+                ),
+                Mock(returncode=0, stdout="repo-committer@example.com", stderr=""),
             ]
 
             service.git_commit(
-                Path("/tmp/repo"),
-                message="User message",
-                user_email="user@example.com"
+                Path("/tmp/repo"), message="User message", user_email="user@example.com"
             )
 
             # Extract commit message from first call (git commit)
@@ -1388,9 +1285,15 @@ Malicious content"""
             commit_msg_index = first_call_args.index("-m") + 1
             actual_message = first_call_args[commit_msg_index]
 
-            assert "Actual-Author: user@example.com" in actual_message, "Missing Git trailer: Actual-Author"
-            assert "Committed-Via: CIDX API" in actual_message, "Missing Git trailer: Committed-Via"
-            assert not actual_message.startswith("AUTHOR:"), "Using old AUTHOR prefix instead of Git trailers"
+            assert (
+                "Actual-Author: user@example.com" in actual_message
+            ), "Missing Git trailer: Actual-Author"
+            assert (
+                "Committed-Via: CIDX API" in actual_message
+            ), "Missing Git trailer: Committed-Via"
+            assert not actual_message.startswith(
+                "AUTHOR:"
+            ), "Using old AUTHOR prefix instead of Git trailers"
 
 
 class TestIssue5InputValidationMissing:
@@ -1405,9 +1308,7 @@ class TestIssue5InputValidationMissing:
 
             with pytest.raises(ValueError) as exc_info:
                 service.git_commit(
-                    Path("/tmp/repo"),
-                    message="Test",
-                    user_email=malicious_email
+                    Path("/tmp/repo"), message="Test", user_email=malicious_email
                 )
 
             assert "Invalid email format" in str(exc_info.value)
@@ -1424,20 +1325,14 @@ class TestIssue5InputValidationMissing:
                     Path("/tmp/repo"),
                     message="Test",
                     user_email="valid@example.com",
-                    user_name=malicious_name
+                    user_name=malicious_name,
                 )
 
             assert "Invalid user name format" in str(exc_info.value)
 
     def test_user_name_validation_regex(self, service):
         """Test user_name must match alphanumeric + space/hyphen/underscore only."""
-        valid_names = [
-            "John Doe",
-            "test-user",
-            "user_name",
-            "User123",
-            "Test-User_123"
-        ]
+        valid_names = ["John Doe", "test-user", "user_name", "User123", "Test-User_123"]
 
         invalid_names = [
             "User; rm -rf /",
@@ -1456,7 +1351,7 @@ class TestIssue5InputValidationMissing:
                         Path("/tmp/repo"),
                         message="Test",
                         user_email="valid@example.com",
-                        user_name=name
+                        user_name=name,
                     )
                 except ValueError:
                     pytest.fail(f"Valid name rejected: {name}")
@@ -1467,7 +1362,7 @@ class TestIssue5InputValidationMissing:
                         Path("/tmp/repo"),
                         message="Test",
                         user_email="valid@example.com",
-                        user_name=name
+                        user_name=name,
                     )
 
 
@@ -1479,7 +1374,7 @@ class TestIssue3EmailValidationInsufficient:
         invalid_emails = [
             "user@domain@second.com",
             "user@@domain.com",
-            "@user@domain.com"
+            "@user@domain.com",
         ]
 
         for email in invalid_emails:
@@ -1488,11 +1383,7 @@ class TestIssue3EmailValidationInsufficient:
 
     def test_email_validation_rejects_consecutive_dots(self, service):
         """Test email validation rejects consecutive dots in domain."""
-        invalid_emails = [
-            "user@domain..com",
-            "user@..domain.com",
-            "user@domain.com.."
-        ]
+        invalid_emails = ["user@domain..com", "user@..domain.com", "user@domain.com.."]
 
         for email in invalid_emails:
             with pytest.raises(ValueError, match="Invalid email format"):
@@ -1500,11 +1391,7 @@ class TestIssue3EmailValidationInsufficient:
 
     def test_email_validation_rejects_leading_trailing_dots(self, service):
         """Test email validation rejects leading/trailing dots in domain."""
-        invalid_emails = [
-            "user@.domain.com",
-            "user@domain.com.",
-            "user@.domain.com."
-        ]
+        invalid_emails = ["user@.domain.com", "user@domain.com.", "user@.domain.com."]
 
         for email in invalid_emails:
             with pytest.raises(ValueError, match="Invalid email format"):
@@ -1589,7 +1476,9 @@ class TestIssue1ThreadSafetyMissing:
 
         assert len(errors) == 0, f"Thread-safety errors: {errors}"
         assert len(tokens) == num_threads, "Lost tokens due to race condition"
-        assert len(set(tokens)) == num_threads, "Duplicate tokens generated (race condition)"
+        assert (
+            len(set(tokens)) == num_threads
+        ), "Duplicate tokens generated (race condition)"
 
     def test_token_validation_thread_safe(self, service):
         """Test concurrent token validation is thread-safe (exactly 1 succeeds)."""
@@ -1617,7 +1506,9 @@ class TestIssue1ThreadSafetyMissing:
 
         assert len(errors) == 0, f"Thread-safety errors: {errors}"
         assert len(validation_results) == num_threads
-        assert sum(validation_results) == 1, f"Expected 1 success, got {sum(validation_results)} (race condition)"
+        assert (
+            sum(validation_results) == 1
+        ), f"Expected 1 success, got {sum(validation_results)} (race condition)"
 
     def test_token_dict_concurrent_access_no_corruption(self, service):
         """Test concurrent token operations don't corrupt internal state."""
@@ -1642,13 +1533,16 @@ class TestIssue1ThreadSafetyMissing:
                 errors.append((op_id, e))
 
         with ThreadPoolExecutor(max_workers=CONCURRENT_THREADS_MEDIUM) as executor:
-            futures = [executor.submit(mixed_operations, i) for i in range(num_operations)]
+            futures = [
+                executor.submit(mixed_operations, i) for i in range(num_operations)
+            ]
             for future in futures:
                 future.result()
 
         assert len(errors) == 0, f"Thread-safety errors: {errors}"
         # Check token storage is TTLCache (not corrupted)
         from cachetools import TTLCache
+
         assert isinstance(service._tokens, TTLCache), "Token storage corrupted"
 
 
@@ -1659,6 +1553,7 @@ class TestIssue2MemoryLeakInTokens:
         """Test expired tokens are automatically removed from memory."""
         # Use short TTL for fast testing (1 second instead of 5 minutes)
         from cachetools import TTLCache
+
         service._tokens = TTLCache(maxsize=10000, ttl=1, timer=time.time)
 
         tokens = []
@@ -1674,13 +1569,18 @@ class TestIssue2MemoryLeakInTokens:
         # Trigger lazy expiration by accessing cache (TTLCache expires items on access)
         _ = list(service._tokens.keys())
 
-        assert len(service._tokens) == 0, f"Memory leak: {len(service._tokens)} expired tokens not cleaned up"
+        assert (
+            len(service._tokens) == 0
+        ), f"Memory leak: {len(service._tokens)} expired tokens not cleaned up"
 
     def test_token_storage_uses_ttl_cache(self, service):
         """Test token storage uses cachetools.TTLCache for auto-expiration."""
         try:
             from cachetools import TTLCache
-            assert isinstance(service._tokens, TTLCache), "Token storage must use TTLCache to prevent memory leak"
+
+            assert isinstance(
+                service._tokens, TTLCache
+            ), "Token storage must use TTLCache to prevent memory leak"
         except ImportError:
             pytest.fail("cachetools library not installed (required for TTLCache)")
 
@@ -1688,9 +1588,10 @@ class TestIssue2MemoryLeakInTokens:
         """Test tokens expire automatically without requiring manual cleanup."""
         # Use short TTL for fast testing (1 second instead of 5 minutes)
         from cachetools import TTLCache
+
         service._tokens = TTLCache(maxsize=10000, ttl=1, timer=time.time)
 
-        token = service._generate_confirmation_token("test_op")
+        service._generate_confirmation_token("test_op")
 
         assert len(service._tokens) > 0
 
@@ -1700,7 +1601,9 @@ class TestIssue2MemoryLeakInTokens:
         # Trigger lazy expiration by accessing cache
         _ = list(service._tokens.keys())
 
-        assert len(service._tokens) == 0, "Expired tokens not automatically removed (memory leak)"
+        assert (
+            len(service._tokens) == 0
+        ), "Expired tokens not automatically removed (memory leak)"
 
 
 class TestIssue7InsufficientErrorContext:
@@ -1713,7 +1616,7 @@ class TestIssue7InsufficientErrorContext:
             stderr="fatal: error",
             returncode=1,
             command=["git", "status"],
-            cwd=Path("/tmp/repo")
+            cwd=Path("/tmp/repo"),
         )
 
         assert hasattr(error, "command"), "GitCommandError missing 'command' attribute"
@@ -1728,7 +1631,7 @@ class TestIssue7InsufficientErrorContext:
             stderr="fatal: not a git repository",
             returncode=128,
             command=["git", "log"],
-            cwd=Path("/invalid/path")
+            cwd=Path("/invalid/path"),
         )
 
         assert error.cwd == Path("/invalid/path")
@@ -1740,14 +1643,16 @@ class TestIssue7InsufficientErrorContext:
             stderr="fatal: not a git repository",
             returncode=128,
             command=["git", "status"],
-            cwd=Path("/tmp/not-a-repo")
+            cwd=Path("/tmp/not-a-repo"),
         )
 
         error_str = str(error)
 
         assert "git status" in error_str, "Error message missing command"
         assert "/tmp/not-a-repo" in error_str, "Error message missing cwd"
-        assert "fatal: not a git repository" in error_str, "Error message missing stderr"
+        assert (
+            "fatal: not a git repository" in error_str
+        ), "Error message missing stderr"
         assert "128" in error_str, "Error message missing return code"
 
     def test_git_operations_raise_error_with_full_context(self, service):
@@ -1756,14 +1661,16 @@ class TestIssue7InsufficientErrorContext:
             mock_run.side_effect = subprocess.CalledProcessError(
                 returncode=128,
                 cmd=["git", "status"],
-                stderr="fatal: not a git repository"
+                stderr="fatal: not a git repository",
             )
 
             with pytest.raises(GitCommandError) as exc_info:
                 service.git_status(Path("/tmp/invalid-repo"))
 
             error = exc_info.value
-            assert hasattr(error, "command"), "Raised GitCommandError missing command context"
+            assert hasattr(
+                error, "command"
+            ), "Raised GitCommandError missing command context"
             assert hasattr(error, "cwd"), "Raised GitCommandError missing cwd context"
             assert error.cwd == Path("/tmp/invalid-repo")
 
@@ -1774,7 +1681,9 @@ class TestRESTWrapperMethods:
     @pytest.fixture
     def mock_activated_repo_manager(self):
         """Mock ActivatedRepoManager for testing wrapper methods."""
-        with patch("code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager") as mock_manager_class:
+        with patch(
+            "code_indexer.server.repositories.activated_repo_manager.ActivatedRepoManager"
+        ) as mock_manager_class:
             mock_instance = Mock()
             mock_manager_class.return_value = mock_instance
             yield mock_instance
@@ -1785,31 +1694,31 @@ class TestRESTWrapperMethods:
         """Test stage_files wrapper resolves alias and calls git_stage."""
         # Setup mocks
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_stage') as mock_git_stage:
+        with patch.object(service, "git_stage") as mock_git_stage:
             mock_git_stage.return_value = {
                 "success": True,
-                "staged_files": ["file1.py", "file2.py"]
+                "staged_files": ["file1.py", "file2.py"],
             }
 
             # Call wrapper method
             result = service.stage_files(
                 repo_alias="test-repo",
                 username="testuser",
-                file_paths=["file1.py", "file2.py"]
+                file_paths=["file1.py", "file2.py"],
             )
 
             # Verify alias resolution
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             # Verify git_stage called with correct parameters
             mock_git_stage.assert_called_once_with(
-                Path("/path/to/repo"),
-                file_paths=["file1.py", "file2.py"]
+                Path("/path/to/repo"), file_paths=["file1.py", "file2.py"]
             )
 
             # Verify success field added
@@ -1819,28 +1728,26 @@ class TestRESTWrapperMethods:
     def test_unstage_files_wrapper(self, service, mock_activated_repo_manager):
         """Test unstage_files wrapper resolves alias and calls git_unstage."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_unstage') as mock_git_unstage:
+        with patch.object(service, "git_unstage") as mock_git_unstage:
             mock_git_unstage.return_value = {
                 "success": True,
-                "unstaged_files": ["file1.py"]
+                "unstaged_files": ["file1.py"],
             }
 
             result = service.unstage_files(
-                repo_alias="test-repo",
-                username="testuser",
-                file_paths=["file1.py"]
+                repo_alias="test-repo", username="testuser", file_paths=["file1.py"]
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_unstage.assert_called_once_with(
-                Path("/path/to/repo"),
-                file_paths=["file1.py"]
+                Path("/path/to/repo"), file_paths=["file1.py"]
             )
 
             assert result["success"] is True
@@ -1849,16 +1756,18 @@ class TestRESTWrapperMethods:
     def test_create_commit_wrapper(self, service, mock_activated_repo_manager):
         """Test create_commit wrapper resolves alias and calls git_commit."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_commit') as mock_git_commit:
+        with patch.object(service, "git_commit") as mock_git_commit:
             # Story #641: Committer from repo git config, not service account
             mock_git_commit.return_value = {
                 "success": True,
                 "commit_hash": "abc123",
                 "message": "Test commit",
                 "author": "test@example.com",
-                "committer": "repo-committer@example.com"  # From repo git config
+                "committer": "repo-committer@example.com",  # From repo git config
             }
 
             result = service.create_commit(
@@ -1866,19 +1775,18 @@ class TestRESTWrapperMethods:
                 username="testuser",
                 message="Test commit",
                 user_email="test@example.com",
-                user_name="Test User"
+                user_name="Test User",
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_commit.assert_called_once_with(
                 Path("/path/to/repo"),
                 message="Test commit",
                 user_email="test@example.com",
-                user_name="Test User"
+                user_name="Test User",
             )
 
             assert result["success"] is True
@@ -1889,30 +1797,26 @@ class TestRESTWrapperMethods:
     def test_push_to_remote_wrapper(self, service, mock_activated_repo_manager):
         """Test push_to_remote wrapper resolves alias and calls git_push."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_push') as mock_git_push:
-            mock_git_push.return_value = {
-                "success": True,
-                "pushed_commits": 2
-            }
+        with patch.object(service, "git_push") as mock_git_push:
+            mock_git_push.return_value = {"success": True, "pushed_commits": 2}
 
             result = service.push_to_remote(
                 repo_alias="test-repo",
                 username="testuser",
                 remote="origin",
-                branch="main"
+                branch="main",
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_push.assert_called_once_with(
-                Path("/path/to/repo"),
-                remote="origin",
-                branch="main"
+                Path("/path/to/repo"), remote="origin", branch="main"
             )
 
             assert result["success"] is True
@@ -1921,31 +1825,30 @@ class TestRESTWrapperMethods:
     def test_pull_from_remote_wrapper(self, service, mock_activated_repo_manager):
         """Test pull_from_remote wrapper resolves alias and calls git_pull."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_pull') as mock_git_pull:
+        with patch.object(service, "git_pull") as mock_git_pull:
             mock_git_pull.return_value = {
                 "success": True,
                 "updated_files": 3,
-                "conflicts": []
+                "conflicts": [],
             }
 
             result = service.pull_from_remote(
                 repo_alias="test-repo",
                 username="testuser",
                 remote="origin",
-                branch="main"
+                branch="main",
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_pull.assert_called_once_with(
-                Path("/path/to/repo"),
-                remote="origin",
-                branch="main"
+                Path("/path/to/repo"), remote="origin", branch="main"
             )
 
             assert result["success"] is True
@@ -1954,28 +1857,26 @@ class TestRESTWrapperMethods:
     def test_fetch_from_remote_wrapper(self, service, mock_activated_repo_manager):
         """Test fetch_from_remote wrapper resolves alias and calls git_fetch."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_fetch') as mock_git_fetch:
+        with patch.object(service, "git_fetch") as mock_git_fetch:
             mock_git_fetch.return_value = {
                 "success": True,
-                "fetched_refs": ["origin/main"]
+                "fetched_refs": ["origin/main"],
             }
 
             result = service.fetch_from_remote(
-                repo_alias="test-repo",
-                username="testuser",
-                remote="origin"
+                repo_alias="test-repo", username="testuser", remote="origin"
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_fetch.assert_called_once_with(
-                Path("/path/to/repo"),
-                remote="origin"
+                Path("/path/to/repo"), remote="origin"
             )
 
             assert result["success"] is True
@@ -1983,126 +1884,131 @@ class TestRESTWrapperMethods:
 
     # F5: Recovery Operations Wrapper Methods
 
-    def test_reset_repository_wrapper_hard_requires_token(self, service, mock_activated_repo_manager):
+    def test_reset_repository_wrapper_hard_requires_token(
+        self, service, mock_activated_repo_manager
+    ):
         """Test reset_repository wrapper handles confirmation token for hard reset."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_reset') as mock_git_reset:
+        with patch.object(service, "git_reset") as mock_git_reset:
             mock_git_reset.return_value = {
                 "requires_confirmation": True,
-                "token": "ABC123"
+                "token": "ABC123",
             }
 
             result = service.reset_repository(
-                repo_alias="test-repo",
-                username="testuser",
-                mode="hard"
+                repo_alias="test-repo", username="testuser", mode="hard"
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_reset.assert_called_once_with(
                 Path("/path/to/repo"),
                 mode="hard",
                 commit_hash=None,
-                confirmation_token=None
+                confirmation_token=None,
             )
 
             assert result["requires_confirmation"] is True
             assert "token" in result
 
-    def test_reset_repository_wrapper_hard_with_token(self, service, mock_activated_repo_manager):
+    def test_reset_repository_wrapper_hard_with_token(
+        self, service, mock_activated_repo_manager
+    ):
         """Test reset_repository wrapper passes confirmation token to git_reset."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_reset') as mock_git_reset:
+        with patch.object(service, "git_reset") as mock_git_reset:
             mock_git_reset.return_value = {
                 "success": True,
                 "reset_mode": "hard",
-                "target_commit": "HEAD"
+                "target_commit": "HEAD",
             }
 
             result = service.reset_repository(
                 repo_alias="test-repo",
                 username="testuser",
                 mode="hard",
-                confirmation_token="ABC123"
+                confirmation_token="ABC123",
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_reset.assert_called_once_with(
                 Path("/path/to/repo"),
                 mode="hard",
                 commit_hash=None,
-                confirmation_token="ABC123"
+                confirmation_token="ABC123",
             )
 
             assert result["success"] is True
             assert result["reset_mode"] == "hard"
 
-    def test_clean_repository_wrapper_requires_token(self, service, mock_activated_repo_manager):
+    def test_clean_repository_wrapper_requires_token(
+        self, service, mock_activated_repo_manager
+    ):
         """Test clean_repository wrapper handles confirmation token requirement."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_clean') as mock_git_clean:
+        with patch.object(service, "git_clean") as mock_git_clean:
             mock_git_clean.return_value = {
                 "requires_confirmation": True,
-                "token": "XYZ789"
+                "token": "XYZ789",
             }
 
             result = service.clean_repository(
-                repo_alias="test-repo",
-                username="testuser"
+                repo_alias="test-repo", username="testuser"
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_clean.assert_called_once_with(
-                Path("/path/to/repo"),
-                confirmation_token=None
+                Path("/path/to/repo"), confirmation_token=None
             )
 
             assert result["requires_confirmation"] is True
             assert "token" in result
 
-    def test_clean_repository_wrapper_with_token(self, service, mock_activated_repo_manager):
+    def test_clean_repository_wrapper_with_token(
+        self, service, mock_activated_repo_manager
+    ):
         """Test clean_repository wrapper passes confirmation token to git_clean."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_clean') as mock_git_clean:
+        with patch.object(service, "git_clean") as mock_git_clean:
             mock_git_clean.return_value = {
                 "success": True,
-                "removed_files": ["temp.txt"]
+                "removed_files": ["temp.txt"],
             }
 
             result = service.clean_repository(
-                repo_alias="test-repo",
-                username="testuser",
-                confirmation_token="XYZ789"
+                repo_alias="test-repo", username="testuser", confirmation_token="XYZ789"
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_clean.assert_called_once_with(
-                Path("/path/to/repo"),
-                confirmation_token="XYZ789"
+                Path("/path/to/repo"), confirmation_token="XYZ789"
             )
 
             assert result["success"] is True
@@ -2111,27 +2017,20 @@ class TestRESTWrapperMethods:
     def test_abort_merge_wrapper(self, service, mock_activated_repo_manager):
         """Test abort_merge wrapper resolves alias and calls git_merge_abort."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_merge_abort') as mock_git_merge_abort:
-            mock_git_merge_abort.return_value = {
-                "success": True,
-                "aborted": True
-            }
+        with patch.object(service, "git_merge_abort") as mock_git_merge_abort:
+            mock_git_merge_abort.return_value = {"success": True, "aborted": True}
 
-            result = service.abort_merge(
-                repo_alias="test-repo",
-                username="testuser"
-            )
+            result = service.abort_merge(repo_alias="test-repo", username="testuser")
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
-            mock_git_merge_abort.assert_called_once_with(
-                Path("/path/to/repo")
-            )
+            mock_git_merge_abort.assert_called_once_with(Path("/path/to/repo"))
 
             assert result["success"] is True
             assert result["aborted"] is True
@@ -2139,28 +2038,26 @@ class TestRESTWrapperMethods:
     def test_checkout_file_wrapper(self, service, mock_activated_repo_manager):
         """Test checkout_file wrapper resolves alias and calls git_checkout_file."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_checkout_file') as mock_git_checkout_file:
+        with patch.object(service, "git_checkout_file") as mock_git_checkout_file:
             mock_git_checkout_file.return_value = {
                 "success": True,
-                "restored_file": "file1.py"
+                "restored_file": "file1.py",
             }
 
             result = service.checkout_file(
-                repo_alias="test-repo",
-                username="testuser",
-                file_paths=["file1.py"]
+                repo_alias="test-repo", username="testuser", file_paths=["file1.py"]
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_checkout_file.assert_called_once_with(
-                Path("/path/to/repo"),
-                file_path="file1.py"
+                Path("/path/to/repo"), file_path="file1.py"
             )
 
             assert result["success"] is True
@@ -2171,28 +2068,24 @@ class TestRESTWrapperMethods:
     def test_list_branches_wrapper(self, service, mock_activated_repo_manager):
         """Test list_branches wrapper resolves alias and calls git_branch_list."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_branch_list') as mock_git_branch_list:
+        with patch.object(service, "git_branch_list") as mock_git_branch_list:
             mock_git_branch_list.return_value = {
                 "current": "main",
                 "local": ["main", "feature"],
-                "remote": ["origin/main"]
+                "remote": ["origin/main"],
             }
 
-            result = service.list_branches(
-                repo_alias="test-repo",
-                username="testuser"
-            )
+            result = service.list_branches(repo_alias="test-repo", username="testuser")
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
-            mock_git_branch_list.assert_called_once_with(
-                Path("/path/to/repo")
-            )
+            mock_git_branch_list.assert_called_once_with(Path("/path/to/repo"))
 
             assert result["success"] is True
             assert result["current"] == "main"
@@ -2200,28 +2093,28 @@ class TestRESTWrapperMethods:
     def test_create_branch_wrapper(self, service, mock_activated_repo_manager):
         """Test create_branch wrapper resolves alias and calls git_branch_create."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_branch_create') as mock_git_branch_create:
+        with patch.object(service, "git_branch_create") as mock_git_branch_create:
             mock_git_branch_create.return_value = {
                 "success": True,
-                "created_branch": "feature-branch"
+                "created_branch": "feature-branch",
             }
 
             result = service.create_branch(
                 repo_alias="test-repo",
                 username="testuser",
-                branch_name="feature-branch"
+                branch_name="feature-branch",
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_branch_create.assert_called_once_with(
-                Path("/path/to/repo"),
-                branch_name="feature-branch"
+                Path("/path/to/repo"), branch_name="feature-branch"
             )
 
             assert result["success"] is True
@@ -2230,92 +2123,96 @@ class TestRESTWrapperMethods:
     def test_switch_branch_wrapper(self, service, mock_activated_repo_manager):
         """Test switch_branch wrapper resolves alias and calls git_branch_switch."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_branch_switch') as mock_git_branch_switch:
+        with patch.object(service, "git_branch_switch") as mock_git_branch_switch:
             mock_git_branch_switch.return_value = {
                 "success": True,
                 "current_branch": "feature-branch",
-                "previous_branch": "main"
+                "previous_branch": "main",
             }
 
             result = service.switch_branch(
                 repo_alias="test-repo",
                 username="testuser",
-                branch_name="feature-branch"
+                branch_name="feature-branch",
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_branch_switch.assert_called_once_with(
-                Path("/path/to/repo"),
-                branch_name="feature-branch"
+                Path("/path/to/repo"), branch_name="feature-branch"
             )
 
             assert result["success"] is True
             assert result["current_branch"] == "feature-branch"
 
-    def test_delete_branch_wrapper_requires_token(self, service, mock_activated_repo_manager):
+    def test_delete_branch_wrapper_requires_token(
+        self, service, mock_activated_repo_manager
+    ):
         """Test delete_branch wrapper handles confirmation token requirement."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_branch_delete') as mock_git_branch_delete:
+        with patch.object(service, "git_branch_delete") as mock_git_branch_delete:
             mock_git_branch_delete.return_value = {
                 "requires_confirmation": True,
-                "token": "DEL123"
+                "token": "DEL123",
             }
 
             result = service.delete_branch(
-                repo_alias="test-repo",
-                username="testuser",
-                branch_name="old-feature"
+                repo_alias="test-repo", username="testuser", branch_name="old-feature"
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_branch_delete.assert_called_once_with(
                 Path("/path/to/repo"),
                 branch_name="old-feature",
-                confirmation_token=None
+                confirmation_token=None,
             )
 
             assert result["requires_confirmation"] is True
             assert "token" in result
 
-    def test_delete_branch_wrapper_with_token(self, service, mock_activated_repo_manager):
+    def test_delete_branch_wrapper_with_token(
+        self, service, mock_activated_repo_manager
+    ):
         """Test delete_branch wrapper passes confirmation token to git_branch_delete."""
         service.activated_repo_manager = mock_activated_repo_manager
-        mock_activated_repo_manager.get_activated_repo_path.return_value = "/path/to/repo"
+        mock_activated_repo_manager.get_activated_repo_path.return_value = (
+            "/path/to/repo"
+        )
 
-        with patch.object(service, 'git_branch_delete') as mock_git_branch_delete:
+        with patch.object(service, "git_branch_delete") as mock_git_branch_delete:
             mock_git_branch_delete.return_value = {
                 "success": True,
-                "deleted_branch": "old-feature"
+                "deleted_branch": "old-feature",
             }
 
             result = service.delete_branch(
                 repo_alias="test-repo",
                 username="testuser",
                 branch_name="old-feature",
-                confirmation_token="DEL123"
+                confirmation_token="DEL123",
             )
 
             mock_activated_repo_manager.get_activated_repo_path.assert_called_once_with(
-                username="testuser",
-                user_alias="test-repo"
+                username="testuser", user_alias="test-repo"
             )
 
             mock_git_branch_delete.assert_called_once_with(
                 Path("/path/to/repo"),
                 branch_name="old-feature",
-                confirmation_token="DEL123"
+                confirmation_token="DEL123",
             )
 
             assert result["success"] is True

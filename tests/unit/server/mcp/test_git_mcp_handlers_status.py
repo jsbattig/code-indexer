@@ -47,9 +47,7 @@ def mock_git_service():
 @pytest.fixture
 def mock_repo_manager():
     """Create mock ActivatedRepoManager."""
-    with patch(
-        "code_indexer.server.mcp.handlers.ActivatedRepoManager"
-    ) as MockClass:
+    with patch("code_indexer.server.mcp.handlers.ActivatedRepoManager") as MockClass:
         mock_instance = MockClass.return_value
         mock_instance.get_activated_repo_path.return_value = Path("/tmp/test-repo")
         yield mock_instance
@@ -65,7 +63,9 @@ class TestGitStatusHandler:
     """Test git_status MCP handler."""
 
     @pytest.mark.asyncio
-    async def test_git_status_success(self, mock_user, mock_git_service, mock_repo_manager):
+    async def test_git_status_success(
+        self, mock_user, mock_git_service, mock_repo_manager
+    ):
         """Test successful git status operation."""
         from code_indexer.server.mcp import handlers
 
@@ -135,7 +135,9 @@ class TestGitDiffHandler:
     """Test git_diff MCP handler."""
 
     @pytest.mark.asyncio
-    async def test_git_diff_success(self, mock_user, mock_git_service, mock_repo_manager):
+    async def test_git_diff_success(
+        self, mock_user, mock_git_service, mock_repo_manager
+    ):
         """Test successful git diff operation."""
         from code_indexer.server.mcp import handlers
 
@@ -193,7 +195,9 @@ class TestGitLogHandler:
     """Test git_log MCP handler."""
 
     @pytest.mark.asyncio
-    async def test_git_log_success(self, mock_user, mock_git_service, mock_repo_manager):
+    async def test_git_log_success(
+        self, mock_user, mock_git_service, mock_repo_manager
+    ):
         """Test successful git log operation."""
         from code_indexer.server.mcp import handlers
 
@@ -278,18 +282,20 @@ class TestGitStageHandler:
     """Test git_stage MCP handler (F3: Staging/Commit)."""
 
     @pytest.mark.asyncio
-    async def test_git_stage_success(self, mock_user, mock_git_service, mock_repo_manager):
+    async def test_git_stage_success(
+        self, mock_user, mock_git_service, mock_repo_manager
+    ):
         """Test successful git stage operation."""
         from code_indexer.server.mcp import handlers
 
         mock_git_service.git_stage.return_value = {
             "success": True,
-            "staged_files": ["file1.py", "file2.py"]
+            "staged_files": ["file1.py", "file2.py"],
         }
 
         params = {
             "repository_alias": "test-repo",
-            "file_paths": ["file1.py", "file2.py"]
+            "file_paths": ["file1.py", "file2.py"],
         }
 
         mcp_response = await handlers.git_stage(params, mock_user)
@@ -335,10 +341,7 @@ class TestGitStageHandler:
         )
         mock_git_service.git_stage.side_effect = error
 
-        params = {
-            "repository_alias": "test-repo",
-            "file_paths": ["nonexistent.py"]
-        }
+        params = {"repository_alias": "test-repo", "file_paths": ["nonexistent.py"]}
 
         mcp_response = await handlers.git_stage(params, mock_user)
         data = _extract_response_data(mcp_response)
@@ -360,13 +363,10 @@ class TestGitUnstageHandler:
 
         mock_git_service.git_unstage.return_value = {
             "success": True,
-            "unstaged_files": ["file1.py"]
+            "unstaged_files": ["file1.py"],
         }
 
-        params = {
-            "repository_alias": "test-repo",
-            "file_paths": ["file1.py"]
-        }
+        params = {"repository_alias": "test-repo", "file_paths": ["file1.py"]}
 
         mcp_response = await handlers.git_unstage(params, mock_user)
         data = _extract_response_data(mcp_response)
@@ -404,10 +404,7 @@ class TestGitUnstageHandler:
         )
         mock_git_service.git_unstage.side_effect = error
 
-        params = {
-            "repository_alias": "test-repo",
-            "file_paths": ["file.py"]
-        }
+        params = {"repository_alias": "test-repo", "file_paths": ["file.py"]}
 
         mcp_response = await handlers.git_unstage(params, mock_user)
         data = _extract_response_data(mcp_response)
@@ -428,19 +425,18 @@ class TestGitCommitHandler:
         from unittest.mock import patch
 
         # Mock User with email attribute using patch.object to add dynamic attribute
-        with patch.object(type(mock_user), 'email', new="testuser@example.com", create=True):
+        with patch.object(
+            type(mock_user), "email", new="testuser@example.com", create=True
+        ):
             mock_git_service.git_commit.return_value = {
                 "success": True,
                 "commit_hash": "abc123",
                 "message": "Test commit",
                 "author": "testuser@example.com",
-                "committer": "service@cidx.local"
+                "committer": "service@cidx.local",
             }
 
-            params = {
-                "repository_alias": "test-repo",
-                "message": "Test commit"
-            }
+            params = {"repository_alias": "test-repo", "message": "Test commit"}
 
             mcp_response = await handlers.git_commit(params, mock_user)
             data = _extract_response_data(mcp_response)
@@ -454,7 +450,7 @@ class TestGitCommitHandler:
                 Path("/tmp/test-repo"),
                 "Test commit",
                 "testuser@example.com",
-                "testuser"  # Derived from username
+                "testuser",  # Derived from username
             )
 
     @pytest.mark.asyncio
@@ -478,7 +474,9 @@ class TestGitCommitHandler:
         from unittest.mock import patch
 
         # Mock User with email attribute using patch.object
-        with patch.object(type(mock_user), 'email', new="testuser@example.com", create=True):
+        with patch.object(
+            type(mock_user), "email", new="testuser@example.com", create=True
+        ):
             error = GitCommandError(
                 message="git commit failed",
                 stderr="fatal: nothing to commit",
@@ -487,10 +485,7 @@ class TestGitCommitHandler:
             )
             mock_git_service.git_commit.side_effect = error
 
-            params = {
-                "repository_alias": "test-repo",
-                "message": "Empty commit"
-            }
+            params = {"repository_alias": "test-repo", "message": "Empty commit"}
 
             mcp_response = await handlers.git_commit(params, mock_user)
             data = _extract_response_data(mcp_response)

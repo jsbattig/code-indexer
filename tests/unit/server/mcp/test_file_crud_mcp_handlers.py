@@ -127,7 +127,9 @@ class TestHandleCreateFile:
         assert "File already exists" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_create_file_permission_denied(self, mock_user, mock_file_crud_service):
+    async def test_create_file_permission_denied(
+        self, mock_user, mock_file_crud_service
+    ):
         """Test create_file with invalid path (security violation)."""
         from code_indexer.server.mcp import handlers
 
@@ -149,7 +151,9 @@ class TestHandleCreateFile:
         assert "Permission" in data["error"] or ".git" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_create_file_crud_operation_error(self, mock_user, mock_file_crud_service):
+    async def test_create_file_crud_operation_error(
+        self, mock_user, mock_file_crud_service
+    ):
         """Test create_file with general CRUD operation failure."""
         from code_indexer.server.mcp import handlers
 
@@ -171,7 +175,9 @@ class TestHandleCreateFile:
         assert "Failed to write file" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_create_file_repository_not_activated(self, mock_user, mock_file_crud_service):
+    async def test_create_file_repository_not_activated(
+        self, mock_user, mock_file_crud_service
+    ):
         """Test create_file when repository is not activated."""
         from code_indexer.server.mcp import handlers
 
@@ -371,7 +377,9 @@ class TestHandleDeleteFile:
     """Test handle_delete_file MCP handler."""
 
     @pytest.mark.asyncio
-    async def test_delete_file_success_without_hash(self, mock_user, mock_file_crud_service):
+    async def test_delete_file_success_without_hash(
+        self, mock_user, mock_file_crud_service
+    ):
         """Test successful file deletion without hash validation."""
         from code_indexer.server.mcp import handlers
 
@@ -405,7 +413,9 @@ class TestHandleDeleteFile:
         )
 
     @pytest.mark.asyncio
-    async def test_delete_file_success_with_hash(self, mock_user, mock_file_crud_service):
+    async def test_delete_file_success_with_hash(
+        self, mock_user, mock_file_crud_service
+    ):
         """Test successful file deletion with hash validation."""
         from code_indexer.server.mcp import handlers
 
@@ -494,7 +504,9 @@ class TestHandleDeleteFile:
         assert "hash mismatch" in data["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_delete_file_permission_denied(self, mock_user, mock_file_crud_service):
+    async def test_delete_file_permission_denied(
+        self, mock_user, mock_file_crud_service
+    ):
         """Test delete_file with invalid path (security violation)."""
         from code_indexer.server.mcp import handlers
 
@@ -515,7 +527,9 @@ class TestHandleDeleteFile:
         assert "Permission" in data["error"] or ".git" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_delete_file_crud_operation_error(self, mock_user, mock_file_crud_service):
+    async def test_delete_file_crud_operation_error(
+        self, mock_user, mock_file_crud_service
+    ):
         """Test delete_file with general CRUD operation failure."""
         from code_indexer.server.mcp import handlers
 

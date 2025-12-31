@@ -8,8 +8,8 @@ memory exhaustion and FastAPI event loop blocking.
 import asyncio
 import logging
 import subprocess
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
@@ -105,9 +105,7 @@ class SubprocessExecutor:
 
         except asyncio.TimeoutError:
             # Asyncio timeout exceeded (should not happen if subprocess timeout works)
-            logger.warning(
-                f"Asyncio timeout exceeded for command: {' '.join(command)}"
-            )
+            logger.warning(f"Asyncio timeout exceeded for command: {' '.join(command)}")
             return SearchExecutionResult(
                 status=ExecutionStatus.TIMEOUT,
                 output_file=output_file_path,
@@ -201,7 +199,7 @@ class SubprocessExecutor:
                         error_message=f"Command timed out after {timeout_seconds} seconds",
                     )
 
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             return SearchExecutionResult(
                 status=ExecutionStatus.ERROR,
                 output_file=output_file_path,

@@ -12,10 +12,8 @@ import json
 import os
 import subprocess
 import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from code_indexer.server.repositories.golden_repo_manager import (
     GoldenRepo,
@@ -66,9 +64,7 @@ class BaseCanonicalPathTest:
 
     def _init_git_repo_with_commit(self, path: str) -> None:
         """Initialize git repo and create initial commit."""
-        subprocess.run(
-            ["git", "init"], cwd=path, check=True, capture_output=True
-        )
+        subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=path,
@@ -197,9 +193,7 @@ class TestBranchServiceUsesCanonicalPath(BaseCanonicalPathTest):
     def setup_method(self):
         """Create manager and branch service."""
         super().setup_method()
-        self.branch_service = GoldenRepoBranchService(
-            golden_repo_manager=self.manager
-        )
+        self.branch_service = GoldenRepoBranchService(golden_repo_manager=self.manager)
 
     def test_branch_service_uses_canonical_path_for_versioned_repos(self):
         """

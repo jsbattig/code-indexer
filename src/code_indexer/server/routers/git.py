@@ -45,13 +45,11 @@ from code_indexer.server.routers.git_models import (
 logger = logging.getLogger(__name__)
 
 # Create router with prefix and tags
-router = APIRouter(
-    prefix="/api/v1/repos/{alias}/git",
-    tags=["git"]
-)
+router = APIRouter(prefix="/api/v1/repos/{alias}/git", tags=["git"])
 
 
 # Git Status/Inspection Endpoints
+
 
 @router.get(
     "/status",
@@ -60,14 +58,13 @@ router = APIRouter(
     responses={
         200: {"description": "Git status retrieved successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Get git status",
-    description="Get the git status of the activated repository"
+    description="Get the git status of the activated repository",
 )
 async def git_status(
-    alias: str,
-    user: User = Depends(get_current_user)
+    alias: str, user: User = Depends(get_current_user)
 ) -> GitStatusResponse:
     """Get git status of the repository."""
     try:
@@ -81,7 +78,7 @@ async def git_status(
         logger.error(f"Git status failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -92,19 +89,23 @@ async def git_status(
     responses={
         200: {"description": "Git diff retrieved successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Get git diff",
-    description="Get the git diff for the activated repository"
+    description="Get the git diff for the activated repository",
 )
 async def git_diff(
     alias: str,
-    context_lines: Optional[int] = Query(None, description="Number of context lines to show"),
-    from_revision: Optional[str] = Query(None, description="Starting revision for diff"),
+    context_lines: Optional[int] = Query(
+        None, description="Number of context lines to show"
+    ),
+    from_revision: Optional[str] = Query(
+        None, description="Starting revision for diff"
+    ),
     to_revision: Optional[str] = Query(None, description="Ending revision for diff"),
     path: Optional[str] = Query(None, description="Specific path to diff"),
     stat_only: Optional[bool] = Query(None, description="Show only file statistics"),
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
 ) -> GitDiffResponse:
     """Get git diff of the repository."""
     try:
@@ -131,7 +132,7 @@ async def git_diff(
         logger.error(f"Git diff failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -142,22 +143,32 @@ async def git_diff(
     responses={
         200: {"description": "Git log retrieved successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Get git log",
-    description="Get the git commit log for the activated repository"
+    description="Get the git commit log for the activated repository",
 )
 async def git_log(
     alias: str,
-    limit: Optional[int] = Query(None, description="Maximum number of commits to return"),
+    limit: Optional[int] = Query(
+        None, description="Maximum number of commits to return"
+    ),
     path: Optional[str] = Query(None, description="Filter commits affecting this path"),
     author: Optional[str] = Query(None, description="Filter commits by author"),
-    since: Optional[str] = Query(None, description="Include only commits after this date"),
-    until: Optional[str] = Query(None, description="Include only commits before this date"),
+    since: Optional[str] = Query(
+        None, description="Include only commits after this date"
+    ),
+    until: Optional[str] = Query(
+        None, description="Include only commits before this date"
+    ),
     branch: Optional[str] = Query(None, description="Branch to get log from"),
-    aggregation_mode: Optional[str] = Query(None, description="How to aggregate results across repos"),
-    response_format: Optional[str] = Query(None, description="Response format (flat or grouped)"),
-    user: User = Depends(get_current_user)
+    aggregation_mode: Optional[str] = Query(
+        None, description="How to aggregate results across repos"
+    ),
+    response_format: Optional[str] = Query(
+        None, description="Response format (flat or grouped)"
+    ),
+    user: User = Depends(get_current_user),
 ) -> GitLogResponse:
     """Get git log of the repository."""
     try:
@@ -190,11 +201,12 @@ async def git_log(
         logger.error(f"Git log failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
 # Git Staging/Commit Endpoints
+
 
 @router.post(
     "/stage",
@@ -204,23 +216,19 @@ async def git_log(
         200: {"description": "Files staged successfully"},
         400: {"description": "Invalid parameters"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Stage files",
-    description="Stage files for commit in the activated repository"
+    description="Stage files for commit in the activated repository",
 )
 async def git_stage(
-    alias: str,
-    request: GitStageRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitStageRequest, user: User = Depends(get_current_user)
 ) -> GitStageResponse:
     """Stage files for commit."""
     try:
         service = git_operations_service
         result = service.stage_files(
-            repo_alias=alias,
-            file_paths=request.file_paths,
-            username=user.username
+            repo_alias=alias, file_paths=request.file_paths, username=user.username
         )
         return GitStageResponse(**result)
     except FileNotFoundError as e:
@@ -233,7 +241,7 @@ async def git_stage(
         logger.error(f"Git stage failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -244,23 +252,19 @@ async def git_stage(
     responses={
         200: {"description": "Files unstaged successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Unstage files",
-    description="Unstage files in the activated repository"
+    description="Unstage files in the activated repository",
 )
 async def git_unstage(
-    alias: str,
-    request: GitUnstageRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitUnstageRequest, user: User = Depends(get_current_user)
 ) -> GitUnstageResponse:
     """Unstage files."""
     try:
         service = git_operations_service
         result = service.unstage_files(
-            repo_alias=alias,
-            file_paths=request.file_paths,
-            username=user.username
+            repo_alias=alias, file_paths=request.file_paths, username=user.username
         )
         return GitUnstageResponse(**result)
     except FileNotFoundError as e:
@@ -270,7 +274,7 @@ async def git_unstage(
         logger.error(f"Git unstage failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -282,15 +286,13 @@ async def git_unstage(
         201: {"description": "Commit created successfully"},
         400: {"description": "Invalid parameters"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Create commit",
-    description="Create a git commit in the activated repository"
+    description="Create a git commit in the activated repository",
 )
 async def git_commit(
-    alias: str,
-    request: GitCommitRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitCommitRequest, user: User = Depends(get_current_user)
 ) -> GitCommitResponse:
     """Create a git commit."""
     try:
@@ -300,7 +302,7 @@ async def git_commit(
             message=request.message,
             author_name=request.author_name,
             author_email=request.author_email,
-            username=user.username
+            username=user.username,
         )
         return GitCommitResponse(**result)
     except FileNotFoundError as e:
@@ -313,11 +315,12 @@ async def git_commit(
         logger.error(f"Git commit failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
 # Git Remote Endpoints
+
 
 @router.post(
     "/push",
@@ -327,15 +330,13 @@ async def git_commit(
         200: {"description": "Push completed successfully"},
         401: {"description": "Missing or invalid authentication"},
         404: {"description": "Repository not found"},
-        500: {"description": "Network error or push failed"}
+        500: {"description": "Network error or push failed"},
     },
     summary="Push commits",
-    description="Push commits to remote repository"
+    description="Push commits to remote repository",
 )
 async def git_push(
-    alias: str,
-    request: GitPushRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitPushRequest, user: User = Depends(get_current_user)
 ) -> GitPushResponse:
     """Push commits to remote."""
     try:
@@ -344,7 +345,7 @@ async def git_push(
             repo_alias=alias,
             username=user.username,
             remote=request.remote,
-            branch=request.branch
+            branch=request.branch,
         )
         return GitPushResponse(**result)
     except FileNotFoundError as e:
@@ -354,7 +355,7 @@ async def git_push(
         logger.error(f"Git push failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -367,15 +368,13 @@ async def git_push(
         401: {"description": "Missing or invalid authentication"},
         404: {"description": "Repository not found"},
         409: {"description": "Merge conflicts"},
-        500: {"description": "Network error or pull failed"}
+        500: {"description": "Network error or pull failed"},
     },
     summary="Pull commits",
-    description="Pull commits from remote repository"
+    description="Pull commits from remote repository",
 )
 async def git_pull(
-    alias: str,
-    request: GitPullRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitPullRequest, user: User = Depends(get_current_user)
 ) -> GitPullResponse:
     """Pull commits from remote."""
     try:
@@ -384,7 +383,7 @@ async def git_pull(
             repo_alias=alias,
             username=user.username,
             remote=request.remote,
-            branch=request.branch
+            branch=request.branch,
         )
         return GitPullResponse(**result)
     except FileNotFoundError as e:
@@ -394,7 +393,7 @@ async def git_pull(
         logger.error(f"Git pull failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -406,23 +405,19 @@ async def git_pull(
         200: {"description": "Fetch completed successfully"},
         401: {"description": "Missing or invalid authentication"},
         404: {"description": "Repository not found"},
-        500: {"description": "Network error or fetch failed"}
+        500: {"description": "Network error or fetch failed"},
     },
     summary="Fetch from remote",
-    description="Fetch refs and objects from remote repository"
+    description="Fetch refs and objects from remote repository",
 )
 async def git_fetch(
-    alias: str,
-    request: GitFetchRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitFetchRequest, user: User = Depends(get_current_user)
 ) -> GitFetchResponse:
     """Fetch from remote."""
     try:
         service = git_operations_service
         result = service.fetch_from_remote(
-            repo_alias=alias,
-            username=user.username,
-            remote=request.remote
+            repo_alias=alias, username=user.username, remote=request.remote
         )
         return GitFetchResponse(**result)
     except FileNotFoundError as e:
@@ -432,11 +427,12 @@ async def git_fetch(
         logger.error(f"Git fetch failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
 # Git Recovery Endpoints
+
 
 @router.post(
     "/reset",
@@ -447,15 +443,13 @@ async def git_fetch(
         400: {"description": "Invalid parameters"},
         401: {"description": "Missing or invalid authentication"},
         403: {"description": "Missing confirmation token"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Reset repository",
-    description="Reset repository to a specific commit (requires confirmation for hard reset)"
+    description="Reset repository to a specific commit (requires confirmation for hard reset)",
 )
 async def git_reset(
-    alias: str,
-    request: GitResetRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitResetRequest, user: User = Depends(get_current_user)
 ) -> GitResetResponse:
     """Reset repository to a specific state."""
     try:
@@ -465,7 +459,7 @@ async def git_reset(
             username=user.username,
             mode=request.mode,
             commit_hash=request.commit_hash,
-            confirmation_token=request.confirmation_token
+            confirmation_token=request.confirmation_token,
         )
         return GitResetResponse(**result)
     except PermissionError as e:
@@ -481,7 +475,7 @@ async def git_reset(
         logger.error(f"Git reset failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -493,15 +487,15 @@ async def git_reset(
         200: {"description": "Clean completed successfully"},
         401: {"description": "Missing or invalid authentication"},
         403: {"description": "Missing confirmation token"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="Clean untracked files",
-    description="Remove untracked files from repository (requires confirmation)"
+    description="Remove untracked files from repository (requires confirmation)",
 )
 async def git_clean(
     alias: str,
     request: GitCleanRequest = GitCleanRequest(),
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
 ) -> GitCleanResponse:
     """Clean untracked files from repository."""
     try:
@@ -509,7 +503,7 @@ async def git_clean(
         result = service.clean_repository(
             repo_alias=alias,
             username=user.username,
-            confirmation_token=request.confirmation_token
+            confirmation_token=request.confirmation_token,
         )
         return GitCleanResponse(**result)
     except PermissionError as e:
@@ -522,7 +516,7 @@ async def git_clean(
         logger.error(f"Git clean failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -533,14 +527,13 @@ async def git_clean(
     responses={
         200: {"description": "Merge aborted successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found or no merge in progress"}
+        404: {"description": "Repository not found or no merge in progress"},
     },
     summary="Abort merge",
-    description="Abort an in-progress merge operation"
+    description="Abort an in-progress merge operation",
 )
 async def git_merge_abort(
-    alias: str,
-    user: User = Depends(get_current_user)
+    alias: str, user: User = Depends(get_current_user)
 ) -> GitMergeAbortResponse:
     """Abort an in-progress merge."""
     try:
@@ -554,7 +547,7 @@ async def git_merge_abort(
         logger.error(f"Git merge abort failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -565,23 +558,19 @@ async def git_merge_abort(
     responses={
         200: {"description": "File restored successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository or file not found"}
+        404: {"description": "Repository or file not found"},
     },
     summary="Restore file",
-    description="Restore a file to its last committed state"
+    description="Restore a file to its last committed state",
 )
 async def git_checkout_file(
-    alias: str,
-    request: GitCheckoutFileRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitCheckoutFileRequest, user: User = Depends(get_current_user)
 ) -> GitCheckoutFileResponse:
     """Restore a file to its last committed state."""
     try:
         service = git_operations_service
         result = service.checkout_file(
-            repo_alias=alias,
-            file_path=request.file_path,
-            username=user.username
+            repo_alias=alias, file_path=request.file_path, username=user.username
         )
         return GitCheckoutFileResponse(**result)
     except FileNotFoundError as e:
@@ -591,11 +580,12 @@ async def git_checkout_file(
         logger.error(f"Git checkout file failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
 # Git Branch Endpoints
+
 
 @router.get(
     "/branches",
@@ -604,14 +594,13 @@ async def git_checkout_file(
     responses={
         200: {"description": "Branch list retrieved successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository not found"}
+        404: {"description": "Repository not found"},
     },
     summary="List branches",
-    description="List all local and remote branches in the repository"
+    description="List all local and remote branches in the repository",
 )
 async def git_branch_list(
-    alias: str,
-    user: User = Depends(get_current_user)
+    alias: str, user: User = Depends(get_current_user)
 ) -> GitBranchListResponse:
     """List all branches."""
     try:
@@ -625,7 +614,7 @@ async def git_branch_list(
         logger.error(f"Git branch list failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -638,23 +627,19 @@ async def git_branch_list(
         400: {"description": "Invalid parameters"},
         401: {"description": "Missing or invalid authentication"},
         404: {"description": "Repository not found"},
-        409: {"description": "Branch already exists"}
+        409: {"description": "Branch already exists"},
     },
     summary="Create branch",
-    description="Create a new branch in the repository"
+    description="Create a new branch in the repository",
 )
 async def git_branch_create(
-    alias: str,
-    request: GitBranchCreateRequest,
-    user: User = Depends(get_current_user)
+    alias: str, request: GitBranchCreateRequest, user: User = Depends(get_current_user)
 ) -> GitBranchCreateResponse:
     """Create a new branch."""
     try:
         service = git_operations_service
         result = service.create_branch(
-            repo_alias=alias,
-            branch_name=request.branch_name,
-            username=user.username
+            repo_alias=alias, branch_name=request.branch_name, username=user.username
         )
         return GitBranchCreateResponse(**result)
     except FileExistsError as e:
@@ -670,7 +655,7 @@ async def git_branch_create(
         logger.error(f"Git branch create failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -681,23 +666,19 @@ async def git_branch_create(
     responses={
         200: {"description": "Branch switched successfully"},
         401: {"description": "Missing or invalid authentication"},
-        404: {"description": "Repository or branch not found"}
+        404: {"description": "Repository or branch not found"},
     },
     summary="Switch branch",
-    description="Switch to a different branch"
+    description="Switch to a different branch",
 )
 async def git_branch_switch(
-    alias: str,
-    name: str,
-    user: User = Depends(get_current_user)
+    alias: str, name: str, user: User = Depends(get_current_user)
 ) -> GitBranchSwitchResponse:
     """Switch to a different branch."""
     try:
         service = git_operations_service
         result = service.switch_branch(
-            repo_alias=alias,
-            branch_name=name,
-            username=user.username
+            repo_alias=alias, branch_name=name, username=user.username
         )
         return GitBranchSwitchResponse(**result)
     except FileNotFoundError as e:
@@ -707,7 +688,7 @@ async def git_branch_switch(
         logger.error(f"Git branch switch failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -719,16 +700,16 @@ async def git_branch_switch(
         200: {"description": "Branch deleted successfully"},
         401: {"description": "Missing or invalid authentication"},
         403: {"description": "Missing confirmation token"},
-        404: {"description": "Repository or branch not found"}
+        404: {"description": "Repository or branch not found"},
     },
     summary="Delete branch",
-    description="Delete a branch (requires confirmation)"
+    description="Delete a branch (requires confirmation)",
 )
 async def git_branch_delete(
     alias: str,
     name: str,
     confirmation_token: Optional[str] = Query(None, description="Confirmation token"),
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
 ) -> GitBranchDeleteResponse:
     """Delete a branch."""
     try:
@@ -737,7 +718,7 @@ async def git_branch_delete(
             repo_alias=alias,
             branch_name=name,
             confirmation_token=confirmation_token,
-            username=user.username
+            username=user.username,
         )
         return GitBranchDeleteResponse(**result)
     except PermissionError as e:
@@ -750,5 +731,5 @@ async def git_branch_delete(
         logger.error(f"Git branch delete failed for {alias}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {str(e)}",
         )

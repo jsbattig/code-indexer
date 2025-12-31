@@ -36,7 +36,7 @@ def manager(mock_data_dir):
     mgr = GoldenRepoManager(data_dir=mock_data_dir)
     # Mock background_job_manager dependency
     mgr.background_job_manager = Mock()
-    mgr.background_job_manager.submit_job.return_value = 'test-job-id-123'
+    mgr.background_job_manager.submit_job.return_value = "test-job-id-123"
     return mgr
 
 
@@ -59,29 +59,32 @@ def test_concurrent_add_operations_serialized(manager):
     def tracked_save_metadata():
         """Track when metadata is saved."""
         with lock:
-            execution_log.append(('save_start', threading.current_thread().name))
+            execution_log.append(("save_start", threading.current_thread().name))
         time.sleep(0.05)  # Simulate slow I/O
         original_save()
         with lock:
-            execution_log.append(('save_end', threading.current_thread().name))
+            execution_log.append(("save_end", threading.current_thread().name))
 
-    with patch.object(manager, '_save_metadata', side_effect=tracked_save_metadata), \
-         patch.object(manager, '_validate_git_repository', return_value=True), \
-         patch.object(manager, '_clone_repository', return_value='/path/to/clone'), \
-         patch.object(manager, '_execute_post_clone_workflow'):
+    with (
+        patch.object(manager, "_save_metadata", side_effect=tracked_save_metadata),
+        patch.object(manager, "_validate_git_repository", return_value=True),
+        patch.object(manager, "_clone_repository", return_value="/path/to/clone"),
+        patch.object(manager, "_execute_post_clone_workflow"),
+    ):
 
         # Run three concurrent add operations
         threads = []
         for i in range(3):
+
             def add_repo(index=i):
                 manager.add_golden_repo(
-                    alias=f'test-repo-{index}',
-                    repo_url=f'https://github.com/user/repo{index}.git',
-                    default_branch='main',
-                    submitter_username='test-user'
+                    alias=f"test-repo-{index}",
+                    repo_url=f"https://github.com/user/repo{index}.git",
+                    default_branch="main",
+                    submitter_username="test-user",
                 )
 
-            thread = threading.Thread(target=add_repo, name=f'add_{i}')
+            thread = threading.Thread(target=add_repo, name=f"add_{i}")
             threads.append(thread)
 
         # Start all threads
@@ -96,13 +99,18 @@ def test_concurrent_add_operations_serialized(manager):
         assert all(not t.is_alive() for t in threads), "All threads should complete"
 
         # Verify metadata saves were serialized (no overlapping saves)
-        save_starts = [i for i, (event, _) in enumerate(execution_log) if event == 'save_start']
-        save_ends = [i for i, (event, _) in enumerate(execution_log) if event == 'save_end']
+        save_starts = [
+            i for i, (event, _) in enumerate(execution_log) if event == "save_start"
+        ]
+        save_ends = [
+            i for i, (event, _) in enumerate(execution_log) if event == "save_end"
+        ]
 
         # Each save_end should come before the next save_start
         for i in range(len(save_starts) - 1):
-            assert save_ends[i] < save_starts[i + 1], \
-                f"Metadata saves should be serialized (log: {execution_log})"
+            assert (
+                save_ends[i] < save_starts[i + 1]
+            ), f"Metadata saves should be serialized (log: {execution_log})"
 
 
 def test_concurrent_remove_operations_serialized(manager):
@@ -116,16 +124,29 @@ def test_concurrent_remove_operations_serialized(manager):
     """
     # Pre-populate metadata with test repos
     from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
+
     manager.golden_repos = {
-        'repo1': GoldenRepo(alias='repo1', repo_url='https://github.com/user/repo1.git',
-                           default_branch='main', clone_path='/path/to/repo1',
-                           created_at='2025-01-01T00:00:00Z'),
-        'repo2': GoldenRepo(alias='repo2', repo_url='https://github.com/user/repo2.git',
-                           default_branch='main', clone_path='/path/to/repo2',
-                           created_at='2025-01-01T00:00:00Z'),
-        'repo3': GoldenRepo(alias='repo3', repo_url='https://github.com/user/repo3.git',
-                           default_branch='main', clone_path='/path/to/repo3',
-                           created_at='2025-01-01T00:00:00Z'),
+        "repo1": GoldenRepo(
+            alias="repo1",
+            repo_url="https://github.com/user/repo1.git",
+            default_branch="main",
+            clone_path="/path/to/repo1",
+            created_at="2025-01-01T00:00:00Z",
+        ),
+        "repo2": GoldenRepo(
+            alias="repo2",
+            repo_url="https://github.com/user/repo2.git",
+            default_branch="main",
+            clone_path="/path/to/repo2",
+            created_at="2025-01-01T00:00:00Z",
+        ),
+        "repo3": GoldenRepo(
+            alias="repo3",
+            repo_url="https://github.com/user/repo3.git",
+            default_branch="main",
+            clone_path="/path/to/repo3",
+            created_at="2025-01-01T00:00:00Z",
+        ),
     }
     manager._save_metadata()
 
@@ -136,25 +157,31 @@ def test_concurrent_remove_operations_serialized(manager):
     def tracked_cleanup(clone_path):
         """Track when cleanup is called."""
         with lock:
-            execution_log.append(('cleanup_start', threading.current_thread().name, clone_path))
+            execution_log.append(
+                ("cleanup_start", threading.current_thread().name, clone_path)
+            )
         time.sleep(0.05)  # Simulate slow cleanup
         result = True  # Mock successful cleanup
         with lock:
-            execution_log.append(('cleanup_end', threading.current_thread().name, clone_path))
+            execution_log.append(
+                ("cleanup_end", threading.current_thread().name, clone_path)
+            )
         return result
 
-    with patch.object(manager, '_cleanup_repository_files', side_effect=tracked_cleanup):
+    with patch.object(
+        manager, "_cleanup_repository_files", side_effect=tracked_cleanup
+    ):
 
         # Run three concurrent remove operations
         threads = []
         for i in range(1, 4):
+
             def remove_repo(index=i):
                 manager.remove_golden_repo(
-                    alias=f'repo{index}',
-                    submitter_username='test-user'
+                    alias=f"repo{index}", submitter_username="test-user"
                 )
 
-            thread = threading.Thread(target=remove_repo, name=f'remove_{i}')
+            thread = threading.Thread(target=remove_repo, name=f"remove_{i}")
             threads.append(thread)
 
         # Start all threads
@@ -169,13 +196,20 @@ def test_concurrent_remove_operations_serialized(manager):
         assert all(not t.is_alive() for t in threads), "All threads should complete"
 
         # Verify cleanup operations were serialized
-        cleanup_starts = [i for i, (event, _, _) in enumerate(execution_log) if event == 'cleanup_start']
-        cleanup_ends = [i for i, (event, _, _) in enumerate(execution_log) if event == 'cleanup_end']
+        cleanup_starts = [
+            i
+            for i, (event, _, _) in enumerate(execution_log)
+            if event == "cleanup_start"
+        ]
+        cleanup_ends = [
+            i for i, (event, _, _) in enumerate(execution_log) if event == "cleanup_end"
+        ]
 
         # Each cleanup_end should come before the next cleanup_start
         for i in range(len(cleanup_starts) - 1):
-            assert cleanup_ends[i] < cleanup_starts[i + 1], \
-                f"Cleanup operations should be serialized (log: {execution_log})"
+            assert (
+                cleanup_ends[i] < cleanup_starts[i + 1]
+            ), f"Cleanup operations should be serialized (log: {execution_log})"
 
 
 def test_concurrent_add_remove_serialized(manager):
@@ -189,11 +223,15 @@ def test_concurrent_add_remove_serialized(manager):
     """
     # Pre-populate with one repo
     from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
+
     manager.golden_repos = {
-        'existing-repo': GoldenRepo(alias='existing-repo',
-                                   repo_url='https://github.com/user/existing.git',
-                                   default_branch='main', clone_path='/path/to/existing',
-                                   created_at='2025-01-01T00:00:00Z'),
+        "existing-repo": GoldenRepo(
+            alias="existing-repo",
+            repo_url="https://github.com/user/existing.git",
+            default_branch="main",
+            clone_path="/path/to/existing",
+            created_at="2025-01-01T00:00:00Z",
+        ),
     }
     manager._save_metadata()
 
@@ -205,30 +243,31 @@ def test_concurrent_add_remove_serialized(manager):
         with lock:
             operation_log.append((op_type, op_name, time.time()))
 
-    with patch.object(manager, '_validate_git_repository', return_value=True), \
-         patch.object(manager, '_clone_repository', return_value='/path/to/new'), \
-         patch.object(manager, '_execute_post_clone_workflow'), \
-         patch.object(manager, '_cleanup_repository_files', return_value=True):
+    with (
+        patch.object(manager, "_validate_git_repository", return_value=True),
+        patch.object(manager, "_clone_repository", return_value="/path/to/new"),
+        patch.object(manager, "_execute_post_clone_workflow"),
+        patch.object(manager, "_cleanup_repository_files", return_value=True),
+    ):
 
         # Create threads for add and remove operations
         def add_operation():
-            track_operation('start', 'add')
+            track_operation("start", "add")
             manager.add_golden_repo(
-                alias='new-repo',
-                repo_url='https://github.com/user/new.git',
-                default_branch='main',
-                submitter_username='test-user'
+                alias="new-repo",
+                repo_url="https://github.com/user/new.git",
+                default_branch="main",
+                submitter_username="test-user",
             )
-            track_operation('end', 'add')
+            track_operation("end", "add")
 
         def remove_operation():
             time.sleep(0.01)  # Small delay to ensure add starts first
-            track_operation('start', 'remove')
+            track_operation("start", "remove")
             manager.remove_golden_repo(
-                alias='existing-repo',
-                submitter_username='test-user'
+                alias="existing-repo", submitter_username="test-user"
             )
-            track_operation('end', 'remove')
+            track_operation("end", "remove")
 
         add_thread = threading.Thread(target=add_operation)
         remove_thread = threading.Thread(target=remove_operation)
@@ -244,14 +283,24 @@ def test_concurrent_add_remove_serialized(manager):
         assert not remove_thread.is_alive(), "Remove thread should complete"
 
         # Verify operations were serialized (no overlap)
-        add_start = next(t for op, name, t in operation_log if name == 'add' and op == 'start')
-        add_end = next(t for op, name, t in operation_log if name == 'add' and op == 'end')
-        remove_start = next(t for op, name, t in operation_log if name == 'remove' and op == 'start')
-        remove_end = next(t for op, name, t in operation_log if name == 'remove' and op == 'end')
+        add_start = next(
+            t for op, name, t in operation_log if name == "add" and op == "start"
+        )
+        add_end = next(
+            t for op, name, t in operation_log if name == "add" and op == "end"
+        )
+        remove_start = next(
+            t for op, name, t in operation_log if name == "remove" and op == "start"
+        )
+        remove_end = next(
+            t for op, name, t in operation_log if name == "remove" and op == "end"
+        )
 
         # Either add completes before remove starts, or remove completes before add starts
         operations_serialized = (add_end < remove_start) or (remove_end < add_start)
-        assert operations_serialized, f"Operations should be serialized (log: {operation_log})"
+        assert (
+            operations_serialized
+        ), f"Operations should be serialized (log: {operation_log})"
 
 
 def test_metadata_lock_prevents_corruption(manager):
@@ -265,11 +314,15 @@ def test_metadata_lock_prevents_corruption(manager):
     """
     # Pre-populate metadata
     from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
+
     manager.golden_repos = {
-        f'repo{i}': GoldenRepo(alias=f'repo{i}',
-                              repo_url=f'https://github.com/user/repo{i}.git',
-                              default_branch='main', clone_path=f'/path/to/repo{i}',
-                              created_at='2025-01-01T00:00:00Z')
+        f"repo{i}": GoldenRepo(
+            alias=f"repo{i}",
+            repo_url=f"https://github.com/user/repo{i}.git",
+            default_branch="main",
+            clone_path=f"/path/to/repo{i}",
+            created_at="2025-01-01T00:00:00Z",
+        )
         for i in range(5)
     }
     manager._save_metadata()
@@ -281,18 +334,19 @@ def test_metadata_lock_prevents_corruption(manager):
     def concurrent_metadata_update(repo_index):
         """Simulate concurrent metadata updates."""
         from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
+
         for j in range(3):
             # Read metadata
             manager._load_metadata()
 
             # Modify metadata
-            new_alias = f'repo{repo_index}-updated-{j}'
+            new_alias = f"repo{repo_index}-updated-{j}"
             manager.golden_repos[new_alias] = GoldenRepo(
                 alias=new_alias,
-                repo_url=f'https://github.com/user/{new_alias}.git',
-                default_branch='main',
-                clone_path=f'/path/to/{new_alias}',
-                created_at='2025-01-01T00:00:00Z'
+                repo_url=f"https://github.com/user/{new_alias}.git",
+                default_branch="main",
+                clone_path=f"/path/to/{new_alias}",
+                created_at="2025-01-01T00:00:00Z",
             )
 
             # Save metadata
@@ -300,7 +354,7 @@ def test_metadata_lock_prevents_corruption(manager):
 
             # Capture snapshot
             with lock:
-                with open(manager.metadata_file, 'r') as f:
+                with open(manager.metadata_file, "r") as f:
                     content = f.read()
                     metadata_snapshots.append(content)
 
@@ -308,8 +362,7 @@ def test_metadata_lock_prevents_corruption(manager):
 
     # Run concurrent metadata updates
     threads = [
-        threading.Thread(target=concurrent_metadata_update, args=(i,))
-        for i in range(3)
+        threading.Thread(target=concurrent_metadata_update, args=(i,)) for i in range(3)
     ]
 
     for t in threads:
@@ -346,12 +399,12 @@ def test_operation_lock_released_on_exception(manager):
     from code_indexer.server.repositories.golden_repo_manager import GoldenRepo
 
     # Pre-populate manager with test data
-    manager.golden_repos['test-repo'] = GoldenRepo(
-        alias='test-repo',
-        repo_url='https://github.com/user/test.git',
-        default_branch='main',
-        clone_path='/path/to/test',
-        created_at='2025-01-01T00:00:00Z'
+    manager.golden_repos["test-repo"] = GoldenRepo(
+        alias="test-repo",
+        repo_url="https://github.com/user/test.git",
+        default_branch="main",
+        clone_path="/path/to/test",
+        created_at="2025-01-01T00:00:00Z",
     )
 
     # Capture real open() before patching to avoid recursion
@@ -368,7 +421,7 @@ def test_operation_lock_released_on_exception(manager):
         # Use captured real open (not the mocked one)
         return real_open(*args, **kwargs)
 
-    with patch('builtins.open', side_effect=failing_open_write):
+    with patch("builtins.open", side_effect=failing_open_write):
         # Verify lock is not held before operation
         assert not manager._operation_lock.locked(), "Lock should be free initially"
 
@@ -377,13 +430,17 @@ def test_operation_lock_released_on_exception(manager):
             manager._save_metadata()
 
         # Verify lock was released after exception
-        assert not manager._operation_lock.locked(), "Lock should be released after exception"
+        assert (
+            not manager._operation_lock.locked()
+        ), "Lock should be released after exception"
         assert save_call_count[0] == 1, "First save attempt should have been made"
 
         # Second _save_metadata should succeed (lock was released)
         manager._save_metadata()
         assert save_call_count[0] == 2, "Second save should succeed (lock was released)"
-        assert not manager._operation_lock.locked(), "Lock should be released after successful operation"
+        assert (
+            not manager._operation_lock.locked()
+        ), "Lock should be released after successful operation"
 
     # Test 2: _load_metadata releases lock on exception
     load_call_count = [0]
@@ -396,7 +453,7 @@ def test_operation_lock_released_on_exception(manager):
         # Use captured real open (not the mocked one)
         return real_open(*args, **kwargs)
 
-    with patch('builtins.open', side_effect=failing_open_read):
+    with patch("builtins.open", side_effect=failing_open_read):
         # Verify lock is not held before operation
         assert not manager._operation_lock.locked(), "Lock should be free initially"
 
@@ -405,10 +462,14 @@ def test_operation_lock_released_on_exception(manager):
             manager._load_metadata()
 
         # Verify lock was released after exception
-        assert not manager._operation_lock.locked(), "Lock should be released after exception"
+        assert (
+            not manager._operation_lock.locked()
+        ), "Lock should be released after exception"
         assert load_call_count[0] == 1, "First load attempt should have been made"
 
         # Second _load_metadata should succeed (lock was released)
         manager._load_metadata()
         assert load_call_count[0] == 2, "Second load should succeed (lock was released)"
-        assert not manager._operation_lock.locked(), "Lock should be released after successful operation"
+        assert (
+            not manager._operation_lock.locked()
+        ), "Lock should be released after successful operation"

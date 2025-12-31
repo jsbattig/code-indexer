@@ -140,7 +140,7 @@ class TestGetFileContentPaginationParameters:
         }
 
         # Execute handler
-        mcp_response = await handlers.get_file_content(params, mock_user)
+        await handlers.get_file_content(params, mock_user)
 
         # Verify service was called without pagination parameters (defaults to None)
         call_args = mock_file_service.get_file_content.call_args
@@ -176,7 +176,7 @@ class TestGetFileContentPaginationParameters:
         }
 
         # Execute handler
-        mcp_response = await handlers.get_file_content(params, mock_user)
+        await handlers.get_file_content(params, mock_user)
 
         # Verify service was called with limit only
         call_args = mock_file_service.get_file_content.call_args
@@ -351,13 +351,17 @@ class TestGetFileContentGlobalRepositories:
 
         # Mock global repo lookup
         # AliasManager is imported inside the function, so patch it at the import location
-        with patch(
-            "code_indexer.server.mcp.handlers.GlobalRegistry"
-        ) as mock_registry_class, patch(
-            "code_indexer.global_repos.alias_manager.AliasManager"
-        ) as mock_alias_manager_class, patch(
-            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
-        ) as mock_get_golden_dir:
+        with (
+            patch(
+                "code_indexer.server.mcp.handlers.GlobalRegistry"
+            ) as mock_registry_class,
+            patch(
+                "code_indexer.global_repos.alias_manager.AliasManager"
+            ) as mock_alias_manager_class,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+            ) as mock_get_golden_dir,
+        ):
 
             mock_get_golden_dir.return_value = "/fake/golden/repos"
 

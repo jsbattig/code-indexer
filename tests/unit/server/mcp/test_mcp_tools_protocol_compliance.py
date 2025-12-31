@@ -37,7 +37,7 @@ class TestMCPProtocolCompliance:
             username="admin",
             password_hash="fake",
             role="admin",
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
 
         # Get filtered tools
@@ -52,8 +52,12 @@ class TestMCPProtocolCompliance:
 
             # MUST have these MCP-required fields
             assert "name" in tool, f"Tool {tool_name} missing required 'name' field"
-            assert "description" in tool, f"Tool {tool_name} missing required 'description' field"
-            assert "inputSchema" in tool, f"Tool {tool_name} missing required 'inputSchema' field"
+            assert (
+                "description" in tool
+            ), f"Tool {tool_name} missing required 'description' field"
+            assert (
+                "inputSchema" in tool
+            ), f"Tool {tool_name} missing required 'inputSchema' field"
 
             # MUST NOT have these internal fields (protocol violation)
             assert "required_permission" not in tool, (
@@ -77,7 +81,7 @@ class TestMCPProtocolCompliance:
             username="admin",
             password_hash="fake",
             role="admin",
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
         filtered_tools = filter_tools_by_role(admin_user)
 
@@ -105,12 +109,12 @@ class TestMCPProtocolCompliance:
         sample_tool = TOOL_REGISTRY[sample_tool_name]
 
         # TOOL_REGISTRY should have internal fields
-        assert "required_permission" in sample_tool, (
-            "TOOL_REGISTRY should contain internal 'required_permission' field"
-        )
-        assert "outputSchema" in sample_tool, (
-            "TOOL_REGISTRY should contain internal 'outputSchema' field"
-        )
+        assert (
+            "required_permission" in sample_tool
+        ), "TOOL_REGISTRY should contain internal 'required_permission' field"
+        assert (
+            "outputSchema" in sample_tool
+        ), "TOOL_REGISTRY should contain internal 'outputSchema' field"
 
         # But these must be filtered out before sending to MCP clients
         # (that's what filter_tools_by_role is supposed to do)
@@ -122,7 +126,7 @@ class TestMCPProtocolCompliance:
             username="user",
             password_hash="fake",
             role="normal_user",
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
 
         # Get tools for regular user
@@ -133,14 +137,14 @@ class TestMCPProtocolCompliance:
             username="admin",
             password_hash="fake",
             role="admin",
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
         admin_tools = filter_tools_by_role(admin_user)
 
         # Admin should have more or equal tools than regular user
-        assert len(admin_tools) >= len(user_tools), (
-            "Admin should have at least as many tools as regular user"
-        )
+        assert len(admin_tools) >= len(
+            user_tools
+        ), "Admin should have at least as many tools as regular user"
 
         # All tools (regardless of role) should be MCP-compliant
         for tool in user_tools + admin_tools:

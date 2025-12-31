@@ -13,16 +13,13 @@ import os
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
 
 import pytest
 
 from src.code_indexer.server.repositories.activated_repo_manager import (
     ActivatedRepoManager,
-    ActivatedRepoError,
-    GitOperationError,
 )
 from src.code_indexer.server.repositories.golden_repo_manager import GoldenRepo
 
@@ -164,13 +161,17 @@ class TestDualRemoteConfiguration:
         assert f"golden\t{real_git_repo}" in remotes_output
 
         # Verify we have exactly 2 remotes (origin and golden)
-        remote_list = subprocess.run(
-            ["git", "remote"],
-            cwd=dest_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip().split("\n")
+        remote_list = (
+            subprocess.run(
+                ["git", "remote"],
+                cwd=dest_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            .stdout.strip()
+            .split("\n")
+        )
 
         assert len(remote_list) == 2
         assert "origin" in remote_list
@@ -618,5 +619,9 @@ class TestSyncWithGoldenRemote:
         fetch_call = fetch_calls[0]
         assert "git" in fetch_call[0][0]
         assert "fetch" in fetch_call[0][0]
-        assert "golden" in fetch_call[0][0], f"Expected 'golden' remote, got: {fetch_call[0][0]}"
-        assert "origin" not in fetch_call[0][0] or "golden" in fetch_call[0][0], "Should use 'golden' not 'origin'"
+        assert (
+            "golden" in fetch_call[0][0]
+        ), f"Expected 'golden' remote, got: {fetch_call[0][0]}"
+        assert (
+            "origin" not in fetch_call[0][0] or "golden" in fetch_call[0][0]
+        ), "Should use 'golden' not 'origin'"

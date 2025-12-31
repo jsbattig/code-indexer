@@ -13,7 +13,6 @@ import pytest
 
 from code_indexer.server.repositories.golden_repo_manager import (
     GoldenRepo,
-    GoldenRepoError,
     GoldenRepoNotFoundError,
     GoldenRepoManager,
 )
@@ -40,6 +39,7 @@ class TestCanonicalPathResolution:
     def teardown_method(self):
         """Clean up temporary directory."""
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -220,7 +220,9 @@ class TestCanonicalPathResolution:
         flat_path = os.path.join(self.golden_repos_dir, "empty-versioned")
 
         # Create versioned directory but NO v_* subdirectories
-        versioned_dir = os.path.join(self.golden_repos_dir, ".versioned", "empty-versioned")
+        versioned_dir = os.path.join(
+            self.golden_repos_dir, ".versioned", "empty-versioned"
+        )
         os.makedirs(versioned_dir, exist_ok=True)
 
         # Add golden repo
@@ -257,7 +259,10 @@ class TestCanonicalPathResolution:
             self.manager.get_actual_repo_path(malicious_alias)
 
         error_msg = str(exc_info.value)
-        assert "path traversal" in error_msg.lower() or "invalid alias" in error_msg.lower()
+        assert (
+            "path traversal" in error_msg.lower()
+            or "invalid alias" in error_msg.lower()
+        )
         assert ".." in error_msg
 
     def test_path_traversal_with_forward_slash(self):
@@ -275,7 +280,10 @@ class TestCanonicalPathResolution:
             self.manager.get_actual_repo_path(malicious_alias)
 
         error_msg = str(exc_info.value)
-        assert "path traversal" in error_msg.lower() or "invalid alias" in error_msg.lower()
+        assert (
+            "path traversal" in error_msg.lower()
+            or "invalid alias" in error_msg.lower()
+        )
         assert "/" in error_msg
 
     def test_path_traversal_with_backslash(self):
@@ -293,7 +301,10 @@ class TestCanonicalPathResolution:
             self.manager.get_actual_repo_path(malicious_alias)
 
         error_msg = str(exc_info.value)
-        assert "path traversal" in error_msg.lower() or "invalid alias" in error_msg.lower()
+        assert (
+            "path traversal" in error_msg.lower()
+            or "invalid alias" in error_msg.lower()
+        )
         assert "\\" in error_msg or "backslash" in error_msg.lower()
 
     def test_malformed_version_directory_skipped(self):
@@ -307,7 +318,9 @@ class TestCanonicalPathResolution:
         flat_path = os.path.join(self.golden_repos_dir, "malformed-ver")
 
         # Create versioned directory with mix of valid and malformed versions
-        versioned_dir = os.path.join(self.golden_repos_dir, ".versioned", "malformed-ver")
+        versioned_dir = os.path.join(
+            self.golden_repos_dir, ".versioned", "malformed-ver"
+        )
         malformed_version = os.path.join(versioned_dir, "v_abc")  # Invalid timestamp
         valid_version = os.path.join(versioned_dir, "v_1767053582")  # Valid timestamp
         os.makedirs(malformed_version, exist_ok=True)
@@ -360,7 +373,9 @@ class TestCanonicalPathResolution:
             self.manager.get_actual_repo_path("symlink-attack")
 
         error_msg = str(exc_info.value)
-        assert "security violation" in error_msg.lower() or "outside" in error_msg.lower()
+        assert (
+            "security violation" in error_msg.lower() or "outside" in error_msg.lower()
+        )
 
 
 class TestCanonicalPathIntegrationWithMigration:
@@ -384,6 +399,7 @@ class TestCanonicalPathIntegrationWithMigration:
     def teardown_method(self):
         """Clean up temporary directory."""
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -403,7 +419,10 @@ class TestCanonicalPathIntegrationWithMigration:
 
         # Initialize as git repo with remote
         import subprocess
-        subprocess.run(["git", "init"], cwd=versioned_path, check=True, capture_output=True)
+
+        subprocess.run(
+            ["git", "init"], cwd=versioned_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "remote", "add", "origin", "https://github.com/user/txt-db.git"],
             cwd=versioned_path,
@@ -453,7 +472,10 @@ class TestCanonicalPathIntegrationWithMigration:
 
         # Initialize as git repo
         import subprocess
-        subprocess.run(["git", "init"], cwd=versioned_path, check=True, capture_output=True)
+
+        subprocess.run(
+            ["git", "init"], cwd=versioned_path, check=True, capture_output=True
+        )
 
         # Add golden repo with stale flat path
         golden_repo = GoldenRepo(

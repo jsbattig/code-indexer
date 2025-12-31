@@ -72,7 +72,9 @@ class FileContentLimitsConfigManager:
             )
             conn.commit()
 
-        logger.info(f"File content limits config database initialized at {self.db_path}")
+        logger.info(
+            f"File content limits config database initialized at {self.db_path}"
+        )
 
     def get_config(self) -> FileContentLimitsConfig:
         """
@@ -127,7 +129,9 @@ class FileContentLimitsConfigManager:
         )
 
     @classmethod
-    def get_instance(cls, db_path: Optional[str] = None) -> "FileContentLimitsConfigManager":
+    def get_instance(
+        cls, db_path: Optional[str] = None
+    ) -> "FileContentLimitsConfigManager":
         """
         Get singleton instance of config manager.
 

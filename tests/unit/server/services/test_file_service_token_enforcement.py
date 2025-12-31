@@ -8,10 +8,11 @@ import os
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from code_indexer.server.services.file_service import FileListingService
-from code_indexer.server.models.file_content_limits_config import FileContentLimitsConfig
+from code_indexer.server.models.file_content_limits_config import (
+    FileContentLimitsConfig,
+)
 from code_indexer.server.services.file_content_limits_config_manager import (
     FileContentLimitsConfigManager,
 )
@@ -41,7 +42,9 @@ class TestFileServiceTokenEnforcement:
 
         # Initialize config manager with test database
         self.config_db_path = Path(self.temp_dir) / "test_config.db"
-        self.config_manager = FileContentLimitsConfigManager(db_path=str(self.config_db_path))
+        self.config_manager = FileContentLimitsConfigManager(
+            db_path=str(self.config_db_path)
+        )
 
         # Initialize service with test config manager
         self.service = FileListingService()
@@ -111,7 +114,10 @@ class TestFileServiceTokenEnforcement:
         """Test that content exceeding token budget is truncated."""
         # Create large file (1000 lines, will exceed 5000 tokens)
         large_file = self.repo_path / "large.py"
-        large_lines = [f"# This is a very long line {i:04d} with lots of content here to fill space\n" for i in range(1, 1001)]
+        large_lines = [
+            f"# This is a very long line {i:04d} with lots of content here to fill space\n"
+            for i in range(1, 1001)
+        ]
         with open(large_file, "w", encoding="utf-8") as f:
             f.writelines(large_lines)
 
@@ -208,7 +214,10 @@ class TestFileServiceTokenEnforcement:
         # Large file (truncated) - needs to exceed 20000 chars (5000 tokens * 4 chars/token)
         # Create file with 1000 lines of ~75 chars each = ~75000 chars (will be truncated)
         large_file = self.repo_path / "large.py"
-        large_lines = [f"# This is a very long line {i:04d} with lots of content here to fill space\n" for i in range(1, 1001)]
+        large_lines = [
+            f"# This is a very long line {i:04d} with lots of content here to fill space\n"
+            for i in range(1, 1001)
+        ]
         with open(large_file, "w", encoding="utf-8") as f:
             f.writelines(large_lines)
 
@@ -279,7 +288,9 @@ class TestFileServiceTokenEnforcement:
     def test_custom_config_affects_token_limit(self):
         """Test that updating config changes token enforcement."""
         # Update config to smaller token limit
-        new_config = FileContentLimitsConfig(max_tokens_per_request=1000, chars_per_token=4)
+        new_config = FileContentLimitsConfig(
+            max_tokens_per_request=1000, chars_per_token=4
+        )
         self.config_manager.update_config(new_config)
 
         # Create file that would fit in 5000 tokens but not 1000 tokens
@@ -308,7 +319,10 @@ class TestFileServiceTokenEnforcement:
         """Test that content NEVER exceeds max_tokens budget."""
         # Create very large file
         huge_file = self.repo_path / "huge.py"
-        huge_lines = [f"# This is line {i:05d} with lots and lots of content to make it long\n" for i in range(1, 5001)]
+        huge_lines = [
+            f"# This is line {i:05d} with lots and lots of content to make it long\n"
+            for i in range(1, 5001)
+        ]
         with open(huge_file, "w", encoding="utf-8") as f:
             f.writelines(huge_lines)
 

@@ -54,6 +54,7 @@ def test_add_golden_repo_result_contains_alias(managers, temp_dirs):
 
     # Initialize as git repo
     import subprocess
+
     subprocess.run(["git", "init"], cwd=test_repo_path, check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
@@ -71,7 +72,9 @@ def test_add_golden_repo_result_contains_alias(managers, temp_dirs):
     # Create initial commit
     test_file = test_repo_path / "README.md"
     test_file.write_text("# Test Repo")
-    subprocess.run(["git", "add", "."], cwd=test_repo_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "."], cwd=test_repo_path, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=test_repo_path,
@@ -88,6 +91,7 @@ def test_add_golden_repo_result_contains_alias(managers, temp_dirs):
 
     # Wait for job completion (synchronously execute for testing)
     import time
+
     max_wait = 10
     waited = 0
     while waited < max_wait:
@@ -104,8 +108,12 @@ def test_add_golden_repo_result_contains_alias(managers, temp_dirs):
 
     # CRITICAL: Verify result contains alias field for dashboard display
     assert job.result is not None, "Job result is None"
-    assert "alias" in job.result, "Job result missing 'alias' field - dashboard will show 'Unknown'"
-    assert job.result["alias"] == "test-repo", f"Expected alias 'test-repo', got '{job.result['alias']}'"
+    assert (
+        "alias" in job.result
+    ), "Job result missing 'alias' field - dashboard will show 'Unknown'"
+    assert (
+        job.result["alias"] == "test-repo"
+    ), f"Expected alias 'test-repo', got '{job.result['alias']}'"
 
 
 def test_refresh_golden_repo_result_contains_alias(managers, temp_dirs):
@@ -116,6 +124,7 @@ def test_refresh_golden_repo_result_contains_alias(managers, temp_dirs):
 
     # Initialize as git repo
     import subprocess
+
     subprocess.run(["git", "init"], cwd=test_repo_path, check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
@@ -133,7 +142,9 @@ def test_refresh_golden_repo_result_contains_alias(managers, temp_dirs):
     # Create initial commit
     test_file = test_repo_path / "README.md"
     test_file.write_text("# Refresh Test Repo")
-    subprocess.run(["git", "add", "."], cwd=test_repo_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "."], cwd=test_repo_path, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=test_repo_path,
@@ -150,6 +161,7 @@ def test_refresh_golden_repo_result_contains_alias(managers, temp_dirs):
 
     # Wait for add job completion
     import time
+
     max_wait = 10
     waited = 0
     while waited < max_wait:
@@ -181,5 +193,9 @@ def test_refresh_golden_repo_result_contains_alias(managers, temp_dirs):
 
     # CRITICAL: Verify result contains alias field for dashboard display
     assert job.result is not None, "Job result is None"
-    assert "alias" in job.result, "Job result missing 'alias' field - dashboard will show 'Unknown'"
-    assert job.result["alias"] == "refresh-test-repo", f"Expected alias 'refresh-test-repo', got '{job.result['alias']}'"
+    assert (
+        "alias" in job.result
+    ), "Job result missing 'alias' field - dashboard will show 'Unknown'"
+    assert (
+        job.result["alias"] == "refresh-test-repo"
+    ), f"Expected alias 'refresh-test-repo', got '{job.result['alias']}'"

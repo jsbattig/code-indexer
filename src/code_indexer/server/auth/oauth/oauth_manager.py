@@ -101,7 +101,11 @@ class OAuthManager:
             "token_endpoint": f"{self.issuer}/oauth/token",
             "registration_endpoint": f"{self.issuer}/oauth/register",
             "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+            "grant_types_supported": [
+                "authorization_code",
+                "refresh_token",
+                "client_credentials",
+            ],
         }
 
     def register_client(
@@ -126,7 +130,13 @@ class OAuthManager:
         with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute(
                 "INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at, metadata) VALUES (?, ?, ?, ?, ?)",
-                (client_id, client_name, json.dumps(redirect_uris), created_at, json.dumps(metadata)),
+                (
+                    client_id,
+                    client_name,
+                    json.dumps(redirect_uris),
+                    created_at,
+                    json.dumps(metadata),
+                ),
             )
             conn.commit()
         return {
