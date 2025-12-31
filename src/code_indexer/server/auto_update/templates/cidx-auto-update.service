@@ -14,7 +14,6 @@ SyslogIdentifier=cidx-auto-update
 
 # Security hardening
 PrivateTmp=yes
-NoNewPrivileges=yes
 
 [Install]
 WantedBy=multi-user.target
