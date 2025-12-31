@@ -9695,6 +9695,8 @@ def server_install_auto_update(ctx):
     """
     try:
         import subprocess
+        import os
+        import tempfile
         from pathlib import Path
 
         # Get template directory
@@ -9704,24 +9706,56 @@ def server_install_auto_update(ctx):
             console.print(f"❌ Error: Template directory not found: {template_dir}", style="red")
             sys.exit(1)
 
-        service_file = template_dir / "cidx-auto-update.service"
+        service_template = template_dir / "cidx-auto-update.service"
         timer_file = template_dir / "cidx-auto-update.timer"
 
-        if not service_file.exists() or not timer_file.exists():
+        if not service_template.exists() or not timer_file.exists():
             console.print("❌ Error: Service/timer templates not found", style="red")
             sys.exit(1)
 
-        # Copy service and timer files to systemd directory
-        console.print("Installing systemd service and timer files...", style="cyan")
+        # Detect current user and repository path
+        current_user = os.getenv("USER") or os.getenv("LOGNAME")
+        if not current_user:
+            console.print("❌ Error: Cannot detect current user", style="red")
+            sys.exit(1)
 
-        subprocess.run(
-            ["sudo", "cp", str(service_file), "/etc/systemd/system/"],
-            check=True,
-        )
-        subprocess.run(
-            ["sudo", "cp", str(timer_file), "/etc/systemd/system/"],
-            check=True,
-        )
+        # Get absolute path to current git repository
+        try:
+            repo_path = subprocess.check_output(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=Path.cwd(),
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except subprocess.CalledProcessError:
+            # If not in a git repo, use current directory
+            repo_path = str(Path.cwd().resolve())
+
+        # Read service template and substitute placeholders
+        service_content = service_template.read_text()
+        service_content = service_content.replace("{USER}", current_user)
+        service_content = service_content.replace("{REPO_PATH}", repo_path)
+
+        # Write substituted service file to temp location
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".service", delete=False) as tmp_service:
+            tmp_service.write(service_content)
+            tmp_service_path = tmp_service.name
+
+        try:
+            # Copy service and timer files to systemd directory
+            console.print("Installing systemd service and timer files...", style="cyan")
+
+            subprocess.run(
+                ["sudo", "cp", tmp_service_path, "/etc/systemd/system/cidx-auto-update.service"],
+                check=True,
+            )
+            subprocess.run(
+                ["sudo", "cp", str(timer_file), "/etc/systemd/system/"],
+                check=True,
+            )
+        finally:
+            # Clean up temp file
+            Path(tmp_service_path).unlink(missing_ok=True)
 
         # Reload systemd daemon
         console.print("Reloading systemd daemon...", style="cyan")
