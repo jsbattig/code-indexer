@@ -1524,7 +1524,7 @@ class ModeAwareGroup(click.Group):
             for cmd_name, icons, help_text in sorted(commands):
                 # Emojis take 2 visual columns each, so adjust padding
                 # Calculate visual width: each emoji = 2 chars, regular chars = 1 char
-                emoji_count = icons.count("🌐") + icons.count("🐳") + icons.count("🔗")
+                emoji_count = icons.count("🌐") + icons.count("💻") + icons.count("🔗")
                 visual_width = len(icons) + emoji_count
 
                 # Target total width for command part is 26 chars (increased for 3 icons)
@@ -1536,7 +1536,7 @@ class ModeAwareGroup(click.Group):
                 formatter.write(formatted_line + "\n")
 
             formatter.write("\n")
-            formatter.write("Legend: 🌐 Remote | 🐳 Local | 🔗 Proxy\n")
+            formatter.write("Legend: 🌐 Remote | 💻 Local | 🔗 Proxy\n")
 
 
 @click.group(invoke_without_command=True, cls=ModeAwareGroup)

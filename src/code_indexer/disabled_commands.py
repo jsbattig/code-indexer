@@ -366,7 +366,7 @@ def get_command_mode_icons(command_name: str) -> str:
 
     Returns:
         String with aligned mode icons accounting for emoji display width
-        Format: 🌐 (remote) 🐳 (local) 🔗 (proxy)
+        Format: 🌐 (remote) 💻 (local) 🔗 (proxy)
     """
     compatibility = COMMAND_COMPATIBILITY.get(command_name, {})
     remote_support = compatibility.get("remote", False)
@@ -377,7 +377,7 @@ def get_command_mode_icons(command_name: str) -> str:
     # Always show in order: Remote, Local, Proxy
     icons = ""
     icons += "🌐" if remote_support else "  "
-    icons += "🐳" if local_support else "  "
+    icons += "💻" if local_support else "  "
     icons += "🔗" if proxy_support else "  "
 
     return icons
