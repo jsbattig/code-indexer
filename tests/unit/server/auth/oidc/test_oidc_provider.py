@@ -182,7 +182,9 @@ class TestOIDCProvider:
             token_endpoint="https://example.com/token",
         )
 
-        auth_url = provider.get_authorization_url("state", "https://callback", "challenge")
+        auth_url = provider.get_authorization_url(
+            "state", "https://callback", "challenge"
+        )
 
         # Verify default scopes are used
         assert "scope=openid+profile+email" in auth_url
@@ -210,7 +212,9 @@ class TestOIDCProvider:
             token_endpoint="https://example.com/token",
         )
 
-        auth_url = provider.get_authorization_url("state", "https://callback", "challenge")
+        auth_url = provider.get_authorization_url(
+            "state", "https://callback", "challenge"
+        )
 
         # Verify custom scopes are used
         assert "scope=openid+profile+email+groups" in auth_url

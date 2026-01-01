@@ -24,7 +24,9 @@ def main():
     """Execute one auto-update polling iteration."""
     try:
         # Configuration
-        repo_path = Path(os.environ.get("CIDX_SERVER_REPO_PATH", "/home/sebabattig/cidx-server"))
+        repo_path = Path(
+            os.environ.get("CIDX_SERVER_REPO_PATH", "/home/sebabattig/cidx-server")
+        )
         lock_file = Path("/tmp/cidx-auto-update.lock")
         check_interval = 60  # seconds (not used in oneshot mode)
 

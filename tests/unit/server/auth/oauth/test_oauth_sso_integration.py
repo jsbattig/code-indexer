@@ -11,7 +11,7 @@ import shutil
 import hashlib
 import base64
 import secrets
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 

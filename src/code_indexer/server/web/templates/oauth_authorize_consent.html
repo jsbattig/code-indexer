@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Authorization Request - CIDX{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <article>
+        <header>
+            <h1>Authorization Request</h1>
+            <p>Signed in as <strong>{{ username }}</strong></p>
+        </header>
+
+        <section>
+            <label for="client-name">Client</label>
+            <input type="text" id="client-name" value="{{ client_name }}" readonly>
+        </section>
+
+        <section>
+            <h3>This application will be able to:</h3>
+            <ul>
+                <li>Access your CIDX code search API</li>
+                <li>Query your indexed code repositories</li>
+                <li>Use semantic and full-text search capabilities</li>
+            </ul>
+        </section>
+
+        <form method="post" action="/oauth/authorize/consent">
+            <input type="hidden" name="client_id" value="{{ client_id }}">
+            <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+            <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
+            <input type="hidden" name="response_type" value="{{ response_type }}">
+            <input type="hidden" name="state" value="{{ state }}">
+            <input type="hidden" name="consent" value="allow">
+
+            <div class="grid">
+                <button type="button" class="secondary" onclick="denyAccess()">
+                    Deny
+                </button>
+                <button type="submit" class="primary">
+                    Authorize
+                </button>
+            </div>
+        </form>
+    </article>
+</div>
+
+<script>
+    function denyAccess() {
+        // Redirect to client's redirect_uri with error
+        const redirectUri = "{{ redirect_uri }}";
+        const state = "{{ state }}";
+        const errorUrl = redirectUri +
+            "?error=access_denied" +
+            "&error_description=" + encodeURIComponent("User denied authorization") +
+            "&state=" + encodeURIComponent(state);
+        window.location.href = errorUrl;
+    }
+</script>
+{% endblock %}
