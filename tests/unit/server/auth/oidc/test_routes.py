@@ -1,5 +1,7 @@
 """Tests for OIDC routes implementation."""
 
+import os
+from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -34,7 +36,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -80,7 +81,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -132,7 +132,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -184,7 +183,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -255,7 +253,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -308,7 +305,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -360,7 +356,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -457,7 +452,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -544,7 +538,6 @@ class TestOIDCRoutes:
         # Create configured OIDC manager
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
         )
@@ -598,3 +591,295 @@ class TestOIDCRoutes:
         # Should return 403 Forbidden (authentication succeeded but authorization failed)
         assert response.status_code == 403
         assert "not authorized" in response.json()["detail"].lower()
+
+    def test_sso_login_uses_cidx_issuer_url_when_set(self):
+        """Test that /auth/sso/login uses CIDX_ISSUER_URL env var for callback URL when set."""
+        from code_indexer.server.auth.oidc.routes import router
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider
+        from code_indexer.server.auth.oidc.state_manager import StateManager
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from unittest.mock import Mock
+
+        # Create configured OIDC manager
+        config = OIDCProviderConfig(
+            enabled=True,
+            issuer_url="https://example.com",
+            client_id="test-client-id",
+        )
+        oidc_mgr = OIDCManager(config, None, None)
+        oidc_mgr.provider = Mock(spec=OIDCProvider)
+        oidc_mgr.provider.get_authorization_url = Mock(
+            return_value="https://example.com/authorize"
+        )
+
+        # Create state manager
+        state_mgr = StateManager()
+
+        # Inject managers into routes module
+        import code_indexer.server.auth.oidc.routes as routes_module
+        from code_indexer.server.utils.config_manager import ServerConfig
+
+        routes_module.oidc_manager = oidc_mgr
+        routes_module.state_manager = state_mgr
+        routes_module.server_config = ServerConfig(
+            server_dir="/tmp", host="localhost", port=8090
+        )
+
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Set CIDX_ISSUER_URL environment variable
+        with patch.dict(
+            os.environ, {"CIDX_ISSUER_URL": "https://linner.ddns.net:8383"}
+        ):
+            # Make request
+            client.get("/auth/sso/login", follow_redirects=False)
+
+            # Verify get_authorization_url was called with CIDX_ISSUER_URL-based callback
+            oidc_mgr.provider.get_authorization_url.assert_called_once()
+            call_args = oidc_mgr.provider.get_authorization_url.call_args[0]
+
+            # Second argument should be the callback URL using CIDX_ISSUER_URL
+            callback_url = call_args[1]
+            assert callback_url == "https://linner.ddns.net:8383/auth/sso/callback"
+
+    def test_sso_login_uses_request_url_when_cidx_issuer_url_not_set(self):
+        """Test that /auth/sso/login falls back to request.url_for() when CIDX_ISSUER_URL not set."""
+        from code_indexer.server.auth.oidc.routes import router
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider
+        from code_indexer.server.auth.oidc.state_manager import StateManager
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from unittest.mock import Mock
+
+        # Create configured OIDC manager
+        config = OIDCProviderConfig(
+            enabled=True,
+            issuer_url="https://example.com",
+            client_id="test-client-id",
+        )
+        oidc_mgr = OIDCManager(config, None, None)
+        oidc_mgr.provider = Mock(spec=OIDCProvider)
+        oidc_mgr.provider.get_authorization_url = Mock(
+            return_value="https://example.com/authorize"
+        )
+
+        # Create state manager
+        state_mgr = StateManager()
+
+        # Inject managers into routes module
+        import code_indexer.server.auth.oidc.routes as routes_module
+        from code_indexer.server.utils.config_manager import ServerConfig
+
+        routes_module.oidc_manager = oidc_mgr
+        routes_module.state_manager = state_mgr
+        routes_module.server_config = ServerConfig(
+            server_dir="/tmp", host="localhost", port=8090
+        )
+
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Ensure CIDX_ISSUER_URL is not set
+        with patch.dict(os.environ, {}, clear=False):
+            if "CIDX_ISSUER_URL" in os.environ:
+                del os.environ["CIDX_ISSUER_URL"]
+
+            # Make request
+            client.get("/auth/sso/login", follow_redirects=False)
+
+            # Verify get_authorization_url was called with request-based callback
+            oidc_mgr.provider.get_authorization_url.assert_called_once()
+            call_args = oidc_mgr.provider.get_authorization_url.call_args[0]
+
+            # Second argument should be the callback URL from request.url_for()
+            callback_url = call_args[1]
+            assert callback_url.endswith("/auth/sso/callback")
+            # Should be http://testserver (TestClient default)
+            assert callback_url.startswith("http://testserver")
+
+    def test_sso_callback_uses_cidx_issuer_url_when_set(self):
+        """Test that /auth/sso/callback uses CIDX_ISSUER_URL for token exchange when set."""
+        from code_indexer.server.auth.oidc.routes import router
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCUserInfo,
+        )
+        from code_indexer.server.auth.oidc.state_manager import StateManager
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from code_indexer.server.auth.user_manager import User, UserRole
+        from unittest.mock import Mock, AsyncMock
+        from datetime import datetime, timezone
+
+        # Create configured OIDC manager
+        config = OIDCProviderConfig(
+            enabled=True,
+            issuer_url="https://example.com",
+            client_id="test-client-id",
+        )
+        oidc_mgr = OIDCManager(config, None, None)
+
+        # Mock provider methods
+        oidc_mgr.provider = Mock(spec=OIDCProvider)
+        oidc_mgr.provider.exchange_code_for_token = AsyncMock(
+            return_value={
+                "access_token": "test-access-token",
+                "id_token": "test-id-token",
+            }
+        )
+        oidc_mgr.provider.get_user_info = AsyncMock(
+            return_value=OIDCUserInfo(
+                subject="test-subject-123",
+                email="test@example.com",
+                email_verified=True,
+            )
+        )
+
+        # Mock OIDCManager methods
+        test_user = User(
+            username="testuser",
+            role=UserRole.NORMAL_USER,
+            password_hash="",
+            created_at=datetime.now(timezone.utc),
+            email="test@example.com",
+        )
+        oidc_mgr.match_or_create_user = AsyncMock(return_value=test_user)
+        oidc_mgr.create_jwt_session = Mock(return_value="test-jwt-token")
+
+        # Create state manager with valid state
+        state_mgr = StateManager()
+        state_token = state_mgr.create_state(
+            {"code_verifier": "test-code-verifier", "redirect_uri": None}
+        )
+
+        # Inject managers into routes module
+        import code_indexer.server.auth.oidc.routes as routes_module
+        from code_indexer.server.utils.config_manager import ServerConfig
+
+        routes_module.oidc_manager = oidc_mgr
+        routes_module.state_manager = state_mgr
+        routes_module.server_config = ServerConfig(
+            server_dir="/tmp", host="localhost", port=8090
+        )
+
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Set CIDX_ISSUER_URL environment variable
+        with patch.dict(
+            os.environ, {"CIDX_ISSUER_URL": "https://linner.ddns.net:8383"}
+        ):
+            # Make callback request
+            response = client.get(
+                f"/auth/sso/callback?code=test-auth-code&state={state_token}",
+                follow_redirects=False,
+            )
+
+            # Verify redirect succeeds
+            assert response.status_code == 302
+
+            # Verify exchange_code_for_token was called with CIDX_ISSUER_URL-based callback
+            oidc_mgr.provider.exchange_code_for_token.assert_called_once()
+            call_args = oidc_mgr.provider.exchange_code_for_token.call_args
+
+            # Third argument should be the callback URL using CIDX_ISSUER_URL
+            callback_url = call_args[0][2]  # positional arg 2
+            assert callback_url == "https://linner.ddns.net:8383/auth/sso/callback"
+
+    def test_sso_callback_uses_request_url_when_cidx_issuer_url_not_set(self):
+        """Test that /auth/sso/callback falls back to request.url_for() when CIDX_ISSUER_URL not set."""
+        from code_indexer.server.auth.oidc.routes import router
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.oidc.oidc_provider import (
+            OIDCProvider,
+            OIDCUserInfo,
+        )
+        from code_indexer.server.auth.oidc.state_manager import StateManager
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from code_indexer.server.auth.user_manager import User, UserRole
+        from unittest.mock import Mock, AsyncMock
+        from datetime import datetime, timezone
+
+        # Create configured OIDC manager
+        config = OIDCProviderConfig(
+            enabled=True,
+            issuer_url="https://example.com",
+            client_id="test-client-id",
+        )
+        oidc_mgr = OIDCManager(config, None, None)
+
+        # Mock provider methods
+        oidc_mgr.provider = Mock(spec=OIDCProvider)
+        oidc_mgr.provider.exchange_code_for_token = AsyncMock(
+            return_value={
+                "access_token": "test-access-token",
+                "id_token": "test-id-token",
+            }
+        )
+        oidc_mgr.provider.get_user_info = AsyncMock(
+            return_value=OIDCUserInfo(
+                subject="test-subject-123",
+                email="test@example.com",
+                email_verified=True,
+            )
+        )
+
+        # Mock OIDCManager methods
+        test_user = User(
+            username="testuser",
+            role=UserRole.NORMAL_USER,
+            password_hash="",
+            created_at=datetime.now(timezone.utc),
+            email="test@example.com",
+        )
+        oidc_mgr.match_or_create_user = AsyncMock(return_value=test_user)
+        oidc_mgr.create_jwt_session = Mock(return_value="test-jwt-token")
+
+        # Create state manager with valid state
+        state_mgr = StateManager()
+        state_token = state_mgr.create_state(
+            {"code_verifier": "test-code-verifier", "redirect_uri": None}
+        )
+
+        # Inject managers into routes module
+        import code_indexer.server.auth.oidc.routes as routes_module
+        from code_indexer.server.utils.config_manager import ServerConfig
+
+        routes_module.oidc_manager = oidc_mgr
+        routes_module.state_manager = state_mgr
+        routes_module.server_config = ServerConfig(
+            server_dir="/tmp", host="localhost", port=8090
+        )
+
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Ensure CIDX_ISSUER_URL is not set
+        with patch.dict(os.environ, {}, clear=False):
+            if "CIDX_ISSUER_URL" in os.environ:
+                del os.environ["CIDX_ISSUER_URL"]
+
+            # Make callback request
+            response = client.get(
+                f"/auth/sso/callback?code=test-auth-code&state={state_token}",
+                follow_redirects=False,
+            )
+
+            # Verify redirect succeeds
+            assert response.status_code == 302
+
+            # Verify exchange_code_for_token was called with request-based callback
+            oidc_mgr.provider.exchange_code_for_token.assert_called_once()
+            call_args = oidc_mgr.provider.exchange_code_for_token.call_args
+
+            # Third argument should be the callback URL from request.url_for()
+            callback_url = call_args[0][2]  # positional arg 2
+            assert callback_url.endswith("/auth/sso/callback")
+            # Should be http://testserver (TestClient default)
+            assert callback_url.startswith("http://testserver")

@@ -1904,9 +1904,7 @@ def create_app() -> FastAPI:
                 oidc_routes.state_manager = state_manager
                 oidc_routes.server_config = config
 
-                logger.info(
-                    f"OIDC configured for provider: {config.oidc_provider_config.provider_name} (will initialize on first login)"
-                )
+                logger.info("OIDC configured (will initialize on first login)")
             else:
                 logger.info("OIDC is not enabled")
 
