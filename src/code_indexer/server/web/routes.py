@@ -4199,8 +4199,10 @@ async def unified_login_sso(
     # Store state with code_verifier and redirect_to using OIDC state manager
     state_data = {
         "code_verifier": code_verifier,
-        "redirect_to": safe_redirect or "/user/api-keys",  # Default redirect
     }
+    # Only include redirect_to if explicitly provided (let callback determine based on role otherwise)
+    if safe_redirect:
+        state_data["redirect_to"] = safe_redirect
     state_token = oidc_routes.state_manager.create_state(state_data)
 
     # Build OIDC authorization URL
