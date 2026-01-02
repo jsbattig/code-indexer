@@ -17,8 +17,6 @@ import re
 
 from src.code_indexer.server.services.ci_token_manager import (
     CITokenManager,
-    TokenData,
-    TokenStatus,
     TokenValidationError,
 )
 
