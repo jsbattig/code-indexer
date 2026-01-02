@@ -16,7 +16,6 @@ class TestOIDCProviderErrorHandling:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://nonexistent.example.com",
             client_id="test-client",
             client_secret="test-secret",
@@ -60,7 +59,6 @@ class TestOIDCProviderErrorHandling:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://unreachable.example.com",
             client_id="test-client",
             client_secret="test-secret",
@@ -98,7 +96,6 @@ class TestOIDCProviderErrorHandling:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client",
             client_secret="test-secret",
@@ -148,7 +145,6 @@ class TestOIDCProviderErrorHandling:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client",
             client_secret="test-secret",
@@ -199,7 +195,6 @@ class TestOIDCProviderErrorHandling:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client",
             client_secret="test-secret",
@@ -251,7 +246,6 @@ class TestOIDCProviderErrorHandling:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client",
             client_secret="test-secret",

@@ -24,7 +24,6 @@ def oidc_test_config(mock_oidc_server, test_users_file):
 
     return OIDCProviderConfig(
         enabled=True,
-        provider_name="TestSSO",
         issuer_url=mock_oidc_server.base_url,
         client_id="test-client-id",
         client_secret="test-client-secret",
@@ -249,7 +248,6 @@ class TestOIDCIntegration:
         # Create config with JIT disabled
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url=mock_oidc_server.base_url,
             client_id="test-client",
             client_secret="test-secret",
@@ -293,7 +291,6 @@ class TestOIDCIntegration:
         # Create config with email verification required (default is True)
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url=mock_oidc_server.base_url,
             client_id="test-client",
             client_secret="test-secret",
@@ -340,7 +337,6 @@ class TestOIDCIntegration:
         # Create config with email verification NOT required
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url=mock_oidc_server.base_url,
             client_id="test-client",
             client_secret="test-secret",

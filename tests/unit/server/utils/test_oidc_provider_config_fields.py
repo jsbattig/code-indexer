@@ -46,7 +46,6 @@ class TestOIDCProviderConfigDeserialization:
                 "port": 8090,
                 "oidc_provider_config": {
                     "enabled": True,
-                    "provider_name": "Test SSO",
                     "issuer_url": "http://localhost:8180/realms/test",
                     "client_id": "test-client",
                     "client_secret": "test-secret",
@@ -75,7 +74,6 @@ class TestOIDCProviderConfigDeserialization:
 
             # Verify all fields are accessible
             assert config.oidc_provider_config.enabled is True
-            assert config.oidc_provider_config.provider_name == "Test SSO"
             assert (
                 config.oidc_provider_config.issuer_url
                 == "http://localhost:8180/realms/test"
