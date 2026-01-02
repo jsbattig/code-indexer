@@ -1245,16 +1245,29 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
         final_path_pattern = None
         # Normalize path first (remove trailing slash) - "/" becomes ""
         path = path.rstrip("/") if path else ""
+
+        # Determine if user_path_pattern is absolute or relative
+        # Absolute patterns contain '/' or '**' (e.g., "code/src/**/*.java", "**/*.py", "src/main/*.py")
+        # Relative patterns are simple globs (e.g., "*.py", "*.{py,java}")
+        is_absolute_pattern = False
+        if user_path_pattern:
+            is_absolute_pattern = "/" in user_path_pattern or user_path_pattern.startswith("**")
+
         if path:
             # Base pattern for the specified directory
             base_pattern = f"{path}/**/*" if recursive else f"{path}/*"
             if user_path_pattern:
-                # Combine path with user's pattern
-                # e.g., path="src", path_pattern="*.py" -> "src/**/*.py"
-                if recursive:
-                    final_path_pattern = f"{path}/**/{user_path_pattern}"
+                if is_absolute_pattern:
+                    # Absolute pattern: use it directly, ignore path parameter
+                    # e.g., path="wrong/path", path_pattern="code/src/**/*.java" -> "code/src/**/*.java"
+                    final_path_pattern = user_path_pattern
                 else:
-                    final_path_pattern = f"{path}/{user_path_pattern}"
+                    # Relative pattern: combine path with user's pattern
+                    # e.g., path="src", path_pattern="*.py" -> "src/**/*.py"
+                    if recursive:
+                        final_path_pattern = f"{path}/**/{user_path_pattern}"
+                    else:
+                        final_path_pattern = f"{path}/{user_path_pattern}"
             else:
                 final_path_pattern = base_pattern
         elif user_path_pattern:
