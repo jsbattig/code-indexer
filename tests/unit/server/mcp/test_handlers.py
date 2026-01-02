@@ -678,9 +678,7 @@ class TestFileHandlers:
             assert data["files"][1]["language"] == "python"
             assert data["files"][1]["is_indexed"] is False
 
-    async def test_list_files_path_parameter_lists_directory_contents(
-        self, mock_user
-    ):
+    async def test_list_files_path_parameter_lists_directory_contents(self, mock_user):
         """Test that path parameter lists files IN the specified directory.
 
         This test proves the bug: path="code/src/access" should return files

@@ -9,7 +9,6 @@ The critical bug being fixed:
 - pathspec: 'org/**/prod' DOES match 'org/prod' (zero or more directories)
 """
 
-import pytest
 from code_indexer.server.omni.repo_pattern_matcher import RepoPatternMatcher
 
 
