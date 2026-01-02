@@ -5,6 +5,7 @@ Provides admin web interface routes for CIDX server administration.
 """
 
 import logging
+import os
 import secrets
 from pathlib import Path
 from typing import Optional
@@ -4203,7 +4204,12 @@ async def unified_login_sso(
     state_token = oidc_routes.state_manager.create_state(state_data)
 
     # Build OIDC authorization URL
-    callback_url = str(request.base_url).rstrip("/") + "/auth/sso/callback"
+    # Use CIDX_ISSUER_URL if set (for reverse proxy scenarios), otherwise use request.base_url
+    issuer_url = os.getenv("CIDX_ISSUER_URL")
+    if issuer_url:
+        callback_url = f"{issuer_url.rstrip('/')}/auth/sso/callback"
+    else:
+        callback_url = str(request.base_url).rstrip("/") + "/auth/sso/callback"
     oidc_auth_url = oidc_routes.oidc_manager.provider.get_authorization_url(
         state=state_token, redirect_uri=callback_url, code_challenge=code_challenge
     )

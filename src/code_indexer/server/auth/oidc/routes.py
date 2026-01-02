@@ -1,7 +1,6 @@
 """OIDC authentication routes for FastAPI."""
 
 import os
-from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from ...web.auth import get_session_manager
@@ -15,59 +14,6 @@ oidc_manager = None
 
 # Global state manager instance (injected by app.py)
 state_manager = None
-
-
-@router.get("/login")
-async def sso_login(request: Request, redirect_uri: Optional[str] = None):
-    """Initiate OIDC authentication flow."""
-    if not oidc_manager or not oidc_manager.is_enabled():
-        raise HTTPException(status_code=404, detail="SSO not configured")
-
-    # Lazily initialize OIDC provider (discovers metadata)
-    try:
-        await oidc_manager.ensure_provider_initialized()
-    except Exception as e:
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.error(f"Failed to initialize OIDC provider: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="SSO provider is currently unavailable. Please try again later or contact administrator.",
-        )
-
-    # Generate PKCE code verifier
-    import secrets
-    import hashlib
-    import base64
-
-    code_verifier = secrets.token_urlsafe(32)
-
-    # Generate PKCE code challenge (S256 method)
-    code_challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
-        .decode()
-        .rstrip("=")
-    )
-
-    # Create state token with code verifier and redirect_uri
-    state = state_manager.create_state(
-        {"code_verifier": code_verifier, "redirect_uri": redirect_uri or "/admin"}
-    )
-
-    # Build callback URL using CIDX_ISSUER_URL if set (for reverse proxy scenarios)
-    issuer_url = os.getenv("CIDX_ISSUER_URL")
-    if issuer_url:
-        callback_url = f"{issuer_url.rstrip('/')}/auth/sso/callback"
-    else:
-        callback_url = str(request.url_for("sso_callback"))
-
-    # Build authorization URL
-    auth_url = oidc_manager.provider.get_authorization_url(
-        state, callback_url, code_challenge
-    )
-
-    return RedirectResponse(url=auth_url, status_code=302)
 
 
 @router.get("/callback")
