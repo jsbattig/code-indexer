@@ -167,6 +167,14 @@ class ServerConfig:
     max_concurrent_claude_cli: int = 4
     description_refresh_interval_hours: int = 24
 
+    # SCIP Workspace Cleanup settings (Story #647)
+    scip_workspace_retention_days: int = 7  # Default: 7 days
+
+    # PR Creation Configuration (Story #659)
+    enable_pr_creation: bool = True  # Enable automatic PR creation after SCIP fixes
+    pr_base_branch: str = "main"  # Default base branch for PRs
+    default_branch: str = "main"  # Default branch for repository operations
+
     def __post_init__(self):
         """Initialize nested config objects if not provided."""
         if self.password_security is None:
@@ -198,12 +206,16 @@ class ServerConfigManager:
         Initialize server configuration manager.
 
         Args:
-            server_dir_path: Path to server directory (defaults to ~/.cidx-server)
+            server_dir_path: Path to server directory (defaults to CIDX_SERVER_DATA_DIR env var or ~/.cidx-server)
         """
         if server_dir_path:
             self.server_dir = Path(server_dir_path)
         else:
-            self.server_dir = Path.home() / ".cidx-server"
+            # Honor CIDX_SERVER_DATA_DIR environment variable
+            default_dir = os.environ.get(
+                "CIDX_SERVER_DATA_DIR", str(Path.home() / ".cidx-server")
+            )
+            self.server_dir = Path(default_dir)
 
         self.config_file_path = self.server_dir / "config.json"
 
@@ -347,6 +359,15 @@ class ServerConfigManager:
         if log_level_env := os.environ.get("CIDX_LOG_LEVEL"):
             config.log_level = log_level_env.upper()
 
+        # SCIP workspace retention days override (Story #647 - AC1)
+        if retention_env := os.environ.get("CIDX_SCIP_WORKSPACE_RETENTION_DAYS"):
+            try:
+                config.scip_workspace_retention_days = int(retention_env)
+            except ValueError:
+                logging.warning(
+                    f"Invalid CIDX_SCIP_WORKSPACE_RETENTION_DAYS environment variable value '{retention_env}'. Using default {config.scip_workspace_retention_days} days"
+                )
+
         return config
 
     def validate_config(self, config: ServerConfig) -> None:
@@ -380,6 +401,12 @@ class ServerConfigManager:
         if config.max_concurrent_claude_cli < 1:
             raise ValueError(
                 f"max_concurrent_claude_cli must be greater than 0, got {config.max_concurrent_claude_cli}"
+            )
+
+        # Validate SCIP workspace retention days (Story #647 - AC1)
+        if not (1 <= config.scip_workspace_retention_days <= 365):
+            raise ValueError(
+                f"scip_workspace_retention_days must be between 1 and 365, got {config.scip_workspace_retention_days}"
             )
 
         # Validate description_refresh_interval_hours

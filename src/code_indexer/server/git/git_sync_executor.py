@@ -30,6 +30,8 @@ from ...utils.git_runner import (
     get_current_branch,
     get_current_commit,
 )
+from ..services.git_state_manager import GitStateManager
+from ..utils.config_manager import ServerConfigManager
 
 
 # Configure logging
@@ -166,6 +168,32 @@ class GitSyncExecutor:
             progress_callback(0, 0, Path(""), "Validating repository state")
 
         validation = self.validate_repository_state()
+
+        # Story #659 Priority 5: Clear dirty repo before pull if behind remote
+        if (
+            validation.has_uncommitted_changes
+            and validation.is_behind_remote
+            and not validation.can_pull
+        ):
+            logger.info(
+                "Repository is dirty and behind remote - triggering pre-pull clearing"
+            )
+            try:
+                config = ServerConfigManager().load_config()
+                git_manager = GitStateManager(config=config)
+                git_manager.clear_repo_before_refresh(repo_path=self.repository_path)
+                logger.info("Pre-pull clearing completed - re-validating repository")
+
+                # Re-validate after clearing
+                validation = self.validate_repository_state()
+
+            except Exception as e:
+                # Clearing errors are logged but not propagated
+                # Validation will still fail if repo remains dirty
+                logger.error(
+                    f"Pre-pull clearing failed (non-blocking): {e}", exc_info=True
+                )
+
         if not validation.can_pull:
             raise GitSyncError(
                 f"Repository not ready for pull: {', '.join(validation.validation_errors)}",

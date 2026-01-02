@@ -14,8 +14,8 @@ import inspect
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, TYPE_CHECKING
-from dataclasses import dataclass, asdict
+from typing import Dict, Any, Optional, Callable, TYPE_CHECKING, List
+from dataclasses import dataclass, asdict, field
 
 if TYPE_CHECKING:
     from code_indexer.server.utils.config_manager import ServerResourceConfig
@@ -29,11 +29,12 @@ class JobStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    RESOLVING_PREREQUISITES = "resolving_prerequisites"  # AC2: SCIP self-healing state
 
 
 @dataclass
 class BackgroundJob:
-    """Background job data structure."""
+    """Background job data structure with SCIP self-healing support."""
 
     job_id: str
     operation_type: str
@@ -47,6 +48,14 @@ class BackgroundJob:
     username: str  # User who submitted the job
     is_admin: bool = False  # Admin priority flag
     cancelled: bool = False  # Cancellation flag
+
+    # SCIP Self-Healing Fields (AC1: Extended BackgroundJob Model)
+    repo_alias: Optional[str] = None  # Repository being processed
+    resolution_attempts: int = 0  # Total Claude Code invocations across all projects
+    claude_actions: Optional[List[str]] = None  # Aggregated actions from all projects
+    failure_reason: Optional[str] = None  # Human-readable failure explanation
+    extended_error: Optional[Dict[str, Any]] = None  # Structured error context
+    language_resolution_status: Optional[Dict[str, Dict[str, Any]]] = None  # Per-project tracking
 
 
 class BackgroundJobManager:
@@ -97,6 +106,7 @@ class BackgroundJobManager:
         *args,
         submitter_username: str,
         is_admin: bool = False,
+        repo_alias: Optional[str] = None,  # AC5: Fix unknown repo bug
         **kwargs,
     ) -> str:
         """
@@ -108,6 +118,7 @@ class BackgroundJobManager:
             *args: Function arguments
             submitter_username: Username of the job submitter
             is_admin: Whether this is an admin job (higher priority)
+            repo_alias: Repository alias being processed (AC5: Fix unknown repo bug)
             **kwargs: Function keyword arguments
 
         Returns:
@@ -118,6 +129,18 @@ class BackgroundJobManager:
         """
         # NOTE: max_jobs_per_user limit has been removed as an artificial constraint
         # Jobs are no longer limited per user
+
+        # AC5: Validate repo_alias to prevent "unknown" values
+        if repo_alias is None:
+            logging.warning(
+                f"Job submitted without repo_alias for operation '{operation_type}' "
+                f"by user '{submitter_username}'. Consider providing repo_alias."
+            )
+        elif repo_alias.lower() == "unknown":
+            logging.warning(
+                f"Job submitted with repo_alias='unknown' for operation '{operation_type}' "
+                f"by user '{submitter_username}'. This may indicate missing repository context."
+            )
 
         job_id = str(uuid.uuid4())
 
@@ -133,6 +156,7 @@ class BackgroundJobManager:
             progress=0,
             username=submitter_username,
             is_admin=is_admin,
+            repo_alias=repo_alias,  # AC5: Store repo_alias
         )
 
         with self._lock:
@@ -184,6 +208,13 @@ class BackgroundJobManager:
                 "result": job.result,
                 "error": job.error,
                 "username": job.username,
+                "repo_alias": job.repo_alias,  # AC5: Include repo_alias in response
+                # AC6: Extended self-healing fields
+                "resolution_attempts": job.resolution_attempts,
+                "claude_actions": job.claude_actions,
+                "failure_reason": job.failure_reason,
+                "extended_error": job.extended_error,
+                "language_resolution_status": job.language_resolution_status,
             }
 
     def list_jobs(
@@ -242,6 +273,13 @@ class BackgroundJobManager:
                         "result": job.result,
                         "error": job.error,
                         "username": job.username,
+                        "repo_alias": job.repo_alias,  # AC5: Include repo_alias in list
+                        # AC6: Extended self-healing fields
+                        "resolution_attempts": job.resolution_attempts,
+                        "claude_actions": job.claude_actions,
+                        "failure_reason": job.failure_reason,
+                        "extended_error": job.extended_error,
+                        "language_resolution_status": job.language_resolution_status,
                     }
                 )
 

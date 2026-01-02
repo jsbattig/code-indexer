@@ -93,6 +93,7 @@ from .services.stats_service import stats_service
 from .services.file_service import file_service
 from .services.search_service import search_service
 from .services.health_service import health_service
+from .services.workspace_cleanup_service import WorkspaceCleanupService
 from .managers.composite_file_listing import _list_composite_files
 
 
@@ -1228,6 +1229,7 @@ background_job_manager: Optional[BackgroundJobManager] = None
 activated_repo_manager: Optional[ActivatedRepoManager] = None
 repository_listing_manager: Optional[RepositoryListingManager] = None
 semantic_query_manager: Optional[SemanticQueryManager] = None
+workspace_cleanup_service: Optional[WorkspaceCleanupService] = None
 
 # Server startup time for health monitoring
 _server_start_time: Optional[str] = None
@@ -2039,12 +2041,21 @@ def create_app() -> FastAPI:
         background_job_manager=background_job_manager,
     )
 
+    # Initialize WorkspaceCleanupService for SCIP workspace cleanup (Story #647)
+    global workspace_cleanup_service
+    workspace_cleanup_service = WorkspaceCleanupService(
+        config=server_config,
+        job_manager=background_job_manager,
+        workspace_root="/tmp",  # Standard temp directory for SCIP workspaces
+    )
+
     # Store managers in app.state for access by routes
     app.state.golden_repo_manager = golden_repo_manager
     app.state.background_job_manager = background_job_manager
     app.state.activated_repo_manager = activated_repo_manager
     app.state.repository_listing_manager = repository_listing_manager
     app.state.semantic_query_manager = semantic_query_manager
+    app.state.workspace_cleanup_service = workspace_cleanup_service
 
     # Initialize MCP credential manager
     from code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
@@ -3162,6 +3173,76 @@ def create_app() -> FastAPI:
 
         return MessageResponse(message=f"User '{username}' deleted successfully")
 
+    @app.post("/api/admin/scip-cleanup-workspaces")
+    async def scip_cleanup_workspaces(
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
+    ):
+        """
+        Manually trigger SCIP workspace cleanup (Story #647 - AC4).
+
+        Triggers immediate cleanup of expired SCIP self-healing workspaces using
+        WorkspaceCleanupService. Returns cleanup summary with counts and space reclaimed.
+
+        Args:
+            current_user: Current authenticated admin user
+
+        Returns:
+            Cleanup summary with deleted_count, preserved_count, space_freed_mb, errors
+
+        Raises:
+            HTTPException: If cleanup service unavailable or cleanup fails
+        """
+        try:
+            result = workspace_cleanup_service.cleanup_workspaces()
+
+            # Convert space from bytes to MB
+            space_freed_mb = result.space_reclaimed_bytes / (1024 * 1024)
+
+            return {
+                "deleted_count": result.workspaces_deleted,
+                "preserved_count": result.workspaces_preserved,
+                "space_freed_mb": round(space_freed_mb, 2),
+                "errors": result.errors,
+            }
+
+        except Exception as e:
+            logger.error(f"SCIP workspace cleanup failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Workspace cleanup failed: {str(e)}",
+            )
+
+    @app.get("/api/admin/scip-cleanup-status")
+    async def get_scip_cleanup_status(
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
+    ):
+        """
+        Get SCIP workspace cleanup status (Story #647 - AC5).
+
+        Returns current cleanup status including last cleanup time, workspace count,
+        oldest workspace age, and total workspace size.
+
+        Args:
+            current_user: Current authenticated admin user
+
+        Returns:
+            Status dictionary with last_cleanup_time, workspace_count,
+            oldest_workspace_age, total_size_mb
+
+        Raises:
+            HTTPException: If cleanup service unavailable or status retrieval fails
+        """
+        try:
+            status_info = workspace_cleanup_service.get_cleanup_status()
+            return status_info
+
+        except Exception as e:
+            logger.error(f"Failed to get SCIP cleanup status: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get cleanup status: {str(e)}",
+            )
+
     @app.put("/api/users/change-password", response_model=MessageResponse)
     async def change_current_user_password(
         password_data: ChangePasswordRequest,
@@ -3813,6 +3894,58 @@ def create_app() -> FastAPI:
             "success_rate": success_rate,
             "average_duration": average_duration,
         }
+
+    @app.get("/api/admin/scip-pr-history")
+    async def get_scip_pr_history(
+        repo_alias: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
+    ):
+        """
+        Get SCIP PR creation audit history (admin only).
+
+        Args:
+            repo_alias: Filter by repository alias (optional)
+            limit: Maximum number of records to return (default: 100)
+            offset: Number of records to skip (default: 0)
+
+        Returns:
+            Audit log entries for PR creations
+        """
+        from code_indexer.server.auth.audit_logger import password_audit_logger
+
+        logs = password_audit_logger.get_pr_logs(
+            repo_alias=repo_alias, limit=limit, offset=offset
+        )
+
+        return {"logs": logs, "total": len(logs)}
+
+    @app.get("/api/admin/scip-git-cleanup-history")
+    async def get_scip_git_cleanup_history(
+        repo_path: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
+    ):
+        """
+        Get SCIP git cleanup audit history (admin only).
+
+        Args:
+            repo_path: Filter by repository path (optional)
+            limit: Maximum number of records to return (default: 100)
+            offset: Number of records to skip (default: 0)
+
+        Returns:
+            Audit log entries for git cleanup operations
+        """
+        from code_indexer.server.auth.audit_logger import password_audit_logger
+
+        logs = password_audit_logger.get_cleanup_logs(
+            repo_path=repo_path, limit=limit, offset=offset
+        )
+
+        return {"logs": logs, "total": len(logs)}
 
     @app.delete("/api/admin/golden-repos/{alias}", status_code=204)
     async def remove_golden_repo(
@@ -4683,6 +4816,7 @@ def create_app() -> FastAPI:
                 sync_job_wrapper,
                 params={"repo_id": cleaned_repo_id},
                 submitter_username=current_user.username,
+                repo_alias=cleaned_repo_id,  # AC5: Fix unknown repo bug
             )
 
             # Return job details
@@ -5866,6 +6000,7 @@ def create_app() -> FastAPI:
                 "sync_repository",
                 sync_job_wrapper,
                 submitter_username=current_user.username,
+                repo_alias=cleaned_repo_id,  # AC5: Fix unknown repo bug
             )
 
             # Create response with job details
