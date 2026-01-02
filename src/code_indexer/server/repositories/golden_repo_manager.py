@@ -324,6 +324,7 @@ class GoldenRepoManager:
             func=background_worker,
             submitter_username=submitter_username,
             is_admin=True,
+            repo_alias=alias,  # AC5: Fix unknown repo bug
         )
         return job_id
 
@@ -517,6 +518,7 @@ class GoldenRepoManager:
             func=background_worker,
             submitter_username=submitter_username,
             is_admin=True,
+            repo_alias=alias,  # AC5: Fix unknown repo bug
         )
         return job_id
 
@@ -1136,6 +1138,7 @@ class GoldenRepoManager:
             func=background_worker,
             submitter_username=submitter_username,
             is_admin=True,
+            repo_alias=alias,  # AC5: Fix unknown repo bug
         )
         return job_id
 
@@ -1776,6 +1779,7 @@ class GoldenRepoManager:
             func=background_worker,
             submitter_username=submitter_username,
             is_admin=True,
+            repo_alias=alias,  # AC5: Fix unknown repo bug
         )
         return job_id
 

@@ -5,7 +5,6 @@ import getpass
 import json
 import logging
 import os
-import subprocess
 import sys
 import signal
 import time
@@ -5875,7 +5874,7 @@ def teach_ai(
         try:
             installed_files = install_skills(str(skills_dir))
             console.print(
-                f"✅ Skills installed to ~/.claude/skills/cidx/", style="green"
+                "✅ Skills installed to ~/.claude/skills/cidx/", style="green"
             )
             console.print(f"   Installed {len(installed_files)} files:", style="dim")
             for file in sorted(installed_files):
@@ -6136,7 +6135,7 @@ def teach_ai(
             )
             console.print(f"   Awareness file: {target_path}", style="dim")
             console.print(
-                f"   Skills directory: ~/.claude/skills/cidx/", style="dim"
+                "   Skills directory: ~/.claude/skills/cidx/", style="dim"
             )
         except Exception as e:
             console.print(f"❌ Failed to write instruction file: {e}", style="red")
@@ -12638,7 +12637,6 @@ def _load_admin_credentials(project_root: Path):
     from .remote.credential_manager import (
         CredentialNotFoundError,
         load_encrypted_credentials,
-        ProjectCredentialManager,
     )
 
     # Load remote configuration
@@ -13731,7 +13729,6 @@ def admin_mcp_credentials_group(ctx):
 def admin_mcp_credentials_list(ctx, user: str, format: str):
     """List MCP credentials for a specific user."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _list_credentials_async():
         """Async wrapper to ensure proper event loop handling."""
@@ -13805,7 +13802,6 @@ def admin_mcp_credentials_list(ctx, user: str, format: str):
 def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: str):
     """Create a new MCP credential for a user."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _create_credential_async():
         """Async wrapper to ensure proper event loop handling."""
@@ -13870,7 +13866,6 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
 def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
     """Revoke an MCP credential for a user."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _revoke_credential_async():
         """Async wrapper to ensure proper event loop handling."""
@@ -13890,7 +13885,7 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
 
         credentials, server_url = _load_admin_credentials(project_root)
 
-        with console.status(f"🗑️  Revoking credential..."):
+        with console.status("🗑️  Revoking credential..."):
             run_async(_revoke_credential_async())
 
         console.print("✅ Credential revoked successfully", style="green")
@@ -13920,7 +13915,6 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
 def admin_mcp_credentials_list_all(ctx, limit: int, format: str):
     """List all MCP credentials across all users."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _list_all_credentials_async():
         """Async wrapper to ensure proper event loop handling."""

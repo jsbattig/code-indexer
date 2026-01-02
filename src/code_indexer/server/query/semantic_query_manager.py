@@ -580,6 +580,7 @@ class SemanticQueryManager:
             min_score=min_score,
             file_extensions=file_extensions,
             submitter_username=username,
+            repo_alias=repository_alias,  # AC5: Fix unknown repo bug
         )
 
         self.logger.info(f"Semantic query job {job_id} submitted for user {username}")
