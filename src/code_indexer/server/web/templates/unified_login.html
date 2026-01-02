@@ -57,7 +57,9 @@
     function redirectToSSO() {
         let url = '/login/sso';
         {% if redirect_to %}
-        url += '?redirect_to=' + encodeURIComponent('{{ redirect_to | urlencode }}');
+        // Note: No urlencode filter - encodeURIComponent handles URL encoding
+        // Only escape single quotes for JavaScript string literal safety
+        url += '?redirect_to=' + encodeURIComponent('{{ redirect_to | replace("'", "\\'") }}');
         {% endif %}
         window.location.href = url;
     }

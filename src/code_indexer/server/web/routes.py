@@ -158,11 +158,11 @@ async def logout(request: Request):
     """
     Logout and clear session.
 
-    Redirects to login page after clearing session.
+    Redirects to unified login page after clearing session.
     """
     session_manager = get_session_manager()
     response = RedirectResponse(
-        url="/admin/login",
+        url="/login",
         status_code=status.HTTP_303_SEE_OTHER,
     )
     session_manager.clear_session(response)
@@ -188,11 +188,8 @@ async def dashboard(request: Request):
     session = session_manager.get_session(request)
 
     if not session:
-        # Not authenticated - redirect to login
-        return RedirectResponse(
-            url="/admin/login",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+        # Not authenticated - redirect to unified login
+        return _create_login_redirect(request)
 
     if session.role != "admin":
         # Not admin - forbidden
@@ -3745,11 +3742,11 @@ async def user_logout(request: Request):
     """
     Logout and clear session for user portal.
 
-    Redirects to login page after clearing session.
+    Redirects to unified login page after clearing session.
     """
     session_manager = get_session_manager()
     response = RedirectResponse(
-        url="/admin/login",
+        url="/login",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3765,9 +3762,7 @@ async def ssh_keys_page(request: Request):
     """SSH Keys management page - view migration status and manage SSH keys."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Generate fresh CSRF token
     csrf_token = generate_csrf_token()
@@ -3866,9 +3861,7 @@ async def create_ssh_key(
     """Create a new SSH key."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -3920,9 +3913,7 @@ async def delete_ssh_key(
     """Delete an SSH key."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -3958,9 +3949,7 @@ async def assign_host_to_key(
     """Assign a host to an SSH key."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -4196,12 +4185,12 @@ async def unified_login_sso(
     )
 
     # Validate redirect_to parameter (prevent open redirect)
-    # Note: redirect_to may be double-encoded from /login page, decode it
+    # Note: redirect_to is URL-encoded by JavaScript's encodeURIComponent, decode it
     from urllib.parse import unquote
 
     safe_redirect = None
     if redirect_to:
-        # URL-decode to handle double-encoding from /login redirect
+        # URL-decode (JavaScript's encodeURIComponent encoding)
         decoded_redirect = unquote(redirect_to)
         if decoded_redirect.startswith("/") and not decoded_redirect.startswith("//"):
             safe_redirect = decoded_redirect

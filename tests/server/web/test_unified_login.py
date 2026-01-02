@@ -158,9 +158,14 @@ class TestUnifiedLoginSubmission:
         )
 
         # Should redirect to /user/api-keys (normal user default)
-        assert response.status_code in [302, 303], f"Expected redirect, got {response.status_code}"
+        assert response.status_code in [
+            302,
+            303,
+        ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/user/api-keys" in location, f"Expected redirect to /user/api-keys, got {location}"
+        assert (
+            "/user/api-keys" in location
+        ), f"Expected redirect to /user/api-keys, got {location}"
 
         # Should set session cookie
         assert "session" in response.cookies, "Session cookie should be set"
@@ -198,7 +203,9 @@ class TestUnifiedLoginSubmission:
         # Should redirect to explicit redirect_to
         assert response.status_code in [302, 303]
         location = response.headers.get("location", "")
-        assert "/admin/users" in location, f"Expected redirect to /admin/users, got {location}"
+        assert (
+            "/admin/users" in location
+        ), f"Expected redirect to /admin/users, got {location}"
 
     def test_login_open_redirect_prevention(
         self, web_infrastructure: WebTestInfrastructure, admin_user: dict
@@ -301,6 +308,55 @@ class TestSSOInitiation:
             400,
             404,
         ], f"Endpoint should exist, got {response.status_code}"
+
+    def test_sso_redirect_to_with_query_params(self, web_client: TestClient):
+        """
+        SSO preserves redirect_to URLs with query parameters (double-encoding fix).
+
+        Given I am redirected to login from a URL with query parameters
+        When I click "Sign in with SSO"
+        Then the redirect_to parameter preserves the query params correctly
+        And no double-encoding occurs
+
+        This tests the fix for the double-encoding bug where Jinja's urlencode
+        filter combined with JavaScript's encodeURIComponent caused URLs with
+        query parameters to be double-encoded and broken.
+        """
+        # Test URL with query parameters (common case)
+        test_url = "/query?repo=backend&query=auth"
+
+        # The unified login page should preserve this redirect_to
+        # Note: Must URL-encode the redirect_to value since it contains special chars
+        from urllib.parse import quote
+
+        response = web_client.get(f"/login?redirect_to={quote(test_url, safe='')}")
+        assert response.status_code == 200
+
+        # Verify the JavaScript has the correct URL (not double-encoded)
+        # After fix: encodeURIComponent('/query?repo=backend&query=auth')
+        # Before fix (broken): encodeURIComponent('/query%3Frepo%3Dbackend%26query%3Dauth')
+        assert (
+            "encodeURIComponent('/query?repo=backend" in response.text
+        ), "JavaScript should have unencoded URL for encodeURIComponent to handle"
+
+        # Verify no double-encoding (the broken state we're fixing)
+        assert (
+            "%253F" not in response.text
+        ), "Should NOT have double-encoded ? (%253F indicates double-encoding)"
+
+        # SSO endpoint should handle the redirect_to parameter correctly
+        # (May fail if OIDC not configured, which is acceptable)
+        response = web_client.get(
+            f"/login/sso?redirect_to={quote(test_url, safe='')}", follow_redirects=False
+        )
+
+        # Endpoint should accept the parameter without error
+        assert response.status_code in [
+            302,
+            303,
+            400,
+            404,
+        ], f"Endpoint should handle query params, got {response.status_code}"
 
 
 # ==============================================================================
@@ -475,7 +531,9 @@ class TestProtectedRouteDecorators:
             303,
         ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert "/login" in location, f"Should redirect to unified /login, got {location}"
+        assert (
+            "/login" in location
+        ), f"Should redirect to unified /login, got {location}"
         assert (
             "redirect_to" in location
         ), "Should include redirect_to parameter for return URL"
