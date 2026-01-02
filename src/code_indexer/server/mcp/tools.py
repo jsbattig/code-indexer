@@ -5872,3 +5872,832 @@ TOOL_REGISTRY["get_index_status"] = {
     },
     "required_permission": "repository:read",
 }
+
+# =============================================================================
+# GITHUB ACTIONS MONITORING TOOLS (Story #633)
+# =============================================================================
+
+TOOL_REGISTRY["gh_actions_list_runs"] = {
+    "name": "gh_actions_list_runs",
+    "description": (
+        "TL;DR: List recent GitHub Actions workflow runs with optional filtering by branch and status. "
+        "QUICK START: gh_actions_list_runs(repository='owner/repo') returns recent runs. "
+        "USE CASES: (1) Monitor CI/CD status, (2) Find failed workflows, (3) Check workflow history. "
+        "FILTERS: branch='main' (filter by branch), status='failure' (filter by conclusion). "
+        "RETURNS: List of workflow runs with id, name, status, conclusion, branch, created_at. "
+        "PERMISSIONS: Requires repository:read. "
+        "AUTHENTICATION: Uses stored GitHub token from token storage. "
+        "EXAMPLE: gh_actions_list_runs(repository='owner/repo', branch='main', status='failure')"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "branch": {
+                "type": "string",
+                "description": "Optional branch filter",
+            },
+            "status": {
+                "type": "string",
+                "description": "Optional status filter (e.g., 'failure', 'success')",
+            },
+        },
+        "required": ["repository"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "runs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "status": {"type": "string"},
+                        "conclusion": {"type": "string"},
+                        "branch": {"type": "string"},
+                        "created_at": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gh_actions_get_run"] = {
+    "name": "gh_actions_get_run",
+    "description": (
+        "TL;DR: Get detailed information for a specific GitHub Actions workflow run. "
+        "QUICK START: gh_actions_get_run(repository='owner/repo', run_id=12345) returns detailed run info. "
+        "USE CASES: (1) Investigate specific workflow run, (2) Get timing information, (3) Find jobs URL. "
+        "RETURNS: Detailed run information including jobs_url, updated_at, run_started_at. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: gh_actions_get_run(repository='owner/repo', run_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID",
+            },
+        },
+        "required": ["repository", "run_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "run": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "name": {"type": "string"},
+                    "status": {"type": "string"},
+                    "conclusion": {"type": "string"},
+                    "branch": {"type": "string"},
+                    "created_at": {"type": "string"},
+                    "updated_at": {"type": "string"},
+                    "html_url": {"type": "string"},
+                    "jobs_url": {"type": "string"},
+                    "run_started_at": {"type": "string"},
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gh_actions_search_logs"] = {
+    "name": "gh_actions_search_logs",
+    "description": (
+        "TL;DR: Search workflow run logs for a pattern using ripgrep-style matching. "
+        "QUICK START: gh_actions_search_logs(repository='owner/repo', run_id=12345, pattern='error') finds errors in logs. "
+        "USE CASES: (1) Find error messages in logs, (2) Search for specific patterns, (3) Debug workflow failures. "
+        "RETURNS: List of matching log lines with job_id, job_name, line, line_number. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: gh_actions_search_logs(repository='owner/repo', run_id=12345, pattern='ERROR|FAIL')"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID",
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Pattern to search for (case-insensitive regex)",
+            },
+        },
+        "required": ["repository", "run_id", "pattern"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "matches": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "integer"},
+                        "job_name": {"type": "string"},
+                        "line": {"type": "string"},
+                        "line_number": {"type": "integer"},
+                    },
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gh_actions_get_job_logs"] = {
+    "name": "gh_actions_get_job_logs",
+    "description": (
+        "TL;DR: Get full log output for a specific job. "
+        "QUICK START: gh_actions_get_job_logs(repository='owner/repo', job_id=67890) returns complete logs. "
+        "USE CASES: (1) Read full job logs, (2) Debug specific job failure, (3) Analyze job output. "
+        "RETURNS: Full log output as text. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: gh_actions_get_job_logs(repository='owner/repo', job_id=67890)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "job_id": {
+                "type": "integer",
+                "description": "Job ID",
+            },
+        },
+        "required": ["repository", "job_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "logs": {"type": "string", "description": "Full log output"},
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gh_actions_retry_run"] = {
+    "name": "gh_actions_retry_run",
+    "description": (
+        "TL;DR: Retry a failed GitHub Actions workflow run. "
+        "QUICK START: gh_actions_retry_run(repository='owner/repo', run_id=12345) triggers retry. "
+        "USE CASES: (1) Retry flaky test failures, (2) Re-run after fixing issue, (3) Resume failed deployment. "
+        "RETURNS: Confirmation with run_id. "
+        "PERMISSIONS: Requires repository:write (GitHub Actions write access). "
+        "EXAMPLE: gh_actions_retry_run(repository='owner/repo', run_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID to retry",
+            },
+        },
+        "required": ["repository", "run_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "run_id": {"type": "integer"},
+        },
+    },
+    "required_permission": "repository:write",
+}
+
+TOOL_REGISTRY["gh_actions_cancel_run"] = {
+    "name": "gh_actions_cancel_run",
+    "description": (
+        "TL;DR: Cancel a running GitHub Actions workflow. "
+        "QUICK START: gh_actions_cancel_run(repository='owner/repo', run_id=12345) cancels workflow. "
+        "USE CASES: (1) Stop unnecessary workflow execution, (2) Cancel failed deployment, (3) Abort long-running jobs. "
+        "RETURNS: Confirmation with run_id. "
+        "PERMISSIONS: Requires repository:write (GitHub Actions write access). "
+        "EXAMPLE: gh_actions_cancel_run(repository='owner/repo', run_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID to cancel",
+            },
+        },
+        "required": ["repository", "run_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "run_id": {"type": "integer"},
+        },
+    },
+    "required_permission": "repository:write",
+}
+
+# ==============================================================================
+# GitLab CI Monitoring Tools (Story #634)
+# ==============================================================================
+
+TOOL_REGISTRY["gitlab_ci_list_pipelines"] = {
+    "name": "gitlab_ci_list_pipelines",
+    "description": (
+        "TL;DR: List recent GitLab CI pipelines with optional filtering by ref and status. "
+        "QUICK START: gitlab_ci_list_pipelines(project_id='namespace/project') returns recent pipelines. "
+        "USE CASES: (1) Monitor CI/CD status, (2) Find failed pipelines, (3) Check pipeline history. "
+        "FILTERS: ref='main' (filter by branch/tag), status='failed' (filter by status). "
+        "RETURNS: List of pipelines with id, status, ref, created_at, web_url. "
+        "PERMISSIONS: Requires repository:read. "
+        "AUTHENTICATION: Uses stored GitLab token from token storage. "
+        "SELF-HOSTED: Supports custom GitLab instances via base_url parameter. "
+        "EXAMPLE: gitlab_ci_list_pipelines(project_id='namespace/project', ref='main', status='failed')"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "project_id": {
+                "type": "string",
+                "description": "Project in 'namespace/project' format or numeric ID",
+            },
+            "ref": {
+                "type": "string",
+                "description": "Optional branch or tag filter",
+            },
+            "status": {
+                "type": "string",
+                "description": "Optional status filter (e.g., 'failed', 'success', 'running')",
+            },
+            "base_url": {
+                "type": "string",
+                "description": "Optional GitLab instance base URL (default: https://gitlab.com)",
+            },
+        },
+        "required": ["project_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "pipelines": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "status": {"type": "string"},
+                        "ref": {"type": "string"},
+                        "created_at": {"type": "string"},
+                        "web_url": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gitlab_ci_get_pipeline"] = {
+    "name": "gitlab_ci_get_pipeline",
+    "description": (
+        "TL;DR: Get detailed information for a specific GitLab CI pipeline. "
+        "QUICK START: gitlab_ci_get_pipeline(project_id='namespace/project', pipeline_id=12345) returns detailed pipeline info. "
+        "USE CASES: (1) Investigate specific pipeline run, (2) Get timing information, (3) View jobs and stages. "
+        "RETURNS: Detailed pipeline information including jobs, duration, coverage, commit SHA. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: gitlab_ci_get_pipeline(project_id='namespace/project', pipeline_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "project_id": {
+                "type": "string",
+                "description": "Project in 'namespace/project' format or numeric ID",
+            },
+            "pipeline_id": {
+                "type": "integer",
+                "description": "Pipeline ID",
+            },
+            "base_url": {
+                "type": "string",
+                "description": "Optional GitLab instance base URL (default: https://gitlab.com)",
+            },
+        },
+        "required": ["project_id", "pipeline_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "pipeline": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "status": {"type": "string"},
+                    "ref": {"type": "string"},
+                    "sha": {"type": "string"},
+                    "created_at": {"type": "string"},
+                    "updated_at": {"type": "string"},
+                    "web_url": {"type": "string"},
+                    "duration": {"type": "integer"},
+                    "coverage": {"type": "string"},
+                    "jobs": {"type": "array"},
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gitlab_ci_search_logs"] = {
+    "name": "gitlab_ci_search_logs",
+    "description": (
+        "TL;DR: Search GitLab CI pipeline logs for a pattern using regex matching. "
+        "QUICK START: gitlab_ci_search_logs(project_id='namespace/project', pipeline_id=12345, pattern='error') finds errors in logs. "
+        "USE CASES: (1) Find error messages in logs, (2) Search for specific patterns, (3) Debug pipeline failures. "
+        "RETURNS: List of matching log lines with job_id, job_name, stage, line, line_number. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: gitlab_ci_search_logs(project_id='namespace/project', pipeline_id=12345, pattern='ERROR|FAIL')"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "project_id": {
+                "type": "string",
+                "description": "Project in 'namespace/project' format or numeric ID",
+            },
+            "pipeline_id": {
+                "type": "integer",
+                "description": "Pipeline ID",
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Regex pattern to search for (case-insensitive)",
+            },
+            "base_url": {
+                "type": "string",
+                "description": "Optional GitLab instance base URL (default: https://gitlab.com)",
+            },
+        },
+        "required": ["project_id", "pipeline_id", "pattern"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "matches": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "integer"},
+                        "job_name": {"type": "string"},
+                        "stage": {"type": "string"},
+                        "line": {"type": "string"},
+                        "line_number": {"type": "integer"},
+                    },
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gitlab_ci_get_job_logs"] = {
+    "name": "gitlab_ci_get_job_logs",
+    "description": (
+        "TL;DR: Get full log output for a specific GitLab CI job. "
+        "QUICK START: gitlab_ci_get_job_logs(project_id='namespace/project', job_id=67890) returns complete logs. "
+        "USE CASES: (1) Read full job logs, (2) Debug specific job failure, (3) Analyze job output. "
+        "RETURNS: Full log output as text. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: gitlab_ci_get_job_logs(project_id='namespace/project', job_id=67890)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "project_id": {
+                "type": "string",
+                "description": "Project in 'namespace/project' format or numeric ID",
+            },
+            "job_id": {
+                "type": "integer",
+                "description": "Job ID",
+            },
+            "base_url": {
+                "type": "string",
+                "description": "Optional GitLab instance base URL (default: https://gitlab.com)",
+            },
+        },
+        "required": ["project_id", "job_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "logs": {"type": "string", "description": "Full log output"},
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gitlab_ci_retry_pipeline"] = {
+    "name": "gitlab_ci_retry_pipeline",
+    "description": (
+        "TL;DR: Retry a failed GitLab CI pipeline. "
+        "QUICK START: gitlab_ci_retry_pipeline(project_id='namespace/project', pipeline_id=12345) triggers retry. "
+        "USE CASES: (1) Retry flaky test failures, (2) Re-run after fixing issue, (3) Resume failed deployment. "
+        "RETURNS: Confirmation with pipeline_id. "
+        "PERMISSIONS: Requires repository:write (GitLab CI write access). "
+        "EXAMPLE: gitlab_ci_retry_pipeline(project_id='namespace/project', pipeline_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "project_id": {
+                "type": "string",
+                "description": "Project in 'namespace/project' format or numeric ID",
+            },
+            "pipeline_id": {
+                "type": "integer",
+                "description": "Pipeline ID to retry",
+            },
+            "base_url": {
+                "type": "string",
+                "description": "Optional GitLab instance base URL (default: https://gitlab.com)",
+            },
+        },
+        "required": ["project_id", "pipeline_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "pipeline_id": {"type": "integer"},
+        },
+    },
+    "required_permission": "repository:write",
+}
+
+TOOL_REGISTRY["gitlab_ci_cancel_pipeline"] = {
+    "name": "gitlab_ci_cancel_pipeline",
+    "description": (
+        "TL;DR: Cancel a running GitLab CI pipeline. "
+        "QUICK START: gitlab_ci_cancel_pipeline(project_id='namespace/project', pipeline_id=12345) cancels pipeline. "
+        "USE CASES: (1) Stop unnecessary pipeline execution, (2) Cancel failed deployment, (3) Abort long-running jobs. "
+        "RETURNS: Confirmation with pipeline_id. "
+        "PERMISSIONS: Requires repository:write (GitLab CI write access). "
+        "EXAMPLE: gitlab_ci_cancel_pipeline(project_id='namespace/project', pipeline_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "project_id": {
+                "type": "string",
+                "description": "Project in 'namespace/project' format or numeric ID",
+            },
+            "pipeline_id": {
+                "type": "integer",
+                "description": "Pipeline ID to cancel",
+            },
+            "base_url": {
+                "type": "string",
+                "description": "Optional GitLab instance base URL (default: https://gitlab.com)",
+            },
+        },
+        "required": ["project_id", "pipeline_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "pipeline_id": {"type": "integer"},
+        },
+    },
+    "required_permission": "repository:write",
+}
+
+# =============================================================================
+# GITHUB ACTIONS TOOLS
+# =============================================================================
+
+TOOL_REGISTRY["github_actions_list_runs"] = {
+    "name": "github_actions_list_runs",
+    "description": (
+        "TL;DR: List GitHub Actions workflow runs with optional filtering by workflow, status, and branch. "
+        "QUICK START: github_actions_list_runs(owner='user', repo='project') returns recent workflow runs. "
+        "USE CASES: (1) Monitor CI/CD status, (2) Find failed workflow runs, (3) Check workflow run history. "
+        "FILTERS: workflow_id='ci.yml' (filter by workflow), status='completed' (filter by status), branch='main' (filter by branch). "
+        "RETURNS: List of workflow runs with id, name, status, conclusion, branch, created_at. "
+        "PERMISSIONS: Requires repository:read. "
+        "AUTHENTICATION: Uses stored GitHub token from token storage. "
+        "EXAMPLE: github_actions_list_runs(owner='user', repo='project', status='failure', branch='main', limit=20)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "owner": {
+                "type": "string",
+                "description": "Repository owner (user or organization)",
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name",
+            },
+            "workflow_id": {
+                "type": "string",
+                "description": "Optional workflow ID or filename (e.g., 'ci.yml')",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["queued", "in_progress", "completed"],
+                "description": "Optional status filter",
+            },
+            "branch": {
+                "type": "string",
+                "description": "Optional branch name filter",
+            },
+            "limit": {
+                "type": "integer",
+                "default": 20,
+                "description": "Maximum number of runs to return (default: 20)",
+            },
+        },
+        "required": ["owner", "repo"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "runs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "status": {"type": "string"},
+                        "conclusion": {"type": "string"},
+                        "branch": {"type": "string"},
+                        "created_at": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["github_actions_get_run"] = {
+    "name": "github_actions_get_run",
+    "description": (
+        "TL;DR: Get detailed information for a specific GitHub Actions workflow run. "
+        "QUICK START: github_actions_get_run(owner='user', repo='project', run_id=12345) returns detailed run info. "
+        "USE CASES: (1) Investigate specific workflow run, (2) Get timing and job information, (3) View run artifacts. "
+        "RETURNS: Detailed run information including jobs with steps, duration, commit SHA, artifacts, html_url. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: github_actions_get_run(owner='user', repo='project', run_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "owner": {
+                "type": "string",
+                "description": "Repository owner",
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID",
+            },
+        },
+        "required": ["owner", "repo", "run_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "run": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "name": {"type": "string"},
+                    "status": {"type": "string"},
+                    "conclusion": {"type": "string"},
+                    "branch": {"type": "string"},
+                    "commit_sha": {"type": "string"},
+                    "duration_seconds": {"type": "integer"},
+                    "created_at": {"type": "string"},
+                    "updated_at": {"type": "string"},
+                    "html_url": {"type": "string"},
+                    "jobs": {"type": "array"},
+                    "artifacts": {"type": "array"},
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["github_actions_search_logs"] = {
+    "name": "github_actions_search_logs",
+    "description": (
+        "TL;DR: Search GitHub Actions workflow run logs for a pattern using regex matching. "
+        "QUICK START: github_actions_search_logs(owner='user', repo='project', run_id=12345, query='error') finds errors in logs. "
+        "USE CASES: (1) Find error messages in logs, (2) Search for specific patterns, (3) Debug workflow failures. "
+        "RETURNS: List of matching log lines with job_id, job_name, line, line_number. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: github_actions_search_logs(owner='user', repo='project', run_id=12345, query='ERROR|FAIL')"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "owner": {
+                "type": "string",
+                "description": "Repository owner",
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID",
+            },
+            "query": {
+                "type": "string",
+                "description": "Search query string (case-insensitive regex)",
+            },
+        },
+        "required": ["owner", "repo", "run_id", "query"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "matches": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "integer"},
+                        "job_name": {"type": "string"},
+                        "line": {"type": "string"},
+                        "line_number": {"type": "integer"},
+                    },
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["github_actions_get_job_logs"] = {
+    "name": "github_actions_get_job_logs",
+    "description": (
+        "TL;DR: Get full log output for a specific GitHub Actions job. "
+        "QUICK START: github_actions_get_job_logs(owner='user', repo='project', job_id=67890) returns complete logs. "
+        "USE CASES: (1) Read full job logs, (2) Debug specific job failure, (3) Analyze job output. "
+        "RETURNS: Full log output as text. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: github_actions_get_job_logs(owner='user', repo='project', job_id=67890)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "owner": {
+                "type": "string",
+                "description": "Repository owner",
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name",
+            },
+            "job_id": {
+                "type": "integer",
+                "description": "Job ID",
+            },
+        },
+        "required": ["owner", "repo", "job_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "logs": {"type": "string", "description": "Full log output"},
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["github_actions_retry_run"] = {
+    "name": "github_actions_retry_run",
+    "description": (
+        "TL;DR: Retry a failed GitHub Actions workflow run. "
+        "QUICK START: github_actions_retry_run(owner='user', repo='project', run_id=12345) triggers retry. "
+        "USE CASES: (1) Retry flaky test failures, (2) Re-run after fixing issue, (3) Resume failed deployment. "
+        "RETURNS: Confirmation with run_id and success status. "
+        "PERMISSIONS: Requires repository:write (GitHub Actions write access). "
+        "EXAMPLE: github_actions_retry_run(owner='user', repo='project', run_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "owner": {
+                "type": "string",
+                "description": "Repository owner",
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID to retry",
+            },
+        },
+        "required": ["owner", "repo", "run_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "run_id": {"type": "integer"},
+        },
+    },
+    "required_permission": "repository:write",
+}
+
+TOOL_REGISTRY["github_actions_cancel_run"] = {
+    "name": "github_actions_cancel_run",
+    "description": (
+        "TL;DR: Cancel a running GitHub Actions workflow run. "
+        "QUICK START: github_actions_cancel_run(owner='user', repo='project', run_id=12345) cancels workflow run. "
+        "USE CASES: (1) Stop unnecessary workflow execution, (2) Cancel failed deployment, (3) Abort long-running jobs. "
+        "RETURNS: Confirmation with run_id and success status. "
+        "PERMISSIONS: Requires repository:write (GitHub Actions write access). "
+        "EXAMPLE: github_actions_cancel_run(owner='user', repo='project', run_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "owner": {
+                "type": "string",
+                "description": "Repository owner",
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID to cancel",
+            },
+        },
+        "required": ["owner", "repo", "run_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "run_id": {"type": "integer"},
+        },
+    },
+    "required_permission": "repository:write",
+}
