@@ -127,7 +127,6 @@ class ConfigService:
             # OIDC/SSO authentication
             "oidc": {
                 "enabled": config.oidc_provider_config.enabled,
-                "provider_name": config.oidc_provider_config.provider_name,
                 "issuer_url": config.oidc_provider_config.issuer_url,
                 "client_id": config.oidc_provider_config.client_id,
                 "client_secret": config.oidc_provider_config.client_secret,
@@ -308,8 +307,6 @@ class ConfigService:
         oidc = config.oidc_provider_config
         if key == "enabled":
             oidc.enabled = value in ["true", True]
-        elif key == "provider_name":
-            oidc.provider_name = str(value)
         elif key == "issuer_url":
             oidc.issuer_url = str(value)
         elif key == "client_id":

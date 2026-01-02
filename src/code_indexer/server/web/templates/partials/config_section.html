@@ -409,11 +409,6 @@
                         <td class="config-note"></td>
                     </tr>
                     <tr>
-                        <td class="config-label">Provider Name</td>
-                        <td class="config-value">{{ config.oidc.provider_name }}</td>
-                        <td class="config-note"><small>Displayed on login button</small></td>
-                    </tr>
-                    <tr>
                         <td class="config-label">Issuer URL</td>
                         <td class="config-value">{{ config.oidc.issuer_url or 'Not configured' }}</td>
                         <td class="config-note"></td>
@@ -482,11 +477,6 @@
                         <option value="true" {% if config.oidc.enabled %}selected{% endif %}>Yes</option>
                         <option value="false" {% if not config.oidc.enabled %}selected{% endif %}>No</option>
                     </select>
-                </label>
-                <label for="oidc-provider-name">
-                    Provider Name
-                    <input type="text" id="oidc-provider-name" name="provider_name" value="{{ config.oidc.provider_name }}">
-                    <small>Displayed on login button (e.g., "Google", "Okta")</small>
                 </label>
                 <label for="oidc-issuer-url">
                     Issuer URL

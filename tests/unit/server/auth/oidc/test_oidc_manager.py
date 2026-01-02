@@ -13,7 +13,6 @@ class TestOIDCManager:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
             client_secret="test-client-secret",
@@ -38,7 +37,6 @@ class TestOIDCManager:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
             client_secret="test-client-secret",
@@ -70,7 +68,6 @@ class TestOIDCManager:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
         )
 
@@ -380,7 +377,6 @@ class TestOIDCManager:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
             client_secret="test-client-secret",
@@ -448,7 +444,6 @@ class TestOIDCManager:
         # Create test config with JIT provisioning enabled
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
             client_secret="test-client-secret",

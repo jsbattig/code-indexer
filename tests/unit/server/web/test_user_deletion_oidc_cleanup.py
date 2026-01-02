@@ -21,7 +21,6 @@ class TestUserDeletionOIDCCleanup:
         # Create OIDC manager to initialize database
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
             client_secret="test-client-secret",
@@ -94,7 +93,6 @@ class TestUserDeletionOIDCCleanup:
         # Create OIDC manager to initialize database
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
             client_secret="test-client-secret",

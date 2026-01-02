@@ -14,7 +14,6 @@ class TestOIDCProviderConfig:
         config = OIDCProviderConfig()
 
         assert config.enabled is False
-        assert config.provider_name == "SSO"
         assert config.issuer_url == ""
 
     def test_server_config_includes_oidc_provider_config(self):

@@ -29,7 +29,7 @@ class OIDCManager:
             from .oidc_provider import OIDCProvider
 
             logger = logging.getLogger(__name__)
-            logger.info(f"Initializing OIDC provider: {self.config.provider_name}")
+            logger.info("Initializing SSO provider")
 
             try:
                 # Create provider and discover metadata atomically
@@ -39,12 +39,10 @@ class OIDCManager:
 
                 # Success - now we can set self.provider
                 self.provider = provider
-                logger.info(
-                    f"OIDC provider initialized successfully: {self.config.provider_name}"
-                )
+                logger.info("SSO provider initialized successfully")
             except Exception as e:
                 logger.error(
-                    f"Failed to initialize OIDC provider {self.config.provider_name}: {e}",
+                    f"Failed to initialize SSO provider: {e}",
                     exc_info=True,
                 )
                 # Don't set self.provider - leave it None so we can retry

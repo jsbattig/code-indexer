@@ -57,7 +57,6 @@ class TestOIDCProvider:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
         )
 
@@ -76,7 +75,6 @@ class TestOIDCProvider:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
         )
 
@@ -131,7 +129,6 @@ class TestOIDCProvider:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
         )
 
@@ -171,7 +168,6 @@ class TestOIDCProvider:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
         )
 
@@ -200,7 +196,6 @@ class TestOIDCProvider:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             scopes=["openid", "profile", "email", "groups"],
         )
@@ -230,7 +225,6 @@ class TestOIDCProvider:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             client_id="test-client-id",
             client_secret="test-client-secret",
@@ -301,7 +295,6 @@ class TestOIDCProvider:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
         )
 

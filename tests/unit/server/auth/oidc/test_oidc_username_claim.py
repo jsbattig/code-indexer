@@ -17,7 +17,6 @@ class TestUsernameClaimExtraction:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             username_claim="preferred_username",  # Default
         )
@@ -78,7 +77,6 @@ class TestUsernameClaimExtraction:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             username_claim="custom_username",  # Custom claim
         )
@@ -137,7 +135,6 @@ class TestUsernameClaimExtraction:
 
         config = OIDCProviderConfig(
             enabled=True,
-            provider_name="TestSSO",
             issuer_url="https://example.com",
             username_claim="preferred_username",
         )

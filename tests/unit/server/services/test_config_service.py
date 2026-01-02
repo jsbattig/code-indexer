@@ -334,16 +334,6 @@ class TestOIDCConfigSettings:
         config = service.get_config()
         assert config.oidc_provider_config.enabled is False
 
-    def test_update_oidc_provider_name(self, tmp_path):
-        """Test updating OIDC provider name."""
-        service = ConfigService(server_dir_path=str(tmp_path))
-        service.load_config()
-
-        service.update_setting("oidc", "provider_name", "MySSO")
-
-        config = service.get_config()
-        assert config.oidc_provider_config.provider_name == "MySSO"
-
     def test_update_oidc_issuer_url(self, tmp_path):
         """Test updating OIDC issuer URL."""
         service = ConfigService(server_dir_path=str(tmp_path))
