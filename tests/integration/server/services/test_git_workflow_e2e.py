@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from code_indexer.server.services.git_state_manager import (
+from src.code_indexer.server.services.git_state_manager import (
     GitStateManager,
     PRCreationResult,
 )

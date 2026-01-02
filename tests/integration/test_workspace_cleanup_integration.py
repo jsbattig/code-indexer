@@ -12,12 +12,12 @@ import time
 
 import pytest
 
-from code_indexer.server.repositories.background_jobs import BackgroundJobManager
-from code_indexer.server.repositories.scip_audit import SCIPAuditRepository
-from code_indexer.server.services.workspace_cleanup_service import (
+from src.code_indexer.server.repositories.background_jobs import BackgroundJobManager
+from src.code_indexer.server.repositories.scip_audit import SCIPAuditRepository
+from src.code_indexer.server.services.workspace_cleanup_service import (
     WorkspaceCleanupService,
 )
-from code_indexer.server.utils.config_manager import ServerConfig
+from src.code_indexer.server.utils.config_manager import ServerConfig
 
 
 @pytest.fixture
