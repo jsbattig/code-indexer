@@ -1107,7 +1107,16 @@ RELATED TOOLS:
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory path (optional)",
+                    "description": "Directory path to list files from (optional). Lists all files IN the specified directory. Example: path='src/auth' lists files matching 'src/auth/**/*' pattern.",
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to recursively list files in subdirectories (default: true). When true, uses '**/*' pattern. When false, uses '*' pattern (only direct children).",
+                },
+                "path_pattern": {
+                    "type": "string",
+                    "description": "Optional glob pattern to filter files within the directory specified by 'path'. Example: path='src', path_pattern='*.py' lists files matching 'src/**/*.py'. If 'path' is not specified, applies pattern to entire repository.",
                 },
                 "response_format": {
                     "type": "string",

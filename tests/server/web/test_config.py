@@ -427,7 +427,9 @@ class TestOIDCConfig:
 
         assert response.status_code == 200
         text_lower = response.text.lower()
-        assert "oidc" in text_lower or "sso" in text_lower, "Page should have OIDC/SSO section"
+        assert (
+            "oidc" in text_lower or "sso" in text_lower
+        ), "Page should have OIDC/SSO section"
 
     def test_oidc_save_success(
         self, web_infrastructure: WebTestInfrastructure, admin_user: Dict[str, Any]
@@ -472,9 +474,15 @@ class TestOIDCConfig:
         text_lower = response.text.lower()
 
         # Should NOT show error message
-        assert "invalid section" not in text_lower, "Should not show 'invalid section' error"
-        assert "error" not in text_lower or "success" in text_lower, "Should not show error without success"
+        assert (
+            "invalid section" not in text_lower
+        ), "Should not show 'invalid section' error"
+        assert (
+            "error" not in text_lower or "success" in text_lower
+        ), "Should not show error without success"
 
         # Should show success message (being more specific)
         assert "success" in text_lower, "Should show success message"
-        assert "oidc" in text_lower or "saved" in text_lower, "Success message should mention OIDC or saved"
+        assert (
+            "oidc" in text_lower or "saved" in text_lower
+        ), "Success message should mention OIDC or saved"

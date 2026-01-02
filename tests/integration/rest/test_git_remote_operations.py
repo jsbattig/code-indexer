@@ -29,16 +29,13 @@ def test_git_push_real_remote(client, activated_repo, test_repo_dir: Path):
     test_file.write_text("content to push")
     subprocess.run(["git", "add", "push_test.txt"], cwd=test_repo_dir, check=True)
     subprocess.run(
-        ["git", "commit", "-m", "Test commit for push"],
-        cwd=test_repo_dir,
-        check=True
+        ["git", "commit", "-m", "Test commit for push"], cwd=test_repo_dir, check=True
     )
 
     try:
         # Execute: Call REST endpoint to push
         response = client.post(
-            f"/api/v1/repos/{activated_repo}/git/push",
-            json={"remote": "origin"}
+            f"/api/v1/repos/{activated_repo}/git/push", json={"remote": "origin"}
         )
 
         # Verify: Check HTTP response
@@ -49,7 +46,9 @@ def test_git_push_real_remote(client, activated_repo, test_repo_dir: Path):
 
     finally:
         # Cleanup: Reset local repo (remote will need manual cleanup)
-        subprocess.run(["git", "reset", "--hard", "HEAD~1"], cwd=test_repo_dir, capture_output=True)
+        subprocess.run(
+            ["git", "reset", "--hard", "HEAD~1"], cwd=test_repo_dir, capture_output=True
+        )
 
 
 def test_git_pull_real_remote(client, activated_repo, test_repo_dir: Path):
@@ -60,8 +59,7 @@ def test_git_pull_real_remote(client, activated_repo, test_repo_dir: Path):
     """
     # Execute: Call REST endpoint to pull
     response = client.post(
-        f"/api/v1/repos/{activated_repo}/git/pull",
-        json={"remote": "origin"}
+        f"/api/v1/repos/{activated_repo}/git/pull", json={"remote": "origin"}
     )
 
     # Verify: Check HTTP response
@@ -81,8 +79,7 @@ def test_git_fetch_real_remote(client, activated_repo, test_repo_dir: Path):
     """
     # Execute: Call REST endpoint to fetch
     response = client.post(
-        f"/api/v1/repos/{activated_repo}/git/fetch",
-        json={"remote": "origin"}
+        f"/api/v1/repos/{activated_repo}/git/fetch", json={"remote": "origin"}
     )
 
     # Verify: Check HTTP response

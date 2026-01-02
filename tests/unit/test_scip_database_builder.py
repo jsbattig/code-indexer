@@ -10,7 +10,6 @@ except ImportError:
     import sqlite3
 
 from code_indexer.scip.database.builder import SCIPDatabaseBuilder
-from code_indexer.scip.database.queries import trace_call_chain
 from code_indexer.scip.database.schema import DatabaseManager
 from code_indexer.scip.protobuf import scip_pb2
 
@@ -294,7 +293,9 @@ class TestCallGraphGeneration:
         helper_ref = doc.occurrences.add()
         helper_ref.symbol = "test.py::helper()."
         helper_ref.range.extend([12, 4, 12, 10])
-        helper_ref.symbol_roles = 10  # Bit 2 (reference) + Bit 8 (ReadAccess) = calls relationship
+        helper_ref.symbol_roles = (
+            10  # Bit 2 (reference) + Bit 8 (ReadAccess) = calls relationship
+        )
 
         # Add symbols
         func_symbol = index.external_symbols.add()
@@ -336,7 +337,9 @@ class TestCallGraphGeneration:
         conn = sqlite3.connect(manager.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT caller_symbol_id, callee_symbol_id, relationship FROM call_graph")
+        cursor.execute(
+            "SELECT caller_symbol_id, callee_symbol_id, relationship FROM call_graph"
+        )
         edges = cursor.fetchall()
 
         assert len(edges) == 1
@@ -387,7 +390,9 @@ class TestCallGraphGeneration:
         helper_ref = doc.occurrences.add()
         helper_ref.symbol = "test.py::callee()."
         helper_ref.range.extend([12, 4, 12, 10])
-        helper_ref.symbol_roles = 8  # ROLE_READ_ACCESS (374,685 occurrences in real data)
+        helper_ref.symbol_roles = (
+            8  # ROLE_READ_ACCESS (374,685 occurrences in real data)
+        )
 
         # Add symbols
         func_symbol = index.external_symbols.add()
@@ -414,12 +419,16 @@ class TestCallGraphGeneration:
 
         # CRITICAL: With role=8, call_graph_count MUST be > 0
         # Bug was: checking role & 2 (ROLE_IMPORT) when should check role & 8 (ROLE_READ_ACCESS)
-        assert result["call_graph_count"] > 0, "Call graph should have edges for role=8 (ROLE_READ_ACCESS)"
+        assert (
+            result["call_graph_count"] > 0
+        ), "Call graph should have edges for role=8 (ROLE_READ_ACCESS)"
 
         conn = sqlite3.connect(manager.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT caller_symbol_id, callee_symbol_id, relationship FROM call_graph")
+        cursor.execute(
+            "SELECT caller_symbol_id, callee_symbol_id, relationship FROM call_graph"
+        )
         edges = cursor.fetchall()
 
         assert len(edges) == 1
@@ -492,15 +501,21 @@ class TestCallGraphGeneration:
         result = builder.build(scip_file, manager.db_path)
 
         # CRITICAL: All 3 occurrences MUST be inserted (no data loss)
-        assert result["occurrence_count"] == 3, f"Expected 3 occurrences, got {result['occurrence_count']}"
+        assert (
+            result["occurrence_count"] == 3
+        ), f"Expected 3 occurrences, got {result['occurrence_count']}"
 
         conn = sqlite3.connect(manager.db_path)
         cursor = conn.cursor()
 
         # Verify external symbol was created
-        cursor.execute("SELECT COUNT(*) FROM symbols WHERE name = ?", ("numpy::`ndarray#",))
+        cursor.execute(
+            "SELECT COUNT(*) FROM symbols WHERE name = ?", ("numpy::`ndarray#",)
+        )
         external_symbol_count = cursor.fetchone()[0]
-        assert external_symbol_count == 1, "External symbol should be created as placeholder"
+        assert (
+            external_symbol_count == 1
+        ), "External symbol should be created as placeholder"
 
         # Verify all occurrences inserted
         cursor.execute("SELECT COUNT(*) FROM occurrences")
@@ -661,7 +676,9 @@ class TestComputeEnclosingRanges:
         assert start_line == 15
         assert end_line == 999999
 
-    def test_build_symbol_references_creates_edges_without_protobuf_enclosing_range(self, tmp_path: Path):
+    def test_build_symbol_references_creates_edges_without_protobuf_enclosing_range(
+        self, tmp_path: Path
+    ):
         """
         Test symbol_references gets edges when definitions lack protobuf enclosing_range.
         CRITICAL: Only 3.3% of definitions have protobuf data. Must use computed ranges for all.
@@ -693,6 +710,7 @@ class TestComputeEnclosingRanges:
         with open(scip_file, "wb") as f:
             f.write(index.SerializeToString())
         from code_indexer.scip.database.schema import DatabaseManager
+
         manager = DatabaseManager(scip_file)
         manager.create_schema()
         builder = SCIPDatabaseBuilder()
@@ -703,7 +721,9 @@ class TestComputeEnclosingRanges:
         cursor.execute("SELECT COUNT(*) FROM symbol_references")
         edge_count = cursor.fetchone()[0]
         conn.close()
-        assert edge_count > 0, "symbol_references should have edges despite missing protobuf enclosing_range"
+        assert (
+            edge_count > 0
+        ), "symbol_references should have edges despite missing protobuf enclosing_range"
 
     def test_call_graph_populated_from_java_repository(self, tmp_path: Path):
         """
@@ -765,6 +785,7 @@ class TestComputeEnclosingRanges:
 
         # Build database
         from code_indexer.scip.database.schema import DatabaseManager
+
         manager = DatabaseManager(scip_file)
         manager.create_schema()
 
@@ -772,26 +793,30 @@ class TestComputeEnclosingRanges:
         result = builder.build(scip_file, manager.db_path)
 
         # CRITICAL: call_graph table MUST have edges
-        assert result["call_graph_count"] > 0, \
-            f"call_graph table should be populated, got {result['call_graph_count']} rows"
+        assert (
+            result["call_graph_count"] > 0
+        ), f"call_graph table should be populated, got {result['call_graph_count']} rows"
 
         # Verify specific dependency edge exists: UserServiceImpl.<init> -> UserRepository
         conn = sqlite3.connect(manager.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT c.caller_display_name, c.callee_display_name, c.relationship
             FROM call_graph c
             WHERE c.callee_display_name = 'UserRepository'
-        """)
+        """
+        )
         edges = cursor.fetchall()
 
         assert len(edges) > 0, "Should have at least one edge to UserRepository"
 
         # Verify constructor depends on UserRepository
         caller_names = [e[0] for e in edges]
-        assert "<init>" in caller_names, \
-            f"Constructor should depend on UserRepository, found callers: {caller_names}"
+        assert (
+            "<init>" in caller_names
+        ), f"Constructor should depend on UserRepository, found callers: {caller_names}"
 
         conn.close()
 
@@ -851,6 +876,7 @@ class TestComputeEnclosingRanges:
 
         # Build database
         from code_indexer.scip.database.schema import DatabaseManager
+
         manager = DatabaseManager(scip_file)
         manager.create_schema()
 
@@ -870,9 +896,12 @@ class TestComputeEnclosingRanges:
         conn.close()
 
         # After fix: Both tables include ALL reference types
-        assert sr_count > 0, "symbol_references should have edges for import/write references"
-        assert cg_count > 0, \
-            "call_graph should ALSO have edges for import/write references (FIX for dependencies/dependents bug)"
+        assert (
+            sr_count > 0
+        ), "symbol_references should have edges for import/write references"
+        assert (
+            cg_count > 0
+        ), "call_graph should ALSO have edges for import/write references (FIX for dependencies/dependents bug)"
 
     def test_call_graph_with_external_symbol_reference(self, tmp_path: Path):
         """
@@ -911,6 +940,7 @@ class TestComputeEnclosingRanges:
             f.write(index.SerializeToString())
 
         from code_indexer.scip.database.schema import DatabaseManager
+
         manager = DatabaseManager(scip_file)
         manager.create_schema()
 
@@ -918,8 +948,9 @@ class TestComputeEnclosingRanges:
         result = builder.build(scip_file, manager.db_path)
 
         # Verify call_graph has edge for method -> Repository
-        assert result["call_graph_count"] > 0, \
-            f"call_graph should have edge for method -> external Repository, got {result['call_graph_count']}"
+        assert (
+            result["call_graph_count"] > 0
+        ), f"call_graph should have edge for method -> external Repository, got {result['call_graph_count']}"
 
         conn = sqlite3.connect(manager.db_path)
         cursor = conn.cursor()
@@ -927,8 +958,9 @@ class TestComputeEnclosingRanges:
         callees = [row[0] for row in cursor.fetchall()]
         conn.close()
 
-        assert "Repository" in callees, \
-            f"call_graph should reference external Repository symbol, got: {callees}"
+        assert (
+            "Repository" in callees
+        ), f"call_graph should reference external Repository symbol, got: {callees}"
 
     def test_call_graph_empty_when_symbol_references_populated(self, tmp_path: Path):
         """
@@ -993,6 +1025,7 @@ class TestComputeEnclosingRanges:
 
         # Build database
         from code_indexer.scip.database.schema import DatabaseManager
+
         manager = DatabaseManager(scip_file)
         manager.create_schema()
 
@@ -1015,11 +1048,14 @@ class TestComputeEnclosingRanges:
         # Expected: If symbol_references has edges, call_graph should also have edges
         # Actual: symbol_references > 0, call_graph = 0
         print(f"DEBUG: symbol_references={sr_count}, call_graph={cg_count}")
-        assert sr_count > 0, "symbol_references should be populated (matches manual test evidence)"
+        assert (
+            sr_count > 0
+        ), "symbol_references should be populated (matches manual test evidence)"
         # THIS ASSERTION SHOULD FAIL, reproducing the bug
-        assert cg_count > 0, \
-            f"BUG REPRODUCED: call_graph is empty ({cg_count}) while symbol_references has {sr_count} rows. " \
+        assert cg_count > 0, (
+            f"BUG REPRODUCED: call_graph is empty ({cg_count}) while symbol_references has {sr_count} rows. "
             f"Root cause: _build_call_graph() requires role & 8 (ReadAccess) but this test only has role=2 (Import)."
+        )
 
     def test_enclosing_resolver_excludes_local_variables(self, tmp_path: Path):
         """
@@ -1039,7 +1075,7 @@ class TestComputeEnclosingRanges:
         """
         import pytest
 
-        real_scip_file = Path('test-fixtures/scip-java-mock/index.scip')
+        real_scip_file = Path("test-fixtures/scip-java-mock/index.scip")
         if not real_scip_file.exists():
             pytest.skip(f"Test fixture not available: {real_scip_file}")
 
@@ -1059,7 +1095,9 @@ class TestComputeEnclosingRanges:
             cursor = conn.cursor()
 
             # Get getUser method
-            cursor.execute("SELECT id FROM symbols WHERE display_name='getUser' LIMIT 1")
+            cursor.execute(
+                "SELECT id FROM symbols WHERE display_name='getUser' LIMIT 1"
+            )
             getUser_row = cursor.fetchone()
             assert getUser_row, "getUser method should exist"
             getUser_id = getUser_row[0]
@@ -1067,7 +1105,11 @@ class TestComputeEnclosingRanges:
             # CRITICAL ASSERTION: getUser method should have call_graph entries as caller
             # Before fix: 0 entries (references attributed to "username" local variable)
             # After fix: >0 entries (references correctly attributed to getUser method)
-            cursor.execute("SELECT COUNT(*) FROM call_graph WHERE caller_symbol_id=?", (getUser_id,))
+            cursor.execute(
+                "SELECT COUNT(*) FROM call_graph WHERE caller_symbol_id=?",
+                (getUser_id,),
+            )
             cg_from_getUser = cursor.fetchone()[0]
-            assert cg_from_getUser > 0, \
-                f"FIX VERIFICATION FAILED: getUser has {cg_from_getUser} call_graph entries (expected >0)"
+            assert (
+                cg_from_getUser > 0
+            ), f"FIX VERIFICATION FAILED: getUser has {cg_from_getUser} call_graph entries (expected >0)"

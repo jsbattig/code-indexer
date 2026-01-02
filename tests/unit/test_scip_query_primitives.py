@@ -44,7 +44,7 @@ def daemon_service_symbol_id(real_query_engine):
         pytest.skip("CIDXDaemonService symbol not found in SCIP index")
 
     # Use first definition (daemon.service module, not rpyc_daemon)
-    target_defn = [d for d in definitions if 'daemon.service' in d.file_path]
+    target_defn = [d for d in definitions if "daemon.service" in d.file_path]
     if not target_defn:
         target_defn = definitions
 
@@ -324,29 +324,33 @@ class TestFindDefinition:
         __init__ methods that should be found.
         """
         # Test with class#method format
-        results_hash = real_query_engine.find_definition("CacheEntry#__init__", exact=True)
+        results_hash = real_query_engine.find_definition(
+            "CacheEntry#__init__", exact=True
+        )
 
         # Should find __init__ methods for CacheEntry class
-        assert len(results_hash) >= 2, (
-            f"Expected at least 2 __init__ methods for CacheEntry, got {len(results_hash)}"
-        )
+        assert (
+            len(results_hash) >= 2
+        ), f"Expected at least 2 __init__ methods for CacheEntry, got {len(results_hash)}"
         assert all("__init__" in r.symbol for r in results_hash)
         assert all("CacheEntry#__init__()" in r.symbol for r in results_hash)
 
         # Test with class#method() format
-        results_parens = real_query_engine.find_definition("CacheEntry#__init__()", exact=True)
+        results_parens = real_query_engine.find_definition(
+            "CacheEntry#__init__()", exact=True
+        )
 
         # Should find same results
-        assert len(results_parens) >= 2, (
-            f"Expected at least 2 __init__ methods for CacheEntry, got {len(results_parens)}"
-        )
+        assert (
+            len(results_parens) >= 2
+        ), f"Expected at least 2 __init__ methods for CacheEntry, got {len(results_parens)}"
         assert all("__init__" in r.symbol for r in results_parens)
         assert all("CacheEntry#__init__()" in r.symbol for r in results_parens)
 
         # Both formats should return identical results
-        assert len(results_hash) == len(results_parens), (
-            "Different formats should return same number of results"
-        )
+        assert len(results_hash) == len(
+            results_parens
+        ), "Different formats should return same number of results"
 
     def test_find_definition_simple_name_shows_only_class_definitions(
         self, real_query_engine
@@ -562,7 +566,10 @@ class TestGetDependents:
 
         assert len(local_var_results) == 0, (
             f"Found {len(local_var_results)} local variable symbols that should be filtered:\n"
-            + "\n".join(f"  - {r.symbol} at {r.file_path}:{r.line}" for r in local_var_results[:10])
+            + "\n".join(
+                f"  - {r.symbol} at {r.file_path}:{r.line}"
+                for r in local_var_results[:10]
+            )
         )
 
     def test_get_dependents_filters_out_local_variables(self, real_query_engine):
@@ -582,7 +589,10 @@ class TestGetDependents:
 
         assert len(local_var_results) == 0, (
             f"Found {len(local_var_results)} local variable symbols that should be filtered:\n"
-            + "\n".join(f"  - {r.symbol} at {r.file_path}:{r.line}" for r in local_var_results[:10])
+            + "\n".join(
+                f"  - {r.symbol} at {r.file_path}:{r.line}"
+                for r in local_var_results[:10]
+            )
         )
 
     def test_analyze_impact_hybrid_returns_more_results(self, real_query_engine):
@@ -654,14 +664,20 @@ class TestTraceCallChain:
         The legacy call_graph-only implementation returns 0 chains because the
         actual chain goes through attribute references (FileFinder), not just calls.
         """
-        chains = real_query_engine.trace_call_chain('DaemonService', '_is_text_file', max_depth=5)
+        chains = real_query_engine.trace_call_chain(
+            "DaemonService", "_is_text_file", max_depth=5
+        )
 
         assert len(chains) > 0, "Should find chain through non-call relationships"
-        assert chains[0].length >= 1, f"Should find valid chain, got length {chains[0].length}"
+        assert (
+            chains[0].length >= 1
+        ), f"Should find valid chain, got length {chains[0].length}"
 
         # Verify path includes DaemonService or FileFinder
-        path_str = ' -> '.join(chains[0].path)
-        assert 'DaemonService' in path_str or 'FileFinder' in path_str, f"Expected symbols in path: {path_str}"
+        path_str = " -> ".join(chains[0].path)
+        assert (
+            "DaemonService" in path_str or "FileFinder" in path_str
+        ), f"Expected symbols in path: {path_str}"
 
     @pytest.mark.slow  # Inherently slow due to O(n²) algorithm in backend (not index issue)
     def test_trace_call_chain_performance(self, real_query_engine):
@@ -674,7 +690,9 @@ class TestTraceCallChain:
         import time
 
         start = time.perf_counter()
-        chains = real_query_engine.trace_call_chain('DaemonService', '_is_text_file', max_depth=5)
+        chains = real_query_engine.trace_call_chain(
+            "DaemonService", "_is_text_file", max_depth=5
+        )
         elapsed = time.perf_counter() - start
 
         assert elapsed < 15.0, f"Should complete in <15s, took {elapsed:.2f}s"
@@ -684,7 +702,9 @@ class TestTraceCallChain:
 class TestSymbolReferencesIntegrity:
     """Tests for symbol_references table integrity and completeness."""
 
-    def test_daemon_service_symbol_references_edge_count(self, real_query_engine, daemon_service_symbol_id):
+    def test_daemon_service_symbol_references_edge_count(
+        self, real_query_engine, daemon_service_symbol_id
+    ):
         """Verify symbol_references has similar edge count to hybrid get_dependencies.
 
         The symbol_references table should contain similar edges to what hybrid
@@ -692,18 +712,22 @@ class TestSymbolReferencesIntegrity:
         symbol_references has only 1 edge, the ETL is broken.
         """
         # Get hybrid get_dependencies result count
-        hybrid_deps = real_query_engine.get_dependencies("CIDXDaemonService", depth=1, exact=True)
+        hybrid_deps = real_query_engine.get_dependencies(
+            "CIDXDaemonService", depth=1, exact=True
+        )
         hybrid_count = len(hybrid_deps)
 
         # Get symbol_references edge count from ALL CIDXDaemonService symbols (class + methods)
         # The ETL creates edges from both the class AND its methods, so we need to aggregate
         cursor = real_query_engine.db_conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*)
             FROM symbol_references sr
             JOIN symbols s ON sr.from_symbol_id = s.id
             WHERE s.name LIKE '%daemon.service%/CIDXDaemonService%'
-        """)
+        """
+        )
         db_edge_count = cursor.fetchone()[0] or 0
 
         # symbol_references should match or exceed hybrid (may have duplicates across methods)
@@ -714,12 +738,16 @@ class TestSymbolReferencesIntegrity:
             f"hybrid get_dependencies count ({hybrid_count}), ratio: {ratio:.2%}"
         )
 
-        print(f"\nEdge count comparison for CIDXDaemonService (symbol_id={daemon_service_symbol_id}):")
+        print(
+            f"\nEdge count comparison for CIDXDaemonService (symbol_id={daemon_service_symbol_id}):"
+        )
         print(f"  hybrid get_dependencies: {hybrid_count} dependencies")
         print(f"  symbol_references edges: {db_edge_count} edges")
         print(f"  Ratio: {ratio:.2%}")
 
-    def test_trace_call_chain_v2_finds_daemon_service_to_filefinder(self, real_query_engine, daemon_service_symbol_id):
+    def test_trace_call_chain_v2_finds_daemon_service_to_filefinder(
+        self, real_query_engine, daemon_service_symbol_id
+    ):
         """Verify trace_call_chain_v2 finds CIDXDaemonService → FileFinder chain.
 
         CIDXDaemonService uses FileFinder class. The database version (using
@@ -730,12 +758,14 @@ class TestSymbolReferencesIntegrity:
         assert len(definitions) > 0, "FileFinder symbol not found"
 
         # Filter to actual FileFinder class (not test classes)
-        target_defn = [d for d in definitions if 'indexing.file_finder' in d.file_path]
+        target_defn = [d for d in definitions if "indexing.file_finder" in d.file_path]
         if not target_defn:
             target_defn = definitions
 
         cursor = real_query_engine.db_conn.cursor()
-        cursor.execute("SELECT id FROM symbols WHERE name = ?", (target_defn[0].symbol,))
+        cursor.execute(
+            "SELECT id FROM symbols WHERE name = ?", (target_defn[0].symbol,)
+        )
         row = cursor.fetchone()
         assert row, "FileFinder symbol ID not found"
         target_symbol_id = row[0]
@@ -750,7 +780,7 @@ class TestSymbolReferencesIntegrity:
             daemon_service_symbol_id,
             target_symbol_id,
             max_depth=5,
-            limit=100
+            limit=100,
         )
         elapsed = time.perf_counter() - start
 
@@ -763,7 +793,7 @@ class TestSymbolReferencesIntegrity:
         # Should be fast (<2s)
         assert elapsed < 2.0, f"Should complete in <2s, took {elapsed:.2f}s"
 
-        print(f"\ntrace_call_chain_v2 performance:")
+        print("\ntrace_call_chain_v2 performance:")
         print(f"  Chains found: {len(chains)}")
         print(f"  Time: {elapsed:.3f}s")
         print(f"  Shortest chain length: {chains[0]['length'] if chains else 'N/A'}")

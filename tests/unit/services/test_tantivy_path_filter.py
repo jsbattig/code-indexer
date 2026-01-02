@@ -106,13 +106,13 @@ class TestPathFilterBasics:
     ):
         """
         GIVEN indexed repo with tests/ and src/ directories
-        WHEN searching with path_filter='*/tests/*'
+        WHEN searching with path_filter='**/tests/*'
         THEN only test files are returned
 
         Acceptance Criteria #1
         """
         results = indexed_tantivy_manager.search(
-            query_text="test", path_filter="*/tests/*", limit=50
+            query_text="test", path_filter="**/tests/*", limit=50
         )
 
         assert len(results) > 0, "Should find matches in tests directory"
@@ -126,13 +126,13 @@ class TestPathFilterBasics:
     ):
         """
         GIVEN indexed repo with server/ directory
-        WHEN searching with path_filter='*/server/*'
+        WHEN searching with path_filter='**/server/*'
         THEN only server files are returned
 
         Acceptance Criteria #2
         """
         results = indexed_tantivy_manager.search(
-            query_text="config", path_filter="*/server/*", limit=50
+            query_text="config", path_filter="**/server/*", limit=50
         )
 
         assert len(results) > 0, "Should find matches in server directory"
@@ -213,7 +213,7 @@ class TestPathFilterWithOtherFeatures:
         """
         results = indexed_tantivy_manager.search(
             query_text="tets",  # Typo: should match "test" with fuzzy
-            path_filter="*/tests/*",
+            path_filter="**/tests/*",
             edit_distance=1,  # Allow 1 character difference
             limit=50,
         )
@@ -237,7 +237,7 @@ class TestPathFilterWithOtherFeatures:
         """
         results = indexed_tantivy_manager.search(
             query_text="TEST",  # Uppercase - should not match with case-sensitive
-            path_filter="*/tests/*",
+            path_filter="**/tests/*",
             case_sensitive=True,
             limit=50,
         )
@@ -261,7 +261,7 @@ class TestPathFilterWithOtherFeatures:
         """
         results = indexed_tantivy_manager.search(
             query_text="test",
-            path_filter="*/tests/*",
+            path_filter="**/tests/*",
             languages=["py"],  # Only Python files
             limit=50,
         )
@@ -317,7 +317,7 @@ class TestPathFilterEdgeCases:
         """Verify that path filter respects the limit parameter."""
         limit = 2
         results = indexed_tantivy_manager.search(
-            query_text="test", path_filter="*/tests/*", limit=limit
+            query_text="test", path_filter="**/tests/*", limit=limit
         )
 
         # Results should not exceed limit
@@ -340,7 +340,7 @@ class TestMultiplePathFilters:
         Acceptance Criteria #1, #2
         """
         results = indexed_tantivy_manager.search(
-            query_text="test", path_filters=["*/tests/*", "*/src/*"], limit=50
+            query_text="test", path_filters=["**/tests/*", "**/src/*"], limit=50
         )
 
         assert len(results) > 0, "Should find matches in tests OR src directories"
@@ -363,7 +363,7 @@ class TestMultiplePathFilters:
         Acceptance Criteria #3 (complex patterns)
         """
         results = indexed_tantivy_manager.search(
-            query_text="test", path_filters=["*/tests/*", "*/src/*", "*.js"], limit=50
+            query_text="test", path_filters=["**/tests/*", "**/src/*", "*.js"], limit=50
         )
 
         assert len(results) > 0, "Should find matches with any of three patterns"
@@ -388,7 +388,7 @@ class TestMultiplePathFilters:
         """
         results = indexed_tantivy_manager.search(
             query_text="test",
-            path_filters=["*/tests/*", "*/src/*"],
+            path_filters=["**/tests/*", "**/src/*"],
             languages=["py"],
             limit=50,
         )
@@ -422,7 +422,7 @@ class TestMultiplePathFilters:
         Acceptance Criteria #7
         """
         results = indexed_tantivy_manager.search(
-            query_text="test", path_filter="*/tests/*", limit=50
+            query_text="test", path_filter="**/tests/*", limit=50
         )
 
         assert len(results) > 0, "Single path_filter should still work"
@@ -457,15 +457,15 @@ class TestMultiplePathFilters:
         """
         # Get individual results
         tests_results = indexed_tantivy_manager.search(
-            query_text="test", path_filter="*/tests/*", limit=50
+            query_text="test", path_filter="**/tests/*", limit=50
         )
         src_results = indexed_tantivy_manager.search(
-            query_text="test", path_filter="*/src/*", limit=50
+            query_text="test", path_filter="**/src/*", limit=50
         )
 
         # Get combined results
         combined_results = indexed_tantivy_manager.search(
-            query_text="test", path_filters=["*/tests/*", "*/src/*"], limit=50
+            query_text="test", path_filters=["**/tests/*", "**/src/*"], limit=50
         )
 
         # Combined should have at least as many as the max individual count
@@ -557,7 +557,7 @@ class TestPathPatternMatcherIntegration:
         """
         from src.code_indexer.services.path_pattern_matcher import PathPatternMatcher
 
-        pattern = "*/tests/*"
+        pattern = "**/tests/*"
         results = indexed_tantivy_manager.search(
             query_text="test", path_filter=pattern, limit=50
         )
@@ -581,9 +581,9 @@ class TestPathPatternMatcherIntegration:
         """
         # These patterns worked with fnmatch in Story 2
         test_cases = [
-            ("*/tests/*", "test", lambda p: "/tests/" in p or p.startswith("tests/")),
+            ("**/tests/*", "test", lambda p: "/tests/" in p or p.startswith("tests/")),
             ("*.py", "test", lambda p: p.endswith(".py")),
-            ("*/server/*", "config", lambda p: "/server/" in p or "server/" in p),
+            ("**/server/*", "config", lambda p: "/server/" in p or "server/" in p),
         ]
 
         for pattern, query, path_check in test_cases:
@@ -606,13 +606,13 @@ class TestExcludePath:
     def test_single_exclude_path(self, indexed_tantivy_manager: TantivyIndexManager):
         """
         GIVEN indexed repo with tests directory
-        WHEN searching with exclude_paths=['*/tests/*']
+        WHEN searching with exclude_paths=['**/tests/*']
         THEN no test files are returned
 
         Acceptance Criteria #1
         """
         results = indexed_tantivy_manager.search(
-            query_text="test", exclude_paths=["*/tests/*"], limit=50
+            query_text="test", exclude_paths=["**/tests/*"], limit=50
         )
 
         # Should find matches outside tests/
@@ -631,7 +631,7 @@ class TestExcludePath:
         Acceptance Criteria #2
         """
         results = indexed_tantivy_manager.search(
-            query_text="test", exclude_paths=["*/tests/*", "*/docs/*"], limit=50
+            query_text="test", exclude_paths=["**/tests/*", "**/docs/*"], limit=50
         )
 
         # Should find matches outside excluded directories
@@ -656,8 +656,8 @@ class TestExcludePath:
         """
         results = indexed_tantivy_manager.search(
             query_text="test",
-            path_filters=["*/src/*"],
-            exclude_paths=["*/server/*"],
+            path_filters=["**/src/*"],
+            exclude_paths=["**/server/*"],
             limit=50,
         )
 
@@ -683,7 +683,7 @@ class TestExcludePath:
         results = indexed_tantivy_manager.search(
             query_text="test",
             path_filters=["*.py"],  # Include all Python files
-            exclude_paths=["*/tests/*"],  # But exclude tests
+            exclude_paths=["**/tests/*"],  # But exclude tests
             limit=50,
         )
 
@@ -706,7 +706,7 @@ class TestExcludePath:
         Acceptance Criteria #5
         """
         results = indexed_tantivy_manager.search(
-            query_text="test", languages=["py"], exclude_paths=["*/tests/*"], limit=50
+            query_text="test", languages=["py"], exclude_paths=["**/tests/*"], limit=50
         )
 
         # Should have Python files but not in tests/
@@ -733,7 +733,7 @@ class TestExcludePath:
         results = indexed_tantivy_manager.search(
             query_text="tets",  # Typo
             edit_distance=1,
-            exclude_paths=["*/docs/*"],
+            exclude_paths=["**/docs/*"],
             limit=50,
         )
 
@@ -756,7 +756,7 @@ class TestExcludePath:
         results = indexed_tantivy_manager.search(
             query_text="test",
             case_sensitive=True,
-            exclude_paths=["*/tests/*"],
+            exclude_paths=["**/tests/*"],
             limit=50,
         )
 

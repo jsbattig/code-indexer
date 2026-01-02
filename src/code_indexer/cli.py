@@ -5875,7 +5875,7 @@ def teach_ai(
         try:
             installed_files = install_skills(str(skills_dir))
             console.print(
-                f"✅ Skills installed to ~/.claude/skills/cidx/", style="green"
+                "✅ Skills installed to ~/.claude/skills/cidx/", style="green"
             )
             console.print(f"   Installed {len(installed_files)} files:", style="dim")
             for file in sorted(installed_files):
@@ -6135,9 +6135,7 @@ def teach_ai(
                 style="green",
             )
             console.print(f"   Awareness file: {target_path}", style="dim")
-            console.print(
-                f"   Skills directory: ~/.claude/skills/cidx/", style="dim"
-            )
+            console.print("   Skills directory: ~/.claude/skills/cidx/", style="dim")
         except Exception as e:
             console.print(f"❌ Failed to write instruction file: {e}", style="red")
             sys.exit(1)
@@ -9703,7 +9701,9 @@ def server_install_auto_update(ctx):
         template_dir = Path(__file__).parent / "server" / "auto_update" / "templates"
 
         if not template_dir.exists():
-            console.print(f"❌ Error: Template directory not found: {template_dir}", style="red")
+            console.print(
+                f"❌ Error: Template directory not found: {template_dir}", style="red"
+            )
             sys.exit(1)
 
         service_template = template_dir / "cidx-auto-update.service"
@@ -9737,7 +9737,9 @@ def server_install_auto_update(ctx):
         service_content = service_content.replace("{REPO_PATH}", repo_path)
 
         # Write substituted service file to temp location
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".service", delete=False) as tmp_service:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".service", delete=False
+        ) as tmp_service:
             tmp_service.write(service_content)
             tmp_service_path = tmp_service.name
 
@@ -9746,7 +9748,12 @@ def server_install_auto_update(ctx):
             console.print("Installing systemd service and timer files...", style="cyan")
 
             subprocess.run(
-                ["sudo", "cp", tmp_service_path, "/etc/systemd/system/cidx-auto-update.service"],
+                [
+                    "sudo",
+                    "cp",
+                    tmp_service_path,
+                    "/etc/systemd/system/cidx-auto-update.service",
+                ],
                 check=True,
             )
             subprocess.run(
@@ -9773,10 +9780,16 @@ def server_install_auto_update(ctx):
         )
 
         console.print()
-        console.print("✅ Auto-update service installed and enabled", style="green bold")
+        console.print(
+            "✅ Auto-update service installed and enabled", style="green bold"
+        )
         console.print()
-        console.print("The service will check for updates every 60 seconds.", style="dim")
-        console.print("Use 'cidx server auto-update-status' to check status.", style="dim")
+        console.print(
+            "The service will check for updates every 60 seconds.", style="dim"
+        )
+        console.print(
+            "Use 'cidx server auto-update-status' to check status.", style="dim"
+        )
 
     except subprocess.CalledProcessError as e:
         console.print(f"❌ Error: Installation failed: {e}", style="red")
@@ -9835,7 +9848,6 @@ def server_uninstall_auto_update(ctx):
 
 def _get_auto_update_timer_info():
     """Get timer status information."""
-    import subprocess
 
     result = subprocess.run(
         ["systemctl", "is-active", "cidx-auto-update.timer"],
@@ -9852,10 +9864,14 @@ def _get_auto_update_timer_info():
 
 def _get_auto_update_last_run():
     """Get last run timestamp."""
-    import subprocess
 
     result = subprocess.run(
-        ["systemctl", "show", "cidx-auto-update.service", "--property=ExecMainExitTimestamp"],
+        [
+            "systemctl",
+            "show",
+            "cidx-auto-update.service",
+            "--property=ExecMainExitTimestamp",
+        ],
         capture_output=True,
         text=True,
     )
@@ -9864,22 +9880,25 @@ def _get_auto_update_last_run():
 
 def _get_auto_update_last_result():
     """Get last deployment result."""
-    import subprocess
 
     result = subprocess.run(
         ["systemctl", "show", "cidx-auto-update.service", "--property=Result"],
         capture_output=True,
         text=True,
     )
-    last_result = result.stdout.strip().split("=", 1)[1] if "=" in result.stdout else "unknown"
-    result_style = "green" if last_result == "success" else "red" if last_result == "failed" else "dim"
+    last_result = (
+        result.stdout.strip().split("=", 1)[1] if "=" in result.stdout else "unknown"
+    )
+    result_style = (
+        "green"
+        if last_result == "success"
+        else "red" if last_result == "failed" else "dim"
+    )
     return {"result": last_result, "style": result_style}
 
 
 def _get_repository_status(repo_path):
     """Get git repository status."""
-    import subprocess
-    from pathlib import Path
 
     if not repo_path.exists():
         return {"error": f"Repository not found: {repo_path}"}
@@ -9952,7 +9971,9 @@ def server_auto_update_status(ctx):
 
         # Timer status
         timer_info = _get_auto_update_timer_info()
-        console.print(f"Timer Status: {timer_info['status']}", style=timer_info['style'])
+        console.print(
+            f"Timer Status: {timer_info['status']}", style=timer_info["style"]
+        )
 
         # Last run
         last_run = _get_auto_update_last_run()
@@ -9960,7 +9981,9 @@ def server_auto_update_status(ctx):
 
         # Last result
         result_info = _get_auto_update_last_result()
-        console.print(f"Last Result: {result_info['result']}", style=result_info['style'])
+        console.print(
+            f"Last Result: {result_info['result']}", style=result_info["style"]
+        )
 
         # Repository status
         console.print()
@@ -9973,7 +9996,9 @@ def server_auto_update_status(ctx):
         else:
             console.print(f"Local commit: {repo_status['local_ref']}", style="white")
             console.print(f"Remote commit: {repo_status['remote_ref']}", style="white")
-            console.print(f"Status: {repo_status['status']}", style=repo_status['style'])
+            console.print(
+                f"Status: {repo_status['status']}", style=repo_status["style"]
+            )
 
         console.print()
 
@@ -12935,7 +12960,6 @@ def _load_admin_credentials(project_root: Path):
     from .remote.credential_manager import (
         CredentialNotFoundError,
         load_encrypted_credentials,
-        ProjectCredentialManager,
     )
 
     # Load remote configuration
@@ -12949,12 +12973,8 @@ def _load_admin_credentials(project_root: Path):
 
         username_for_creds = remote_config.get("username")
         if not username_for_creds:
-            console.print(
-                "❌ No username found in remote configuration", style="red"
-            )
-            console.print(
-                "Run 'cidx auth login' to authenticate first", style="dim"
-            )
+            console.print("❌ No username found in remote configuration", style="red")
+            console.print("Run 'cidx auth login' to authenticate first", style="dim")
             sys.exit(1)
 
         decrypted_creds = credential_manager.decrypt_credentials(
@@ -14028,7 +14048,6 @@ def admin_mcp_credentials_group(ctx):
 def admin_mcp_credentials_list(ctx, user: str, format: str):
     """List MCP credentials for a specific user."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _list_credentials_async():
         """Async wrapper to ensure proper event loop handling."""
@@ -14081,10 +14100,13 @@ def admin_mcp_credentials_list(ctx, user: str, format: str):
         error_str = str(e).lower()
         if "user" in error_str and "not found" in error_str:
             console.print(f"💡 User '{user}' not found", style="dim")
-        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
@@ -14102,7 +14124,6 @@ def admin_mcp_credentials_list(ctx, user: str, format: str):
 def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: str):
     """Create a new MCP credential for a user."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _create_credential_async():
         """Async wrapper to ensure proper event loop handling."""
@@ -14110,7 +14131,9 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
             server_url=server_url, credentials=credentials, project_root=project_root
         )
         try:
-            response = await admin_client.create_mcp_credential(username=user, name=name)
+            response = await admin_client.create_mcp_credential(
+                username=user, name=name
+            )
             return response
         finally:
             await admin_client.close()
@@ -14131,7 +14154,10 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
         else:
             console.print("✅ MCP Credential Created Successfully", style="green bold")
             console.print()
-            console.print("⚠️  WARNING: Save these credentials now. The secret will not be shown again!", style="yellow bold")
+            console.print(
+                "⚠️  WARNING: Save these credentials now. The secret will not be shown again!",
+                style="yellow bold",
+            )
             console.print()
 
             table = Table(show_header=False, box=None)
@@ -14145,17 +14171,22 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
 
             console.print(table)
             console.print()
-            console.print("💡 Provide these credentials to the user securely", style="dim")
+            console.print(
+                "💡 Provide these credentials to the user securely", style="dim"
+            )
 
     except Exception as e:
         console.print(f"❌ Failed to create MCP credential: {e}", style="red")
         error_str = str(e).lower()
         if "user" in error_str and "not found" in error_str:
             console.print(f"💡 User '{user}' not found", style="dim")
-        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
@@ -14167,7 +14198,6 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
 def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
     """Revoke an MCP credential for a user."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _revoke_credential_async():
         """Async wrapper to ensure proper event loop handling."""
@@ -14175,7 +14205,9 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
             server_url=server_url, credentials=credentials, project_root=project_root
         )
         try:
-            await admin_client.revoke_mcp_credential(username=user, credential_id=credential_id)
+            await admin_client.revoke_mcp_credential(
+                username=user, credential_id=credential_id
+            )
         finally:
             await admin_client.close()
 
@@ -14187,7 +14219,7 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
 
         credentials, server_url = _load_admin_credentials(project_root)
 
-        with console.status(f"🗑️  Revoking credential..."):
+        with console.status("🗑️  Revoking credential..."):
             run_async(_revoke_credential_async())
 
         console.print("✅ Credential revoked successfully", style="green")
@@ -14197,10 +14229,13 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
         error_str = str(e).lower()
         if "credential not found" in error_str or "not found" in error_str:
             console.print("💡 Credential not found", style="dim")
-        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
@@ -14217,7 +14252,6 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
 def admin_mcp_credentials_list_all(ctx, limit: int, format: str):
     """List all MCP credentials across all users."""
     from .mode_detection.command_mode_detector import find_project_root
-    from .api_clients.admin_client import AdminAPIClient
 
     async def _list_all_credentials_async():
         """Async wrapper to ensure proper event loop handling."""
@@ -14266,7 +14300,9 @@ def admin_mcp_credentials_list_all(ctx, limit: int, format: str):
                     )
 
                 console.print(table)
-                console.print(f"\nShowing {len(credentials_list)} credentials", style="dim")
+                console.print(
+                    f"\nShowing {len(credentials_list)} credentials", style="dim"
+                )
 
     except Exception as e:
         console.print(f"❌ Failed to list all MCP credentials: {e}", style="red")
@@ -14275,6 +14311,7 @@ def admin_mcp_credentials_list_all(ctx, limit: int, format: str):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 

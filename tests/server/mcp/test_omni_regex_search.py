@@ -63,7 +63,11 @@ class TestOmniRegexSearchDetection:
 
     @pytest.mark.asyncio
     async def test_string_repository_alias_routes_to_single_repo(
-        self, mock_user, mock_regex_search_service, mock_resolve_repo_path, mock_golden_repos_dir
+        self,
+        mock_user,
+        mock_regex_search_service,
+        mock_resolve_repo_path,
+        mock_golden_repos_dir,
     ):
         """Single-repo regex search when repository_alias is a string."""
         params = {

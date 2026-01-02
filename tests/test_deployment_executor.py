@@ -96,7 +96,15 @@ class TestDeploymentExecutorPipInstall:
         assert result is True
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        assert args == ["python3", "-m", "pip", "install", "--break-system-packages", "-e", "."]
+        assert args == [
+            "python3",
+            "-m",
+            "pip",
+            "install",
+            "--break-system-packages",
+            "-e",
+            ".",
+        ]
 
     @patch("subprocess.run")
     def test_pip_install_uses_correct_working_directory(self, mock_run):

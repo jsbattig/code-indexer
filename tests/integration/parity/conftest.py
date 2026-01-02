@@ -20,9 +20,7 @@ def test_client() -> Generator[TestClient, None, None]:
 def mock_user() -> User:
     """Create a mock user for authentication in MCP handlers."""
     return User(
-        username="testuser",
-        role=UserRole.USER,
-        created_at="2024-01-01T00:00:00Z"
+        username="testuser", role=UserRole.USER, created_at="2024-01-01T00:00:00Z"
     )
 
 
@@ -30,9 +28,7 @@ def mock_user() -> User:
 def admin_user() -> User:
     """Create a mock admin user for administrative operations."""
     return User(
-        username="admin",
-        role=UserRole.ADMIN,
-        created_at="2024-01-01T00:00:00Z"
+        username="admin", role=UserRole.ADMIN, created_at="2024-01-01T00:00:00Z"
     )
 
 
@@ -42,15 +38,14 @@ def auth_headers() -> dict:
     # This fixture would normally obtain a JWT token
     # For now, return a mock token structure
     # In real tests, this would call the /auth/token endpoint
-    return {
-        "Authorization": "Bearer mock_test_token"
-    }
+    return {"Authorization": "Bearer mock_test_token"}
 
 
 @pytest.fixture
 def mcp_tool_registry():
     """Import and return the MCP TOOL_REGISTRY for schema inspection."""
     from code_indexer.server.mcp.tools import TOOL_REGISTRY
+
     return TOOL_REGISTRY
 
 

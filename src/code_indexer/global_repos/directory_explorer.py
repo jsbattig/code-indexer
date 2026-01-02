@@ -5,7 +5,6 @@ Provides the DirectoryExplorerService that generates tree views of repository
 directory structure, similar to the 'tree' command.
 """
 
-import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -109,8 +108,10 @@ class DirectoryExplorerService:
         total_files = 0
         max_depth_reached = False
 
-        def should_exclude(name: str, is_dir: bool) -> bool:
+        def should_exclude(name: str, is_dir: bool, rel_path: str = "") -> bool:
             """Check if entry should be excluded."""
+            import pathspec
+
             # Always exclude .git
             if name == ".git":
                 return True
@@ -119,20 +120,30 @@ class DirectoryExplorerService:
             if not include_hidden and name.startswith("."):
                 return True
 
+            # Use rel_path if available (more accurate for ** patterns), otherwise use name
+            match_path = rel_path if rel_path else name
+
             # Check exclude patterns
             for pattern in all_excludes:
-                if fnmatch.fnmatch(name, pattern):
+                spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+                if spec.match_file(match_path):
                     return True
 
             return False
 
-        def should_include_file(name: str) -> bool:
+        def should_include_file(name: str, rel_path: str = "") -> bool:
             """Check if file matches include patterns."""
+            import pathspec
+
             if not include_patterns:
                 return True
 
+            # Use rel_path if available (more accurate for ** patterns), otherwise use name
+            match_path = rel_path if rel_path else name
+
             for pattern in include_patterns:
-                if fnmatch.fnmatch(name, pattern):
+                spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+                if spec.match_file(match_path):
                     return True
 
             return False
@@ -147,7 +158,7 @@ class DirectoryExplorerService:
 
             if current_path.is_file():
                 # Check include patterns for files
-                if not should_include_file(name):
+                if not should_include_file(name, relative_path):
                     return None
 
                 total_files += 1
@@ -189,22 +200,25 @@ class DirectoryExplorerService:
             files = []
 
             for entry in entries:
+                # Calculate entry's relative path
+                entry_rel_path = f"{relative_path}/{entry.name}" if relative_path else entry.name
+
                 # Skip excluded entries
-                if should_exclude(entry.name, entry.is_dir()):
+                if should_exclude(entry.name, entry.is_dir(), entry_rel_path):
                     continue
 
                 # Skip symlinks to prevent loops
                 if entry.is_symlink():
                     # Include as a file but don't follow
                     if entry.is_file() or not entry.is_dir():
-                        if should_include_file(entry.name):
+                        if should_include_file(entry.name, entry_rel_path):
                             files.append(entry)
                     continue
 
                 if entry.is_dir():
                     dirs.append(entry)
                 elif entry.is_file():
-                    if should_include_file(entry.name):
+                    if should_include_file(entry.name, entry_rel_path):
                         files.append(entry)
 
             # Sort alphabetically (case-insensitive)

@@ -49,11 +49,8 @@ def client(user_manager):
     # Login to get session
     login_response = test_client.post(
         "/user/login",
-        data={
-            "username": "testuser",
-            "password": "Test123!@#Password"
-        },
-        follow_redirects=False
+        data={"username": "testuser", "password": "Test123!@#Password"},
+        follow_redirects=False,
     )
 
     yield test_client
@@ -105,7 +102,9 @@ class TestMCPCredentialsWebUI:
             app = create_app()
             unauth_client = TestClient(app)
 
-            response = unauth_client.get("/user/mcp-credentials", follow_redirects=False)
+            response = unauth_client.get(
+                "/user/mcp-credentials", follow_redirects=False
+            )
 
             # Should redirect to login
             assert response.status_code == 303
@@ -134,7 +133,9 @@ class TestMCPCredentialsWebUI:
         - Metadata is displayed (name, client_id_prefix, created_at, last_used_at)
         - Delete button is present
         """
-        from src.code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+        from src.code_indexer.server.auth.mcp_credential_manager import (
+            MCPCredentialManager,
+        )
 
         # Generate a credential
         mcp_manager = MCPCredentialManager(user_manager=user_manager)
@@ -170,9 +171,15 @@ class TestMCPCredentialsWebUI:
 
         # Empty state: should show message or table
         # Since no credentials, should show empty message
-        assert "No MCP credentials" in content or "No credentials" in content or "<table" in content
+        assert (
+            "No MCP credentials" in content
+            or "No credentials" in content
+            or "<table" in content
+        )
 
-    def test_partials_mcp_credentials_list_shows_credentials(self, client, user_manager):
+    def test_partials_mcp_credentials_list_shows_credentials(
+        self, client, user_manager
+    ):
         """
         AC3: HTMX partial shows credentials table when credentials exist.
 
@@ -181,7 +188,9 @@ class TestMCPCredentialsWebUI:
         - Table contains credential metadata
         - Table contains delete buttons
         """
-        from src.code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+        from src.code_indexer.server.auth.mcp_credential_manager import (
+            MCPCredentialManager,
+        )
 
         # Generate two credentials
         mcp_manager = MCPCredentialManager(user_manager=user_manager)
@@ -253,13 +262,12 @@ class TestMCPCredentialsWebUI:
         # Step 1: Load page - should show empty state
         response = client.get("/user/mcp-credentials")
         assert response.status_code == 200
-        assert "No MCP credentials" in response.text or "No credentials" in response.text
+        assert (
+            "No MCP credentials" in response.text or "No credentials" in response.text
+        )
 
         # Step 2: Generate credential via API (simulating JavaScript call)
-        api_response = client.post(
-            "/api/mcp-credentials",
-            json={"name": "Web UI Test"}
-        )
+        api_response = client.post("/api/mcp-credentials", json={"name": "Web UI Test"})
         assert api_response.status_code == 201
         credential_id = api_response.json()["credential_id"]
 
@@ -275,4 +283,7 @@ class TestMCPCredentialsWebUI:
         # Step 5: Refresh partial - should show empty state
         partial_response = client.get("/user/partials/mcp-credentials-list")
         assert partial_response.status_code == 200
-        assert "No MCP credentials" in partial_response.text or "No credentials" in partial_response.text
+        assert (
+            "No MCP credentials" in partial_response.text
+            or "No credentials" in partial_response.text
+        )

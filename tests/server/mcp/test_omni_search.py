@@ -367,23 +367,31 @@ class TestOmniSearchAggregation:
                     {"similarity_score": 0.72, "file_path": "repo2/file5.py"},
                     {"similarity_score": 0.68, "file_path": "repo2/file6.py"},
                 ]
-            return _mcp_response({
-                "success": True,
-                "results": {
-                    "results": results,
-                    "total_results": len(results),
-                },
-            })
+            return _mcp_response(
+                {
+                    "success": True,
+                    "results": {
+                        "results": results,
+                        "total_results": len(results),
+                    },
+                }
+            )
 
-        with patch("code_indexer.server.mcp.handlers._expand_wildcard_patterns") as mock_expand:
+        with patch(
+            "code_indexer.server.mcp.handlers._expand_wildcard_patterns"
+        ) as mock_expand:
             # Return patterns unchanged (no wildcard expansion needed for literal names)
             mock_expand.side_effect = lambda patterns: patterns
 
-            with patch("code_indexer.server.mcp.handlers.search_code", side_effect=mock_search):
+            with patch(
+                "code_indexer.server.mcp.handlers.search_code", side_effect=mock_search
+            ):
                 from code_indexer.server.mcp.handlers import _omni_search_code
+
                 result = await _omni_search_code(params, mock_user)
 
                 import json
+
                 response_data = json.loads(result["content"][0]["text"])
 
                 assert response_data["success"] is True
@@ -393,8 +401,12 @@ class TestOmniSearchAggregation:
                 assert len(final_results) == 10
 
                 # Count results from each repo
-                repo1_results = [r for r in final_results if r.get("source_repo") == "repo1"]
-                repo2_results = [r for r in final_results if r.get("source_repo") == "repo2"]
+                repo1_results = [
+                    r for r in final_results if r.get("source_repo") == "repo1"
+                ]
+                repo2_results = [
+                    r for r in final_results if r.get("source_repo") == "repo2"
+                ]
 
                 assert len(repo1_results) == 5
                 assert len(repo2_results) == 5
@@ -441,7 +453,10 @@ class TestOmniSearchJsonStringArrayParsing:
 
             # Verify repository_alias was parsed from JSON string to list
             assert isinstance(call_args["repository_alias"], list)
-            assert call_args["repository_alias"] == ["backend-global", "frontend-global"]
+            assert call_args["repository_alias"] == [
+                "backend-global",
+                "frontend-global",
+            ]
 
     @pytest.mark.asyncio
     async def test_json_string_array_routes_to_omni_search(self, mock_user):
@@ -477,6 +492,7 @@ class TestOmniSearchJsonStringArrayParsing:
 
             # Verify response is in MCP format
             import json
+
             response_data = json.loads(result["content"][0]["text"])
             assert response_data["success"] is True
             assert "results" in response_data

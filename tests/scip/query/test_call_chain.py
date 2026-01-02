@@ -46,7 +46,7 @@ class TestCallChainTracing:
             line=10,
             column=5,
             kind="dependency",
-            relationship="calls"
+            relationship="calls",
         )
 
         # B depends on C (B calls C)
@@ -57,34 +57,40 @@ class TestCallChainTracing:
             line=20,
             column=5,
             kind="dependency",
-            relationship="calls"
+            relationship="calls",
         )
 
         # Mock SCIPQueryEngine to return dependencies
-        with patch('src.code_indexer.scip.query.composites.SCIPQueryEngine') as MockEngine:
+        with patch(
+            "src.code_indexer.scip.query.composites.SCIPQueryEngine"
+        ) as MockEngine:
             mock_engine = Mock()
             MockEngine.return_value = mock_engine
 
             # Configure find_definition to return method definitions
             def mock_find_definition(symbol, exact=False):
                 if "methodA" in symbol:
-                    return [QueryResult(
-                        symbol="Service#methodA().",
-                        project="test",
-                        file_path="test.py",
-                        line=5,
-                        column=4,
-                        kind="definition"
-                    )]
+                    return [
+                        QueryResult(
+                            symbol="Service#methodA().",
+                            project="test",
+                            file_path="test.py",
+                            line=5,
+                            column=4,
+                            kind="definition",
+                        )
+                    ]
                 elif "methodC" in symbol:
-                    return [QueryResult(
-                        symbol="Service#methodC().",
-                        project="test",
-                        file_path="test.py",
-                        line=25,
-                        column=4,
-                        kind="definition"
-                    )]
+                    return [
+                        QueryResult(
+                            symbol="Service#methodC().",
+                            project="test",
+                            file_path="test.py",
+                            line=25,
+                            column=4,
+                            kind="definition",
+                        )
+                    ]
                 return []
 
             # Configure get_dependencies to return our chain
@@ -102,7 +108,7 @@ class TestCallChainTracing:
             backend_chain = BackendCallChain(
                 path=["Service#methodB().", "Service#methodC()."],
                 length=2,
-                has_cycle=False
+                has_cycle=False,
             )
             mock_engine.trace_call_chain.return_value = [backend_chain]
 
@@ -113,20 +119,28 @@ class TestCallChainTracing:
             mock_engine.get_dependencies.side_effect = mock_get_dependencies
 
             # Mock glob to return our fake SCIP file
-            with patch.object(Path, 'glob', return_value=[mock_scip_file]):
+            with patch.object(Path, "glob", return_value=[mock_scip_file]):
                 # Act - use realistic SCIP method symbols
-                result = trace_call_chain("Service#methodA().", "Service#methodC().", scip_dir, max_depth=5)
+                result = trace_call_chain(
+                    "Service#methodA().", "Service#methodC().", scip_dir, max_depth=5
+                )
 
         # Assert
         # If using get_dependencies correctly, should find chain A->B->C
-        assert result.total_chains_found > 0, "Should find at least one chain from methodA to methodC"
+        assert (
+            result.total_chains_found > 0
+        ), "Should find at least one chain from methodA to methodC"
         assert len(result.chains) > 0, "Should have chains in result"
 
         # Verify the chain is A->B->C (length 2: A->B, B->C)
         chain = result.chains[0]
         assert chain.length == 2, f"Chain should have 2 steps, got {chain.length}"
-        assert chain.path[0].symbol == "Service#methodB().", "First step should be methodA->methodB"
-        assert chain.path[1].symbol == "Service#methodC().", "Second step should be methodB->methodC"
+        assert (
+            chain.path[0].symbol == "Service#methodB()."
+        ), "First step should be methodA->methodB"
+        assert (
+            chain.path[1].symbol == "Service#methodC()."
+        ), "Second step should be methodB->methodC"
 
     def test_direct_call_chain_found(self, comprehensive_scip_fixture):
         """Test that direct call chain (A -> B) is found."""
@@ -142,7 +156,9 @@ class TestCallChainTracing:
         # Assert
         assert result.from_symbol == from_symbol
         assert result.to_symbol == to_symbol
-        assert result.total_chains_found >= 0  # May be 0 if no path exists in test fixture
+        assert (
+            result.total_chains_found >= 0
+        )  # May be 0 if no path exists in test fixture
 
     def test_multi_hop_chain_found(self, comprehensive_scip_fixture):
         """Test that multi-hop chain (A -> B -> C) is found."""

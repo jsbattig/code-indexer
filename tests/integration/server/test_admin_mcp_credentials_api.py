@@ -42,7 +42,7 @@ class TestAdminMCPCredentialsAPI:
                 "password_hash": password_manager.hash_password("TestPass123!"),
                 "role": "normal_user",
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "mcp_credentials": []
+                "mcp_credentials": [],
             },
             "another_user": {
                 "user_id": "another_user",
@@ -50,7 +50,7 @@ class TestAdminMCPCredentialsAPI:
                 "password_hash": password_manager.hash_password("AnotherPass123!"),
                 "role": "normal_user",
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "mcp_credentials": []
+                "mcp_credentials": [],
             },
         }
 
@@ -79,8 +79,7 @@ class TestAdminMCPCredentialsAPI:
     def admin_token(self, client):
         """Get admin authentication token."""
         response = client.post(
-            "/auth/login",
-            json={"username": "admin_user", "password": "AdminPass123!"}
+            "/auth/login", json={"username": "admin_user", "password": "AdminPass123!"}
         )
         assert response.status_code == 200
         return response.json()["access_token"]
@@ -89,8 +88,7 @@ class TestAdminMCPCredentialsAPI:
     def normal_user_token(self, client):
         """Get normal user authentication token."""
         response = client.post(
-            "/auth/login",
-            json={"username": "test_user", "password": "TestPass123!"}
+            "/auth/login", json={"username": "test_user", "password": "TestPass123!"}
         )
         assert response.status_code == 200
         return response.json()["access_token"]
@@ -99,7 +97,7 @@ class TestAdminMCPCredentialsAPI:
         """Test admin listing credentials for user with no credentials."""
         response = client.get(
             "/api/admin/users/test_user/mcp-credentials",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert response.status_code == 200
@@ -114,7 +112,7 @@ class TestAdminMCPCredentialsAPI:
         response = client.post(
             "/api/admin/users/test_user/mcp-credentials",
             json={"name": "Test Credential"},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert response.status_code == 201
@@ -131,7 +129,7 @@ class TestAdminMCPCredentialsAPI:
         response = client.post(
             "/api/admin/users/test_user/mcp-credentials",
             json={},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert response.status_code == 201
@@ -146,7 +144,7 @@ class TestAdminMCPCredentialsAPI:
         create_response = client.post(
             "/api/admin/users/test_user/mcp-credentials",
             json={"name": "Test Cred 1"},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert create_response.status_code == 201
         credential_id = create_response.json()["credential_id"]
@@ -154,7 +152,7 @@ class TestAdminMCPCredentialsAPI:
         # Then list credentials
         list_response = client.get(
             "/api/admin/users/test_user/mcp-credentials",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert list_response.status_code == 200
@@ -170,7 +168,7 @@ class TestAdminMCPCredentialsAPI:
         create_response = client.post(
             "/api/admin/users/test_user/mcp-credentials",
             json={"name": "To Be Revoked"},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert create_response.status_code == 201
         credential_id = create_response.json()["credential_id"]
@@ -178,7 +176,7 @@ class TestAdminMCPCredentialsAPI:
         # Then revoke it
         revoke_response = client.delete(
             f"/api/admin/users/test_user/mcp-credentials/{credential_id}",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert revoke_response.status_code == 200
@@ -188,7 +186,7 @@ class TestAdminMCPCredentialsAPI:
         # Verify it's gone
         list_response = client.get(
             "/api/admin/users/test_user/mcp-credentials",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert list_response.status_code == 200
         assert len(list_response.json()["credentials"]) == 0
@@ -197,7 +195,7 @@ class TestAdminMCPCredentialsAPI:
         """Test admin revoking non-existent credential returns 404."""
         response = client.delete(
             "/api/admin/users/test_user/mcp-credentials/nonexistent-id",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert response.status_code == 404
@@ -208,7 +206,7 @@ class TestAdminMCPCredentialsAPI:
         # List credentials
         list_response = client.get(
             "/api/admin/users/nonexistent_user/mcp-credentials",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert list_response.status_code == 404
 
@@ -216,14 +214,14 @@ class TestAdminMCPCredentialsAPI:
         create_response = client.post(
             "/api/admin/users/nonexistent_user/mcp-credentials",
             json={"name": "Test"},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert create_response.status_code == 404
 
         # Revoke credential
         revoke_response = client.delete(
             "/api/admin/users/nonexistent_user/mcp-credentials/some-id",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert revoke_response.status_code == 404
 
@@ -233,23 +231,23 @@ class TestAdminMCPCredentialsAPI:
         client.post(
             "/api/admin/users/test_user/mcp-credentials",
             json={"name": "Test User Cred 1"},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         client.post(
             "/api/admin/users/test_user/mcp-credentials",
             json={"name": "Test User Cred 2"},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         client.post(
             "/api/admin/users/another_user/mcp-credentials",
             json={"name": "Another User Cred"},
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         # List all
         response = client.get(
             "/api/admin/mcp-credentials",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert response.status_code == 200
@@ -270,13 +268,13 @@ class TestAdminMCPCredentialsAPI:
             client.post(
                 "/api/admin/users/test_user/mcp-credentials",
                 json={"name": f"Cred {i}"},
-                headers={"Authorization": f"Bearer {admin_token}"}
+                headers={"Authorization": f"Bearer {admin_token}"},
             )
 
         # List with limit
         response = client.get(
             "/api/admin/mcp-credentials?limit=3",
-            headers={"Authorization": f"Bearer {admin_token}"}
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
 
         assert response.status_code == 200
@@ -289,7 +287,7 @@ class TestAdminMCPCredentialsAPI:
         # Try list user credentials
         list_response = client.get(
             "/api/admin/users/test_user/mcp-credentials",
-            headers={"Authorization": f"Bearer {normal_user_token}"}
+            headers={"Authorization": f"Bearer {normal_user_token}"},
         )
         assert list_response.status_code == 403
 
@@ -297,21 +295,21 @@ class TestAdminMCPCredentialsAPI:
         create_response = client.post(
             "/api/admin/users/test_user/mcp-credentials",
             json={"name": "Test"},
-            headers={"Authorization": f"Bearer {normal_user_token}"}
+            headers={"Authorization": f"Bearer {normal_user_token}"},
         )
         assert create_response.status_code == 403
 
         # Try revoke credential
         revoke_response = client.delete(
             "/api/admin/users/test_user/mcp-credentials/some-id",
-            headers={"Authorization": f"Bearer {normal_user_token}"}
+            headers={"Authorization": f"Bearer {normal_user_token}"},
         )
         assert revoke_response.status_code == 403
 
         # Try list all credentials
         list_all_response = client.get(
             "/api/admin/mcp-credentials",
-            headers={"Authorization": f"Bearer {normal_user_token}"}
+            headers={"Authorization": f"Bearer {normal_user_token}"},
         )
         assert list_all_response.status_code == 403
 
@@ -322,8 +320,7 @@ class TestAdminMCPCredentialsAPI:
         assert response.status_code == 401
 
         response = client.post(
-            "/api/admin/users/test_user/mcp-credentials",
-            json={"name": "Test"}
+            "/api/admin/users/test_user/mcp-credentials", json={"name": "Test"}
         )
         assert response.status_code == 401
 

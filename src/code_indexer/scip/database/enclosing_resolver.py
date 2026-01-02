@@ -14,8 +14,12 @@ class EnclosingSymbolResolver:
 
     def __init__(self):
         """Initialize resolver with empty caches."""
-        self._enclosing_range_map: Dict[tuple, int] = {}  # (doc_index, range) -> symbol_id
-        self._document_definitions: Dict[int, List[Dict[str, Any]]] = {}  # doc_index -> sorted definitions
+        self._enclosing_range_map: Dict[tuple, int] = (
+            {}
+        )  # (doc_index, range) -> symbol_id
+        self._document_definitions: Dict[int, List[Dict[str, Any]]] = (
+            {}
+        )  # doc_index -> sorted definitions
 
     def build_enclosing_range_map(
         self, occurrences: List[Dict[str, Any]], symbol_map: Dict[str, int]
@@ -59,10 +63,12 @@ class EnclosingSymbolResolver:
                         if doc_index not in self._document_definitions:
                             self._document_definitions[doc_index] = []
 
-                        self._document_definitions[doc_index].append({
-                            "symbol_id": symbol_id,
-                            "line": occ["start_line"],
-                        })
+                        self._document_definitions[doc_index].append(
+                            {
+                                "symbol_id": symbol_id,
+                                "line": occ["start_line"],
+                            }
+                        )
 
         # Sort definitions by line number for each document
         for doc_index in self._document_definitions:

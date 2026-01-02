@@ -28,7 +28,9 @@ from code_indexer.scip.query.primitives import SCIPQueryEngine
 @pytest.fixture
 def scip_python_mock_path():
     """Path to scip-python-mock test fixture."""
-    fixture_path = Path(__file__).parent.parent.parent / "test-fixtures" / "scip-python-mock"
+    fixture_path = (
+        Path(__file__).parent.parent.parent / "test-fixtures" / "scip-python-mock"
+    )
     scip_db = fixture_path / ".code-indexer" / "scip" / "index.scip.db"
 
     if not scip_db.exists():
@@ -85,7 +87,9 @@ class TestDefinitionQuery:
         assert len(user_service_class) > 0, "Should find UserService class"
 
         # Verify file path
-        assert any("src/services/user_service.py" in r.file_path for r in user_service_class)
+        assert any(
+            "src/services/user_service.py" in r.file_path for r in user_service_class
+        )
 
 
 class TestReferencesQuery:
@@ -98,7 +102,9 @@ class TestReferencesQuery:
         assert len(results) > 0, "Should find Logger#log references"
 
         # Logger#log is used extensively - should find multiple references
-        assert len(results) >= 10, f"Should find at least 10 references, found {len(results)}"
+        assert (
+            len(results) >= 10
+        ), f"Should find at least 10 references, found {len(results)}"
 
         # Verify references in controllers (Logger#log is primarily used in controllers)
         controller_refs = [r for r in results if "controllers/" in r.file_path]
@@ -115,7 +121,9 @@ class TestReferencesQuery:
         assert len(results) > 0, "Should find Logger references"
 
         # Simple name search should find various Logger usages
-        assert len(results) >= 5, f"Should find multiple Logger references, found {len(results)}"
+        assert (
+            len(results) >= 5
+        ), f"Should find multiple Logger references, found {len(results)}"
 
     def test_find_user_references(self, query_engine):
         """Should find User class references across codebase."""
@@ -138,12 +146,15 @@ class TestDependenciesQuery:
         assert len(results) > 0, "UserService should have dependencies"
 
         # UserService uses Logger and UserRepository
-        dependency_names = {r.symbol.split('/')[-1].rstrip('#').rstrip('.').rstrip('()')
-                           for r in results}
+        dependency_names = {
+            r.symbol.split("/")[-1].rstrip("#").rstrip(".").rstrip("()")
+            for r in results
+        }
 
         # Should find Logger dependency
-        assert any("Logger" in name for name in dependency_names), \
-            "UserService should depend on Logger"
+        assert any(
+            "Logger" in name for name in dependency_names
+        ), "UserService should depend on Logger"
 
     def test_get_auth_service_dependencies(self, query_engine):
         """Should find symbols that AuthService depends on."""
@@ -152,8 +163,9 @@ class TestDependenciesQuery:
         assert len(results) > 0, "AuthService should have dependencies"
 
         # AuthService has multiple dependencies
-        assert len(results) >= 3, \
-            f"AuthService should have at least 3 dependencies, found {len(results)}"
+        assert (
+            len(results) >= 3
+        ), f"AuthService should have at least 3 dependencies, found {len(results)}"
 
 
 class TestDependentsQuery:
@@ -166,13 +178,15 @@ class TestDependentsQuery:
         assert len(results) > 0, "Logger should have dependents"
 
         # Logger is used by many classes
-        assert len(results) >= 5, \
-            f"Logger should have at least 5 dependents, found {len(results)}"
+        assert (
+            len(results) >= 5
+        ), f"Logger should have at least 5 dependents, found {len(results)}"
 
         # Verify dependents span multiple files
         file_paths = {r.file_path for r in results}
-        assert len(file_paths) >= 3, \
-            "Logger should be used in at least 3 different files"
+        assert (
+            len(file_paths) >= 3
+        ), "Logger should be used in at least 3 different files"
 
     def test_get_user_dependents(self, query_engine):
         """Should find symbols that depend on User class."""
@@ -181,8 +195,9 @@ class TestDependentsQuery:
         assert len(results) > 0, "User should have dependents"
 
         # User class is referenced by services and controllers
-        assert len(results) >= 3, \
-            f"User should have at least 3 dependents, found {len(results)}"
+        assert (
+            len(results) >= 3
+        ), f"User should have at least 3 dependents, found {len(results)}"
 
 
 class TestImpactQuery:
@@ -195,14 +210,15 @@ class TestImpactQuery:
         assert len(results) > 0, "Logger changes should have impact"
 
         # Logger is fundamental - should impact multiple files
-        assert len(results) >= 3, \
-            f"Logger should impact at least 3 files, found {len(results)}"
+        assert (
+            len(results) >= 3
+        ), f"Logger should impact at least 3 files, found {len(results)}"
 
         # Verify results have required fields
         for result in results:
-            assert hasattr(result, 'file_path'), "Result should have file_path"
-            assert hasattr(result, 'symbol_count'), "Result should have symbol_count"
-            assert hasattr(result, 'symbols'), "Result should have symbols list"
+            assert hasattr(result, "file_path"), "Result should have file_path"
+            assert hasattr(result, "symbol_count"), "Result should have symbol_count"
+            assert hasattr(result, "symbols"), "Result should have symbols list"
 
             # Verify counts are reasonable
             assert result.symbol_count > 0, "Symbol count should be positive"
@@ -215,8 +231,9 @@ class TestImpactQuery:
         assert len(results) > 0, "UserService changes should have impact"
 
         # UserService is used by controllers
-        assert any("controller" in result.file_path for result in results), \
-            "UserService changes should impact controllers"
+        assert any(
+            "controller" in result.file_path for result in results
+        ), "UserService changes should impact controllers"
 
 
 class TestCallChainQuery:
@@ -226,10 +243,7 @@ class TestCallChainQuery:
         """Should trace call chain from authenticate to validate_token."""
         # authenticate function calls validate_token
         chains = query_engine.trace_call_chain(
-            "authenticate",
-            "validate_token",
-            max_depth=3,
-            limit=10
+            "authenticate", "validate_token", max_depth=3, limit=10
         )
 
         # May not find direct chain if symbols don't match exactly
@@ -239,9 +253,9 @@ class TestCallChainQuery:
         if len(chains) > 0:
             # Verify chain structure
             chain = chains[0]
-            assert hasattr(chain, 'path'), "Chain should have path"
-            assert hasattr(chain, 'length'), "Chain should have length"
-            assert hasattr(chain, 'has_cycle'), "Chain should have has_cycle flag"
+            assert hasattr(chain, "path"), "Chain should have path"
+            assert hasattr(chain, "length"), "Chain should have length"
+            assert hasattr(chain, "has_cycle"), "Chain should have has_cycle flag"
 
             assert len(chain.path) > 0, "Chain path should not be empty"
             assert chain.length > 0, "Chain length should be positive"
@@ -250,10 +264,7 @@ class TestCallChainQuery:
         """Should return empty list for symbols with no call path."""
         # Test with symbols unlikely to have a direct call path
         chains = query_engine.trace_call_chain(
-            "LogLevel",  # Enum
-            "Database",  # Unrelated class
-            max_depth=5,
-            limit=10
+            "LogLevel", "Database", max_depth=5, limit=10  # Enum  # Unrelated class
         )
 
         # Should return empty list (not error) for unconnected symbols
@@ -264,7 +275,9 @@ class TestCallChainQuery:
 class TestContextQuery:
     """Tests for context query - find enclosing symbols (if implemented)."""
 
-    @pytest.mark.skip(reason="Context query not yet implemented - placeholder for future")
+    @pytest.mark.skip(
+        reason="Context query not yet implemented - placeholder for future"
+    )
     def test_find_context_for_logger_reference(self, query_engine):
         """Should find enclosing symbol (method/function) for Logger reference.
 
@@ -290,7 +303,7 @@ class TestQueryIntegration:
 
         # Step 2: Find references using full symbol name
         # Extract simple name from SCIP symbol for reference search
-        simple_name = logger_symbol.split('/')[-1].rstrip('#')
+        simple_name = logger_symbol.split("/")[-1].rstrip("#")
         references = query_engine.find_references(simple_name, limit=10, exact=False)
 
         assert len(references) > 0, "Should find references to Logger"
@@ -302,7 +315,9 @@ class TestQueryIntegration:
 
         if len(deps) > 0:
             # Step 2: Analyze impact of first dependency
-            first_dep_name = deps[0].symbol.split('/')[-1].rstrip('#').rstrip('.').rstrip('()')
+            first_dep_name = (
+                deps[0].symbol.split("/")[-1].rstrip("#").rstrip(".").rstrip("()")
+            )
 
             # Only analyze if it's not a stdlib symbol
             if "python-stdlib" not in deps[0].symbol:

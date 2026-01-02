@@ -44,10 +44,10 @@ class TestSCIPGenerator:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = {row[0] for row in cursor.fetchall()}
 
-            assert 'symbols' in tables, "Database should have symbols table"
-            assert 'occurrences' in tables, "Database should have occurrences table"
-            assert 'documents' in tables, "Database should have documents table"
-            assert 'call_graph' in tables, "Database should have call_graph table"
+            assert "symbols" in tables, "Database should have symbols table"
+            assert "occurrences" in tables, "Database should have occurrences table"
+            assert "documents" in tables, "Database should have documents table"
+            assert "call_graph" in tables, "Database should have call_graph table"
 
             cursor.execute("SELECT COUNT(*) FROM symbols")
             symbol_count = cursor.fetchone()[0]
@@ -116,7 +116,13 @@ class TestSCIPGenerator:
     @patch("code_indexer.scip.generator.JavaIndexer")
     @patch("code_indexer.scip.generator.TypeScriptIndexer")
     def test_generate_multiple_projects_partial_success(
-        self, mock_ts_indexer, mock_java_indexer, mock_discovery, mock_builder, mock_db_manager, tmp_path
+        self,
+        mock_ts_indexer,
+        mock_java_indexer,
+        mock_discovery,
+        mock_builder,
+        mock_db_manager,
+        tmp_path,
     ):
         """Test partial success with multiple projects."""
         # Arrange
@@ -203,7 +209,12 @@ class TestSCIPGenerator:
     @patch("code_indexer.scip.generator.ProjectDiscovery")
     @patch("code_indexer.scip.generator.PythonIndexer")
     def test_generate_with_progress_callback(
-        self, mock_python_indexer, mock_discovery, mock_builder, mock_db_manager, tmp_path
+        self,
+        mock_python_indexer,
+        mock_discovery,
+        mock_builder,
+        mock_db_manager,
+        tmp_path,
     ):
         """Test progress reporting during generation."""
         # Arrange
@@ -286,7 +297,7 @@ class TestSCIPGenerator:
         result = generator.generate()
 
         # Assert
-        db_file = scip_file.with_suffix('.scip.db')
+        db_file = scip_file.with_suffix(".scip.db")
         self._assert_database_has_required_tables(db_file)
         assert result.successful_projects == 1
 
@@ -338,8 +349,12 @@ class TestSCIPGenerator:
         result = generator.generate()
 
         # Assert - Generation MUST fail when database build fails
-        assert result.failed_projects == 1, "Database build failure must mark generation as failed"
-        assert result.successful_projects == 0, "No projects should be marked successful when database fails"
+        assert (
+            result.failed_projects == 1
+        ), "Database build failure must mark generation as failed"
+        assert (
+            result.successful_projects == 0
+        ), "No projects should be marked successful when database fails"
         assert result.is_complete_failure(), "Overall result must be complete failure"
 
         # Verify the project result status is FAILED
@@ -361,7 +376,7 @@ class TestSCIPGenerator:
         """
         # Arrange
         scip_file = tmp_path / ".code-indexer" / "scip" / "backend" / "index.scip"
-        db_file = scip_file.with_suffix('.scip.db')
+        db_file = scip_file.with_suffix(".scip.db")
 
         project = DiscoveredProject(
             relative_path=Path("backend"),
@@ -401,6 +416,7 @@ class TestSCIPGenerator:
 
         # Second generation with DIFFERENT data (more symbols)
         from code_indexer.scip.protobuf import scip_pb2
+
         index = scip_pb2.Index()
         doc = index.documents.add()
         doc.relative_path = "Main.java"
@@ -429,7 +445,9 @@ class TestSCIPGenerator:
             count_v2 = cursor.fetchone()[0]
 
             # Should have exactly 2 symbols (new data only), not 3 (old + new)
-            assert count_v2 == 2, f"Database should have clean data (2 symbols), found {count_v2}. Stale data detected!"
+            assert (
+                count_v2 == 2
+            ), f"Database should have clean data (2 symbols), found {count_v2}. Stale data detected!"
 
 
 class TestSCIPRebuild:
@@ -440,7 +458,12 @@ class TestSCIPRebuild:
     @patch("code_indexer.scip.status.StatusTracker")
     @patch("code_indexer.scip.generator.JavaIndexer")
     def test_rebuild_single_project_success(
-        self, mock_java_indexer, mock_status_tracker, mock_builder, mock_db_manager, tmp_path
+        self,
+        mock_java_indexer,
+        mock_status_tracker,
+        mock_builder,
+        mock_db_manager,
+        tmp_path,
     ):
         """Test rebuilding a single failed project successfully."""
         from code_indexer.scip.status import (
@@ -518,7 +541,13 @@ class TestSCIPRebuild:
     @patch("code_indexer.scip.generator.JavaIndexer")
     @patch("code_indexer.scip.generator.TypeScriptIndexer")
     def test_rebuild_failed_only_flag(
-        self, mock_ts_indexer, mock_java_indexer, mock_status_tracker, mock_builder, mock_db_manager, tmp_path
+        self,
+        mock_ts_indexer,
+        mock_java_indexer,
+        mock_status_tracker,
+        mock_builder,
+        mock_db_manager,
+        tmp_path,
     ):
         """Test --failed flag rebuilds only failed projects."""
         from code_indexer.scip.status import (
@@ -619,7 +648,12 @@ class TestSCIPRebuild:
     @patch("code_indexer.scip.status.StatusTracker")
     @patch("code_indexer.scip.generator.TypeScriptIndexer")
     def test_rebuild_force_flag_on_successful_project(
-        self, mock_ts_indexer, mock_status_tracker, mock_builder, mock_db_manager, tmp_path
+        self,
+        mock_ts_indexer,
+        mock_status_tracker,
+        mock_builder,
+        mock_db_manager,
+        tmp_path,
     ):
         """Test --force flag allows rebuilding successful projects."""
         from code_indexer.scip.status import (
@@ -698,7 +732,13 @@ class TestSCIPRebuild:
     @patch("code_indexer.scip.generator.JavaIndexer")
     @patch("code_indexer.scip.generator.TypeScriptIndexer")
     def test_rebuild_multiple_projects(
-        self, mock_ts_indexer, mock_java_indexer, mock_status_tracker, mock_builder, mock_db_manager, tmp_path
+        self,
+        mock_ts_indexer,
+        mock_java_indexer,
+        mock_status_tracker,
+        mock_builder,
+        mock_db_manager,
+        tmp_path,
     ):
         """Test rebuilding multiple specific projects."""
         from code_indexer.scip.status import (
@@ -845,5 +885,7 @@ class TestSCIPRebuild:
         # Assert - Rebuild MUST fail when database build fails
         assert len(rebuild_result) == 1
         assert "backend" in rebuild_result
-        assert rebuild_result["backend"].status == OverallStatus.FAILED, "Database build failure must mark rebuild as failed"
+        assert (
+            rebuild_result["backend"].status == OverallStatus.FAILED
+        ), "Database build failure must mark rebuild as failed"
         assert "Database build failed" in rebuild_result["backend"].error_message

@@ -329,19 +329,18 @@ class GitServiceConfig(BaseModel):
     """
 
     service_committer_name: str = Field(
-        default="CIDX Service",
-        description="Service account name for Git committer"
+        default="CIDX Service", description="Service account name for Git committer"
     )
     service_committer_email: str = Field(
         default="cidx-service@example.com",
-        description="Service account email (must match SSH key owner in GitHub/GitLab)"
+        description="Service account email (must match SSH key owner in GitHub/GitLab)",
     )
     default_committer_email: Optional[str] = Field(
         default="cidx-default@example.com",
-        description="Fallback email used when no SSH key authenticates to remote (Story #641)"
+        description="Fallback email used when no SSH key authenticates to remote (Story #641)",
     )
 
-    @field_validator('service_committer_email', 'default_committer_email')
+    @field_validator("service_committer_email", "default_committer_email")
     @classmethod
     def validate_email_format(cls, v: Optional[str]) -> Optional[str]:
         """Validate email format and check for common issues."""
@@ -353,20 +352,20 @@ class GitServiceConfig(BaseModel):
 
         # RFC 5322 compliant basic validation
         email_pattern = re.compile(
-            r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@'
-            r'[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?'
-            r'(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
+            r"^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@"
+            r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+            r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
         )
 
         if not email_pattern.match(v):
             raise ValueError(f"Invalid email format: {v}")
 
         # Additional validation: require domain
-        if '@' not in v or '.' not in v.split('@')[1]:
+        if "@" not in v or "." not in v.split("@")[1]:
             raise ValueError(f"Email must have valid domain: {v}")
 
         # Security: prevent obviously malicious patterns
-        if '..' in v or v.startswith('.') or v.endswith('.'):
+        if ".." in v or v.startswith(".") or v.endswith("."):
             raise ValueError(f"Invalid email format (security): {v}")
 
         return v

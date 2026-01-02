@@ -24,7 +24,12 @@ def scip_test_repo(tmp_path):
     scip_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy test .scip.db fixture (simulating post-conversion state)
-    fixture_src = Path(__file__).parent.parent / "scip" / "fixtures" / "comprehensive_index.scip.db"
+    fixture_src = (
+        Path(__file__).parent.parent
+        / "scip"
+        / "fixtures"
+        / "comprehensive_index.scip.db"
+    )
     fixture_dst = scip_dir / "index.scip.db"
     shutil.copy(fixture_src, fixture_dst)
 

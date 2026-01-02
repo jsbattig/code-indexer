@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class ServiceState(Enum):
     """Service state machine states."""
+
     IDLE = "idle"
     CHECKING = "checking"
     DEPLOYING = "deploying"
@@ -56,7 +57,9 @@ class AutoUpdateService:
         Args:
             new_state: Target state to transition to
         """
-        logger.info(f"State transition: {self.current_state.value} -> {new_state.value}")
+        logger.info(
+            f"State transition: {self.current_state.value} -> {new_state.value}"
+        )
 
         # Record timestamp when entering DEPLOYING state
         if new_state == ServiceState.DEPLOYING:
@@ -71,9 +74,15 @@ class AutoUpdateService:
         Only runs when in IDLE state to prevent concurrent operations.
         """
         # Validate components are injected before use
-        assert self.change_detector is not None, "change_detector must be set before calling poll_once()"
-        assert self.deployment_lock is not None, "deployment_lock must be set before calling poll_once()"
-        assert self.deployment_executor is not None, "deployment_executor must be set before calling poll_once()"
+        assert (
+            self.change_detector is not None
+        ), "change_detector must be set before calling poll_once()"
+        assert (
+            self.deployment_lock is not None
+        ), "deployment_lock must be set before calling poll_once()"
+        assert (
+            self.deployment_executor is not None
+        ), "deployment_executor must be set before calling poll_once()"
 
         # Skip if not in IDLE state
         if self.current_state != ServiceState.IDLE:

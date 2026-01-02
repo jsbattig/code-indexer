@@ -136,14 +136,23 @@ class TestPathLengthEdgeCases:
         assert not matcher.matches_pattern("file.py", "*/file.py")
 
     def test_root_path_handled_correctly(self):
-        """Test that root paths are handled correctly."""
+        """Test that root paths are handled correctly with gitignore semantics."""
         from code_indexer.services.path_pattern_matcher import PathPatternMatcher
 
         matcher = PathPatternMatcher()
 
-        # Root paths
-        assert matcher.matches_pattern("/", "*")
+        # Root path "/" (bare slash) should NOT match * (correct gitignore behavior)
+        assert not matcher.matches_pattern("/", "*")
+
+        # /*.py matches files in root directory (gitignore semantics)
         assert matcher.matches_pattern("/file.py", "/*.py")
+        assert matcher.matches_pattern(
+            "file.py", "/*.py"
+        )  # gitignore: / is optional for root
+
+        # But /*.py should NOT match files in subdirectories
+        assert not matcher.matches_pattern("src/file.py", "/*.py")
+        assert not matcher.matches_pattern("/src/file.py", "/*.py")
 
 
 class TestSymbolicLinksAndAliases:

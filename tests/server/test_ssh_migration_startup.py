@@ -23,23 +23,35 @@ class TestSSHMigrationStartup:
         (ssh_dir / "custom_key.pub").write_text("ssh-ed25519 BBBB... custom")
 
         # Create existing config with mappings
-        (ssh_dir / "config").write_text(f"""Host github.com
+        (ssh_dir / "config").write_text(
+            f"""Host github.com
   HostName github.com
   User git
   IdentityFile {ssh_dir}/id_ed25519
-""")
+"""
+        )
 
         server_data_dir = tmp_path / ".code-indexer-server"
         server_data_dir.mkdir(parents=True)
 
         # Create CIDX config with activated repos
         config_path = server_data_dir / "config.json"
-        config_path.write_text(json.dumps({
-            "activated_repositories": [
-                {"path": "/repo1", "remote_url": "git@github.com:user/repo1.git"},
-                {"path": "/repo2", "remote_url": "git@gitlab.com:user/repo2.git"}
-            ]
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "activated_repositories": [
+                        {
+                            "path": "/repo1",
+                            "remote_url": "git@github.com:user/repo1.git",
+                        },
+                        {
+                            "path": "/repo2",
+                            "remote_url": "git@gitlab.com:user/repo2.git",
+                        },
+                    ]
+                }
+            )
+        )
 
         result = run_ssh_migration_on_startup(
             server_data_dir=str(server_data_dir),
@@ -137,11 +149,18 @@ class TestSSHMigrationStartup:
 
         # Create CIDX config with activated repo
         config_path = server_data_dir / "config.json"
-        config_path.write_text(json.dumps({
-            "activated_repositories": [
-                {"path": "/repo1", "remote_url": "git@timeout-host.example.com:user/repo.git"}
-            ]
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "activated_repositories": [
+                        {
+                            "path": "/repo1",
+                            "remote_url": "git@timeout-host.example.com:user/repo.git",
+                        }
+                    ]
+                }
+            )
+        )
 
         orchestrator = MigrationOrchestrator(
             ssh_dir=ssh_dir,
@@ -196,9 +215,7 @@ class TestSSHMigrationStartup:
 
         # Create CIDX config with NO activated repositories (or local-only paths)
         config_path = server_data_dir / "config.json"
-        config_path.write_text(json.dumps({
-            "activated_repositories": []
-        }))
+        config_path.write_text(json.dumps({"activated_repositories": []}))
 
         result = run_ssh_migration_on_startup(
             server_data_dir=str(server_data_dir),
@@ -227,37 +244,43 @@ class TestServerStartupIntegration:
 
     def test_app_contains_ssh_migration_startup_code(self):
         """Verify app.py contains the SSH migration startup code."""
-        
-        app_path = Path(__file__).parent.parent.parent / "src" / "code_indexer" / "server" / "app.py"
+
+        app_path = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "server"
+            / "app.py"
+        )
         app_content = app_path.read_text()
-        
+
         # Verify the SSH migration code is present in app.py
         assert "run_ssh_migration_on_startup" in app_content
         assert "SSH key migration" in app_content
         assert "app.state.ssh_migration_result" in app_content
-        
+
     def test_run_ssh_migration_function_exists_and_works(self, tmp_path):
         """Verify the run_ssh_migration_on_startup function works correctly."""
         from code_indexer.server.services.ssh_startup_migration import (
             run_ssh_migration_on_startup,
         )
-        
+
         ssh_dir = tmp_path / ".ssh"
         ssh_dir.mkdir(parents=True)
-        
+
         # Create an SSH key
         (ssh_dir / "test_key").write_text("PRIVATE KEY")
         (ssh_dir / "test_key.pub").write_text("ssh-ed25519 TEST... test")
-        
+
         server_data_dir = tmp_path / ".code-indexer-server"
         server_data_dir.mkdir(parents=True)
-        
+
         result = run_ssh_migration_on_startup(
             server_data_dir=str(server_data_dir),
             ssh_dir=str(ssh_dir),
             skip_key_testing=True,
         )
-        
+
         # Verify migration ran successfully
         assert result.completed is True
         assert result.keys_discovered == 1

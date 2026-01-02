@@ -33,7 +33,9 @@ class TestBasicImpactAnalysis:
         # All found symbols should be at depth 1
         assert all(s.depth == 1 for s in result.affected_symbols)
 
-    def test_transitive_impact_follows_dependency_chain(self, comprehensive_scip_fixture):
+    def test_transitive_impact_follows_dependency_chain(
+        self, comprehensive_scip_fixture
+    ):
         """Test that impact analysis follows transitive dependencies."""
         # Arrange: Symbol with multi-level dependents
         scip_dir = comprehensive_scip_fixture

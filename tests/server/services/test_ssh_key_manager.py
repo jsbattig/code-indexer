@@ -115,11 +115,13 @@ class TestSSHKeyManagerAssignKeyToHost:
         config_path = ssh_dir / "config"
 
         # Create user-defined host entry
-        config_path.write_text("""Host github.com
+        config_path.write_text(
+            """Host github.com
   HostName github.com
   User git
   IdentityFile ~/.ssh/user_key
-""")
+"""
+        )
 
         manager = SSHKeyManager(
             ssh_dir=ssh_dir,

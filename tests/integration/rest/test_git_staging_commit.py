@@ -28,7 +28,7 @@ def test_git_stage_real_files(client, activated_repo, test_repo_dir: Path):
         # Execute: Call REST endpoint to stage file
         response = client.post(
             f"/api/v1/repos/{activated_repo}/git/stage",
-            json={"file_paths": ["stage_test.txt"]}
+            json={"file_paths": ["stage_test.txt"]},
         )
 
         # Verify: Check HTTP response
@@ -42,13 +42,19 @@ def test_git_stage_real_files(client, activated_repo, test_repo_dir: Path):
             ["git", "status", "--porcelain"],
             cwd=test_repo_dir,
             capture_output=True,
-            text=True
+            text=True,
         )
-        assert "A  stage_test.txt" in result.stdout or "A stage_test.txt" in result.stdout
+        assert (
+            "A  stage_test.txt" in result.stdout or "A stage_test.txt" in result.stdout
+        )
 
     finally:
         # Cleanup: Unstage and remove file
-        subprocess.run(["git", "reset", "HEAD", "stage_test.txt"], cwd=test_repo_dir, capture_output=True)
+        subprocess.run(
+            ["git", "reset", "HEAD", "stage_test.txt"],
+            cwd=test_repo_dir,
+            capture_output=True,
+        )
         if test_file.exists():
             test_file.unlink()
 
@@ -68,7 +74,7 @@ def test_git_unstage_real_files(client, activated_repo, test_repo_dir: Path):
         # Execute: Call REST endpoint to unstage file
         response = client.post(
             f"/api/v1/repos/{activated_repo}/git/unstage",
-            json={"file_paths": ["unstage_test.txt"]}
+            json={"file_paths": ["unstage_test.txt"]},
         )
 
         # Verify: Check HTTP response
@@ -82,7 +88,7 @@ def test_git_unstage_real_files(client, activated_repo, test_repo_dir: Path):
             ["git", "status", "--porcelain"],
             cwd=test_repo_dir,
             capture_output=True,
-            text=True
+            text=True,
         )
         assert "??" in result.stdout  # File should be untracked now
 
@@ -92,7 +98,9 @@ def test_git_unstage_real_files(client, activated_repo, test_repo_dir: Path):
             test_file.unlink()
 
 
-def test_git_commit_real_repository(client, activated_repo, test_repo_dir: Path, mock_user):
+def test_git_commit_real_repository(
+    client, activated_repo, test_repo_dir: Path, mock_user
+):
     """
     Integration test: POST /api/v1/repos/{alias}/git/commit
 
@@ -109,8 +117,8 @@ def test_git_commit_real_repository(client, activated_repo, test_repo_dir: Path,
             f"/api/v1/repos/{activated_repo}/git/commit",
             json={
                 "message": "Test commit from integration test",
-                "author_email": mock_user.email
-            }
+                "author_email": mock_user.email,
+            },
         )
 
         # Verify: Check HTTP response
@@ -126,12 +134,14 @@ def test_git_commit_real_repository(client, activated_repo, test_repo_dir: Path,
             ["git", "log", "-1", "--format=%H"],
             cwd=test_repo_dir,
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.stdout.strip() == data["commit_hash"]
 
     finally:
         # Cleanup: Reset to previous commit (undo test commit)
-        subprocess.run(["git", "reset", "--hard", "HEAD~1"], cwd=test_repo_dir, capture_output=True)
+        subprocess.run(
+            ["git", "reset", "--hard", "HEAD~1"], cwd=test_repo_dir, capture_output=True
+        )
         if test_file.exists():
             test_file.unlink()

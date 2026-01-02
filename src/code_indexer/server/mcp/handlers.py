@@ -12,9 +12,9 @@ All handlers return MCP-compliant responses with content arrays:
 """
 
 import difflib
-import fnmatch
 import json
 import logging
+import pathspec
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from code_indexer.server.auth.user_manager import User, UserRole
@@ -297,10 +297,10 @@ def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
     expanded = []
     for pattern in patterns:
         if _has_wildcard(pattern):
-            # Expand wildcard
-            matches = [
-                repo for repo in available_repos if fnmatch.fnmatch(repo, pattern)
-            ]
+            # Expand wildcard using pathspec (gitignore-style matching)
+            # This correctly handles ** as "zero or more directories"
+            spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+            matches = [repo for repo in available_repos if spec.match_file(repo)]
             if matches:
                 logger.debug(f"Expanded wildcard '{pattern}' -> {matches}")
                 expanded.extend(matches)
@@ -931,7 +931,32 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         if isinstance(repository_alias, list):
             return await _omni_list_files(params, user)
 
-        path_filter = params.get("path", "")
+        # Extract parameters for path pattern building
+        path = params.get("path", "")
+        recursive = params.get("recursive", True)  # Default to recursive for backward compatibility
+        user_path_pattern = params.get("path_pattern")  # Optional advanced filtering
+
+        # Build path pattern combining path and user's pattern
+        # This logic mirrors browse_directory (lines 1220-1238)
+        final_path_pattern = None
+        # Normalize path first (remove trailing slash) - "/" becomes ""
+        path = path.rstrip("/") if path else ""
+        if path:
+            # Base pattern for the specified directory
+            base_pattern = f"{path}/**/*" if recursive else f"{path}/*"
+            if user_path_pattern:
+                # Combine path with user's pattern
+                # e.g., path="src", path_pattern="*.py" -> "src/**/*.py"
+                if recursive:
+                    final_path_pattern = f"{path}/**/{user_path_pattern}"
+                else:
+                    final_path_pattern = f"{path}/{user_path_pattern}"
+            else:
+                final_path_pattern = base_pattern
+        elif user_path_pattern:
+            # Just use the user's pattern directly
+            final_path_pattern = user_path_pattern
+        # else: final_path_pattern stays None (all files)
 
         # Check if this is a global repository (ends with -global suffix)
         if repository_alias and repository_alias.endswith("-global"):
@@ -976,7 +1001,7 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             query_params = FileListQueryParams(
                 page=1,
                 limit=500,  # Max limit for MCP tool usage
-                path_pattern=path_filter if path_filter else None,
+                path_pattern=final_path_pattern,
             )
 
             result = app_module.file_service.list_files_by_path(
@@ -988,7 +1013,7 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             query_params = FileListQueryParams(
                 page=1,
                 limit=500,  # Max limit for MCP tool usage
-                path_pattern=path_filter if path_filter else None,
+                path_pattern=final_path_pattern,
             )
 
             # Call with correct signature: list_files(repo_id, username, query_params)

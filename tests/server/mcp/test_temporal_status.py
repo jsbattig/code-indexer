@@ -23,14 +23,19 @@ class TestIsTemporalQuery:
         assert _is_temporal_query({"query_text": "test"}) is False
 
     def test_false_values_not_temporal(self):
-        assert _is_temporal_query({"time_range_all": False, "include_removed": False}) is False
+        assert (
+            _is_temporal_query({"time_range_all": False, "include_removed": False})
+            is False
+        )
 
 
 class TestGetTemporalStatus:
     """Test temporal status lookup."""
 
     def test_returns_temporal_and_non_temporal_repos(self):
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.return_value = "/fake/path"
             with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_reg:
                 mock_instance = Mock()
@@ -47,7 +52,9 @@ class TestGetTemporalStatus:
                 assert "warning" not in status
 
     def test_warning_when_no_temporal_repos(self):
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.return_value = "/fake/path"
             with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_reg:
                 mock_instance = Mock()
@@ -65,7 +72,9 @@ class TestGetTemporalStatus:
                 assert "--index-commits" in status["warning"]
 
     def test_returns_empty_on_error(self):
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.side_effect = RuntimeError("No config")
 
             status = _get_temporal_status(["repo1-global"])

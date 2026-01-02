@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any, Set
 from datetime import datetime, timezone
 import logging
-import fnmatch
 import math
 
 import pathspec
@@ -380,9 +379,11 @@ class FileListingService:
         # Filter by path pattern
         if query_params.path_pattern:
             pattern = query_params.path_pattern
-            filtered_files = [
-                f for f in filtered_files if fnmatch.fnmatch(f.path, pattern)
-            ]
+            # Use pathspec for proper ** glob support (gitignore-style)
+            # pathspec treats ** as "this directory and all subdirectories"
+            # while fnmatch treats ** as requiring 1+ subdirectories
+            spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+            filtered_files = [f for f in filtered_files if spec.match_file(f.path)]
 
         # Filter by language
         if query_params.language:

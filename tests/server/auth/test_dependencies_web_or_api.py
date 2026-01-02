@@ -17,7 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 import code_indexer.server.auth.dependencies as deps_module
 from code_indexer.server.auth.jwt_manager import JWTManager
 from code_indexer.server.auth.user_manager import UserManager, UserRole
-from code_indexer.server.web.auth import init_session_manager, SessionManager
+from code_indexer.server.web.auth import init_session_manager
 import sys
 
 
@@ -124,9 +124,7 @@ def _make_request_with_cookies(
 
 def _make_request_with_bearer(token: str) -> Request:
     """Construct a Request with Bearer token."""
-    headers = [
-        (b"authorization", f"Bearer {token}".encode("latin-1"))
-    ]
+    headers = [(b"authorization", f"Bearer {token}".encode("latin-1"))]
     scope = {
         "type": "http",
         "method": "POST",
@@ -148,6 +146,7 @@ class TestWebSessionAuthentication:
 
         # Create web session using SessionManager
         from fastapi import Response
+
         response = Response()
         session_manager.create_session(response, username="alice", role="admin")
 
@@ -167,7 +166,9 @@ class TestWebSessionAuthentication:
         request = _make_request_with_cookies(web_session_cookie=session_cookie_value)
 
         # Call get_current_user_web_or_api
-        user = deps_module.get_current_user_web_or_api(request=request, credentials=None)
+        user = deps_module.get_current_user_web_or_api(
+            request=request, credentials=None
+        )
 
         assert user is not None
         assert user.username == "alice"
@@ -182,6 +183,7 @@ class TestWebSessionAuthentication:
 
         # Create web session
         from fastapi import Response
+
         response = Response()
         session_manager.create_session(response, username="bob", role="normal_user")
 
@@ -201,7 +203,9 @@ class TestWebSessionAuthentication:
         request = _make_request_with_cookies(web_session_cookie=session_cookie_value)
 
         # Call dependency
-        user = deps_module.get_current_user_web_or_api(request=request, credentials=None)
+        user = deps_module.get_current_user_web_or_api(
+            request=request, credentials=None
+        )
 
         assert user is not None
         assert user.username == "bob"
@@ -211,9 +215,7 @@ class TestWebSessionAuthentication:
 class TestJWTFallbackAuthentication:
     """Test JWT/Bearer authentication (priority 2 - fallback)."""
 
-    def test_jwt_cookie_when_no_web_session(
-        self, setup_auth_env, user_manager
-    ):
+    def test_jwt_cookie_when_no_web_session(self, setup_auth_env, user_manager):
         """JWT cookie authenticates when web session absent."""
         jwt_mgr = setup_auth_env
 
@@ -221,23 +223,21 @@ class TestJWTFallbackAuthentication:
         user_manager.create_user("carol", "StrongP@ssw0rd-3", UserRole.POWER_USER)
 
         # Create JWT token
-        jwt_token = jwt_mgr.create_token(
-            {"username": "carol", "role": "power_user"}
-        )
+        jwt_token = jwt_mgr.create_token({"username": "carol", "role": "power_user"})
 
         # Make request with JWT cookie (no web session cookie)
         request = _make_request_with_cookies(jwt_cookie=jwt_token)
 
         # Call dependency
-        user = deps_module.get_current_user_web_or_api(request=request, credentials=None)
+        user = deps_module.get_current_user_web_or_api(
+            request=request, credentials=None
+        )
 
         assert user is not None
         assert user.username == "carol"
         assert user.role == UserRole.POWER_USER
 
-    def test_bearer_token_when_no_web_session(
-        self, setup_auth_env, user_manager
-    ):
+    def test_bearer_token_when_no_web_session(self, setup_auth_env, user_manager):
         """Bearer token authenticates when web session absent."""
         jwt_mgr = setup_auth_env
 
@@ -245,9 +245,7 @@ class TestJWTFallbackAuthentication:
         user_manager.create_user("dave", "StrongP@ssw0rd-4", UserRole.NORMAL_USER)
 
         # Create JWT token
-        jwt_token = jwt_mgr.create_token(
-            {"username": "dave", "role": "normal_user"}
-        )
+        jwt_token = jwt_mgr.create_token({"username": "dave", "role": "normal_user"})
 
         # Make request with Bearer token
         request = _make_request_with_bearer(jwt_token)
@@ -256,7 +254,9 @@ class TestJWTFallbackAuthentication:
         )
 
         # Call dependency
-        user = deps_module.get_current_user_web_or_api(request=request, credentials=credentials)
+        user = deps_module.get_current_user_web_or_api(
+            request=request, credentials=credentials
+        )
 
         assert user is not None
         assert user.username == "dave"
@@ -278,6 +278,7 @@ class TestAuthenticationPriority:
 
         # Create web session for web_user
         from fastapi import Response
+
         response = Response()
         session_manager.create_session(response, username="web_user", role="admin")
 
@@ -297,12 +298,13 @@ class TestAuthenticationPriority:
 
         # Make request with BOTH cookies
         request = _make_request_with_cookies(
-            web_session_cookie=session_cookie_value,
-            jwt_cookie=jwt_token
+            web_session_cookie=session_cookie_value, jwt_cookie=jwt_token
         )
 
         # Call dependency - should authenticate as web_user (web session takes precedence)
-        user = deps_module.get_current_user_web_or_api(request=request, credentials=None)
+        user = deps_module.get_current_user_web_or_api(
+            request=request, credentials=None
+        )
 
         assert user is not None
         assert user.username == "web_user"  # Web session wins
@@ -323,11 +325,11 @@ class TestAuthenticationFailures:
             deps_module.get_current_user_web_or_api(request=request, credentials=None)
 
         assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "www-authenticate" in {k.lower(): v for k, v in exc.value.headers.items()}
+        assert "www-authenticate" in {
+            k.lower(): v for k, v in exc.value.headers.items()
+        }
 
-    def test_invalid_web_session_falls_back_to_jwt(
-        self, setup_auth_env, user_manager
-    ):
+    def test_invalid_web_session_falls_back_to_jwt(self, setup_auth_env, user_manager):
         """Invalid web session cookie falls back to JWT cookie."""
         jwt_mgr = setup_auth_env
 
@@ -335,25 +337,22 @@ class TestAuthenticationFailures:
         user_manager.create_user("eve", "StrongP@ssw0rd-7", UserRole.NORMAL_USER)
 
         # Create valid JWT token
-        jwt_token = jwt_mgr.create_token(
-            {"username": "eve", "role": "normal_user"}
-        )
+        jwt_token = jwt_mgr.create_token({"username": "eve", "role": "normal_user"})
 
         # Make request with invalid web session + valid JWT
         request = _make_request_with_cookies(
-            web_session_cookie="invalid-session-cookie",
-            jwt_cookie=jwt_token
+            web_session_cookie="invalid-session-cookie", jwt_cookie=jwt_token
         )
 
         # Should fall back to JWT and succeed
-        user = deps_module.get_current_user_web_or_api(request=request, credentials=None)
+        user = deps_module.get_current_user_web_or_api(
+            request=request, credentials=None
+        )
 
         assert user is not None
         assert user.username == "eve"
 
-    def test_expired_web_session_falls_back_to_jwt(
-        self, setup_auth_env, user_manager
-    ):
+    def test_expired_web_session_falls_back_to_jwt(self, setup_auth_env, user_manager):
         """Expired web session falls back to JWT authentication."""
         jwt_mgr = setup_auth_env
 
@@ -361,9 +360,7 @@ class TestAuthenticationFailures:
         user_manager.create_user("frank", "StrongP@ssw0rd-8", UserRole.NORMAL_USER)
 
         # Create valid JWT token
-        jwt_token = jwt_mgr.create_token(
-            {"username": "frank", "role": "normal_user"}
-        )
+        jwt_token = jwt_mgr.create_token({"username": "frank", "role": "normal_user"})
 
         # Create expired web session (simulate by using invalid signature)
         # This simulates what happens when session expires
@@ -371,12 +368,13 @@ class TestAuthenticationFailures:
 
         # Make request with expired session + valid JWT
         request = _make_request_with_cookies(
-            web_session_cookie=expired_session,
-            jwt_cookie=jwt_token
+            web_session_cookie=expired_session, jwt_cookie=jwt_token
         )
 
         # Should fall back to JWT and succeed
-        user = deps_module.get_current_user_web_or_api(request=request, credentials=None)
+        user = deps_module.get_current_user_web_or_api(
+            request=request, credentials=None
+        )
 
         assert user is not None
         assert user.username == "frank"
@@ -385,8 +383,7 @@ class TestAuthenticationFailures:
         """Invalid web session AND invalid JWT returns 401."""
         # Make request with invalid credentials
         request = _make_request_with_cookies(
-            web_session_cookie="invalid-session",
-            jwt_cookie="invalid-jwt-token"
+            web_session_cookie="invalid-session", jwt_cookie="invalid-jwt-token"
         )
 
         from fastapi import HTTPException, status

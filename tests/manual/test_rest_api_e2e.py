@@ -80,7 +80,13 @@ class RestAPIE2ETester:
         from datetime import datetime, timezone
 
         # Create user directory in activated-repos
-        user_dir = Path.home() / ".cidx-server" / "data" / "activated-repos" / self.test_username
+        user_dir = (
+            Path.home()
+            / ".cidx-server"
+            / "data"
+            / "activated-repos"
+            / self.test_username
+        )
         user_dir.mkdir(parents=True, exist_ok=True)
 
         # Create repository directory
@@ -97,7 +103,7 @@ class RestAPIE2ETester:
             "golden_repo_alias": "test_golden",
             "current_branch": "master",
             "activated_at": datetime.now(timezone.utc).isoformat(),
-            "last_accessed": datetime.now(timezone.utc).isoformat()
+            "last_accessed": datetime.now(timezone.utc).isoformat(),
         }
 
         metadata_file = repo_dir.parent / f"{self.test_alias}.json"
@@ -112,7 +118,7 @@ class RestAPIE2ETester:
             username=self.test_username,
             password_hash="not_used",
             role=UserRole.NORMAL_USER,
-            created_at="2025-01-01T00:00:00Z"
+            created_at="2025-01-01T00:00:00Z",
         )
 
         # Override get_current_user dependency to return mock user
@@ -140,7 +146,13 @@ class RestAPIE2ETester:
         """Remove repository from ActivatedRepoManager manually."""
         try:
             # Remove activated repository structure
-            user_dir = Path.home() / ".cidx-server" / "data" / "activated-repos" / self.test_username
+            user_dir = (
+                Path.home()
+                / ".cidx-server"
+                / "data"
+                / "activated-repos"
+                / self.test_username
+            )
             if user_dir.exists():
                 # Remove symlink and metadata
                 repo_link = user_dir / self.test_alias
@@ -201,7 +213,7 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/files",
             json={"file_path": file_path, "content": content},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code == 201:
@@ -210,14 +222,14 @@ class RestAPIE2ETester:
             self.log_test(
                 "Create File (POST /files)",
                 "PASS",
-                f"File: {file_path}, hash: {self._format_hash(content_hash)}"
+                f"File: {file_path}, hash: {self._format_hash(content_hash)}",
             )
             return content_hash
         else:
             self.log_test(
                 "Create File (POST /files)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return None
 
@@ -229,7 +241,7 @@ class RestAPIE2ETester:
         self.log_test(
             "Create File - File Existence Check",
             "PASS" if exists else "FAIL",
-            f"File {'exists' if exists else 'not found'}: {full_path}"
+            f"File {'exists' if exists else 'not found'}: {full_path}",
         )
         return exists
 
@@ -244,9 +256,9 @@ class RestAPIE2ETester:
                 "old_string": old_str,
                 "new_string": new_str,
                 "content_hash": hash_val,
-                "replace_all": False
+                "replace_all": False,
             },
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code == 200:
@@ -256,14 +268,14 @@ class RestAPIE2ETester:
             self.log_test(
                 "Edit File (PATCH /files/{path})",
                 "PASS",
-                f"{changes} changes, new hash: {self._format_hash(new_hash)}"
+                f"{changes} changes, new hash: {self._format_hash(new_hash)}",
             )
             return new_hash
         else:
             self.log_test(
                 "Edit File (PATCH /files/{path})",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return None
 
@@ -276,7 +288,7 @@ class RestAPIE2ETester:
         self.log_test(
             "Edit File - Content Verification",
             "PASS" if contains else "FAIL",
-            f"Content {'updated correctly' if contains else 'not updated'}"
+            f"Content {'updated correctly' if contains else 'not updated'}",
         )
         return contains
 
@@ -288,7 +300,7 @@ class RestAPIE2ETester:
 
         response = self.client.delete(
             f"/api/v1/repos/{self.test_alias}/files/{file_path}",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code == 200:
@@ -297,14 +309,14 @@ class RestAPIE2ETester:
             self.log_test(
                 "Delete File (DELETE /files/{path}) - BUG FIX VERIFIED",
                 "PASS",
-                f"File deleted at {deleted_at}"
+                f"File deleted at {deleted_at}",
             )
             return True
         else:
             self.log_test(
                 "Delete File (DELETE /files/{path}) - BUG FIX FAILED",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return False
 
@@ -316,7 +328,7 @@ class RestAPIE2ETester:
         self.log_test(
             "Delete File - File Removal Verification",
             "PASS" if deleted else "FAIL",
-            f"File {'removed' if deleted else 'still exists'}"
+            f"File {'removed' if deleted else 'still exists'}",
         )
         return deleted
 
@@ -376,13 +388,13 @@ class RestAPIE2ETester:
         self.client.post(
             f"/api/v1/repos/{self.test_alias}/files",
             json={"file_path": duplicate_path, "content": "First"},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/files",
             json={"file_path": duplicate_path, "content": "Second"},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         status = "PASS" if response.status_code == 409 else "FAIL"
@@ -402,9 +414,9 @@ class RestAPIE2ETester:
                 "old_string": "foo",
                 "new_string": "bar",
                 "content_hash": "fakehash",
-                "replace_all": False
+                "replace_all": False,
             },
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         status = "PASS" if response.status_code == 404 else "FAIL"
@@ -420,7 +432,7 @@ class RestAPIE2ETester:
         print("\n2.3 Testing delete non-existent file (404 Not Found)")
         response = self.client.delete(
             f"/api/v1/repos/{self.test_alias}/files/nonexistent_delete.txt",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         status = "PASS" if response.status_code == 404 else "FAIL"
@@ -437,7 +449,7 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/files",
             json={"file_path": ".git/malicious.txt", "content": "Bad"},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         status = "PASS" if response.status_code == 403 else "FAIL"
@@ -467,8 +479,7 @@ class RestAPIE2ETester:
         """Test GET /api/v1/repos/{alias}/git/status."""
         print("\n3.1 Testing GET /api/v1/repos/{alias}/git/status")
         response = self.client.get(
-            f"/api/v1/repos/{self.test_alias}/git/status",
-            headers=self._auth_headers()
+            f"/api/v1/repos/{self.test_alias}/git/status", headers=self._auth_headers()
         )
 
         if response.status_code == 200:
@@ -478,13 +489,13 @@ class RestAPIE2ETester:
             self.log_test(
                 "Git Status (GET /git/status)",
                 "PASS",
-                f"Status: {branch}, Clean: {is_clean}"
+                f"Status: {branch}, Clean: {is_clean}",
             )
         else:
             self.log_test(
                 "Git Status (GET /git/status)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
 
     def _prepare_git_test_file(self):
@@ -498,22 +509,20 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/stage",
             json={"file_paths": ["git_test.txt"]},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code == 200:
             data = response.json()
             files_staged = data.get("files_staged", [])
             self.log_test(
-                "Git Stage (POST /git/stage)",
-                "PASS",
-                f"Files staged: {files_staged}"
+                "Git Stage (POST /git/stage)", "PASS", f"Files staged: {files_staged}"
             )
         else:
             self.log_test(
                 "Git Stage (POST /git/stage)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
 
     def _test_git_commit(self):
@@ -522,7 +531,7 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/commit",
             json={"message": "Test commit from REST API E2E"},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code == 201:
@@ -533,13 +542,13 @@ class RestAPIE2ETester:
             self.log_test(
                 "Git Commit (POST /git/commit)",
                 "PASS",
-                f"Commit: {hash_short}, message: {message}"
+                f"Commit: {hash_short}, message: {message}",
             )
         else:
             self.log_test(
                 "Git Commit (POST /git/commit)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
 
     # ==========================================================================
@@ -559,7 +568,7 @@ class RestAPIE2ETester:
         print("\n4.1 Testing GET /api/v1/repos/{alias}/index-status")
         response = self.client.get(
             f"/api/v1/repos/{self.test_alias}/index-status",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code == 200:
@@ -569,13 +578,13 @@ class RestAPIE2ETester:
             self.log_test(
                 "Index Status (GET /index-status)",
                 "PASS",
-                f"Semantic: {semantic}, FTS: {fts}"
+                f"Semantic: {semantic}, FTS: {fts}",
             )
         else:
             self.log_test(
                 "Index Status (GET /index-status)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
 
     # ==========================================================================
@@ -595,9 +604,7 @@ class RestAPIE2ETester:
         app.dependency_overrides.clear()
 
         try:
-            response = self.client.get(
-                f"/api/v1/repos/{self.test_alias}/git/status"
-            )
+            response = self.client.get(f"/api/v1/repos/{self.test_alias}/git/status")
 
             status = "PASS" if response.status_code == 401 else "FAIL"
             details = (
@@ -631,14 +638,14 @@ class RestAPIE2ETester:
         print("\n6.1 Testing GET /api/v1/repos/{alias}/git/branches")
         response = self.client.get(
             f"/api/v1/repos/{self.test_alias}/git/branches",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Branch List (GET /git/branches)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -648,7 +655,7 @@ class RestAPIE2ETester:
         self.log_test(
             "Git Branch List (GET /git/branches)",
             "PASS",
-            f"Current: {current}, Branches: {len(local_branches)}"
+            f"Current: {current}, Branches: {len(local_branches)}",
         )
 
     def _test_branch_create(self) -> bool:
@@ -657,14 +664,14 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/branches",
             json={"branch_name": "feature-test-e2e"},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 201:
             self.log_test(
                 "Git Branch Create (POST /git/branches)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return False
 
@@ -673,7 +680,7 @@ class RestAPIE2ETester:
         self.log_test(
             "Git Branch Create (POST /git/branches)",
             "PASS",
-            f"Created branch: {created_branch}"
+            f"Created branch: {created_branch}",
         )
         return True
 
@@ -682,14 +689,14 @@ class RestAPIE2ETester:
         print("\n6.3 Testing POST /api/v1/repos/{alias}/git/branches/{branch}/switch")
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/branches/feature-test-e2e/switch",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Branch Switch (POST /git/branches/{branch}/switch)",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -699,13 +706,13 @@ class RestAPIE2ETester:
         self.log_test(
             "Git Branch Switch (POST /git/branches/{branch}/switch)",
             "PASS",
-            f"Switched from {previous_branch} to {current_branch}"
+            f"Switched from {previous_branch} to {current_branch}",
         )
 
         # Switch back to master
         self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/branches/master/switch",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
     def _test_branch_delete(self):
@@ -715,14 +722,14 @@ class RestAPIE2ETester:
         # First request - should return confirmation token
         response = self.client.delete(
             f"/api/v1/repos/{self.test_alias}/git/branches/feature-test-e2e",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Branch Delete (DELETE /git/branches/{branch})",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -734,21 +741,21 @@ class RestAPIE2ETester:
             self.log_test(
                 "Git Branch Delete (DELETE /git/branches/{branch})",
                 "FAIL",
-                "Expected confirmation token"
+                "Expected confirmation token",
             )
             return
 
         # Second request with token
         response = self.client.delete(
             f"/api/v1/repos/{self.test_alias}/git/branches/feature-test-e2e?confirmation_token={token}",
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Branch Delete (DELETE /git/branches/{branch})",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -757,7 +764,7 @@ class RestAPIE2ETester:
         self.log_test(
             "Git Branch Delete (DELETE /git/branches/{branch})",
             "PASS",
-            f"Deleted branch: {deleted_branch}"
+            f"Deleted branch: {deleted_branch}",
         )
 
     # ==========================================================================
@@ -785,14 +792,14 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/clean",
             json={},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Clean (POST /git/clean) - request token",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -804,7 +811,7 @@ class RestAPIE2ETester:
             self.log_test(
                 "Git Clean (POST /git/clean) - request token",
                 "FAIL",
-                "Expected confirmation token"
+                "Expected confirmation token",
             )
             return
 
@@ -812,14 +819,14 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/clean",
             json={"confirmation_token": token},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Clean (POST /git/clean) - with token",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -828,12 +835,14 @@ class RestAPIE2ETester:
         self.log_test(
             "Git Clean (POST /git/clean) - with token",
             "PASS",
-            f"Removed {len(removed_files)} untracked files"
+            f"Removed {len(removed_files)} untracked files",
         )
 
     def _test_git_reset_with_token(self):
         """Test POST /api/v1/repos/{alias}/git/reset with confirmation token."""
-        print("\n7.2 Testing POST /api/v1/repos/{alias}/git/reset --hard (with confirmation)")
+        print(
+            "\n7.2 Testing POST /api/v1/repos/{alias}/git/reset --hard (with confirmation)"
+        )
 
         # Make a dirty change to README.md
         readme_path = Path(self.test_repo_dir) / "README.md"
@@ -841,7 +850,7 @@ class RestAPIE2ETester:
             self.log_test(
                 "Git Reset --hard (POST /git/reset) - setup",
                 "FAIL",
-                "README.md not found for reset test"
+                "README.md not found for reset test",
             )
             return
 
@@ -852,14 +861,14 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/reset",
             json={"mode": "hard"},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Reset --hard (POST /git/reset) - request token",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -871,7 +880,7 @@ class RestAPIE2ETester:
             self.log_test(
                 "Git Reset --hard (POST /git/reset) - request token",
                 "FAIL",
-                "Expected confirmation token"
+                "Expected confirmation token",
             )
             return
 
@@ -879,14 +888,14 @@ class RestAPIE2ETester:
         response = self.client.post(
             f"/api/v1/repos/{self.test_alias}/git/reset",
             json={"mode": "hard", "confirmation_token": token},
-            headers=self._auth_headers()
+            headers=self._auth_headers(),
         )
 
         if response.status_code != 200:
             self.log_test(
                 "Git Reset --hard (POST /git/reset) - with token",
                 "FAIL",
-                f"HTTP {response.status_code}: {response.text}"
+                f"HTTP {response.status_code}: {response.text}",
             )
             return
 
@@ -895,7 +904,7 @@ class RestAPIE2ETester:
         self.log_test(
             "Git Reset --hard (POST /git/reset) - with token",
             "PASS",
-            f"Reset completed with mode: {reset_mode}"
+            f"Reset completed with mode: {reset_mode}",
         )
 
     # ==========================================================================

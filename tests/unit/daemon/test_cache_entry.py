@@ -107,7 +107,6 @@ class TestCacheEntryConcurrencyPrimitives:
     def test_rw_lock_write_is_exclusive(self):
         """Test write lock provides exclusive access (blocks reads and writes)."""
         from code_indexer.daemon.cache import CacheEntry
-        import threading
 
         entry = CacheEntry(Path("/tmp/test"))
 
@@ -134,7 +133,6 @@ class TestCacheEntryConcurrencyPrimitives:
     def test_rw_lock_reader_writer_semantics(self):
         """Test ReaderWriterLock reader-writer semantics."""
         from code_indexer.daemon.cache import CacheEntry
-        import threading
 
         entry = CacheEntry(Path("/tmp/test"))
 

@@ -16,7 +16,6 @@ import pytest
 import threading
 import time
 import json
-from pathlib import Path
 from unittest.mock import patch
 from code_indexer.global_repos.global_registry import GlobalRegistry
 
@@ -51,15 +50,16 @@ def test_concurrent_register_operations_serialized(registry):
     # Run three concurrent register operations
     threads = []
     for i in range(3):
+
         def register_repo(index=i):
             registry.register_global_repo(
-                repo_name=f'test-repo-{index}',
-                alias_name=f'test-repo-{index}-global',
-                repo_url=f'https://github.com/user/repo{index}.git',
-                index_path=f'/path/to/index{index}'
+                repo_name=f"test-repo-{index}",
+                alias_name=f"test-repo-{index}-global",
+                repo_url=f"https://github.com/user/repo{index}.git",
+                index_path=f"/path/to/index{index}",
             )
 
-        thread = threading.Thread(target=register_repo, name=f'register_{i}')
+        thread = threading.Thread(target=register_repo, name=f"register_{i}")
         threads.append(thread)
 
     # Start all threads
@@ -75,14 +75,16 @@ def test_concurrent_register_operations_serialized(registry):
 
     # Verify all three repos were successfully registered
     registry._load_registry()
-    assert len([k for k in registry._registry_data.keys() if 'test-repo-' in k]) == 3, \
-        "All three register operations should succeed"
+    assert (
+        len([k for k in registry._registry_data.keys() if "test-repo-" in k]) == 3
+    ), "All three register operations should succeed"
 
     # Verify registry file is valid JSON
-    with open(registry.registry_file, 'r') as f:
+    with open(registry.registry_file, "r") as f:
         data = json.load(f)
-    assert len([k for k in data.keys() if 'test-repo-' in k]) == 3, \
-        "Registry file should contain all three repos"
+    assert (
+        len([k for k in data.keys() if "test-repo-" in k]) == 3
+    ), "Registry file should contain all three repos"
 
 
 def test_concurrent_unregister_operations_serialized(registry):
@@ -100,19 +102,20 @@ def test_concurrent_unregister_operations_serialized(registry):
     # Pre-populate registry
     for i in range(1, 4):
         registry.register_global_repo(
-            repo_name=f'repo{i}',
-            alias_name=f'repo{i}-global',
-            repo_url=f'https://github.com/user/repo{i}.git',
-            index_path=f'/path/to/repo{i}'
+            repo_name=f"repo{i}",
+            alias_name=f"repo{i}-global",
+            repo_url=f"https://github.com/user/repo{i}.git",
+            index_path=f"/path/to/repo{i}",
         )
 
     # Run three concurrent unregister operations
     threads = []
     for i in range(1, 4):
-        def unregister_repo(index=i):
-            registry.unregister_global_repo(alias_name=f'repo{index}-global')
 
-        thread = threading.Thread(target=unregister_repo, name=f'unregister_{i}')
+        def unregister_repo(index=i):
+            registry.unregister_global_repo(alias_name=f"repo{index}-global")
+
+        thread = threading.Thread(target=unregister_repo, name=f"unregister_{i}")
         threads.append(thread)
 
     # Start all threads
@@ -128,14 +131,23 @@ def test_concurrent_unregister_operations_serialized(registry):
 
     # Verify all three repos were successfully unregistered
     registry._load_registry()
-    assert len([k for k in registry._registry_data.keys() if 'repo' in k and '-global' in k]) == 0, \
-        "All three unregister operations should succeed"
+    assert (
+        len(
+            [
+                k
+                for k in registry._registry_data.keys()
+                if "repo" in k and "-global" in k
+            ]
+        )
+        == 0
+    ), "All three unregister operations should succeed"
 
     # Verify registry file is valid JSON and empty
-    with open(registry.registry_file, 'r') as f:
+    with open(registry.registry_file, "r") as f:
         data = json.load(f)
-    assert len([k for k in data.keys() if 'repo' in k and '-global' in k]) == 0, \
-        "Registry file should have no repos after unregister"
+    assert (
+        len([k for k in data.keys() if "repo" in k and "-global" in k]) == 0
+    ), "Registry file should have no repos after unregister"
 
 
 def test_concurrent_register_unregister_serialized(registry):
@@ -152,24 +164,24 @@ def test_concurrent_register_unregister_serialized(registry):
     """
     # Pre-populate with one repo
     registry.register_global_repo(
-        repo_name='existing-repo',
-        alias_name='existing-repo-global',
-        repo_url='https://github.com/user/existing.git',
-        index_path='/path/to/existing'
+        repo_name="existing-repo",
+        alias_name="existing-repo-global",
+        repo_url="https://github.com/user/existing.git",
+        index_path="/path/to/existing",
     )
 
     # Create threads for register and unregister operations
     def register_operation():
         registry.register_global_repo(
-            repo_name='new-repo',
-            alias_name='new-repo-global',
-            repo_url='https://github.com/user/new.git',
-            index_path='/path/to/new'
+            repo_name="new-repo",
+            alias_name="new-repo-global",
+            repo_url="https://github.com/user/new.git",
+            index_path="/path/to/new",
         )
 
     def unregister_operation():
         time.sleep(0.01)  # Small delay to ensure register starts first
-        registry.unregister_global_repo(alias_name='existing-repo-global')
+        registry.unregister_global_repo(alias_name="existing-repo-global")
 
     register_thread = threading.Thread(target=register_operation)
     unregister_thread = threading.Thread(target=unregister_operation)
@@ -186,14 +198,18 @@ def test_concurrent_register_unregister_serialized(registry):
 
     # Verify final state is consistent
     registry._load_registry()
-    assert 'new-repo-global' in registry._registry_data, "New repo should be registered"
-    assert 'existing-repo-global' not in registry._registry_data, "Existing repo should be unregistered"
+    assert "new-repo-global" in registry._registry_data, "New repo should be registered"
+    assert (
+        "existing-repo-global" not in registry._registry_data
+    ), "Existing repo should be unregistered"
 
     # Verify registry file is valid JSON
-    with open(registry.registry_file, 'r') as f:
+    with open(registry.registry_file, "r") as f:
         data = json.load(f)
-    assert 'new-repo-global' in data, "Registry file should contain new repo"
-    assert 'existing-repo-global' not in data, "Registry file should not contain removed repo"
+    assert "new-repo-global" in data, "Registry file should contain new repo"
+    assert (
+        "existing-repo-global" not in data
+    ), "Registry file should not contain removed repo"
 
 
 def test_registry_file_lock_prevents_corruption(registry):
@@ -208,10 +224,10 @@ def test_registry_file_lock_prevents_corruption(registry):
     # Pre-populate registry
     for i in range(5):
         registry.register_global_repo(
-            repo_name=f'repo{i}',
-            alias_name=f'repo{i}-global',
-            repo_url=f'https://github.com/user/repo{i}.git',
-            index_path=f'/path/to/repo{i}'
+            repo_name=f"repo{i}",
+            alias_name=f"repo{i}-global",
+            repo_url=f"https://github.com/user/repo{i}.git",
+            index_path=f"/path/to/repo{i}",
         )
 
     # Track registry file state
@@ -225,16 +241,16 @@ def test_registry_file_lock_prevents_corruption(registry):
             registry._load_registry()
 
             # Modify registry
-            new_alias = f'repo{repo_index}-updated-{j}-global'
+            new_alias = f"repo{repo_index}-updated-{j}-global"
             registry._registry_data[new_alias] = {
-                'repo_name': f'repo{repo_index}-updated-{j}',
-                'alias_name': new_alias,
-                'repo_url': f'https://github.com/user/repo{repo_index}-updated-{j}.git',
-                'index_path': f'/path/to/repo{repo_index}-updated-{j}',
-                'created_at': '2025-01-01T00:00:00Z',
-                'last_refresh': '2025-01-01T00:00:00Z',
-                'enable_temporal': False,
-                'temporal_options': None
+                "repo_name": f"repo{repo_index}-updated-{j}",
+                "alias_name": new_alias,
+                "repo_url": f"https://github.com/user/repo{repo_index}-updated-{j}.git",
+                "index_path": f"/path/to/repo{repo_index}-updated-{j}",
+                "created_at": "2025-01-01T00:00:00Z",
+                "last_refresh": "2025-01-01T00:00:00Z",
+                "enable_temporal": False,
+                "temporal_options": None,
             }
 
             # Save registry
@@ -242,7 +258,7 @@ def test_registry_file_lock_prevents_corruption(registry):
 
             # Capture snapshot
             with lock:
-                with open(registry.registry_file, 'r') as f:
+                with open(registry.registry_file, "r") as f:
                     content = f.read()
                     registry_snapshots.append(content)
 
@@ -250,8 +266,7 @@ def test_registry_file_lock_prevents_corruption(registry):
 
     # Run concurrent registry updates
     threads = [
-        threading.Thread(target=concurrent_registry_update, args=(i,))
-        for i in range(3)
+        threading.Thread(target=concurrent_registry_update, args=(i,)) for i in range(3)
     ]
 
     for t in threads:
@@ -272,7 +287,9 @@ def test_registry_file_lock_prevents_corruption(registry):
 
     # Verify final registry is valid and consistent
     registry._load_registry()
-    assert isinstance(registry._registry_data, dict), "Final registry should be valid dict"
+    assert isinstance(
+        registry._registry_data, dict
+    ), "Final registry should be valid dict"
 
 
 def test_file_lock_released_on_exception(registry):
@@ -290,6 +307,7 @@ def test_file_lock_released_on_exception(registry):
 
     # Test 1: _save_registry releases lock on exception
     import tempfile as temp_module
+
     save_call_count = [0]
     real_mkstemp = temp_module.mkstemp
 
@@ -301,7 +319,7 @@ def test_file_lock_released_on_exception(registry):
         # Use real mkstemp for subsequent calls
         return real_mkstemp(*args, **kwargs)
 
-    with patch('tempfile.mkstemp', side_effect=failing_mkstemp):
+    with patch("tempfile.mkstemp", side_effect=failing_mkstemp):
         # First _save_registry should fail and release lock
         # Note: mkstemp() failure raises IOError directly (not wrapped in RuntimeError)
         with pytest.raises(IOError, match="Disk full"):
@@ -324,7 +342,7 @@ def test_file_lock_released_on_exception(registry):
         # Use captured real open (not the mocked one)
         return real_open(*args, **kwargs)
 
-    with patch('builtins.open', side_effect=failing_open_read):
+    with patch("builtins.open", side_effect=failing_open_read):
         # First _load_registry should fail and release lock
         # Note: _load_registry catches exceptions and starts fresh, so no exception propagates
         registry._load_registry()

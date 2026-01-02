@@ -1340,26 +1340,24 @@ Remember: You have read-only access. You cannot modify, edit, or execute files."
         self, path: Path, rel_path_str: str, pattern: str
     ) -> bool:
         """Check if a path matches a gitignore pattern."""
-        import fnmatch
+        import pathspec
 
         # Handle directory patterns (ending with /)
         if pattern.endswith("/"):
             if path.is_dir():
                 dir_pattern = pattern[:-1]
-                if fnmatch.fnmatch(path.name, dir_pattern) or fnmatch.fnmatch(
-                    rel_path_str, dir_pattern
-                ):
+                spec = pathspec.PathSpec.from_lines("gitwildmatch", [dir_pattern])
+                if spec.match_file(path.name) or spec.match_file(rel_path_str):
                     return True
         else:
             # Handle file patterns
-            if fnmatch.fnmatch(path.name, pattern) or fnmatch.fnmatch(
-                rel_path_str, pattern
-            ):
+            spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+            if spec.match_file(path.name) or spec.match_file(rel_path_str):
                 return True
 
             # Handle path-based patterns
             if "/" in pattern:
-                if fnmatch.fnmatch(rel_path_str, pattern):
+                if spec.match_file(rel_path_str):
                     return True
 
         return False

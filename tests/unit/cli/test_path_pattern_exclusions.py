@@ -13,19 +13,19 @@ class TestBasicPathPatternMatching:
     """Test basic glob pattern matching for path exclusions."""
 
     def test_single_wildcard_matches_directory_component(self):
-        """Test that */tests/* pattern matches any path containing tests directory."""
+        """Test that **/tests/* pattern matches any path containing tests directory."""
         from code_indexer.services.path_pattern_matcher import PathPatternMatcher
 
         matcher = PathPatternMatcher()
 
-        # Should match: any/path/tests/file.py
-        assert matcher.matches_pattern("src/project/tests/test_auth.py", "*/tests/*")
-        assert matcher.matches_pattern("lib/tests/unit.py", "*/tests/*")
-        assert matcher.matches_pattern("tests/integration.py", "*/tests/*")
+        # Should match: any/path/tests/file.py (use ** for multiple directory levels)
+        assert matcher.matches_pattern("src/project/tests/test_auth.py", "**/tests/*")
+        assert matcher.matches_pattern("lib/tests/unit.py", "**/tests/*")
+        assert matcher.matches_pattern("tests/integration.py", "**/tests/*")
 
         # Should NOT match: no tests directory
-        assert not matcher.matches_pattern("src/project/auth.py", "*/tests/*")
-        assert not matcher.matches_pattern("src/testing.py", "*/tests/*")
+        assert not matcher.matches_pattern("src/project/auth.py", "**/tests/*")
+        assert not matcher.matches_pattern("src/testing.py", "**/tests/*")
 
     def test_double_wildcard_matches_nested_paths(self):
         """Test that ** pattern matches any depth of nested directories."""

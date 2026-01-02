@@ -104,7 +104,9 @@ class TestSchedulerEventSignaling:
         time.sleep(0.5)
 
         # Verify event is not set while running
-        assert not scheduler._stop_event.is_set(), "Event should not be set while running"
+        assert (
+            not scheduler._stop_event.is_set()
+        ), "Event should not be set while running"
 
         # Stop scheduler
         scheduler.stop()
@@ -137,6 +139,4 @@ class TestSchedulerEventSignaling:
         assert scheduler._thread is None or not scheduler._thread.is_alive()
 
         # Shutdown should be fast (<1s)
-        assert (
-            shutdown_time < 1.0
-        ), f"Shutdown took {shutdown_time:.2f}s, expected <1s"
+        assert shutdown_time < 1.0, f"Shutdown took {shutdown_time:.2f}s, expected <1s"

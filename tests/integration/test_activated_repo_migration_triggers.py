@@ -13,20 +13,16 @@ Test Scenarios:
 """
 
 import json
-import os
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Dict, Any
 import pytest
 
 from code_indexer.server.repositories.activated_repo_manager import (
     ActivatedRepoManager,
-    ActivatedRepoError,
 )
 from code_indexer.server.services.git_operations_service import (
     GitOperationsService,
-    GitCommandError,
 )
 
 
@@ -58,9 +54,7 @@ def legacy_test_repo(temp_data_dir: Path) -> Dict[str, Any]:
     golden_dir = temp_data_dir / "golden-repos" / "test-golden"
     golden_dir.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(
-        ["git", "init"], cwd=golden_dir, check=True, capture_output=True
-    )
+    subprocess.run(["git", "init"], cwd=golden_dir, check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=golden_dir,
@@ -78,9 +72,7 @@ def legacy_test_repo(temp_data_dir: Path) -> Dict[str, Any]:
     test_file = golden_dir / "README.md"
     test_file.write_text("# Test Repository\n")
 
-    subprocess.run(
-        ["git", "add", "."], cwd=golden_dir, check=True, capture_output=True
-    )
+    subprocess.run(["git", "add", "."], cwd=golden_dir, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=golden_dir,
@@ -141,9 +133,14 @@ def legacy_test_repo(temp_data_dir: Path) -> Dict[str, Any]:
 
 
 @pytest.fixture
-def activated_repo_manager(temp_data_dir: Path, legacy_test_repo: Dict[str, Any]) -> ActivatedRepoManager:
+def activated_repo_manager(
+    temp_data_dir: Path, legacy_test_repo: Dict[str, Any]
+) -> ActivatedRepoManager:
     """Create ActivatedRepoManager for testing with golden repo registered."""
-    from code_indexer.server.repositories.golden_repo_manager import GoldenRepoManager, GoldenRepo
+    from code_indexer.server.repositories.golden_repo_manager import (
+        GoldenRepoManager,
+        GoldenRepo,
+    )
     from datetime import datetime, timezone
 
     # Create golden repo manager and register the test golden repo
@@ -163,7 +160,9 @@ def activated_repo_manager(temp_data_dir: Path, legacy_test_repo: Dict[str, Any]
     golden_mgr.golden_repos["test-golden"] = golden_repo
 
     # Create ActivatedRepoManager with the configured GoldenRepoManager
-    return ActivatedRepoManager(data_dir=str(temp_data_dir), golden_repo_manager=golden_mgr)
+    return ActivatedRepoManager(
+        data_dir=str(temp_data_dir), golden_repo_manager=golden_mgr
+    )
 
 
 @pytest.fixture
@@ -179,7 +178,9 @@ class TestSyncTriggersMigration:
     """Test that sync_with_golden_repository triggers migration."""
 
     def test_sync_triggers_migration_for_legacy_repo(
-        self, legacy_test_repo: Dict[str, Any], activated_repo_manager: ActivatedRepoManager
+        self,
+        legacy_test_repo: Dict[str, Any],
+        activated_repo_manager: ActivatedRepoManager,
     ):
         """
         Scenario 7: Legacy repo migration triggered by sync operation.
@@ -203,7 +204,9 @@ class TestSyncTriggersMigration:
             text=True,
         )
         assert origin_result.returncode == 0
-        assert origin_result.stdout.strip().startswith("/"), "Origin should be local path"
+        assert origin_result.stdout.strip().startswith(
+            "/"
+        ), "Origin should be local path"
 
         # No golden remote should exist yet
         golden_result = subprocess.run(
@@ -249,7 +252,9 @@ class TestGitOperationsTriggerMigration:
     """Test that git operations (push, pull, fetch) trigger migration."""
 
     def test_push_triggers_migration_for_legacy_repo(
-        self, legacy_test_repo: Dict[str, Any], activated_repo_manager: ActivatedRepoManager
+        self,
+        legacy_test_repo: Dict[str, Any],
+        activated_repo_manager: ActivatedRepoManager,
     ):
         """
         Scenario 6: Legacy activated repo auto-migrates on first push.
@@ -287,7 +292,9 @@ class TestGitOperationsTriggerMigration:
             capture_output=True,
             text=True,
         )
-        assert origin_result.stdout.strip().startswith("/"), "Origin should be local path"
+        assert origin_result.stdout.strip().startswith(
+            "/"
+        ), "Origin should be local path"
 
         # Manually trigger migration via internal method
         # (This simulates what should happen automatically in git_push wrapper)
@@ -314,7 +321,9 @@ class TestGitOperationsTriggerMigration:
         # This test focuses on migration trigger, not push success
 
     def test_pull_triggers_migration_for_legacy_repo(
-        self, legacy_test_repo: Dict[str, Any], activated_repo_manager: ActivatedRepoManager
+        self,
+        legacy_test_repo: Dict[str, Any],
+        activated_repo_manager: ActivatedRepoManager,
     ):
         """Test that git_pull triggers migration for legacy repo."""
         repo_dir = legacy_test_repo["repo_dir"]
@@ -328,7 +337,9 @@ class TestGitOperationsTriggerMigration:
             capture_output=True,
             text=True,
         )
-        assert origin_result.stdout.strip().startswith("/"), "Origin should be local path"
+        assert origin_result.stdout.strip().startswith(
+            "/"
+        ), "Origin should be local path"
 
         # Manually trigger migration (simulates automatic trigger in git_pull)
         activated_repo_manager._detect_and_migrate_legacy_remotes(repo_dir, golden_dir)
@@ -351,7 +362,9 @@ class TestGitOperationsTriggerMigration:
         assert golden_after.stdout.strip() == golden_dir, "Golden should be local path"
 
     def test_fetch_triggers_migration_for_legacy_repo(
-        self, legacy_test_repo: Dict[str, Any], activated_repo_manager: ActivatedRepoManager
+        self,
+        legacy_test_repo: Dict[str, Any],
+        activated_repo_manager: ActivatedRepoManager,
     ):
         """Test that git_fetch triggers migration for legacy repo."""
         repo_dir = legacy_test_repo["repo_dir"]
@@ -365,7 +378,9 @@ class TestGitOperationsTriggerMigration:
             capture_output=True,
             text=True,
         )
-        assert origin_result.stdout.strip().startswith("/"), "Origin should be local path"
+        assert origin_result.stdout.strip().startswith(
+            "/"
+        ), "Origin should be local path"
 
         # Manually trigger migration (simulates automatic trigger in git_fetch)
         activated_repo_manager._detect_and_migrate_legacy_remotes(repo_dir, golden_dir)
@@ -392,7 +407,9 @@ class TestMigrationIdempotency:
     """Test that migration is idempotent across multiple operations."""
 
     def test_migration_idempotent_across_operations(
-        self, legacy_test_repo: Dict[str, Any], activated_repo_manager: ActivatedRepoManager
+        self,
+        legacy_test_repo: Dict[str, Any],
+        activated_repo_manager: ActivatedRepoManager,
     ):
         """
         Scenario 7: Migration is idempotent.
@@ -432,7 +449,9 @@ class TestMigrationIdempotency:
         result2 = activated_repo_manager._detect_and_migrate_legacy_remotes(
             repo_dir, golden_dir
         )
-        assert result2 is False, "Second migration should return False (already migrated)"
+        assert (
+            result2 is False
+        ), "Second migration should return False (already migrated)"
 
         # Verify remotes are still correct (unchanged)
         origin_after = subprocess.run(
@@ -462,7 +481,9 @@ class TestMigrationMethodImprovements:
     """Test improvements to migration method (timeouts, validation)."""
 
     def test_migration_respects_timeouts(
-        self, legacy_test_repo: Dict[str, Any], activated_repo_manager: ActivatedRepoManager
+        self,
+        legacy_test_repo: Dict[str, Any],
+        activated_repo_manager: ActivatedRepoManager,
     ):
         """Test that migration method uses proper timeouts."""
         repo_dir = legacy_test_repo["repo_dir"]
@@ -471,6 +492,7 @@ class TestMigrationMethodImprovements:
         # This test verifies the migration doesn't hang
         # By successfully completing within reasonable time
         import time
+
         start_time = time.time()
 
         result = activated_repo_manager._detect_and_migrate_legacy_remotes(
@@ -484,7 +506,9 @@ class TestMigrationMethodImprovements:
         assert result in [True, False], "Migration should return boolean"
 
     def test_migration_validates_github_url_not_local_path(
-        self, legacy_test_repo: Dict[str, Any], activated_repo_manager: ActivatedRepoManager
+        self,
+        legacy_test_repo: Dict[str, Any],
+        activated_repo_manager: ActivatedRepoManager,
     ):
         """
         Test that migration validates GitHub URL is not another local path.
@@ -510,7 +534,9 @@ class TestMigrationMethodImprovements:
         )
 
         # Should complete without error (may return True or False)
-        assert isinstance(result, bool), "Migration should return boolean even with missing golden origin"
+        assert isinstance(
+            result, bool
+        ), "Migration should return boolean even with missing golden origin"
 
         # Verify it doesn't crash and creates valid remote configuration
         origin_result = subprocess.run(

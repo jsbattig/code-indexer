@@ -9,7 +9,6 @@ import logging
 import shutil
 import subprocess
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union, TYPE_CHECKING
@@ -224,7 +223,9 @@ class RefreshScheduler:
                 # Get repo info from registry
                 repo_info = self.registry.get_global_repo(alias_name)
                 if not repo_info:
-                    logger.warning(f"Repo {alias_name} not in registry, skipping refresh")
+                    logger.warning(
+                        f"Repo {alias_name} not in registry, skipping refresh"
+                    )
                     return
 
                 # Get golden repo path from alias (registry path becomes stale after refresh)
@@ -245,7 +246,9 @@ class RefreshScheduler:
                 has_changes = updater.has_changes()
 
                 if not has_changes:
-                    logger.info(f"No changes detected for {alias_name}, skipping refresh")
+                    logger.info(
+                        f"No changes detected for {alias_name}, skipping refresh"
+                    )
                     return
 
                 # Pull latest changes

@@ -90,9 +90,7 @@ class TestSSHKeyCLICommands:
             mock_manager.delete_key.return_value = True
             mock_manager_class.return_value = mock_manager
 
-            result = runner.invoke(
-                cli, ["ssh-key", "delete", "test-key", "--force"]
-            )
+            result = runner.invoke(cli, ["ssh-key", "delete", "test-key", "--force"])
 
             # Should succeed
             assert result.exit_code == 0

@@ -153,9 +153,11 @@ class TestFileContentLimitsDisplay:
 
         # Should have form elements
         assert "<form" in text_lower, "Page should have form"
-        assert 'type="range"' in text_lower or 'type="number"' in text_lower or 'input' in text_lower, (
-            "Page should have slider or number input"
-        )
+        assert (
+            'type="range"' in text_lower
+            or 'type="number"' in text_lower
+            or "input" in text_lower
+        ), "Page should have slider or number input"
         assert "<select" in text_lower, "Page should have dropdown for chars_per_token"
         assert (
             "save" in text_lower or 'type="submit"' in text_lower
@@ -203,9 +205,9 @@ class TestFileContentLimitsFormInputs:
 
         # Should have select with options 3, 4, 5
         assert "<select" in text_lower, "Page should have dropdown"
-        assert "3" in response.text and "4" in response.text and "5" in response.text, (
-            "Dropdown should have options 3, 4, 5"
-        )
+        assert (
+            "3" in response.text and "4" in response.text and "5" in response.text
+        ), "Dropdown should have options 3, 4, 5"
 
 
 # =============================================================================
@@ -476,9 +478,9 @@ class TestFileContentLimitsFeedback:
         text_lower = response.text.lower()
 
         # Should show error and still have form
-        assert "error" in text_lower or "invalid" in text_lower, (
-            "Should show error message"
-        )
+        assert (
+            "error" in text_lower or "invalid" in text_lower
+        ), "Should show error message"
         assert "<form" in text_lower, "Form should still be displayed after error"
 
 

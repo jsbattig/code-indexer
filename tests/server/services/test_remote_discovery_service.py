@@ -1,6 +1,5 @@
 """Unit tests for RemoteDiscoveryService."""
 
-
 from code_indexer.server.services.remote_discovery_service import (
     RemoteDiscoveryService,
 )
@@ -46,7 +45,9 @@ class TestRemoteDiscoveryServiceExtractHostname:
         service = RemoteDiscoveryService()
 
         # ssh://git@hostname:port/path format
-        hostname = service.extract_hostname("ssh://git@private.server.com:2222/user/repo.git")
+        hostname = service.extract_hostname(
+            "ssh://git@private.server.com:2222/user/repo.git"
+        )
 
         assert hostname == "private.server.com"
 

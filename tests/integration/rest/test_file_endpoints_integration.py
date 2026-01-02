@@ -24,6 +24,7 @@ from code_indexer.server.auth.dependencies import get_current_user
 # TEST FIXTURES
 # ============================================================================
 
+
 @pytest.fixture(scope="module")
 def mock_user():
     """Create mock User object for authentication bypass."""
@@ -36,6 +37,7 @@ def mock_user():
 @pytest.fixture(scope="module")
 def test_app(mock_user):
     """Create FastAPI test app with authentication bypass."""
+
     def mock_get_current_user_dep():
         return mock_user
 
@@ -61,6 +63,7 @@ def client(test_app):
 # INTEGRATION TESTS - FILE CRUD ENDPOINTS
 # ============================================================================
 
+
 def test_create_file_integration(client):
     """
     Integration test: POST /api/v1/repos/{alias}/files
@@ -68,23 +71,22 @@ def test_create_file_integration(client):
     Tests full HTTP request → router → service layer flow.
     """
     # Mock the service method
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
         mock_service.create_file.return_value = {
             "success": True,
             "file_path": "src/test.py",
             "content_hash": "abc123hash",
             "size_bytes": 15,
-            "created_at": "2025-01-15T10:00:00Z"
+            "created_at": "2025-01-15T10:00:00Z",
         }
 
         # Make HTTP request
         response = client.post(
             "/api/v1/repos/test-repo/files",
-            json={
-                "file_path": "src/test.py",
-                "content": "print('hello')"
-            }
+            json={"file_path": "src/test.py", "content": "print('hello')"},
         )
 
     # Verify HTTP response
@@ -101,7 +103,7 @@ def test_create_file_integration(client):
         repo_alias="test-repo",
         file_path="src/test.py",
         content="print('hello')",
-        username="testuser"
+        username="testuser",
     )
 
 
@@ -112,14 +114,16 @@ def test_edit_file_integration(client):
     Tests full HTTP request → router → service layer flow.
     """
     # Mock the service method
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
         mock_service.edit_file.return_value = {
             "success": True,
             "file_path": "src/test.py",
             "content_hash": "def456hash",
             "modified_at": "2025-01-15T10:05:00Z",
-            "changes_made": 1
+            "changes_made": 1,
         }
 
         # Make HTTP request
@@ -129,8 +133,8 @@ def test_edit_file_integration(client):
                 "old_string": "hello",
                 "new_string": "world",
                 "content_hash": "abc123",
-                "replace_all": False
-            }
+                "replace_all": False,
+            },
         )
 
     # Verify HTTP response
@@ -150,7 +154,7 @@ def test_edit_file_integration(client):
         new_string="world",
         content_hash="abc123",
         replace_all=False,
-        username="testuser"
+        username="testuser",
     )
 
 
@@ -161,12 +165,14 @@ def test_delete_file_integration(client):
     Tests full HTTP request → router → service layer flow.
     """
     # Mock the service method
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
         mock_service.delete_file.return_value = {
             "success": True,
             "file_path": "src/test.py",
-            "deleted_at": "2025-01-15T10:10:00Z"
+            "deleted_at": "2025-01-15T10:10:00Z",
         }
 
         # Make HTTP request
@@ -184,7 +190,7 @@ def test_delete_file_integration(client):
         repo_alias="test-repo",
         file_path="src/test.py",
         content_hash=None,
-        username="testuser"
+        username="testuser",
     )
 
 
@@ -194,12 +200,14 @@ def test_delete_file_with_content_hash(client):
 
     Verify content_hash parameter is passed when provided.
     """
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
         mock_service.delete_file.return_value = {
             "success": True,
             "file_path": "src/test.py",
-            "deleted_at": "2025-01-15T10:10:00Z"
+            "deleted_at": "2025-01-15T10:10:00Z",
         }
 
         response = client.delete(
@@ -214,7 +222,7 @@ def test_delete_file_with_content_hash(client):
         repo_alias="test-repo",
         file_path="src/test.py",
         content_hash="abc123def",  # Should pass hash, not None
-        username="testuser"
+        username="testuser",
     )
 
 
@@ -222,18 +230,18 @@ def test_delete_file_with_content_hash(client):
 # ERROR HANDLING INTEGRATION TESTS
 # ============================================================================
 
+
 def test_create_file_repository_not_found(client):
     """Integration test: Verify 404 when repository doesn't exist."""
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
         mock_service.create_file.side_effect = FileNotFoundError("Repository not found")
 
         response = client.post(
             "/api/v1/repos/nonexistent-repo/files",
-            json={
-                "file_path": "test.py",
-                "content": "test"
-            }
+            json={"file_path": "test.py", "content": "test"},
         )
 
     assert response.status_code == 404
@@ -242,16 +250,15 @@ def test_create_file_repository_not_found(client):
 
 def test_create_file_already_exists(client):
     """Integration test: Verify 409 when file already exists."""
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
         mock_service.create_file.side_effect = FileExistsError("File already exists")
 
         response = client.post(
             "/api/v1/repos/test-repo/files",
-            json={
-                "file_path": "existing.py",
-                "content": "test"
-            }
+            json={"file_path": "existing.py", "content": "test"},
         )
 
     assert response.status_code == 409
@@ -260,16 +267,17 @@ def test_create_file_already_exists(client):
 
 def test_create_file_git_directory_blocked(client):
     """Integration test: Verify 403 when attempting to create file in .git/ directory."""
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
-        mock_service.create_file.side_effect = PermissionError(".git/ directory access blocked")
+        mock_service.create_file.side_effect = PermissionError(
+            ".git/ directory access blocked"
+        )
 
         response = client.post(
             "/api/v1/repos/test-repo/files",
-            json={
-                "file_path": ".git/config",
-                "content": "malicious"
-            }
+            json={"file_path": ".git/config", "content": "malicious"},
         )
 
     assert response.status_code == 403
@@ -282,7 +290,9 @@ def test_edit_file_hash_mismatch(client):
     # Import custom exception
     from code_indexer.server.services.file_crud_service import HashMismatchError
 
-    with patch("code_indexer.server.routers.files.FileCRUDService") as mock_service_class:
+    with patch(
+        "code_indexer.server.routers.files.FileCRUDService"
+    ) as mock_service_class:
         mock_service = mock_service_class.return_value
         mock_service.edit_file.side_effect = HashMismatchError("Hash mismatch")
 
@@ -292,8 +302,8 @@ def test_edit_file_hash_mismatch(client):
                 "old_string": "old",
                 "new_string": "new",
                 "content_hash": "wronghash",
-                "replace_all": False
-            }
+                "replace_all": False,
+            },
         )
 
     assert response.status_code == 409

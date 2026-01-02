@@ -74,7 +74,9 @@ class GlobalRegistry:
                         f"Loaded global registry with {len(self._registry_data)} repos"
                     )
                 except (json.JSONDecodeError, IOError) as e:
-                    logger.warning(f"Failed to load global registry, starting fresh: {e}")
+                    logger.warning(
+                        f"Failed to load global registry, starting fresh: {e}"
+                    )
                     self._registry_data = {}
                     self._save_registry()  # Safe: RLock allows reentrant acquisition
             else:
@@ -95,7 +97,9 @@ class GlobalRegistry:
         with self._file_lock:
             # Write to temporary file first
             tmp_fd, tmp_path = tempfile.mkstemp(
-                dir=str(self.golden_repos_dir), prefix=".global_registry_", suffix=".tmp"
+                dir=str(self.golden_repos_dir),
+                prefix=".global_registry_",
+                suffix=".tmp",
             )
 
             try:

@@ -26,7 +26,7 @@ class DatabaseManager:
         """
         # Validate SQLite version before proceeding
         version = sqlite3.sqlite_version
-        major, minor, patch = map(int, version.split('.'))
+        major, minor, patch = map(int, version.split("."))
         if major < 3 or (major == 3 and minor < 35):
             raise RuntimeError(
                 f"SQLite 3.35+ required for recursive CTEs and window functions. "
@@ -60,7 +60,8 @@ class DatabaseManager:
             # Enable foreign key constraints
             cursor.execute("PRAGMA foreign_keys = ON")
             # Create symbols table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS symbols (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -71,20 +72,24 @@ class DatabaseManager:
                     package_id TEXT,
                     enclosing_symbol_id INTEGER
                 )
-            """)
+            """
+            )
 
             # Create documents table (needed for FK constraint in occurrences)
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS documents (
                     id INTEGER PRIMARY KEY,
                     relative_path TEXT NOT NULL,
                     language TEXT,
                     occurrences TEXT
                 )
-            """)
+            """
+            )
 
             # Create occurrences table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS occurrences (
                     id INTEGER PRIMARY KEY,
                     symbol_id INTEGER NOT NULL,
@@ -102,10 +107,12 @@ class DatabaseManager:
                     FOREIGN KEY (symbol_id) REFERENCES symbols(id),
                     FOREIGN KEY (document_id) REFERENCES documents(id)
                 )
-            """)
+            """
+            )
 
             # Create call_graph table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS call_graph (
                     id INTEGER PRIMARY KEY,
                     caller_symbol_id INTEGER NOT NULL,
@@ -118,10 +125,12 @@ class DatabaseManager:
                     FOREIGN KEY (callee_symbol_id) REFERENCES symbols(id),
                     FOREIGN KEY (occurrence_id) REFERENCES occurrences(id)
                 )
-            """)
+            """
+            )
 
             # Create symbol_relationships table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS symbol_relationships (
                     id INTEGER PRIMARY KEY,
                     from_symbol_id INTEGER NOT NULL,
@@ -130,10 +139,12 @@ class DatabaseManager:
                     FOREIGN KEY (from_symbol_id) REFERENCES symbols(id),
                     FOREIGN KEY (to_symbol_id) REFERENCES symbols(id)
                 )
-            """)
+            """
+            )
 
             # Create symbol_references table (for fast trace_call_chain queries)
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS symbol_references (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     from_symbol_id INTEGER NOT NULL,
@@ -144,10 +155,12 @@ class DatabaseManager:
                     FOREIGN KEY (to_symbol_id) REFERENCES symbols(id),
                     FOREIGN KEY (occurrence_id) REFERENCES occurrences(id)
                 )
-            """)
+            """
+            )
 
             # Create FTS5 virtual table for symbol search
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
                     name,
                     display_name,
@@ -155,7 +168,8 @@ class DatabaseManager:
                     content=symbols,
                     content_rowid=id
                 )
-            """)
+            """
+            )
 
             conn.commit()
         finally:
@@ -170,34 +184,70 @@ class DatabaseManager:
             # Enable foreign key constraints
             cursor.execute("PRAGMA foreign_keys = ON")
             # Symbols table indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbols_display_name ON symbols(display_name)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbols_enclosing ON symbols(enclosing_symbol_id)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbols_display_name ON symbols(display_name)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbols_enclosing ON symbols(enclosing_symbol_id)"
+            )
 
             # Occurrences table indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_occurrences_symbol ON occurrences(symbol_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_occurrences_document ON occurrences(document_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_occurrences_role ON occurrences(role)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_occurrences_location ON occurrences(start_line, start_char)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_occurrences_symbol ON occurrences(symbol_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_occurrences_document ON occurrences(document_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_occurrences_role ON occurrences(role)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_occurrences_location ON occurrences(start_line, start_char)"
+            )
 
             # Call graph indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_call_graph_caller ON call_graph(caller_symbol_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_call_graph_callee ON call_graph(callee_symbol_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_call_graph_occurrence ON call_graph(occurrence_id)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_call_graph_caller ON call_graph(caller_symbol_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_call_graph_callee ON call_graph(callee_symbol_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_call_graph_occurrence ON call_graph(occurrence_id)"
+            )
 
             # Symbol relationships indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_from ON symbol_relationships(from_symbol_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_to ON symbol_relationships(to_symbol_id)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_relationships_from ON symbol_relationships(from_symbol_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_relationships_to ON symbol_relationships(to_symbol_id)"
+            )
 
             # Symbol references indexes (for fast trace_call_chain queries)
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol_refs_from ON symbol_references(from_symbol_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol_refs_to ON symbol_references(to_symbol_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol_refs_type ON symbol_references(relationship_type)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbol_refs_from ON symbol_references(from_symbol_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbol_refs_to ON symbol_references(to_symbol_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbol_refs_type ON symbol_references(relationship_type)"
+            )
 
             # Documents table indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(relative_path)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_language ON documents(language)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(relative_path)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_documents_language ON documents(language)"
+            )
 
             conn.commit()
         finally:

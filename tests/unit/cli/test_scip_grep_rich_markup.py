@@ -24,7 +24,7 @@ def test_rich_markup_crash_without_protection():
     """
     # Code with Rich markup closing tag pattern - this WILL crash
     # Pattern like [/(lth|ct|rth)/g] is interpreted as closing tag [/...]
-    context_line = '    new: [/(lth|ct|rth)/g, /test/i],'
+    context_line = "    new: [/(lth|ct|rth)/g, /test/i],"
 
     output = StringIO()
     console = Console(file=output)
@@ -45,10 +45,10 @@ def test_rich_markup_safe_with_markup_false():
     # Including the [/(lth|ct|rth)/g] pattern that definitely crashes
     context_before = [
         "const patterns = {",
-        '    old: [/(foo|bar)/g],',
+        "    old: [/(foo|bar)/g],",
     ]
 
-    matching_line = '    new: [/(lth|ct|rth)/g, /test/i],'
+    matching_line = "    new: [/(lth|ct|rth)/g, /test/i],"
 
     context_after = [
         "};",
@@ -83,8 +83,8 @@ def test_rich_markup_with_regex_patterns():
     # JavaScript regex patterns that look like Rich markup
     context_lines = [
         "const patterns = {",
-        '    old: [/(foo|bar)/g],',
-        '    new: [/(lth|ct|rth)/g, /test/i],',
+        "    old: [/(foo|bar)/g],",
+        "    new: [/(lth|ct|rth)/g, /test/i],",
         "};",
     ]
 

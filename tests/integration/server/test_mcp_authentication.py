@@ -64,10 +64,13 @@ def client(tmp_path):
 
     # Create and populate user_manager BEFORE create_app()
     from src.code_indexer.server.auth.user_manager import UserManager, UserRole
+
     users_file = str(tmp_path / "users.json")
     test_user_manager = UserManager(users_file_path=users_file)
     test_user_manager.seed_initial_admin()
-    test_user_manager.create_user("testuser", "Test123!@#Password", UserRole.NORMAL_USER)
+    test_user_manager.create_user(
+        "testuser", "Test123!@#Password", UserRole.NORMAL_USER
+    )
 
     # Now create app - it will use the pre-populated users.json
     app = create_app()
@@ -77,7 +80,10 @@ def client(tmp_path):
     dependencies.user_manager = test_user_manager
     # Create MCP manager with test user_manager
     from src.code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
-    dependencies.mcp_credential_manager = MCPCredentialManager(user_manager=test_user_manager)
+
+    dependencies.mcp_credential_manager = MCPCredentialManager(
+        user_manager=test_user_manager
+    )
 
     # Create client
     test_client = TestClient(app)
@@ -102,7 +108,9 @@ def mcp_credential(client):
     Depends on client fixture to ensure managers are set up first.
     Uses the MCP manager from dependencies that was configured by client fixture.
     """
-    result = dependencies.mcp_credential_manager.generate_credential("testuser", name="Test Auth Credential")
+    result = dependencies.mcp_credential_manager.generate_credential(
+        "testuser", name="Test Auth Credential"
+    )
     return result
 
 
@@ -128,21 +136,17 @@ class TestMCPAuthenticationBasicAuth:
 
         # Make request to /mcp endpoint with MCP credentials
         # Use a simple tools/list request for testing
-        mcp_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
+        mcp_request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
 
         # Should succeed (200) not fail with 401
         assert response.status_code != 401, "MCP Basic auth should not return 401"
-        assert response.status_code == 200, "MCP endpoint should return 200 with valid auth"
+        assert (
+            response.status_code == 200
+        ), "MCP endpoint should return 200 with valid auth"
 
     def test_basic_auth_with_invalid_client_id(self, client, mcp_credential):
         """
@@ -160,16 +164,10 @@ class TestMCPAuthenticationBasicAuth:
         encoded = base64.b64encode(auth_credentials.encode()).decode()
         auth_header = f"Basic {encoded}"
 
-        mcp_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
+        mcp_request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
 
         # Should return 401
@@ -184,29 +182,27 @@ class TestMCPAuthenticationBasicAuth:
         - Returns 401 Unauthorized
         """
         client_id = mcp_credential["client_id"]
-        fake_secret = "mcp_sec_fakefakefakefakefakefakefakefakefakefakefakefakefakefakefakefake"
+        fake_secret = (
+            "mcp_sec_fakefakefakefakefakefakefakefakefakefakefakefakefakefakefakefake"
+        )
 
         # Create Basic auth header with wrong secret
         auth_credentials = f"{client_id}:{fake_secret}"
         encoded = base64.b64encode(auth_credentials.encode()).decode()
         auth_header = f"Basic {encoded}"
 
-        mcp_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
+        mcp_request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
 
         # Should return 401
         assert response.status_code == 401
 
-    def test_basic_auth_updates_last_used_at(self, client, mcp_manager, mcp_credential, user_manager):
+    def test_basic_auth_updates_last_used_at(
+        self, client, mcp_manager, mcp_credential, user_manager
+    ):
         """
         AC4: Successful Basic auth updates last_used_at.
 
@@ -220,7 +216,9 @@ class TestMCPAuthenticationBasicAuth:
 
         # Check last_used_at is initially None
         stored_credentials = user_manager.get_mcp_credentials("testuser")
-        initial_cred = next(c for c in stored_credentials if c["credential_id"] == credential_id)
+        initial_cred = next(
+            c for c in stored_credentials if c["credential_id"] == credential_id
+        )
         assert initial_cred["last_used_at"] is None
 
         # Authenticate with Basic auth
@@ -228,16 +226,10 @@ class TestMCPAuthenticationBasicAuth:
         encoded = base64.b64encode(auth_credentials_str.encode()).decode()
         auth_header = f"Basic {encoded}"
 
-        mcp_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
+        mcp_request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
 
         # Should succeed
@@ -245,7 +237,9 @@ class TestMCPAuthenticationBasicAuth:
 
         # Check last_used_at is now set
         stored_credentials = user_manager.get_mcp_credentials("testuser")
-        updated_cred = next(c for c in stored_credentials if c["credential_id"] == credential_id)
+        updated_cred = next(
+            c for c in stored_credentials if c["credential_id"] == credential_id
+        )
         assert updated_cred["last_used_at"] is not None
         assert updated_cred["last_used_at"] != initial_cred["last_used_at"]
 
@@ -271,17 +265,16 @@ class TestMCPAuthenticationClientSecretPost:
             "id": 1,
             "method": "tools/list",
             "client_id": client_id,
-            "client_secret": client_secret
+            "client_secret": client_secret,
         }
 
-        response = client.post(
-            "/mcp",
-            json=mcp_request
-        )
+        response = client.post("/mcp", json=mcp_request)
 
         # Should succeed (200) not fail with 401
         assert response.status_code != 401, "client_secret_post should not return 401"
-        assert response.status_code == 200, "MCP endpoint should return 200 with valid credentials"
+        assert (
+            response.status_code == 200
+        ), "MCP endpoint should return 200 with valid credentials"
 
     def test_client_secret_post_with_invalid_client_id(self, client, mcp_credential):
         """
@@ -299,13 +292,10 @@ class TestMCPAuthenticationClientSecretPost:
             "id": 1,
             "method": "tools/list",
             "client_id": fake_client_id,
-            "client_secret": client_secret
+            "client_secret": client_secret,
         }
 
-        response = client.post(
-            "/mcp",
-            json=mcp_request
-        )
+        response = client.post("/mcp", json=mcp_request)
 
         # Should return 401
         assert response.status_code == 401
@@ -319,25 +309,26 @@ class TestMCPAuthenticationClientSecretPost:
         - Returns 401 Unauthorized
         """
         client_id = mcp_credential["client_id"]
-        fake_secret = "mcp_sec_fakefakefakefakefakefakefakefakefakefakefakefakefakefakefakefake"
+        fake_secret = (
+            "mcp_sec_fakefakefakefakefakefakefakefakefakefakefakefakefakefakefakefake"
+        )
 
         mcp_request = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/list",
             "client_id": client_id,
-            "client_secret": fake_secret
+            "client_secret": fake_secret,
         }
 
-        response = client.post(
-            "/mcp",
-            json=mcp_request
-        )
+        response = client.post("/mcp", json=mcp_request)
 
         # Should return 401
         assert response.status_code == 401
 
-    def test_client_secret_post_updates_last_used_at(self, client, mcp_manager, mcp_credential, user_manager):
+    def test_client_secret_post_updates_last_used_at(
+        self, client, mcp_manager, mcp_credential, user_manager
+    ):
         """
         AC8: Successful client_secret_post updates last_used_at.
 
@@ -351,7 +342,9 @@ class TestMCPAuthenticationClientSecretPost:
 
         # Check last_used_at is initially None
         stored_credentials = user_manager.get_mcp_credentials("testuser")
-        initial_cred = next(c for c in stored_credentials if c["credential_id"] == credential_id)
+        initial_cred = next(
+            c for c in stored_credentials if c["credential_id"] == credential_id
+        )
         assert initial_cred["last_used_at"] is None
 
         # Authenticate with client_secret_post
@@ -360,20 +353,19 @@ class TestMCPAuthenticationClientSecretPost:
             "id": 1,
             "method": "tools/list",
             "client_id": client_id,
-            "client_secret": client_secret
+            "client_secret": client_secret,
         }
 
-        response = client.post(
-            "/mcp",
-            json=mcp_request
-        )
+        response = client.post("/mcp", json=mcp_request)
 
         # Should succeed
         assert response.status_code != 401
 
         # Check last_used_at is now set
         stored_credentials = user_manager.get_mcp_credentials("testuser")
-        updated_cred = next(c for c in stored_credentials if c["credential_id"] == credential_id)
+        updated_cred = next(
+            c for c in stored_credentials if c["credential_id"] == credential_id
+        )
         assert updated_cred["last_used_at"] is not None
         assert updated_cred["last_used_at"] != initial_cred["last_used_at"]
 
@@ -381,7 +373,9 @@ class TestMCPAuthenticationClientSecretPost:
 class TestMCPAuthenticationRevocation:
     """Test revoked MCP credentials fail authentication."""
 
-    def test_revoked_credential_fails_basic_auth(self, client, mcp_manager, mcp_credential):
+    def test_revoked_credential_fails_basic_auth(
+        self, client, mcp_manager, mcp_credential
+    ):
         """
         AC9: Revoked credentials immediately fail authentication (Basic auth).
 
@@ -399,17 +393,11 @@ class TestMCPAuthenticationRevocation:
         encoded = base64.b64encode(auth_credentials.encode()).decode()
         auth_header = f"Basic {encoded}"
 
-        mcp_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
+        mcp_request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
         # Step 1: Verify credential works
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
         assert response.status_code != 401, "Credential should work before revocation"
 
@@ -419,15 +407,15 @@ class TestMCPAuthenticationRevocation:
 
         # Step 3: Try to use revoked credential
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
 
         # Should now return 401
         assert response.status_code == 401, "Revoked credential should return 401"
 
-    def test_revoked_credential_fails_client_secret_post(self, client, mcp_manager, mcp_credential):
+    def test_revoked_credential_fails_client_secret_post(
+        self, client, mcp_manager, mcp_credential
+    ):
         """
         AC10: Revoked credentials immediately fail authentication (client_secret_post).
 
@@ -446,7 +434,7 @@ class TestMCPAuthenticationRevocation:
             "id": 1,
             "method": "tools/list",
             "client_id": client_id,
-            "client_secret": client_secret
+            "client_secret": client_secret,
         }
 
         response = client.post("/mcp", json=mcp_request)
@@ -466,7 +454,9 @@ class TestMCPAuthenticationRevocation:
 class TestMCPAuthenticationVerifyCredential:
     """Test verify_credential() integration in auth flow."""
 
-    def test_verify_credential_called_on_basic_auth(self, client, mcp_manager, mcp_credential):
+    def test_verify_credential_called_on_basic_auth(
+        self, client, mcp_manager, mcp_credential
+    ):
         """
         AC11: verify_credential() is called during Basic auth.
 
@@ -483,11 +473,15 @@ class TestMCPAuthenticationVerifyCredential:
         assert user_id == "testuser"
 
         # Test 2: Invalid credentials - verify_credential() returns None
-        fake_secret = "mcp_sec_fakefakefakefakefakefakefakefakefakefakefakefakefakefakefakefake"
+        fake_secret = (
+            "mcp_sec_fakefakefakefakefakefakefakefakefakefakefakefakefakefakefakefake"
+        )
         user_id = mcp_manager.verify_credential(client_id, fake_secret)
         assert user_id is None
 
-    def test_verify_credential_bcrypt_hash_check(self, client, mcp_manager, mcp_credential, user_manager):
+    def test_verify_credential_bcrypt_hash_check(
+        self, client, mcp_manager, mcp_credential, user_manager
+    ):
         """
         AC12: verify_credential() uses bcrypt to check secret.
 
@@ -512,7 +506,9 @@ class TestMCPAuthenticationVerifyCredential:
 class TestMCPAuthenticationEndToEnd:
     """End-to-end authentication workflow tests."""
 
-    def test_full_credential_lifecycle_authentication(self, client, mcp_manager, user_manager):
+    def test_full_credential_lifecycle_authentication(
+        self, client, mcp_manager, user_manager
+    ):
         """
         AC13: Complete lifecycle - generate, authenticate, revoke.
 
@@ -533,16 +529,10 @@ class TestMCPAuthenticationEndToEnd:
         encoded = base64.b64encode(auth_credentials.encode()).decode()
         auth_header = f"Basic {encoded}"
 
-        mcp_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
+        mcp_request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
         assert response.status_code != 401, "Should authenticate successfully"
 
@@ -557,9 +547,7 @@ class TestMCPAuthenticationEndToEnd:
 
         # Step 5: Try to authenticate with revoked credential
         response = client.post(
-            "/mcp",
-            headers={"Authorization": auth_header},
-            json=mcp_request
+            "/mcp", headers={"Authorization": auth_header}, json=mcp_request
         )
         assert response.status_code == 401, "Revoked credential should fail"
 
@@ -585,15 +573,15 @@ class TestMCPAuthenticationEndToEnd:
         cred2_encoded = base64.b64encode(cred2_str.encode()).decode()
         cred2_header = f"Basic {cred2_encoded}"
 
-        mcp_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
+        mcp_request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
         # Both should work initially
-        response1 = client.post("/mcp", headers={"Authorization": cred1_header}, json=mcp_request)
-        response2 = client.post("/mcp", headers={"Authorization": cred2_header}, json=mcp_request)
+        response1 = client.post(
+            "/mcp", headers={"Authorization": cred1_header}, json=mcp_request
+        )
+        response2 = client.post(
+            "/mcp", headers={"Authorization": cred2_header}, json=mcp_request
+        )
         assert response1.status_code != 401
         assert response2.status_code != 401
 
@@ -601,9 +589,13 @@ class TestMCPAuthenticationEndToEnd:
         mcp_manager.revoke_credential("testuser", cred1["credential_id"])
 
         # Credential 1 should fail
-        response1 = client.post("/mcp", headers={"Authorization": cred1_header}, json=mcp_request)
+        response1 = client.post(
+            "/mcp", headers={"Authorization": cred1_header}, json=mcp_request
+        )
         assert response1.status_code == 401
 
         # Credential 2 should still work
-        response2 = client.post("/mcp", headers={"Authorization": cred2_header}, json=mcp_request)
+        response2 = client.post(
+            "/mcp", headers={"Authorization": cred2_header}, json=mcp_request
+        )
         assert response2.status_code != 401

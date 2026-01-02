@@ -5,9 +5,7 @@ These tests follow TDD methodology - tests are written FIRST before implementati
 All tests use real components following MESSI Rule #1: No mocks.
 """
 
-import os
 import json
-from pathlib import Path
 from typing import Dict, Any
 from fastapi.testclient import TestClient
 

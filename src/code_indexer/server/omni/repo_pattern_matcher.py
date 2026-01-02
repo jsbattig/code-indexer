@@ -5,7 +5,7 @@ Filters repository aliases by wildcard patterns and regex.
 """
 
 import re
-import fnmatch
+import pathspec
 from typing import List
 
 
@@ -65,10 +65,12 @@ class RepoPatternMatcher:
                     except Exception:
                         pass
                 else:
-                    # Use fnmatch for wildcard patterns (*, ?, [abc])
+                    # Use pathspec for wildcard patterns (*, ?, [abc], **)
+                    # This correctly handles ** as "zero or more directories"
                     try:
+                        spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
                         for repo in repos:
-                            if fnmatch.fnmatch(repo, pattern):
+                            if spec.match_file(repo):
                                 matched.add(repo)
                     except Exception:
                         pass

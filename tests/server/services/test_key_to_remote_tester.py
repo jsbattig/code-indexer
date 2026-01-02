@@ -29,7 +29,9 @@ class TestKeyToRemoteTesterTestResult:
 
     def test_test_result_timeout(self):
         """Should indicate timeout."""
-        result = TestResult(success=False, message="Connection timed out", timed_out=True)
+        result = TestResult(
+            success=False, message="Connection timed out", timed_out=True
+        )
 
         assert result.success is False
         assert result.timed_out is True
@@ -46,7 +48,7 @@ class TestKeyToRemoteTesterParseOutput:
         result = tester._parse_ssh_output(
             exit_code=1,  # GitHub returns 1 even on success
             stdout="",
-            stderr="Hi testuser! You've successfully authenticated, but GitHub does not provide shell access."
+            stderr="Hi testuser! You've successfully authenticated, but GitHub does not provide shell access.",
         )
 
         assert result.success is True
@@ -57,9 +59,7 @@ class TestKeyToRemoteTesterParseOutput:
 
         # GitLab returns: "Welcome to GitLab, @username!"
         result = tester._parse_ssh_output(
-            exit_code=0,
-            stdout="Welcome to GitLab, @testuser!",
-            stderr=""
+            exit_code=0, stdout="Welcome to GitLab, @testuser!", stderr=""
         )
 
         assert result.success is True
@@ -69,9 +69,7 @@ class TestKeyToRemoteTesterParseOutput:
         tester = KeyToRemoteTester()
 
         result = tester._parse_ssh_output(
-            exit_code=255,
-            stdout="",
-            stderr="Permission denied (publickey)."
+            exit_code=255, stdout="", stderr="Permission denied (publickey)."
         )
 
         assert result.success is False
@@ -82,9 +80,7 @@ class TestKeyToRemoteTesterParseOutput:
         tester = KeyToRemoteTester()
 
         result = tester._parse_ssh_output(
-            exit_code=0,
-            stdout="successfully authenticated",
-            stderr=""
+            exit_code=0, stdout="successfully authenticated", stderr=""
         )
 
         assert result.success is True
@@ -106,7 +102,7 @@ class TestKeyToRemoteTesterIntegration:
             mock_run.return_value = MagicMock(
                 returncode=1,
                 stdout="",
-                stderr="Hi testuser! You've successfully authenticated"
+                stderr="Hi testuser! You've successfully authenticated",
             )
 
             result = tester.test_key_against_host(key_path, "github.com")
@@ -123,9 +119,7 @@ class TestKeyToRemoteTesterIntegration:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
-                returncode=255,
-                stdout="",
-                stderr="Permission denied (publickey)."
+                returncode=255, stdout="", stderr="Permission denied (publickey)."
             )
 
             result = tester.test_key_against_host(key_path, "github.com")
@@ -157,13 +151,16 @@ class TestKeyToRemoteTesterIntegration:
         with patch("subprocess.run") as mock_run:
             # First call succeeds (github), second fails (gitlab)
             mock_run.side_effect = [
-                MagicMock(returncode=1, stdout="", stderr="Hi user! You've successfully authenticated"),
+                MagicMock(
+                    returncode=1,
+                    stdout="",
+                    stderr="Hi user! You've successfully authenticated",
+                ),
                 MagicMock(returncode=255, stdout="", stderr="Permission denied"),
             ]
 
             results = tester.test_key_against_multiple_hosts(
-                key_path,
-                ["github.com", "gitlab.com"]
+                key_path, ["github.com", "gitlab.com"]
             )
 
             assert len(results) == 2

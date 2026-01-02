@@ -15,15 +15,12 @@ def test_file_not_found_error_parity():
     - REST: Returns 404 with detail containing "not found"
     """
     # MCP error response structure
-    mcp_error_structure = {
-        "success": False,
-        "error": "File not found: nonexistent.py"
-    }
+    mcp_error_structure = {"success": False, "error": "File not found: nonexistent.py"}
 
     # REST error response structure
     rest_error_structure = {
         "status_code": 404,
-        "detail": "File not found: nonexistent.py"
+        "detail": "File not found: nonexistent.py",
     }
 
     # Both should indicate file not found
@@ -42,13 +39,13 @@ def test_file_already_exists_error_parity():
     # MCP error response structure
     mcp_error_structure = {
         "success": False,
-        "error": "File already exists: existing.py"
+        "error": "File already exists: existing.py",
     }
 
     # REST error response structure
     rest_error_structure = {
         "status_code": 409,
-        "detail": "File already exists: existing.py"
+        "detail": "File already exists: existing.py",
     }
 
     # Both should indicate file already exists
@@ -67,18 +64,24 @@ def test_hash_mismatch_error_parity():
     # MCP error response structure
     mcp_error_structure = {
         "success": False,
-        "error": "Hash mismatch: file was modified"
+        "error": "Hash mismatch: file was modified",
     }
 
     # REST error response structure
     rest_error_structure = {
         "status_code": 409,
-        "detail": "Hash mismatch: file was modified"
+        "detail": "Hash mismatch: file was modified",
     }
 
     # Both should indicate hash mismatch
-    assert "hash" in mcp_error_structure["error"].lower() or "modified" in mcp_error_structure["error"].lower()
-    assert "hash" in rest_error_structure["detail"].lower() or "modified" in rest_error_structure["detail"].lower()
+    assert (
+        "hash" in mcp_error_structure["error"].lower()
+        or "modified" in mcp_error_structure["error"].lower()
+    )
+    assert (
+        "hash" in rest_error_structure["detail"].lower()
+        or "modified" in rest_error_structure["detail"].lower()
+    )
 
 
 def test_permission_denied_error_parity():
@@ -92,18 +95,24 @@ def test_permission_denied_error_parity():
     # MCP error response structure
     mcp_error_structure = {
         "success": False,
-        "error": "Permission denied: Cannot modify .git/ directory"
+        "error": "Permission denied: Cannot modify .git/ directory",
     }
 
     # REST error response structure
     rest_error_structure = {
         "status_code": 403,
-        "detail": "Permission denied: Cannot modify .git/ directory"
+        "detail": "Permission denied: Cannot modify .git/ directory",
     }
 
     # Both should indicate permission denied
-    assert "permission" in mcp_error_structure["error"].lower() or "denied" in mcp_error_structure["error"].lower()
-    assert "permission" in rest_error_structure["detail"].lower() or "denied" in rest_error_structure["detail"].lower()
+    assert (
+        "permission" in mcp_error_structure["error"].lower()
+        or "denied" in mcp_error_structure["error"].lower()
+    )
+    assert (
+        "permission" in rest_error_structure["detail"].lower()
+        or "denied" in rest_error_structure["detail"].lower()
+    )
 
 
 def test_invalid_parameters_error_parity():
@@ -117,15 +126,18 @@ def test_invalid_parameters_error_parity():
     # MCP error response structure
     mcp_error_structure = {
         "success": False,
-        "error": "Invalid parameters: old_string cannot be empty"
+        "error": "Invalid parameters: old_string cannot be empty",
     }
 
     # REST error response structure
     rest_error_structure = {
         "status_code": 400,
-        "detail": "Invalid parameters: old_string cannot be empty"
+        "detail": "Invalid parameters: old_string cannot be empty",
     }
 
     # Both should indicate invalid parameters
     assert "invalid" in mcp_error_structure["error"].lower()
-    assert "invalid" in rest_error_structure["detail"].lower() or rest_error_structure["status_code"] == 400
+    assert (
+        "invalid" in rest_error_structure["detail"].lower()
+        or rest_error_structure["status_code"] == 400
+    )

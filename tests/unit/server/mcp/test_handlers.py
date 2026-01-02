@@ -678,6 +678,197 @@ class TestFileHandlers:
             assert data["files"][1]["language"] == "python"
             assert data["files"][1]["is_indexed"] is False
 
+    async def test_list_files_path_parameter_lists_directory_contents(
+        self, mock_user
+    ):
+        """Test that path parameter lists files IN the specified directory.
+
+        This test proves the bug: path="code/src/access" should return files
+        matching "code/src/access/**/*" pattern, not files with literal path
+        "code/src/access".
+
+        Bug Report: When Claude.ai called list_files with path="code/src/dms/...",
+        it expected to list 38 files IN that directory, but got [] because the
+        implementation treats path as a literal pattern filter.
+        """
+        from code_indexer.server.models.api_models import (
+            FileInfo,
+            FileListResponse,
+            PaginationInfo,
+        )
+
+        params = {
+            "repository_alias": "test-repo",
+            "path": "code/src/access",  # Should list files IN this directory
+        }
+
+        # Create mock files that WOULD be in code/src/access/ directory
+        file1 = FileInfo(
+            path="code/src/access/auth.py",
+            size_bytes=1024,
+            modified_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+        file2 = FileInfo(
+            path="code/src/access/permissions.py",
+            size_bytes=2048,
+            modified_at=datetime(2024, 1, 2, 14, 30, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+        file3 = FileInfo(
+            path="code/src/access/roles.py",
+            size_bytes=1536,
+            modified_at=datetime(2024, 1, 3, 10, 15, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+
+        pagination = PaginationInfo(page=1, limit=500, total=3, has_next=False)
+        mock_response = FileListResponse(
+            files=[file1, file2, file3],
+            pagination=pagination,
+        )
+
+        with patch("code_indexer.server.app.file_service") as mock_service:
+            mock_service.list_files = Mock(return_value=mock_response)
+
+            result = await list_files(params, mock_user)
+
+            # Verify the service was called with correct path_pattern
+            # Expected: "code/src/access/**/*" (list files IN directory)
+            # Current bug: "code/src/access" (literal pattern - returns nothing)
+            call_args = mock_service.list_files.call_args
+            query_params = call_args.kwargs["query_params"]
+
+            # This assertion will FAIL with current implementation, proving the bug
+            assert (
+                query_params.path_pattern == "code/src/access/**/*"
+            ), f"Expected path_pattern='code/src/access/**/*' but got '{query_params.path_pattern}'"
+
+            # MCP format: parse content array
+            import json
+
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert len(data["files"]) == 3
+            assert data["files"][0]["path"] == "code/src/access/auth.py"
+            assert data["files"][1]["path"] == "code/src/access/permissions.py"
+            assert data["files"][2]["path"] == "code/src/access/roles.py"
+
+    async def test_list_files_with_recursive_false(self, mock_user):
+        """Test that recursive=false uses non-recursive pattern (path/*)."""
+        from code_indexer.server.models.api_models import (
+            FileInfo,
+            FileListResponse,
+            PaginationInfo,
+        )
+
+        params = {
+            "repository_alias": "test-repo",
+            "path": "src",
+            "recursive": False,  # Non-recursive listing
+        }
+
+        # Mock files - only direct children, not nested
+        file1 = FileInfo(
+            path="src/main.py",
+            size_bytes=1024,
+            modified_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+        file2 = FileInfo(
+            path="src/utils.py",
+            size_bytes=512,
+            modified_at=datetime(2024, 1, 2, 14, 30, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+
+        pagination = PaginationInfo(page=1, limit=500, total=2, has_next=False)
+        mock_response = FileListResponse(
+            files=[file1, file2],
+            pagination=pagination,
+        )
+
+        with patch("code_indexer.server.app.file_service") as mock_service:
+            mock_service.list_files = Mock(return_value=mock_response)
+
+            result = await list_files(params, mock_user)
+
+            # Verify non-recursive pattern
+            call_args = mock_service.list_files.call_args
+            query_params = call_args.kwargs["query_params"]
+            assert (
+                query_params.path_pattern == "src/*"
+            ), f"Expected path_pattern='src/*' but got '{query_params.path_pattern}'"
+
+            # MCP format: parse content array
+            import json
+
+            data = json.loads(result["content"][0]["text"])
+            assert data["success"] is True
+            assert len(data["files"]) == 2
+
+    async def test_list_files_with_path_and_pattern(self, mock_user):
+        """Test combining path and path_pattern parameters."""
+        from code_indexer.server.models.api_models import (
+            FileInfo,
+            FileListResponse,
+            PaginationInfo,
+        )
+
+        params = {
+            "repository_alias": "test-repo",
+            "path": "src",
+            "path_pattern": "*.py",  # Only Python files
+            "recursive": True,
+        }
+
+        # Mock Python files in src/
+        file1 = FileInfo(
+            path="src/main.py",
+            size_bytes=1024,
+            modified_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+        file2 = FileInfo(
+            path="src/auth/login.py",
+            size_bytes=2048,
+            modified_at=datetime(2024, 1, 2, 14, 30, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+
+        pagination = PaginationInfo(page=1, limit=500, total=2, has_next=False)
+        mock_response = FileListResponse(
+            files=[file1, file2],
+            pagination=pagination,
+        )
+
+        with patch("code_indexer.server.app.file_service") as mock_service:
+            mock_service.list_files = Mock(return_value=mock_response)
+
+            result = await list_files(params, mock_user)
+
+            # Verify combined pattern: path + recursive + pattern
+            call_args = mock_service.list_files.call_args
+            query_params = call_args.kwargs["query_params"]
+            assert (
+                query_params.path_pattern == "src/**/*.py"
+            ), f"Expected path_pattern='src/**/*.py' but got '{query_params.path_pattern}'"
+
+            # MCP format: parse content array
+            import json
+
+            data = json.loads(result["content"][0]["text"])
+            assert data["success"] is True
+            assert len(data["files"]) == 2
+
     async def test_get_file_content(self, mock_user):
         """Test getting file content."""
         params = {

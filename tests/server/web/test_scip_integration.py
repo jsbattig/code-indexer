@@ -82,7 +82,9 @@ class TestSCIPQueryViaWebUI:
 
     def _get_global_registry(self) -> GlobalRegistry:
         """Get GlobalRegistry instance for current test environment."""
-        server_data_dir = os.environ.get("CIDX_SERVER_DATA_DIR", os.path.expanduser("~/.cidx-server"))
+        server_data_dir = os.environ.get(
+            "CIDX_SERVER_DATA_DIR", os.path.expanduser("~/.cidx-server")
+        )
         golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
         return GlobalRegistry(str(golden_repos_dir))
 
@@ -112,8 +114,14 @@ class TestSCIPQueryViaWebUI:
         )
 
         # Use test fixture with real SCIP index
-        test_fixture_path = Path(__file__).parent.parent.parent.parent / "test-fixtures" / "scip-python-mock"
-        assert test_fixture_path.exists(), f"Test fixture not found: {test_fixture_path}"
+        test_fixture_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "test-fixtures"
+            / "scip-python-mock"
+        )
+        assert (
+            test_fixture_path.exists()
+        ), f"Test fixture not found: {test_fixture_path}"
 
         scip_file = test_fixture_path / ".code-indexer" / "scip" / "index.scip"
         assert scip_file.exists(), f"SCIP index not found: {scip_file}"
@@ -161,7 +169,11 @@ class TestSCIPQueryViaWebUI:
             admin_user["username"], admin_user["password"]
         )
 
-        test_fixture_path = Path(__file__).parent.parent.parent.parent / "test-fixtures" / "scip-python-mock"
+        test_fixture_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "test-fixtures"
+            / "scip-python-mock"
+        )
         repo_alias = "python-mock-global"
         self._setup_golden_repo_with_scip(repo_alias, test_fixture_path)
 

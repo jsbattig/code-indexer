@@ -84,10 +84,7 @@ class TestMCPCredentialsAPI:
         - client_id format: mcp_{32 hex chars}
         - client_secret format: mcp_sec_{64 hex chars}
         """
-        response = client.post(
-            "/api/mcp-credentials",
-            json={"name": "Test Credential"}
-        )
+        response = client.post("/api/mcp-credentials", json={"name": "Test Credential"})
 
         assert response.status_code == 201
         data = response.json()
@@ -127,13 +124,11 @@ class TestMCPCredentialsAPI:
         """AC1: Credential generation requires authentication."""
         # Clear authentication override to test auth requirement
         from src.code_indexer.server.app import create_app
+
         app = create_app()
         unauth_client = TestClient(app)
 
-        response = unauth_client.post(
-            "/api/mcp-credentials",
-            json={"name": "Test"}
-        )
+        response = unauth_client.post("/api/mcp-credentials", json={"name": "Test"})
 
         # Should return 401 Unauthorized
         assert response.status_code == 401
@@ -160,8 +155,7 @@ class TestMCPCredentialsAPI:
         """
         # Generate credential
         create_response = client.post(
-            "/api/mcp-credentials",
-            json={"name": "Test Credential"}
+            "/api/mcp-credentials", json={"name": "Test Credential"}
         )
         assert create_response.status_code == 201
         created_credential = create_response.json()
@@ -191,6 +185,7 @@ class TestMCPCredentialsAPI:
     def test_list_mcp_credentials_requires_auth(self, client):
         """AC2: Listing credentials requires authentication."""
         from src.code_indexer.server.app import create_app
+
         app = create_app()
         unauth_client = TestClient(app)
 
@@ -210,8 +205,7 @@ class TestMCPCredentialsAPI:
         """
         # Generate credential
         create_response = client.post(
-            "/api/mcp-credentials",
-            json={"name": "To Be Deleted"}
+            "/api/mcp-credentials", json={"name": "To Be Deleted"}
         )
         assert create_response.status_code == 201
         credential_id = create_response.json()["credential_id"]
@@ -238,6 +232,7 @@ class TestMCPCredentialsAPI:
     def test_delete_mcp_credential_requires_auth(self, client):
         """AC3: Deleting credentials requires authentication."""
         from src.code_indexer.server.app import create_app
+
         app = create_app()
         unauth_client = TestClient(app)
 
@@ -256,14 +251,8 @@ class TestMCPCredentialsAPI:
         - Deleting one leaves others intact
         """
         # Generate two credentials
-        response1 = client.post(
-            "/api/mcp-credentials",
-            json={"name": "Credential 1"}
-        )
-        response2 = client.post(
-            "/api/mcp-credentials",
-            json={"name": "Credential 2"}
-        )
+        response1 = client.post("/api/mcp-credentials", json={"name": "Credential 1"})
+        response2 = client.post("/api/mcp-credentials", json={"name": "Credential 2"})
 
         credential_id_1 = response1.json()["credential_id"]
         credential_id_2 = response2.json()["credential_id"]
@@ -296,8 +285,7 @@ class TestMCPCredentialsAPI:
 
         # Step 2: Generate credential
         create_response = client.post(
-            "/api/mcp-credentials",
-            json={"name": "Test Journey"}
+            "/api/mcp-credentials", json={"name": "Test Journey"}
         )
         assert create_response.status_code == 201
         created = create_response.json()
@@ -314,7 +302,9 @@ class TestMCPCredentialsAPI:
         assert "client_secret" not in credentials[0]  # Secret not in list
 
         # Step 4: Delete credential
-        delete_response = client.delete(f"/api/mcp-credentials/{created['credential_id']}")
+        delete_response = client.delete(
+            f"/api/mcp-credentials/{created['credential_id']}"
+        )
         assert delete_response.status_code == 200
 
         # Step 5: List is empty again
@@ -332,12 +322,13 @@ class TestMCPCredentialsAPI:
         - Returns proper None for revoked credentials
         """
         import src.code_indexer.server.app as app_module
-        from src.code_indexer.server.auth.mcp_credential_manager import MCPCredentialManager
+        from src.code_indexer.server.auth.mcp_credential_manager import (
+            MCPCredentialManager,
+        )
 
         # Generate credential
         create_response = client.post(
-            "/api/mcp-credentials",
-            json={"name": "Test Auth"}
+            "/api/mcp-credentials", json={"name": "Test Auth"}
         )
         assert create_response.status_code == 201
         credential = create_response.json()
@@ -358,10 +349,14 @@ class TestMCPCredentialsAPI:
 
         # Step 3: Verify credential IMMEDIATELY fails authentication (no caching)
         user_id = mcp_manager.verify_credential(client_id, client_secret)
-        assert user_id is None, "Revoked credential should immediately fail authentication"
+        assert (
+            user_id is None
+        ), "Revoked credential should immediately fail authentication"
 
         # Step 4: Additional verification - specific revoked credential should not be in list
         list_response = client.get("/api/mcp-credentials")
         credentials = list_response.json()["credentials"]
         credential_ids = [c["credential_id"] for c in credentials]
-        assert credential_id not in credential_ids, "Revoked credential should not appear in list"
+        assert (
+            credential_id not in credential_ids
+        ), "Revoked credential should not appear in list"

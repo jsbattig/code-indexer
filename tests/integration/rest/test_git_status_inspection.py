@@ -87,8 +87,7 @@ def test_git_log_real_repository(client, activated_repo, test_repo_dir: Path):
     """
     # Execute: Call REST endpoint with limit
     response = client.get(
-        f"/api/v1/repos/{activated_repo}/git/log",
-        params={"limit": 5}
+        f"/api/v1/repos/{activated_repo}/git/log", params={"limit": 5}
     )
 
     # Verify: Check HTTP response

@@ -1,9 +1,7 @@
 """Unit tests for SCIP CLI verification error reporting to stderr."""
 
-import pytest
 from unittest.mock import Mock, patch
 import click.testing
-from pathlib import Path
 
 
 class TestSCIPVerificationStderr:
@@ -65,7 +63,7 @@ class TestSCIPVerificationStderr:
         mock_verifier_cls,
         mock_db_manager_cls,
         tmp_path,
-        monkeypatch
+        monkeypatch,
     ):
         """Test that verification errors are written to stderr, not stdout.
 
@@ -93,7 +91,7 @@ class TestSCIPVerificationStderr:
         mock_verify_result.errors = [
             "Symbol count mismatch: expected 100, got 95",
             "Occurrence count mismatch: expected 500, got 490",
-            "Document path mismatch: src/main.py missing"
+            "Document path mismatch: src/main.py missing",
         ]
         mock_verifier = Mock()
         mock_verifier.verify.return_value = mock_verify_result
@@ -106,15 +104,21 @@ class TestSCIPVerificationStderr:
         result = runner.invoke(scip_generate, [])
 
         # Assertions
-        assert result.exit_code == 1, "Should exit with error code when verification fails"
+        assert (
+            result.exit_code == 1
+        ), "Should exit with error code when verification fails"
 
         # CRITICAL: Verification error messages must be in stderr
         assert result.stderr, "stderr should not be empty when verification fails"
-        assert "Verification FAILED" in result.stderr or "verification errors" in result.stderr, \
-            f"Expected verification error in stderr, got: {result.stderr}"
-        assert "Symbol count mismatch" in result.stderr, \
-            f"Expected specific error in stderr, got: {result.stderr}"
+        assert (
+            "Verification FAILED" in result.stderr
+            or "verification errors" in result.stderr
+        ), f"Expected verification error in stderr, got: {result.stderr}"
+        assert (
+            "Symbol count mismatch" in result.stderr
+        ), f"Expected specific error in stderr, got: {result.stderr}"
 
         # Success messages should stay in stdout
-        assert "Successfully generated SCIP" in result.stdout, \
-            "Generation success message should be in stdout"
+        assert (
+            "Successfully generated SCIP" in result.stdout
+        ), "Generation success message should be in stdout"

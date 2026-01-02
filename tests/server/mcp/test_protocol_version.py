@@ -41,8 +41,7 @@ class TestProtocolVersion:
 
         # Test authenticated endpoint
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -54,8 +53,7 @@ class TestProtocolVersion:
 
         # Test /mcp-public endpoint
         response_public = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response_public.status_code == 200
         version_public = response_public.json()["result"]["serverInfo"]["version"]
@@ -69,14 +67,13 @@ class TestProtocolVersion:
         import re
 
         response = client.post(
-            "/mcp-public",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+            "/mcp-public", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         )
         assert response.status_code == 200
         version = response.json()["result"]["serverInfo"]["version"]
 
         # Validate semantic versioning format (X.Y.Z or X.Y.Z-prerelease)
         semver_pattern = r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$"
-        assert re.match(semver_pattern, version), (
-            f"Version '{version}' does not follow semantic versioning format"
-        )
+        assert re.match(
+            semver_pattern, version
+        ), f"Version '{version}' does not follow semantic versioning format"

@@ -53,7 +53,15 @@ class DeploymentExecutor:
         """
         try:
             result = subprocess.run(
-                ["python3", "-m", "pip", "install", "--break-system-packages", "-e", "."],
+                [
+                    "python3",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--break-system-packages",
+                    "-e",
+                    ".",
+                ],
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,

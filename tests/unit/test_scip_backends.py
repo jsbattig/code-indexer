@@ -60,7 +60,9 @@ class TestDatabaseBackend:
 
         backend = DatabaseBackend(db_fixture_path)
 
-        results = backend.find_references("UserService#authenticate().", limit=10, exact=True)
+        results = backend.find_references(
+            "UserService#authenticate().", limit=10, exact=True
+        )
 
         assert len(results) > 0
         assert all(isinstance(r, QueryResult) for r in results)
@@ -85,7 +87,9 @@ class TestDatabaseBackend:
         results = backend.find_references("UserService", limit=10, exact=False)
 
         # Should find references (not empty)
-        assert len(results) > 0, "find_references with exact=False should return results for substring matching"
+        assert (
+            len(results) > 0
+        ), "find_references with exact=False should return results for substring matching"
         assert all(isinstance(r, QueryResult) for r in results)
         assert all(r.kind == "reference" for r in results)
         # Verify substring matching worked - all symbols should contain "UserService"
@@ -194,7 +198,9 @@ class TestDatabaseBackend:
         if not scip_file.exists():
             pytest.skip(f"SCIP file not found: {scip_file}")
 
-        backend = DatabaseBackend(db_path, project_root=str(project_root), scip_file=scip_file)
+        backend = DatabaseBackend(
+            db_path, project_root=str(project_root), scip_file=scip_file
+        )
 
         # Query SmartIndexer class (ends with #, has ~30 methods)
         start = time.time()
@@ -233,7 +239,9 @@ class TestDatabaseBackend:
         if not scip_file.exists():
             pytest.skip(f"SCIP file not found: {scip_file}")
 
-        backend = DatabaseBackend(db_path, project_root=str(project_root), scip_file=scip_file)
+        backend = DatabaseBackend(
+            db_path, project_root=str(project_root), scip_file=scip_file
+        )
 
         # Query FileFinder class (should have methods)
         start = time.time()

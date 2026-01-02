@@ -246,19 +246,29 @@ class ReindexingConfig:
 
     def is_config_file(self, file_path: str) -> bool:
         """Check if a file path matches configuration file patterns."""
-        import fnmatch
+        import logging
+        import pathspec
         from pathlib import Path
 
+        logger = logging.getLogger(__name__)
         file_name = Path(file_path).name
 
         # Direct match
         if file_name in self.config_file_patterns:
             return True
 
-        # Pattern matching
+        # Pattern matching using pathspec (gitignore-style matching)
+        # This correctly handles ** as "zero or more directories"
         for pattern in self.config_file_patterns:
-            if fnmatch.fnmatch(file_name, pattern):
-                return True
+            try:
+                spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+                if spec.match_file(file_name):
+                    return True
+            except Exception as e:
+                # Log pattern parsing errors for debugging
+                logger.debug(f"Pattern '{pattern}' failed to parse: {e}")
+                # Skip pattern on parse error
+                continue
 
         return False
 

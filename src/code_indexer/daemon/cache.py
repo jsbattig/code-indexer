@@ -120,7 +120,9 @@ class CacheEntry:
         self.access_count: int = 0
 
         # Concurrency control
-        self.rw_lock: ReaderWriterLock = ReaderWriterLock()  # For concurrent reads and exclusive writes
+        self.rw_lock: ReaderWriterLock = (
+            ReaderWriterLock()
+        )  # For concurrent reads and exclusive writes
 
     def update_access(self) -> None:
         """Update last accessed timestamp and increment access count.

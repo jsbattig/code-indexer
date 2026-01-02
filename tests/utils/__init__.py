@@ -21,8 +21,11 @@ class EnvironmentManager:
     Tests importing this will fail since container support was removed.
     This stub prevents collection errors.
     """
+
     def __init__(self, *args, **kwargs):
-        raise RuntimeError("Container infrastructure was removed - EnvironmentManager cannot be instantiated")
+        raise RuntimeError(
+            "Container infrastructure was removed - EnvironmentManager cannot be instantiated"
+        )
 
 
 __all__ = [

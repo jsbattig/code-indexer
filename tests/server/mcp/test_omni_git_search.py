@@ -33,13 +33,17 @@ class TestGitSearchCommitsPolymorphic:
     ):
         """String repository_alias routes to single-repo git_search_commits."""
         # Setup: Create mock git operations service
-        with patch(
-            "code_indexer.server.mcp.handlers._resolve_repo_path"
-        ) as mock_resolve, patch(
-            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
-        ) as mock_get_dir, patch(
-            "code_indexer.global_repos.git_operations.GitOperationsService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "code_indexer.server.mcp.handlers._resolve_repo_path"
+            ) as mock_resolve,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+            ) as mock_get_dir,
+            patch(
+                "code_indexer.global_repos.git_operations.GitOperationsService"
+            ) as mock_service_class,
+        ):
 
             mock_get_dir.return_value = str(tmp_path)
             mock_resolve.return_value = str(tmp_path / "repo1")
@@ -94,13 +98,17 @@ class TestGitLogPolymorphic:
     ):
         """String repository_alias routes to single-repo git_log."""
         # Setup: Create mock git operations service
-        with patch(
-            "code_indexer.server.mcp.handlers._resolve_repo_path"
-        ) as mock_resolve, patch(
-            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
-        ) as mock_get_dir, patch(
-            "code_indexer.global_repos.git_operations.GitOperationsService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "code_indexer.server.mcp.handlers._resolve_repo_path"
+            ) as mock_resolve,
+            patch(
+                "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+            ) as mock_get_dir,
+            patch(
+                "code_indexer.global_repos.git_operations.GitOperationsService"
+            ) as mock_service_class,
+        ):
 
             mock_get_dir.return_value = str(tmp_path)
             mock_resolve.return_value = str(tmp_path / "repo1")
@@ -117,6 +125,7 @@ class TestGitLogPolymorphic:
 
             # Execute: Call with string repository_alias
             from code_indexer.server.mcp.handlers import handle_git_log
+
             result = await handle_git_log(
                 {"repository_alias": "repo1-global", "limit": 10}, test_user
             )
@@ -130,6 +139,7 @@ class TestGitLogPolymorphic:
         """Array repository_alias routes to omni-git-log."""
         # Execute: Call with array repository_alias
         from code_indexer.server.mcp.handlers import handle_git_log
+
         result = await handle_git_log(
             {"repository_alias": ["repo1-global", "repo2-global"], "limit": 10},
             test_user,

@@ -78,7 +78,9 @@ class TestSSHKeyGeneratorGenerate:
         assert result.public_key is not None
         assert len(result.public_key) > 0
         # Public key should start with key type
-        assert result.public_key.startswith("ssh-ed25519") or result.public_key.startswith("ssh-rsa")
+        assert result.public_key.startswith(
+            "ssh-ed25519"
+        ) or result.public_key.startswith("ssh-rsa")
 
     def test_generate_key_returns_fingerprint(self, tmp_path):
         """Should return the key fingerprint."""

@@ -40,7 +40,9 @@ class TestTeachAiCodex:
         content = codex_md_path.read_text()
         assert "## SEMANTIC SEARCH" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "Read ~/.claude/skills/cidx/SKILL.md" in content  # Generic template marker
+        assert (
+            "Read ~/.claude/skills/cidx/SKILL.md" in content
+        )  # Generic template marker
         assert "--limit N" in content
         assert "When to use CIDX" in content
         assert "cidx query" in content
@@ -111,7 +113,9 @@ class TestTeachAiGemini:
         content = styleguide_path.read_text()
         assert "## SEMANTIC SEARCH" in content
         assert "**CIDX FIRST**: Always use `cidx query`" in content
-        assert "Read ~/.claude/skills/cidx/SKILL.md" in content  # Generic template marker
+        assert (
+            "Read ~/.claude/skills/cidx/SKILL.md" in content
+        )  # Generic template marker
         assert "--limit N" in content
         assert "**Examples**:" in content
         assert "cidx query" in content

@@ -5,13 +5,11 @@ Provides ripgrep-style regex search with grep fallback for searching
 directly against files on disk in global repositories.
 """
 
-import asyncio
 import json
 import logging
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -203,7 +201,9 @@ class RegexSearchService:
                     else:
                         context_before.append(ctx)
             except json.JSONDecodeError:
-                logger.debug(f"Skipping non-JSON line from ripgrep output: {line[:100]}")
+                logger.debug(
+                    f"Skipping non-JSON line from ripgrep output: {line[:100]}"
+                )
                 continue
 
         return matches, total

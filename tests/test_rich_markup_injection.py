@@ -34,18 +34,21 @@ def temp_test_dir():
 
         # Create test file with Rich markup syntax that triggers the bug
         test_file = test_dir / "test_rich_markup.py"
-        test_file.write_text("""
+        test_file.write_text(
+            """
 # Test file containing Rich markup syntax
 def display_status():
     status_style = "bold green"
     console.print(f"[{status_style}]Status: OK[/{status_style}]")
     console.print("[red]Error message[/red]")
     console.print("[bold blue]Info: {info}[/bold blue]")
-""")
+"""
+        )
 
         # Create test file with complex markup patterns
         complex_file = test_dir / "test_complex_markup.py"
-        complex_file.write_text("""
+        complex_file.write_text(
+            """
 # Complex Rich markup patterns
 def render_ui():
     # These patterns caused MarkupError in manual testing
@@ -53,7 +56,8 @@ def render_ui():
     nested = "[bold [red]Error[/red]][/bold]"
     unclosed = "[green]Missing close tag"
     special = "[link=https://example.com]Link[/link]"
-""")
+"""
+        )
 
         yield test_dir
 
@@ -77,6 +81,7 @@ class TestRichMarkupInjectionBehavioral:
         # Initialize and index the test directory
         with runner.isolated_filesystem(temp_dir=str(temp_test_dir.parent)):
             import os
+
             os.chdir(temp_test_dir)
 
             # Initialize cidx
@@ -89,7 +94,9 @@ class TestRichMarkupInjectionBehavioral:
 
             # Query for content that contains Rich markup syntax
             # This should NOT crash with MarkupError
-            result = runner.invoke(cli, ["query", "status_style", "--quiet", "--limit", "5"])
+            result = runner.invoke(
+                cli, ["query", "status_style", "--quiet", "--limit", "5"]
+            )
 
             # CRITICAL: This must NOT crash with MarkupError
             assert result.exit_code == 0, (
@@ -99,9 +106,9 @@ class TestRichMarkupInjectionBehavioral:
             )
 
             # Verify the content is displayed (not just error-suppressed)
-            assert "status_style" in result.output or "display_status" in result.output, (
-                "Content should be displayed, not silently suppressed"
-            )
+            assert (
+                "status_style" in result.output or "display_status" in result.output
+            ), "Content should be displayed, not silently suppressed"
 
     def test_exception_handler_has_markup_protection(self, temp_test_dir):
         """
@@ -115,9 +122,10 @@ class TestRichMarkupInjectionBehavioral:
         content = cli_file.read_text()
 
         # The exception handler should have markup=False
-        assert 'console.print(f"❌ Search failed: {e}", style="red", markup=False)' in content, (
-            "Query exception handler must use markup=False to prevent markup injection"
-        )
+        assert (
+            'console.print(f"❌ Search failed: {e}", style="red", markup=False)'
+            in content
+        ), "Query exception handler must use markup=False to prevent markup injection"
 
     def test_nested_markup_patterns(self, temp_test_dir):
         """
@@ -135,6 +143,7 @@ class TestRichMarkupInjectionBehavioral:
 
         with runner.isolated_filesystem(temp_dir=str(temp_test_dir.parent)):
             import os
+
             os.chdir(temp_test_dir)
 
             runner.invoke(cli, ["init"])
@@ -144,9 +153,9 @@ class TestRichMarkupInjectionBehavioral:
             result = runner.invoke(cli, ["query", "nested", "--quiet", "--limit", "5"])
 
             # Must not crash
-            assert result.exit_code == 0, (
-                f"Complex markup patterns caused crash: {result.exception}"
-            )
+            assert (
+                result.exit_code == 0
+            ), f"Complex markup patterns caused crash: {result.exception}"
 
     def test_semantic_search_result_with_rich_markup(self, temp_test_dir):
         """
@@ -166,6 +175,7 @@ class TestRichMarkupInjectionBehavioral:
 
         with runner.isolated_filesystem(temp_dir=str(temp_test_dir.parent)):
             import os
+
             os.chdir(temp_test_dir)
 
             # Initialize and index
@@ -184,7 +194,15 @@ class TestRichMarkupInjectionBehavioral:
             # This will hit _display_hybrid_results() which has the vulnerability
             result = runner.invoke(
                 cli,
-                ["query", "status_style", "--semantic", "--fts", "--quiet", "--limit", "5"]
+                [
+                    "query",
+                    "status_style",
+                    "--semantic",
+                    "--fts",
+                    "--quiet",
+                    "--limit",
+                    "5",
+                ],
             )
 
             # CRITICAL: This must NOT crash with MarkupError in semantic results display
@@ -195,9 +213,9 @@ class TestRichMarkupInjectionBehavioral:
             )
 
             # Verify content is displayed
-            assert "status_style" in result.output or "display_status" in result.output, (
-                "Semantic search content should be displayed"
-            )
+            assert (
+                "status_style" in result.output or "display_status" in result.output
+            ), "Semantic search content should be displayed"
 
 
 if __name__ == "__main__":

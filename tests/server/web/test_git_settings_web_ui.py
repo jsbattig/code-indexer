@@ -43,7 +43,7 @@ def test_git_settings_page_displays_current_config(authenticated_client: TestCli
 
     # Should have input/form for default_committer_email
     assert "default_committer_email" in html
-    assert '<form' in html or 'input' in html
+    assert "<form" in html or "input" in html
 
 
 def test_git_settings_page_includes_csrf_token(authenticated_client: TestClient):
@@ -57,9 +57,7 @@ def test_git_settings_page_includes_csrf_token(authenticated_client: TestClient)
     assert "csrf_token" in html or "csrf-token" in html
 
     # Should set CSRF cookie
-    csrf_cookie_found = any(
-        cookie.name == "_csrf" for cookie in response.cookies.jar
-    )
+    csrf_cookie_found = any(cookie.name == "_csrf" for cookie in response.cookies.jar)
     assert csrf_cookie_found, "CSRF cookie not set in response"
 
 

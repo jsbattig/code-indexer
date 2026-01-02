@@ -26,7 +26,7 @@ def test_git_branch_create_real(client, activated_repo, test_repo_dir: Path):
         # Execute: Call REST endpoint to create branch
         response = client.post(
             f"/api/v1/repos/{activated_repo}/git/branches",
-            json={"branch_name": branch_name}
+            json={"branch_name": branch_name},
         )
 
         # Verify: Check HTTP response
@@ -40,16 +40,14 @@ def test_git_branch_create_real(client, activated_repo, test_repo_dir: Path):
             ["git", "branch", "--list", branch_name],
             cwd=test_repo_dir,
             capture_output=True,
-            text=True
+            text=True,
         )
         assert branch_name in result.stdout
 
     finally:
         # Cleanup: Delete branch
         subprocess.run(
-            ["git", "branch", "-D", branch_name],
-            cwd=test_repo_dir,
-            capture_output=True
+            ["git", "branch", "-D", branch_name], cwd=test_repo_dir, capture_output=True
         )
 
 
@@ -68,7 +66,7 @@ def test_git_branch_switch_real(client, activated_repo, test_repo_dir: Path):
         ["git", "branch", "--show-current"],
         cwd=test_repo_dir,
         capture_output=True,
-        text=True
+        text=True,
     ).stdout.strip()
 
     try:
@@ -89,14 +87,18 @@ def test_git_branch_switch_real(client, activated_repo, test_repo_dir: Path):
             ["git", "branch", "--show-current"],
             cwd=test_repo_dir,
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.stdout.strip() == branch_name
 
     finally:
         # Cleanup: Switch back and delete branch
-        subprocess.run(["git", "checkout", current_branch], cwd=test_repo_dir, capture_output=True)
-        subprocess.run(["git", "branch", "-D", branch_name], cwd=test_repo_dir, capture_output=True)
+        subprocess.run(
+            ["git", "checkout", current_branch], cwd=test_repo_dir, capture_output=True
+        )
+        subprocess.run(
+            ["git", "branch", "-D", branch_name], cwd=test_repo_dir, capture_output=True
+        )
 
 
 def test_git_branch_delete_real(client, activated_repo, test_repo_dir: Path):
@@ -111,7 +113,9 @@ def test_git_branch_delete_real(client, activated_repo, test_repo_dir: Path):
 
     try:
         # Step 1: Request confirmation token
-        response = client.delete(f"/api/v1/repos/{activated_repo}/git/branches/{branch_name}")
+        response = client.delete(
+            f"/api/v1/repos/{activated_repo}/git/branches/{branch_name}"
+        )
 
         # Verify: Token required
         assert response.status_code == 200
@@ -136,14 +140,12 @@ def test_git_branch_delete_real(client, activated_repo, test_repo_dir: Path):
             ["git", "branch", "--list", branch_name],
             cwd=test_repo_dir,
             capture_output=True,
-            text=True
+            text=True,
         )
         assert branch_name not in result.stdout
 
     finally:
         # Cleanup: Ensure branch is deleted
         subprocess.run(
-            ["git", "branch", "-D", branch_name],
-            cwd=test_repo_dir,
-            capture_output=True
+            ["git", "branch", "-D", branch_name], cwd=test_repo_dir, capture_output=True
         )

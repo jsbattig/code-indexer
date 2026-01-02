@@ -32,21 +32,23 @@ class TestSymbolReferencesSchema:
             cursor = conn.cursor()
 
             # Check table exists
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT name FROM sqlite_master
                 WHERE type='table' AND name='symbol_references'
-            """)
+            """
+            )
             assert cursor.fetchone() is not None, "symbol_references table should exist"
 
             # Check columns
             cursor.execute("PRAGMA table_info(symbol_references)")
             columns = {row[1]: row[2] for row in cursor.fetchall()}
 
-            assert 'id' in columns
-            assert 'from_symbol_id' in columns
-            assert 'to_symbol_id' in columns
-            assert 'relationship_type' in columns
-            assert 'occurrence_id' in columns
+            assert "id" in columns
+            assert "from_symbol_id" in columns
+            assert "to_symbol_id" in columns
+            assert "relationship_type" in columns
+            assert "occurrence_id" in columns
 
             conn.close()
 
@@ -65,15 +67,17 @@ class TestSymbolReferencesSchema:
             conn = sqlite3.connect(db_manager.db_path)
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT name FROM sqlite_master
                 WHERE type='index' AND tbl_name='symbol_references'
-            """)
+            """
+            )
             indexes = {row[0] for row in cursor.fetchall()}
 
-            assert 'idx_symbol_refs_from' in indexes
-            assert 'idx_symbol_refs_to' in indexes
-            assert 'idx_symbol_refs_type' in indexes
+            assert "idx_symbol_refs_from" in indexes
+            assert "idx_symbol_refs_to" in indexes
+            assert "idx_symbol_refs_type" in indexes
 
             conn.close()
 
@@ -106,14 +110,18 @@ class TestSymbolReferencesETL:
             cursor.execute("SELECT COUNT(*) FROM symbol_references")
             ref_count = cursor.fetchone()[0]
 
-            assert ref_count > 0, "symbol_references table should have entries after indexing"
+            assert (
+                ref_count > 0
+            ), "symbol_references table should have entries after indexing"
 
             # Verify columns are populated correctly
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT from_symbol_id, to_symbol_id, relationship_type, occurrence_id
                 FROM symbol_references
                 LIMIT 1
-            """)
+            """
+            )
             row = cursor.fetchone()
 
             assert row is not None
@@ -156,16 +164,18 @@ class TestSymbolReferencesETL:
             cursor.execute("PRAGMA table_info(occurrences)")
             columns = {row[1] for row in cursor.fetchall()}
 
-            assert 'enclosing_range_start_line' in columns
-            assert 'enclosing_range_start_char' in columns
-            assert 'enclosing_range_end_line' in columns
-            assert 'enclosing_range_end_char' in columns
+            assert "enclosing_range_start_line" in columns
+            assert "enclosing_range_start_char" in columns
+            assert "enclosing_range_end_line" in columns
+            assert "enclosing_range_end_char" in columns
 
             # Check if any occurrences have enclosing_range data
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(*) FROM occurrences
                 WHERE enclosing_range_start_line IS NOT NULL
-            """)
+            """
+            )
             with_enclosing = cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(*) FROM occurrences")
@@ -209,10 +219,12 @@ class TestSymbolReferencesQuery:
 
             # Find any two symbols in the database
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, name FROM symbols
                 LIMIT 2
-            """)
+            """
+            )
             symbols = cursor.fetchall()
 
             # Skip test if not enough symbols
@@ -225,11 +237,7 @@ class TestSymbolReferencesQuery:
 
             # Call trace_call_chain_v2
             results, _ = queries.trace_call_chain_v2(
-                conn,
-                from_symbol_id=from_id,
-                to_symbol_id=to_id,
-                max_depth=5,
-                limit=100
+                conn, from_symbol_id=from_id, to_symbol_id=to_id, max_depth=5, limit=100
             )
 
             # Verify results format (may be empty if no chain exists)
@@ -237,9 +245,9 @@ class TestSymbolReferencesQuery:
 
             # If results exist, verify structure
             if results:
-                assert 'path' in results[0]
-                assert 'length' in results[0]
-                assert 'has_cycle' in results[0]
-                assert isinstance(results[0]['path'], list)
+                assert "path" in results[0]
+                assert "length" in results[0]
+                assert "has_cycle" in results[0]
+                assert isinstance(results[0]["path"], list)
 
             conn.close()

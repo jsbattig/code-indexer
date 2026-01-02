@@ -140,9 +140,7 @@ class TestChangeDetectorIntegration:
     def test_handles_real_git_failure(self):
         """ChangeDetector should raise exception on real git failure."""
         # Use non-existent repo path
-        detector = ChangeDetector(
-            repo_path=Path("/nonexistent/repo"), branch="master"
-        )
+        detector = ChangeDetector(repo_path=Path("/nonexistent/repo"), branch="master")
 
         with pytest.raises(Exception):
             detector.fetch()

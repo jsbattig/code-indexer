@@ -192,7 +192,9 @@ def test_database_backend_auto_runs_migration():
             "CREATE TABLE occurrences (id INTEGER PRIMARY KEY, symbol_id INTEGER)"
         )
         conn.execute("CREATE TABLE symbols (id INTEGER PRIMARY KEY, name TEXT)")
-        conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY, relative_path TEXT)")
+        conn.execute(
+            "CREATE TABLE documents (id INTEGER PRIMARY KEY, relative_path TEXT)"
+        )
         conn.commit()
         conn.close()
 
@@ -233,7 +235,9 @@ def test_database_backend_auto_runs_migration():
 
         # Verify version was updated to 2
         updated_version = get_scip_db_version(config_path)
-        assert updated_version == 2, f"Version should be 2 after migration, got {updated_version}"
+        assert (
+            updated_version == 2
+        ), f"Version should be 2 after migration, got {updated_version}"
 
         backend.conn.close()
 
@@ -252,9 +256,9 @@ def test_database_backend_auto_runs_migration():
         cursor = backend2.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index'")
         index_count_after = cursor.fetchone()[0]
-        assert index_count_after == index_count_before, (
-            "Index count should not change on second initialization (fast path)"
-        )
+        assert (
+            index_count_after == index_count_before
+        ), "Index count should not change on second initialization (fast path)"
 
         backend2.conn.close()
 
@@ -686,7 +690,9 @@ def _create_depth3_transitive_database(tmp_path: Path, filename: str) -> tuple:
 
     # Connect and setup transitive chain
     conn = sqlite3.connect(manager.db_path)
-    symbol_ids = {name: _get_symbol_id(conn, symbol) for name, symbol in symbols.items()}
+    symbol_ids = {
+        name: _get_symbol_id(conn, symbol) for name, symbol in symbols.items()
+    }
 
     # Insert symbol_references chain: A->B, B->C, C->D
     cursor = conn.cursor()
@@ -1717,12 +1723,16 @@ class TestGetDependents:
 
             # Test depth=3 query performance
             start_time = time.time()
-            results = get_dependents(conn, symbol_ids["SymbolA"], depth=3, scip_file=scip_file)
+            results = get_dependents(
+                conn, symbol_ids["SymbolA"], depth=3, scip_file=scip_file
+            )
             elapsed = time.time() - start_time
 
             # Verify all 3 dependents returned
             result_names = {r["symbol_name"] for r in results}
-            assert len(result_names) == 3, f"Expected 3 dependents, got {len(result_names)}"
+            assert (
+                len(result_names) == 3
+            ), f"Expected 3 dependents, got {len(result_names)}"
 
             # Performance assertion
             assert elapsed < 1.0, (
@@ -1752,12 +1762,16 @@ class TestGetDependents:
         try:
             # Test depth=3 query performance
             start_time = time.time()
-            results = get_dependencies(conn, symbol_ids["SymbolA"], depth=3, scip_file=scip_file)
+            results = get_dependencies(
+                conn, symbol_ids["SymbolA"], depth=3, scip_file=scip_file
+            )
             elapsed = time.time() - start_time
 
             # Verify all 3 dependencies returned
             result_names = {r["symbol_name"] for r in results}
-            assert len(result_names) == 3, f"Expected 3 dependencies, got {len(result_names)}"
+            assert (
+                len(result_names) == 3
+            ), f"Expected 3 dependencies, got {len(result_names)}"
 
             # Performance assertion
             assert elapsed < 1.0, (
@@ -1971,11 +1985,15 @@ class TestQueryEngineIntegration:
         ), "SCIPQueryEngine must expose trace_call_chain() method (AC5 violation)"
 
         # Test trace_call_chain() delegation
-        chains = engine.trace_call_chain("FunctionA", "FunctionC", max_depth=3, limit=100)
+        chains = engine.trace_call_chain(
+            "FunctionA", "FunctionC", max_depth=3, limit=100
+        )
 
         # Verify results structure
         assert isinstance(chains, list), "Should return list of CallChain objects"
-        assert len(chains) > 0, "Should find at least one path from FunctionA to FunctionC"
+        assert (
+            len(chains) > 0
+        ), "Should find at least one path from FunctionA to FunctionC"
 
         # Verify CallChain structure
         chain = chains[0]
@@ -2635,7 +2653,7 @@ class TestTraceCallChain:
             assert all(
                 r["length"] == 2 for r in results
             ), f"Expected all paths with length 2, got {[r['length'] for r in results]}"
-            assert all(r["has_cycle"] is False for r in results), f"Expected no cycles"
+            assert all(r["has_cycle"] is False for r in results), "Expected no cycles"
 
             # Check that we have both paths (order may vary)
             path_middles = [r["path"][1] for r in results]
@@ -2745,7 +2763,7 @@ class TestTraceCallChain:
             assert (
                 results[0]["length"] == 1
             ), f"Expected length 1 for first path, got {results[0]['length']}"
-            assert results[0]["has_cycle"] is False, f"Expected no cycle in direct path"
+            assert results[0]["has_cycle"] is False, "Expected no cycle in direct path"
 
             # Second result should show cyclic path
             assert (
@@ -2755,7 +2773,7 @@ class TestTraceCallChain:
                 results[1]["has_cycle"] is True
             ), f"Expected has_cycle=True for cyclic path, got {results[1]['has_cycle']}"
             # Verify path includes cycle: A -> B -> C -> B
-            assert len(results[1]["path"]) == 4, f"Expected 4 symbols in cyclic path"
+            assert len(results[1]["path"]) == 4, "Expected 4 symbols in cyclic path"
             assert "A#" in results[1]["path"][0]
             assert "B#" in results[1]["path"][1]
             assert "C#" in results[1]["path"][2]
@@ -2893,7 +2911,6 @@ class TestTraceCallChainV2BidirectionalBFS:
         This test documents the bug where limit=0 causes SQL LIMIT 0 clause,
         which returns 0 rows instead of unlimited results.
         """
-        import pytest
         from code_indexer.scip.database.queries import trace_call_chain_v2
 
         # Use production database
@@ -2976,7 +2993,9 @@ class TestTraceCallChainV2BidirectionalBFS:
             to_id = to_row[0]
 
             # Execute query
-            chains, _ = trace_call_chain_v2(conn, from_id, to_id, max_depth=5, limit=100)
+            chains, _ = trace_call_chain_v2(
+                conn, from_id, to_id, max_depth=5, limit=100
+            )
 
             # Verify correctness (symbol_references has fewer duplicates than call_graph - more accurate)
             assert len(chains) == 8, f"Expected 8 chains, got {len(chains)}"
@@ -3027,7 +3046,9 @@ class TestTraceCallChainV2BidirectionalBFS:
 
             # Execute with timing
             start = time.time()
-            chains, _ = trace_call_chain_v2(conn, from_id, to_id, max_depth=5, limit=100)
+            chains, _ = trace_call_chain_v2(
+                conn, from_id, to_id, max_depth=5, limit=100
+            )
             elapsed = time.time() - start
 
             # Verify performance
@@ -3066,7 +3087,9 @@ class TestTraceCallChainV2BidirectionalBFS:
             to_id = cursor.fetchone()[0]
 
             # Execute query
-            chains, _ = trace_call_chain_v2(conn, from_id, to_id, max_depth=5, limit=100)
+            chains, _ = trace_call_chain_v2(
+                conn, from_id, to_id, max_depth=5, limit=100
+            )
 
             # Verify ordering
             lengths = [c["length"] for c in chains]
@@ -3109,7 +3132,9 @@ class TestTraceCallChainV2BidirectionalBFS:
             to_id = cursor.fetchone()[0]
 
             # Execute query
-            chains, _ = trace_call_chain_v2(conn, from_id, to_id, max_depth=5, limit=100)
+            chains, _ = trace_call_chain_v2(
+                conn, from_id, to_id, max_depth=5, limit=100
+            )
 
             # Verify no cycles in any path
             for chain in chains:
@@ -3158,7 +3183,9 @@ class TestTraceCallChainV2BidirectionalBFS:
             to_id = to_row[0]
 
             # Execute query
-            chains, _ = trace_call_chain_v2(conn, from_id, to_id, max_depth=5, limit=100)
+            chains, _ = trace_call_chain_v2(
+                conn, from_id, to_id, max_depth=5, limit=100
+            )
 
             # Verify no paths found (highly likely these are unconnected)
             # If paths ARE found, that's ok - this test is best-effort
@@ -3560,7 +3587,6 @@ class TestDependenciesHybridClassLevelBug:
         - UserRepository INTERFACE (ID=8) should expand to [findById, save, delete]
         - UserController#getUser METHOD (ID=5) should return [5] (no expansion)
         """
-        import pytest
         from code_indexer.scip.query.backends import DatabaseBackend
         from pathlib import Path
 
@@ -3658,9 +3684,10 @@ def test_trace_call_chain_java_mock_bug():
     never included the synthetic interface→implementation edges that Bug #2
     was about. Skipping test as it's testing call_graph-specific behavior.
     """
-    import pytest
 
-    pytest.skip("Test is call_graph-specific, not relevant after symbol_references migration (Story #610)")
+    pytest.skip(
+        "Test is call_graph-specific, not relevant after symbol_references migration (Story #610)"
+    )
 
     # Use actual java-mock database from golden repos
     db_path = (
@@ -3734,7 +3761,6 @@ def test_call_graph_has_interface_to_impl_edges():
 
     This test should FAIL until Bug #2 is fixed in builder.py.
     """
-    import pytest
 
     # Use actual java-mock database from golden repos
     db_path = (
@@ -3807,7 +3833,9 @@ def test_trace_call_chain_v2_batched_multiple_sources_and_targets():
         conn = sqlite3.connect(str(db_path))
 
         # Create schema
-        conn.execute("CREATE TABLE symbols (id INTEGER PRIMARY KEY, name TEXT, kind TEXT)")
+        conn.execute(
+            "CREATE TABLE symbols (id INTEGER PRIMARY KEY, name TEXT, kind TEXT)"
+        )
         conn.execute(
             """CREATE TABLE call_graph (
                 id INTEGER PRIMARY KEY,
@@ -3863,8 +3891,12 @@ def test_trace_call_chain_v2_batched_multiple_sources_and_targets():
         )
 
         # Create indexes for symbol_references
-        conn.execute("CREATE INDEX idx_symbol_refs_from ON symbol_references(from_symbol_id)")
-        conn.execute("CREATE INDEX idx_symbol_refs_to ON symbol_references(to_symbol_id)")
+        conn.execute(
+            "CREATE INDEX idx_symbol_refs_from ON symbol_references(from_symbol_id)"
+        )
+        conn.execute(
+            "CREATE INDEX idx_symbol_refs_to ON symbol_references(to_symbol_id)"
+        )
 
         conn.commit()
 
@@ -3896,8 +3928,12 @@ def test_trace_call_chain_v2_batched_multiple_sources_and_targets():
             if len(path) == 3
         )
 
-        assert chain1_found, f"Chain 1 (methodA->methodC->targetX) not found in: {paths}"
-        assert chain2_found, f"Chain 2 (methodB->methodD->targetY) not found in: {paths}"
+        assert (
+            chain1_found
+        ), f"Chain 1 (methodA->methodC->targetX) not found in: {paths}"
+        assert (
+            chain2_found
+        ), f"Chain 2 (methodB->methodD->targetY) not found in: {paths}"
 
         conn.close()
 
@@ -3919,7 +3955,9 @@ def test_trace_call_chain_v2_batched_uses_symbol_references():
         conn = sqlite3.connect(str(db_path))
 
         # Create schema with both tables
-        conn.execute("CREATE TABLE symbols (id INTEGER PRIMARY KEY, name TEXT, kind TEXT)")
+        conn.execute(
+            "CREATE TABLE symbols (id INTEGER PRIMARY KEY, name TEXT, kind TEXT)"
+        )
         conn.execute(
             """CREATE TABLE call_graph (
                 id INTEGER PRIMARY KEY,
@@ -3951,7 +3989,11 @@ def test_trace_call_chain_v2_batched_uses_symbol_references():
         # Populate call_graph with PARAMETER->METHOD relationships (granular inner scopes)
         # This is what call_graph typically contains - not useful for METHOD->METHOD chains
         call_graph_edges = [
-            (5, 4, "call"),  # (param)filename -> _is_text_file (NOT useful for our query)
+            (
+                5,
+                4,
+                "call",
+            ),  # (param)filename -> _is_text_file (NOT useful for our query)
         ]
         conn.executemany(
             "INSERT INTO call_graph (caller_symbol_id, callee_symbol_id, relationship) VALUES (?, ?, ?)",
@@ -3969,13 +4011,17 @@ def test_trace_call_chain_v2_batched_uses_symbol_references():
         )
 
         # Create indexes
-        conn.execute("CREATE INDEX idx_symbol_refs_from ON symbol_references(from_symbol_id)")
-        conn.execute("CREATE INDEX idx_symbol_refs_to ON symbol_references(to_symbol_id)")
+        conn.execute(
+            "CREATE INDEX idx_symbol_refs_from ON symbol_references(from_symbol_id)"
+        )
+        conn.execute(
+            "CREATE INDEX idx_symbol_refs_to ON symbol_references(to_symbol_id)"
+        )
         conn.commit()
 
         # Test: Query from DaemonService (class expands to methods) to _is_text_file
         from_ids = [1]  # DaemonService# (class)
-        to_ids = [4]    # FileFinder#_is_text_file() (method)
+        to_ids = [4]  # FileFinder#_is_text_file() (method)
 
         results, error_msg = trace_call_chain_v2_batched(
             conn, from_symbol_ids=from_ids, to_symbol_ids=to_ids, max_depth=3, limit=100
@@ -3983,7 +4029,9 @@ def test_trace_call_chain_v2_batched_uses_symbol_references():
 
         # Assertions: Should find the chain via symbol_references
         assert error_msg is None, f"Query should not error: {error_msg}"
-        assert len(results) >= 1, f"Expected at least 1 chain using symbol_references, got {len(results)}"
+        assert (
+            len(results) >= 1
+        ), f"Expected at least 1 chain using symbol_references, got {len(results)}"
 
         # Verify the chain contains DaemonService#start and _is_text_file
         paths = [r["path"] for r in results]
@@ -3993,6 +4041,8 @@ def test_trace_call_chain_v2_batched_uses_symbol_references():
             if len(path) == 2
         )
 
-        assert chain_found, f"Expected chain DaemonService#start() -> _is_text_file() not found in: {paths}"
+        assert (
+            chain_found
+        ), f"Expected chain DaemonService#start() -> _is_text_file() not found in: {paths}"
 
         conn.close()

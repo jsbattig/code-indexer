@@ -161,11 +161,15 @@ class TestMigrationOrchestratorKeyTesting:
         # Create CIDX config with activated repo
         cidx_config_path = tmp_path / ".code-indexer-server" / "config.json"
         cidx_config_path.parent.mkdir(parents=True)
-        cidx_config_path.write_text(json.dumps({
-            "activated_repositories": [
-                {"path": "/repo", "remote_url": "git@github.com:user/repo.git"}
-            ]
-        }))
+        cidx_config_path.write_text(
+            json.dumps(
+                {
+                    "activated_repositories": [
+                        {"path": "/repo", "remote_url": "git@github.com:user/repo.git"}
+                    ]
+                }
+            )
+        )
 
         metadata_path = tmp_path / ".code-indexer-server" / "ssh_migration.json"
         metadata_dir = tmp_path / ".code-indexer-server" / "ssh_keys"
@@ -197,11 +201,18 @@ class TestMigrationOrchestratorKeyTesting:
         # Create CIDX config with activated repo
         cidx_config_path = tmp_path / ".code-indexer-server" / "config.json"
         cidx_config_path.parent.mkdir(parents=True)
-        cidx_config_path.write_text(json.dumps({
-            "activated_repositories": [
-                {"path": "/repo", "remote_url": "git@slow-host.example.com:user/repo.git"}
-            ]
-        }))
+        cidx_config_path.write_text(
+            json.dumps(
+                {
+                    "activated_repositories": [
+                        {
+                            "path": "/repo",
+                            "remote_url": "git@slow-host.example.com:user/repo.git",
+                        }
+                    ]
+                }
+            )
+        )
 
         metadata_path = tmp_path / ".code-indexer-server" / "ssh_migration.json"
         metadata_dir = tmp_path / ".code-indexer-server" / "ssh_keys"
@@ -217,12 +228,12 @@ class TestMigrationOrchestratorKeyTesting:
         # Mock the key tester to return a timeout result
         with patch.object(
             orchestrator.key_tester,
-            'test_key_against_host',
+            "test_key_against_host",
             return_value=TestResult(
                 success=False,
                 message="Connection timed out",
                 timed_out=True,
-            )
+            ),
         ):
             result = orchestrator.run_migration()
 
@@ -259,9 +270,7 @@ class TestMigrationOrchestratorNoRemotes:
         # Create CIDX config with NO activated repos (no remotes)
         cidx_config_path = tmp_path / ".code-indexer-server" / "config.json"
         cidx_config_path.parent.mkdir(parents=True)
-        cidx_config_path.write_text(json.dumps({
-            "activated_repositories": []
-        }))
+        cidx_config_path.write_text(json.dumps({"activated_repositories": []}))
 
         metadata_path = tmp_path / ".code-indexer-server" / "ssh_migration.json"
         metadata_dir = tmp_path / ".code-indexer-server" / "ssh_keys"

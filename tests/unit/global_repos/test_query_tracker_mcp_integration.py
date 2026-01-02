@@ -11,7 +11,6 @@ Tests verify:
 Story #620 Priority 1A: QueryTracker MCP Integration
 """
 
-import pytest
 import threading
 import time
 from code_indexer.global_repos.query_tracker import QueryTracker

@@ -204,10 +204,12 @@ class TestTableSchema:
         cursor = conn.cursor()
 
         # Check if FTS table exists
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT name FROM sqlite_master
             WHERE type='table' AND name='symbols_fts'
-        """)
+        """
+        )
         result = cursor.fetchone()
 
         assert result is not None
@@ -226,7 +228,7 @@ class TestSQLiteVersionValidation:
 
         # Document current SQLite version
         version = sqlite3.sqlite_version
-        major, minor, patch = map(int, version.split('.'))
+        major, minor, patch = map(int, version.split("."))
         print(f"\nCurrent SQLite version: {version}")
 
         # Check if version meets requirement
@@ -240,7 +242,7 @@ class TestSQLiteVersionValidation:
             # Should raise RuntimeError due to insufficient version
             with pytest.raises(
                 RuntimeError,
-                match="SQLite 3.35\\+ required for recursive CTEs and window functions"
+                match="SQLite 3.35\\+ required for recursive CTEs and window functions",
             ):
                 DatabaseManager(scip_file)
 
@@ -263,20 +265,26 @@ class TestForeignKeyEnforcement:
         cursor.execute("PRAGMA foreign_keys = ON")
 
         # First create a document (needed for FK constraint)
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO documents (relative_path, language)
             VALUES ('test.py', 'python')
-        """)
+        """
+        )
         conn.commit()
 
         # Attempt to insert occurrence with invalid symbol_id (should fail due to FK)
-        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
-            cursor.execute("""
+        with pytest.raises(
+            sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"
+        ):
+            cursor.execute(
+                """
                 INSERT INTO occurrences (
                     symbol_id, document_id, start_line, start_char,
                     end_line, end_char, role
                 ) VALUES (999, 1, 1, 0, 1, 10, 'reference')
-            """)
+            """
+            )
             conn.commit()
 
         conn.close()
@@ -299,11 +307,13 @@ class TestIndexCreation:
         cursor = conn.cursor()
 
         # Get all indexes
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT name FROM sqlite_master
             WHERE type='index' AND name NOT LIKE 'sqlite_%'
             ORDER BY name
-        """)
+        """
+        )
         indexes = {row[0] for row in cursor.fetchall()}
 
         # Verify all required indexes exist

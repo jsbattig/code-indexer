@@ -4,9 +4,6 @@ Test MCP/REST response format parity.
 Verifies that MCP and REST return identical JSON structures for critical operations.
 """
 
-import pytest
-import json
-
 
 def extract_mcp_response_schema(output_schema: dict) -> dict:
     """
@@ -67,11 +64,7 @@ def test_create_file_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["create_file"].get("outputSchema", {})
 
-    assert_response_parity(
-        "create_file",
-        mcp_output,
-        CreateFileResponse
-    )
+    assert_response_parity("create_file", mcp_output, CreateFileResponse)
 
 
 def test_edit_file_response_parity(mcp_tool_registry):
@@ -80,11 +73,7 @@ def test_edit_file_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["edit_file"].get("outputSchema", {})
 
-    assert_response_parity(
-        "edit_file",
-        mcp_output,
-        EditFileResponse
-    )
+    assert_response_parity("edit_file", mcp_output, EditFileResponse)
 
 
 def test_delete_file_response_parity(mcp_tool_registry):
@@ -93,11 +82,7 @@ def test_delete_file_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["delete_file"].get("outputSchema", {})
 
-    assert_response_parity(
-        "delete_file",
-        mcp_output,
-        DeleteFileResponse
-    )
+    assert_response_parity("delete_file", mcp_output, DeleteFileResponse)
 
 
 # Git Operations
@@ -109,11 +94,7 @@ def test_git_status_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["git_status"].get("outputSchema", {})
 
-    assert_response_parity(
-        "git_status",
-        mcp_output,
-        GitStatusResponse
-    )
+    assert_response_parity("git_status", mcp_output, GitStatusResponse)
 
 
 def test_git_commit_response_parity(mcp_tool_registry):
@@ -122,11 +103,7 @@ def test_git_commit_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["git_commit"].get("outputSchema", {})
 
-    assert_response_parity(
-        "git_commit",
-        mcp_output,
-        GitCommitResponse
-    )
+    assert_response_parity("git_commit", mcp_output, GitCommitResponse)
 
 
 def test_git_push_response_parity(mcp_tool_registry):
@@ -135,11 +112,7 @@ def test_git_push_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["git_push"].get("outputSchema", {})
 
-    assert_response_parity(
-        "git_push",
-        mcp_output,
-        GitPushResponse
-    )
+    assert_response_parity("git_push", mcp_output, GitPushResponse)
 
 
 def test_git_reset_response_parity(mcp_tool_registry):
@@ -148,11 +121,7 @@ def test_git_reset_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["git_reset"].get("outputSchema", {})
 
-    assert_response_parity(
-        "git_reset",
-        mcp_output,
-        GitResetResponse
-    )
+    assert_response_parity("git_reset", mcp_output, GitResetResponse)
 
 
 def test_git_clean_response_parity(mcp_tool_registry):
@@ -161,11 +130,7 @@ def test_git_clean_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["git_clean"].get("outputSchema", {})
 
-    assert_response_parity(
-        "git_clean",
-        mcp_output,
-        GitCleanResponse
-    )
+    assert_response_parity("git_clean", mcp_output, GitCleanResponse)
 
 
 # Git Branch Operations
@@ -177,11 +142,7 @@ def test_git_branch_create_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["git_branch_create"].get("outputSchema", {})
 
-    assert_response_parity(
-        "git_branch_create",
-        mcp_output,
-        GitBranchCreateResponse
-    )
+    assert_response_parity("git_branch_create", mcp_output, GitBranchCreateResponse)
 
 
 def test_git_branch_list_response_parity(mcp_tool_registry):
@@ -190,11 +151,7 @@ def test_git_branch_list_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["git_branch_list"].get("outputSchema", {})
 
-    assert_response_parity(
-        "git_branch_list",
-        mcp_output,
-        GitBranchListResponse
-    )
+    assert_response_parity("git_branch_list", mcp_output, GitBranchListResponse)
 
 
 # Indexing Operations
@@ -206,11 +163,7 @@ def test_trigger_reindex_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["trigger_reindex"].get("outputSchema", {})
 
-    assert_response_parity(
-        "trigger_reindex",
-        mcp_output,
-        TriggerReindexResponse
-    )
+    assert_response_parity("trigger_reindex", mcp_output, TriggerReindexResponse)
 
 
 def test_get_index_status_response_parity(mcp_tool_registry):
@@ -219,11 +172,7 @@ def test_get_index_status_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["get_index_status"].get("outputSchema", {})
 
-    assert_response_parity(
-        "get_index_status",
-        mcp_output,
-        GetIndexStatusResponse
-    )
+    assert_response_parity("get_index_status", mcp_output, GetIndexStatusResponse)
 
 
 # SCIP Operations
@@ -235,11 +184,7 @@ def test_scip_definition_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["scip_definition"].get("outputSchema", {})
 
-    assert_response_parity(
-        "scip_definition",
-        mcp_output,
-        ScipDefinitionResponse
-    )
+    assert_response_parity("scip_definition", mcp_output, ScipDefinitionResponse)
 
 
 def test_scip_references_response_parity(mcp_tool_registry):
@@ -248,8 +193,4 @@ def test_scip_references_response_parity(mcp_tool_registry):
 
     mcp_output = mcp_tool_registry["scip_references"].get("outputSchema", {})
 
-    assert_response_parity(
-        "scip_references",
-        mcp_output,
-        ScipReferencesResponse
-    )
+    assert_response_parity("scip_references", mcp_output, ScipReferencesResponse)

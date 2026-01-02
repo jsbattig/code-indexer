@@ -59,7 +59,9 @@ class TestGetAvailableRepos:
         """Test that available repos are returned."""
         from code_indexer.server.mcp.handlers import _get_available_repos
 
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.return_value = "/fake/path"
             with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_reg:
                 mock_instance = Mock()
@@ -77,7 +79,9 @@ class TestGetAvailableRepos:
         """Test graceful handling of registry errors."""
         from code_indexer.server.mcp.handlers import _get_available_repos
 
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.side_effect = RuntimeError("No golden_repos_dir")
 
             result = _get_available_repos()
@@ -106,7 +110,9 @@ class TestSearchCodeErrorSuggestions:
             "repository_alias": "evolutoin-global",  # typo: evolutoin instead of evolution
         }
 
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.return_value = "/fake/path"
             with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_reg:
                 mock_instance = Mock()
@@ -122,5 +128,7 @@ class TestSearchCodeErrorSuggestions:
 
                 assert response_data["success"] is False
                 assert "suggestions" in response_data
-                assert "evolution-global" in response_data["suggestions"]  # Should suggest correct spelling
+                assert (
+                    "evolution-global" in response_data["suggestions"]
+                )  # Should suggest correct spelling
                 assert "available_values" in response_data

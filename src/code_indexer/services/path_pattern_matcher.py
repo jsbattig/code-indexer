@@ -6,9 +6,10 @@ Provides glob-style pattern matching with cross-platform support:
 - Character sequences ([seq], [!seq])
 - Path normalization (separators, case sensitivity)
 - Pattern caching for performance
+- Gitignore-style matching via pathspec library
 """
 
-import fnmatch
+import pathspec
 from pathlib import PurePosixPath
 from typing import List
 import sys
@@ -71,8 +72,14 @@ class PathPatternMatcher:
             normalized = PurePosixPath(path.replace("\\", "/"))
 
             # Resolve . and .. components
+            # Note: PurePosixPath.parts includes '/' as first element for absolute paths
             parts: List[str] = []
+            is_absolute = str(normalized).startswith("/")
+
             for part in normalized.parts:
+                # Skip the root '/' part (it's just a marker for absolute paths)
+                if part == "/":
+                    continue
                 if part == "..":
                     if parts and parts[-1] != "..":
                         parts.pop()
@@ -84,8 +91,10 @@ class PathPatternMatcher:
             result = "/".join(parts)
 
             # Preserve leading slash for absolute paths
-            if str(normalized).startswith("/"):
+            if is_absolute and result:
                 result = "/" + result
+            elif is_absolute and not result:
+                result = "/"
 
             return result
         except (ValueError, TypeError):
@@ -94,11 +103,15 @@ class PathPatternMatcher:
 
     def matches_pattern(self, path: str, pattern: str) -> bool:
         """
-        Check if a path matches a glob pattern.
+        Check if a path matches a glob pattern using gitignore-style matching.
+
+        This method uses pathspec library for consistent gitignore-style glob matching,
+        which properly handles ** patterns as "this directory and all subdirectories"
+        rather than requiring at least one subdirectory level.
 
         Args:
             path: File path to check
-            pattern: Glob pattern to match against
+            pattern: Glob pattern to match against (gitignore-style)
 
         Returns:
             True if path matches pattern, False otherwise
@@ -113,7 +126,9 @@ class PathPatternMatcher:
             True
             >>> matcher.matches_pattern("src/module.py", "*/tests/*")
             False
-            >>> matcher.matches_pattern("dist/app.min.js", "*.min.js")
+            >>> matcher.matches_pattern("code/src/Main.java", "code/src/**/*.java")
+            True
+            >>> matcher.matches_pattern("code/src/util/Helper.java", "code/src/**/*.java")
             True
         """
         if pattern is None:
@@ -129,116 +144,25 @@ class PathPatternMatcher:
         if not normalized_pattern:
             return False
 
-        # Use fnmatch for glob-style matching
-        # fnmatch supports *, ?, [seq], [!seq] patterns
         try:
-            # Handle case sensitivity based on platform
-            if sys.platform == "win32":
-                # Windows is case-insensitive
-                normalized_path = normalized_path.lower()
-                normalized_pattern = normalized_pattern.lower()
-
             # Check if pattern is in cache
             cache_key = normalized_pattern
             if cache_key not in self._pattern_cache:
-                # Cache the pattern for reuse
-                self._pattern_cache[cache_key] = normalized_pattern
+                # Create PathSpec object and cache it
+                # Use "gitwildmatch" for gitignore-style glob matching
+                # This properly handles ** patterns and other glob features
+                spec = pathspec.PathSpec.from_lines("gitwildmatch", [normalized_pattern])
+                self._pattern_cache[cache_key] = spec
+            else:
+                spec = self._pattern_cache[cache_key]
 
-            # Use fnmatch for pattern matching
-            # fnmatch.fnmatch handles *, ?, [seq], [!seq]
-            # For ** patterns, we need custom logic
-            if "**" in normalized_pattern:
-                # Convert ** to * for fnmatch (greedy match)
-                # ** matches any depth of directories
-                fnmatch_pattern = normalized_pattern.replace("**/", "*/").replace(
-                    "/**", "/*"
-                )
-
-                # Also try direct match with original pattern
-                if fnmatch.fnmatch(normalized_path, fnmatch_pattern):
-                    return True
-
-                # Try matching with ** as wildcard across path components
-                # Split pattern by ** and check if path contains all parts in order
-                pattern_parts = normalized_pattern.split("**")
-                if len(pattern_parts) > 1:
-                    # Check if all pattern parts appear in order in path
-                    for i, part in enumerate(pattern_parts):
-                        if not part:  # Empty part from leading/trailing **
-                            continue
-
-                        # Clean up slashes
-                        part = part.strip("/")
-                        if not part:
-                            continue
-
-                        # For the first part, check from beginning
-                        if i == 0:
-                            if not fnmatch.fnmatch(normalized_path, part + "*"):
-                                return False
-                        # For the last part, check ending
-                        elif i == len(pattern_parts) - 1:
-                            if not fnmatch.fnmatch(normalized_path, "*" + part):
-                                return False
-                        # For middle parts, check they exist in sequence
-                        else:
-                            # This is a simplified ** matching
-                            # More complex logic would track position
-                            if part not in normalized_path:
-                                return False
-                    return True
-
-            # Strip trailing slashes from path for consistent matching
-            # "src/tests/" should match same as "src/tests"
-            normalized_path_no_trailing = normalized_path.rstrip("/")
-
-            # Direct fnmatch - handles *, ?, [seq], [!seq]
-            if fnmatch.fnmatch(normalized_path_no_trailing, normalized_pattern):
-                return True
-
-            # Also try with trailing slash preserved (for patterns that expect it)
-            if normalized_path != normalized_path_no_trailing:
-                if fnmatch.fnmatch(normalized_path, normalized_pattern):
-                    return True
-
-            # Special handling for patterns ending with /* where the path is a directory
-            # This allows "*/tests/*" to match "src/tests/" (directory)
-            # The * at the end can match empty for directories
-            if normalized_pattern.endswith("/*"):
-                # Try matching the path as if the trailing /* can match the directory itself
-                pattern_without_trailing = normalized_pattern[:-2]  # Remove "/*"
-                if fnmatch.fnmatch(
-                    normalized_path_no_trailing, pattern_without_trailing
-                ):
-                    return True
-                # Also try the special case where */tests/* should match tests/ or src/tests/
-                # by combining both leading and trailing * removal
-                if pattern_without_trailing.startswith("*/"):
-                    pattern_core = pattern_without_trailing[2:]  # Remove "*/"
-                    # Now try matching against the path with trailing removed
-                    # This handles "*/tests/*" matching "src/tests/" or "tests/"
-                    if "/" in normalized_path_no_trailing:
-                        # Has directory separator, try matching the end part
-                        if (
-                            normalized_path_no_trailing.endswith("/" + pattern_core)
-                            or normalized_path_no_trailing == pattern_core
-                        ):
-                            return True
-
-            # Special handling for patterns like */something/* where * should match empty
-            # This allows "*/tests/*" to match "tests/file.py"
-            # BUT it should NOT allow "*/file.py" to match "file.py" (no directory separator)
-            if normalized_pattern.startswith("*/"):
-                # Only apply this if the path contains at least one directory separator
-                if "/" in normalized_path_no_trailing:
-                    # Try matching without the leading */
-                    pattern_without_leading = normalized_pattern[2:]  # Remove "*/"
-                    if fnmatch.fnmatch(
-                        normalized_path_no_trailing, pattern_without_leading
-                    ):
-                        return True
-
-            return False
+            # Use pathspec to match the path
+            # pathspec.match_file() handles:
+            # - ** as "this directory and all subdirectories"
+            # - * as single-level wildcard
+            # - ?, [seq], [!seq] patterns
+            # - Proper path separator handling
+            return bool(spec.match_file(normalized_path))
 
         except Exception as e:
             # Invalid pattern - treat as ValueError

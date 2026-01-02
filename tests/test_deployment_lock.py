@@ -213,9 +213,7 @@ class TestDeploymentLockExceptionHandling:
     @patch("pathlib.Path.exists")
     @patch("builtins.open", new_callable=mock_open)
     @patch("os.getpid")
-    def test_acquire_raises_on_write_ioerror(
-        self, mock_getpid, mock_file, mock_exists
-    ):
+    def test_acquire_raises_on_write_ioerror(self, mock_getpid, mock_file, mock_exists):
         """acquire() should raise IOError when lock file can't be written."""
         import pytest
 

@@ -62,10 +62,16 @@ class SCIPDatabaseVerifier:
         errors: List[str] = []
 
         # Run all verification checks
-        symbol_count_match, symbol_sample_ok, symbols_sampled = self._verify_symbols(errors)
-        occurrence_count_match, occurrence_sample_ok, occurrences_sampled = self._verify_occurrences(errors)
+        symbol_count_match, symbol_sample_ok, symbols_sampled = self._verify_symbols(
+            errors
+        )
+        occurrence_count_match, occurrence_sample_ok, occurrences_sampled = (
+            self._verify_occurrences(errors)
+        )
         documents_ok = self._verify_documents(errors)
-        call_graph_fk_ok, call_graph_sample_ok, call_graph_sampled = self._verify_call_graph(errors)
+        call_graph_fk_ok, call_graph_sample_ok, call_graph_sampled = (
+            self._verify_call_graph(errors)
+        )
 
         # Determine overall pass/fail
         passed = (
@@ -120,7 +126,7 @@ class SCIPDatabaseVerifier:
         # These are external symbols that builder will auto-generate
         external_symbol_names = set()
         for occ in protobuf_occurrences:
-            symbol_name = occ['symbol']
+            symbol_name = occ["symbol"]
             if symbol_name not in protobuf_symbol_names:
                 external_symbol_names.add(symbol_name)
 
@@ -141,7 +147,9 @@ class SCIPDatabaseVerifier:
             )
 
         # Sample verification
-        sample_ok, symbols_sampled = self._verify_symbol_sample(protobuf_symbols, errors)
+        sample_ok, symbols_sampled = self._verify_symbol_sample(
+            protobuf_symbols, errors
+        )
 
         return count_match, sample_ok, symbols_sampled
 
@@ -167,7 +175,9 @@ class SCIPDatabaseVerifier:
 
         return protobuf_symbols
 
-    def _verify_symbol_sample(self, protobuf_symbols: List, errors: List[str]) -> tuple[bool, int]:
+    def _verify_symbol_sample(
+        self, protobuf_symbols: List, errors: List[str]
+    ) -> tuple[bool, int]:
         """
         Verify random sample of symbols match database.
 
@@ -208,7 +218,10 @@ class SCIPDatabaseVerifier:
                 else:
                     db_display_name, db_kind = result
                     # Verify display_name matches if present
-                    if symbol_info.display_name and db_display_name != symbol_info.display_name:
+                    if (
+                        symbol_info.display_name
+                        and db_display_name != symbol_info.display_name
+                    ):
                         errors.append(
                             f"Symbol display_name mismatch for {symbol_name}: "
                             f"expected {symbol_info.display_name}, actual {db_display_name}"
@@ -247,7 +260,9 @@ class SCIPDatabaseVerifier:
             )
 
         # Sample verification
-        sample_ok, occurrences_sampled = self._verify_occurrence_sample(protobuf_occurrences, errors)
+        sample_ok, occurrences_sampled = self._verify_occurrence_sample(
+            protobuf_occurrences, errors
+        )
 
         return count_match, sample_ok, occurrences_sampled
 
@@ -266,15 +281,19 @@ class SCIPDatabaseVerifier:
         protobuf_occurrences = []
         for doc in index.documents:
             for occ in doc.occurrences:
-                protobuf_occurrences.append({
-                    'symbol': occ.symbol,
-                    'range': list(occ.range),
-                    'role': occ.symbol_roles,
-                })
+                protobuf_occurrences.append(
+                    {
+                        "symbol": occ.symbol,
+                        "range": list(occ.range),
+                        "role": occ.symbol_roles,
+                    }
+                )
 
         return protobuf_occurrences
 
-    def _verify_occurrence_sample(self, protobuf_occurrences: List, errors: List[str]) -> tuple[bool, int]:
+    def _verify_occurrence_sample(
+        self, protobuf_occurrences: List, errors: List[str]
+    ) -> tuple[bool, int]:
         """
         Verify random sample of occurrences match database.
 
@@ -302,9 +321,9 @@ class SCIPDatabaseVerifier:
             cursor = conn.cursor()
 
             for occ in sampled_occurrences:
-                symbol_name = occ['symbol']
-                occ_range = occ['range']
-                role = occ['role']
+                symbol_name = occ["symbol"]
+                occ_range = occ["range"]
+                role = occ["role"]
 
                 # Parse range to get start line/char
                 if len(occ_range) >= 2:
@@ -347,7 +366,9 @@ class SCIPDatabaseVerifier:
             index = scip_pb2.Index()  # type: ignore[attr-defined]
             index.ParseFromString(f.read())
 
-        expected_docs = {doc.relative_path: doc.language or None for doc in index.documents}
+        expected_docs = {
+            doc.relative_path: doc.language or None for doc in index.documents
+        }
         documents_ok = True
 
         # Verify documents in single database connection
@@ -361,7 +382,9 @@ class SCIPDatabaseVerifier:
             # Check expected documents exist with correct language
             for expected_path, expected_lang in expected_docs.items():
                 if expected_path not in db_docs:
-                    errors.append(f"Document path mismatch: expected {expected_path} not found in database")
+                    errors.append(
+                        f"Document path mismatch: expected {expected_path} not found in database"
+                    )
                     documents_ok = False
                 elif db_docs[expected_path] != expected_lang:
                     errors.append(
@@ -373,7 +396,9 @@ class SCIPDatabaseVerifier:
             # Check for unexpected documents in database
             unexpected_paths = set(db_docs.keys()) - set(expected_docs.keys())
             for path in unexpected_paths:
-                errors.append(f"Document path mismatch: unexpected {path} found in database")
+                errors.append(
+                    f"Document path mismatch: unexpected {path} found in database"
+                )
                 documents_ok = False
 
         return documents_ok

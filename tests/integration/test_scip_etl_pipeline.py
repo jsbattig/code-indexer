@@ -21,7 +21,9 @@ class TestETLPipeline:
         Then database contains all symbols, occurrences, documents, and call graph edges
         """
         # Use existing test SCIP file
-        scip_file = Path(__file__).parent.parent / "scip" / "fixtures" / "test_index.scip"
+        scip_file = (
+            Path(__file__).parent.parent / "scip" / "fixtures" / "test_index.scip"
+        )
 
         if not scip_file.exists():
             pytest.skip(f"Test SCIP file not found: {scip_file}")
@@ -64,12 +66,14 @@ class TestETLPipeline:
         assert call_graph_count >= 0
 
         # Verify foreign key integrity (all occurrences link to valid symbols)
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*)
             FROM occurrences o
             LEFT JOIN symbols s ON o.symbol_id = s.id
             WHERE s.id IS NULL
-        """)
+        """
+        )
         orphan_occurrences = cursor.fetchone()[0]
         assert orphan_occurrences == 0, "All occurrences should link to valid symbols"
 

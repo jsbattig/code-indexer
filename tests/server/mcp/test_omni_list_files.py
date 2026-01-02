@@ -4,6 +4,7 @@ Tests polymorphic repository_alias parameter:
 - String value routes to single-repo list_files
 - Array value routes to omni-list-files across multiple repositories
 """
+
 import json
 import pytest
 from unittest.mock import patch, MagicMock
@@ -19,17 +20,14 @@ def mock_user():
         username="testuser",
         password_hash="hash",
         role=UserRole.NORMAL_USER,
-        created_at=datetime.now()
+        created_at=datetime.now(),
     )
 
 
 @pytest.mark.asyncio
 async def test_list_files_with_string_repository_alias(mock_user):
     """Test list_files with string repository_alias routes to single-repo handler."""
-    params = {
-        "repository_alias": "test-repo",
-        "path": "src/"
-    }
+    params = {"repository_alias": "test-repo", "path": "src/"}
 
     # Mock the file_service to return a mock result
     mock_result = MagicMock()
@@ -40,7 +38,7 @@ async def test_list_files_with_string_repository_alias(mock_user):
                 "size_bytes": 1024,
                 "modified_at": "2025-01-01T00:00:00",
                 "language": "python",
-                "is_indexed": True
+                "is_indexed": True,
             }
         )
     ]

@@ -28,8 +28,7 @@ def test_callchain_uses_fast_database_primitive():
     # Time the execution
     start = time.perf_counter()
     result = runner.invoke(
-        cli,
-        ['scip', 'callchain', 'DaemonService', '_is_text_file', '--max-depth', '5']
+        cli, ["scip", "callchain", "DaemonService", "_is_text_file", "--max-depth", "5"]
     )
     elapsed = time.perf_counter() - start
 
@@ -46,6 +45,6 @@ def test_callchain_uses_fast_database_primitive():
     )
 
     # Verify output format (at least one chain found)
-    assert 'call chain' in result.output.lower(), (
-        f"Expected 'call chain' in output, got:\n{result.output}"
-    )
+    assert (
+        "call chain" in result.output.lower()
+    ), f"Expected 'call chain' in output, got:\n{result.output}"

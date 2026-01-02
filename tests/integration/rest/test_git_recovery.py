@@ -25,16 +25,13 @@ def test_git_reset_hard_real_repository(client, activated_repo, test_repo_dir: P
     test_file.write_text("content to reset")
     subprocess.run(["git", "add", "reset_test.txt"], cwd=test_repo_dir, check=True)
     subprocess.run(
-        ["git", "commit", "-m", "Test commit for reset"],
-        cwd=test_repo_dir,
-        check=True
+        ["git", "commit", "-m", "Test commit for reset"], cwd=test_repo_dir, check=True
     )
 
     try:
         # Step 1: Request confirmation token
         response = client.post(
-            f"/api/v1/repos/{activated_repo}/git/reset",
-            json={"mode": "hard"}
+            f"/api/v1/repos/{activated_repo}/git/reset", json={"mode": "hard"}
         )
 
         # Verify: Token required
@@ -47,7 +44,7 @@ def test_git_reset_hard_real_repository(client, activated_repo, test_repo_dir: P
         # Step 2: Perform reset with token
         response = client.post(
             f"/api/v1/repos/{activated_repo}/git/reset",
-            json={"mode": "hard", "commit_hash": "HEAD~1", "confirmation_token": token}
+            json={"mode": "hard", "commit_hash": "HEAD~1", "confirmation_token": token},
         )
 
         # Verify: Reset succeeded
@@ -91,7 +88,7 @@ def test_git_clean_real_untracked(client, activated_repo, test_repo_dir: Path):
         # Step 2: Perform clean with token
         response = client.post(
             f"/api/v1/repos/{activated_repo}/git/clean",
-            json={"confirmation_token": token}
+            json={"confirmation_token": token},
         )
 
         # Verify: Clean succeeded
@@ -124,29 +121,39 @@ def test_git_merge_abort_real_conflict(client, activated_repo, test_repo_dir: Pa
         ["git", "branch", "--show-current"],
         cwd=test_repo_dir,
         capture_output=True,
-        text=True
+        text=True,
     ).stdout.strip()
 
     test_file = test_repo_dir / "merge_test.txt"
 
     try:
         # Create test branch
-        subprocess.run(["git", "checkout", "-b", "test-merge-branch"], cwd=test_repo_dir, check=True)
+        subprocess.run(
+            ["git", "checkout", "-b", "test-merge-branch"],
+            cwd=test_repo_dir,
+            check=True,
+        )
         test_file.write_text("branch content")
         subprocess.run(["git", "add", "merge_test.txt"], cwd=test_repo_dir, check=True)
-        subprocess.run(["git", "commit", "-m", "Branch commit"], cwd=test_repo_dir, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Branch commit"], cwd=test_repo_dir, check=True
+        )
 
         # Switch back and create conflicting change
-        subprocess.run(["git", "checkout", current_branch], cwd=test_repo_dir, check=True)
+        subprocess.run(
+            ["git", "checkout", current_branch], cwd=test_repo_dir, check=True
+        )
         test_file.write_text("main content")
         subprocess.run(["git", "add", "merge_test.txt"], cwd=test_repo_dir, check=True)
-        subprocess.run(["git", "commit", "-m", "Main commit"], cwd=test_repo_dir, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Main commit"], cwd=test_repo_dir, check=True
+        )
 
         # Attempt merge (will conflict)
         subprocess.run(
             ["git", "merge", "test-merge-branch"],
             cwd=test_repo_dir,
-            capture_output=True
+            capture_output=True,
         )  # Expected to fail with conflict
 
         # Execute: Call REST endpoint to abort merge
@@ -164,9 +171,19 @@ def test_git_merge_abort_real_conflict(client, activated_repo, test_repo_dir: Pa
 
     finally:
         # Cleanup: Delete test branch and file
-        subprocess.run(["git", "merge", "--abort"], cwd=test_repo_dir, capture_output=True)
-        subprocess.run(["git", "checkout", current_branch], cwd=test_repo_dir, capture_output=True)
-        subprocess.run(["git", "branch", "-D", "test-merge-branch"], cwd=test_repo_dir, capture_output=True)
-        subprocess.run(["git", "reset", "--hard", "HEAD~1"], cwd=test_repo_dir, capture_output=True)
+        subprocess.run(
+            ["git", "merge", "--abort"], cwd=test_repo_dir, capture_output=True
+        )
+        subprocess.run(
+            ["git", "checkout", current_branch], cwd=test_repo_dir, capture_output=True
+        )
+        subprocess.run(
+            ["git", "branch", "-D", "test-merge-branch"],
+            cwd=test_repo_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", "HEAD~1"], cwd=test_repo_dir, capture_output=True
+        )
         if test_file.exists():
             test_file.unlink()

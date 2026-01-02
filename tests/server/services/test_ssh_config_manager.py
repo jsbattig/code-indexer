@@ -136,7 +136,9 @@ class TestSSHConfigManagerWriteConfig:
 
         # Create a host entry
         entries = [
-            HostEntry(host="github.com", hostname="github.com", key_path="~/.ssh/my-key")
+            HostEntry(
+                host="github.com", hostname="github.com", key_path="~/.ssh/my-key"
+            )
         ]
 
         # Write to non-existent file
@@ -171,7 +173,9 @@ class TestSSHConfigManagerWriteConfig:
 
         # Add CIDX entries
         entries = [
-            HostEntry(host="github.com", hostname="github.com", key_path="~/.ssh/cidx-key")
+            HostEntry(
+                host="github.com", hostname="github.com", key_path="~/.ssh/cidx-key"
+            )
         ]
 
         manager.write_config(config_file, parsed, entries)
@@ -204,7 +208,9 @@ Host myserver.com
 
         # Add CIDX entries
         entries = [
-            HostEntry(host="github.com", hostname="github.com", key_path="~/.ssh/cidx-key")
+            HostEntry(
+                host="github.com", hostname="github.com", key_path="~/.ssh/cidx-key"
+            )
         ]
 
         manager.write_config(config_file, parsed, entries)

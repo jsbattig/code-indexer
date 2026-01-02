@@ -7,7 +7,7 @@ try:
 except ImportError:
     import sqlite3
 
-from code_indexer.scip.database.verify import SCIPDatabaseVerifier, VerificationResult
+from code_indexer.scip.database.verify import SCIPDatabaseVerifier
 from code_indexer.scip.database.builder import (
     SCIPDatabaseBuilder,
     ROLE_DEFINITION,
@@ -137,7 +137,6 @@ class TestSymbolVerification:
         # Verify sample size (should be 100 for 150 symbols)
         assert 90 <= result.symbols_sampled <= 100
 
-
     def test_verify_symbols_with_external_references(self, tmp_path: Path):
         """
         Test symbol count verification when builder creates external symbols.
@@ -252,7 +251,9 @@ class TestOccurrenceVerification:
             occ = doc.occurrences.add()
             occ.symbol = "test.py::TestClass#"
             occ.range.extend([i * 10, 0, i * 10, 9])
-            occ.symbol_roles = 1 if i == 0 else 8  # First is definition, rest are references
+            occ.symbol_roles = (
+                1 if i == 0 else 8
+            )  # First is definition, rest are references
 
         scip_file = tmp_path / "test.scip"
         with open(scip_file, "wb") as f:
@@ -312,7 +313,9 @@ class TestOccurrenceVerification:
         # Corrupt database by deleting 2 occurrences
         conn = sqlite3.connect(manager.db_path)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM occurrences WHERE id IN (SELECT id FROM occurrences LIMIT 2)")
+        cursor.execute(
+            "DELETE FROM occurrences WHERE id IN (SELECT id FROM occurrences LIMIT 2)"
+        )
         conn.commit()
         conn.close()
 
@@ -379,11 +382,13 @@ class TestDocumentVerification:
         # Create SCIP protobuf with 3 documents
         index = scip_pb2.Index()
 
-        for i, (path, lang) in enumerate([
-            ("src/main.py", "Python"),
-            ("src/utils.py", "Python"),
-            ("test/test_main.py", "Python"),
-        ]):
+        for i, (path, lang) in enumerate(
+            [
+                ("src/main.py", "Python"),
+                ("src/utils.py", "Python"),
+                ("test/test_main.py", "Python"),
+            ]
+        ):
             doc = index.documents.add()
             doc.relative_path = path
             doc.language = lang
@@ -445,8 +450,10 @@ class TestDocumentVerification:
         # Corrupt database
         conn = sqlite3.connect(manager.db_path)
         cursor = conn.cursor()
-        cursor.execute("UPDATE documents SET relative_path = ? WHERE relative_path = ?",
-                      ("src/wrong.py", "src/main.py"))
+        cursor.execute(
+            "UPDATE documents SET relative_path = ? WHERE relative_path = ?",
+            ("src/wrong.py", "src/main.py"),
+        )
         conn.commit()
         conn.close()
 
@@ -566,7 +573,10 @@ class TestCallGraphVerification:
         assert result.passed is False
         assert result.call_graph_fk_valid is False
         # Check if any error contains "foreign key" or "invalid reference"
-        assert any("foreign key" in err.lower() or "invalid reference" in err.lower() for err in result.errors)
+        assert any(
+            "foreign key" in err.lower() or "invalid reference" in err.lower()
+            for err in result.errors
+        )
 
     def test_cleanup_preserves_database_after_verification(self, tmp_path: Path):
         """
@@ -645,12 +655,16 @@ class TestCallGraphVerification:
         assert cleanup_success is True, "Cleanup should succeed"
 
         # 2. Database file should still exist
-        assert manager.db_path.exists(), "Database file should still exist after cleanup"
+        assert (
+            manager.db_path.exists()
+        ), "Database file should still exist after cleanup"
 
         # 3. Database should be non-empty (not recreated as 0-byte file)
         db_size_after = manager.db_path.stat().st_size
         assert db_size_after > 0, "Database should be non-empty after cleanup"
-        assert db_size_after == db_size_before, "Database size should not change after cleanup"
+        assert (
+            db_size_after == db_size_before
+        ), "Database size should not change after cleanup"
 
         # 4. Database should still contain schema and data
         conn = sqlite3.connect(manager.db_path)

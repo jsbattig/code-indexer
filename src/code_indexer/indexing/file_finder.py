@@ -270,12 +270,16 @@ class FileFinder:
                         if self._force_include_spec.match_file(test_path):
                             should_keep = True
                         # Also check glob patterns like "projects/**/*.jsonl"
-                        for pattern in (self.config.override_config.force_include_patterns
-                                       if hasattr(self.config, 'override_config')
-                                       and self.config.override_config
-                                       and self.config.override_config.force_include_patterns
-                                       else []):
-                            if pattern.startswith(dir_str) or dir_str.startswith(pattern.split('/')[0]):
+                        for pattern in (
+                            self.config.override_config.force_include_patterns
+                            if hasattr(self.config, "override_config")
+                            and self.config.override_config
+                            and self.config.override_config.force_include_patterns
+                            else []
+                        ):
+                            if pattern.startswith(dir_str) or dir_str.startswith(
+                                pattern.split("/")[0]
+                            ):
                                 should_keep = True
                                 break
 

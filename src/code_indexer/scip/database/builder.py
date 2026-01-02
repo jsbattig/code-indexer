@@ -62,6 +62,7 @@ class SCIPDatabaseBuilder:
         # its side effect of deleting existing databases.
         # Note: create_schema() only requires db_path attribute.
         from .schema import DatabaseManager
+
         temp_manager = DatabaseManager.__new__(DatabaseManager)
         temp_manager.db_path = db_path
         temp_manager.create_schema()
@@ -85,18 +86,25 @@ class SCIPDatabaseBuilder:
             external_symbols = {}
             for occ in occurrences:
                 symbol_name = occ["symbol_name"]
-                if symbol_name not in symbol_map and symbol_name not in external_symbols:
+                if (
+                    symbol_name not in symbol_map
+                    and symbol_name not in external_symbols
+                ):
                     # Create placeholder for external symbol (e.g., stdlib, external libraries)
-                    display_name = symbol_name.split('/')[-1] if '/' in symbol_name else symbol_name
+                    display_name = (
+                        symbol_name.split("/")[-1]
+                        if "/" in symbol_name
+                        else symbol_name
+                    )
                     # Strip SCIP symbol suffixes for cleaner display
-                    if display_name.endswith('#') or display_name.endswith('.'):
+                    if display_name.endswith("#") or display_name.endswith("."):
                         display_name = display_name[:-1]
                     external_symbols[symbol_name] = {
-                        'name': symbol_name,
-                        'display_name': display_name,
-                        'kind': None,
-                        'signature': None,
-                        'documentation': None
+                        "name": symbol_name,
+                        "display_name": display_name,
+                        "kind": None,
+                        "signature": None,
+                        "documentation": None,
                     }
 
             # Insert external symbols
@@ -117,7 +125,9 @@ class SCIPDatabaseBuilder:
                         None,
                     ),
                 )
-                assert cursor.lastrowid is not None  # lastrowid is always set after INSERT
+                assert (
+                    cursor.lastrowid is not None
+                )  # lastrowid is always set after INSERT
                 symbol_map[symbol_data["name"]] = cursor.lastrowid
             conn.commit()
 
@@ -131,7 +141,9 @@ class SCIPDatabaseBuilder:
             self._build_symbol_references(conn, occurrences, symbol_map, doc_map)
 
             # Build call graph
-            call_graph_count = self._build_call_graph(conn, occurrences, symbol_map, doc_map)
+            call_graph_count = self._build_call_graph(
+                conn, occurrences, symbol_map, doc_map
+            )
 
             # Create indexes for query performance
             self._create_indexes(conn)
@@ -177,24 +189,42 @@ class SCIPDatabaseBuilder:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)")
 
         # Occurrences table indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_occurrences_symbol ON occurrences(symbol_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_occurrences_document ON occurrences(document_id)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_occurrences_symbol ON occurrences(symbol_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_occurrences_document ON occurrences(document_id)"
+        )
 
         # Call graph indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_call_graph_caller ON call_graph(caller_symbol_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_call_graph_callee ON call_graph(callee_symbol_id)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_call_graph_caller ON call_graph(caller_symbol_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_call_graph_callee ON call_graph(callee_symbol_id)"
+        )
 
         # Documents table indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(relative_path)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(relative_path)"
+        )
 
         # Symbol references indexes (for fast trace_call_chain)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol_refs_from ON symbol_references(from_symbol_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol_refs_to ON symbol_references(to_symbol_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol_refs_type ON symbol_references(relationship_type)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_symbol_refs_from ON symbol_references(from_symbol_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_symbol_refs_to ON symbol_references(to_symbol_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_symbol_refs_type ON symbol_references(relationship_type)"
+        )
 
         conn.commit()
 
-    def _insert_symbols(self, conn: sqlite3.Connection, symbols: List[Dict[str, Any]]) -> Dict[str, int]:
+    def _insert_symbols(
+        self, conn: sqlite3.Connection, symbols: List[Dict[str, Any]]
+    ) -> Dict[str, int]:
         """
         Insert symbols into database and track generated IDs.
 
@@ -231,7 +261,9 @@ class SCIPDatabaseBuilder:
         conn.commit()
         return symbol_map
 
-    def _insert_documents(self, conn: sqlite3.Connection, documents: List[Dict[str, Any]]) -> Dict[int, int]:
+    def _insert_documents(
+        self, conn: sqlite3.Connection, documents: List[Dict[str, Any]]
+    ) -> Dict[int, int]:
         """
         Insert documents into database.
 
@@ -322,8 +354,7 @@ class SCIPDatabaseBuilder:
         conn.commit()
 
     def _compute_enclosing_ranges(
-        self,
-        occurrences: List[Dict[str, Any]]
+        self, occurrences: List[Dict[str, Any]]
     ) -> Dict[tuple, tuple]:
         """
         Compute enclosing ranges for definitions missing protobuf enclosing_range.
@@ -359,10 +390,12 @@ class SCIPDatabaseBuilder:
                 if occ["role"] & ROLE_DEFINITION:
                     # Only compute ranges for definitions missing protobuf data
                     if occ.get("enclosing_range_start_line") is None:
-                        definitions.append({
-                            "symbol_name": occ["symbol_name"],
-                            "def_line": occ["start_line"],
-                        })
+                        definitions.append(
+                            {
+                                "symbol_name": occ["symbol_name"],
+                                "def_line": occ["start_line"],
+                            }
+                        )
 
             # Sort definitions by line number
             definitions.sort(key=lambda d: d["def_line"])
@@ -407,7 +440,9 @@ class SCIPDatabaseBuilder:
         cursor = conn.cursor()
 
         # Build occurrence ID map
-        cursor.execute("SELECT symbol_id, document_id, start_line, start_char, id FROM occurrences")
+        cursor.execute(
+            "SELECT symbol_id, document_id, start_line, start_char, id FROM occurrences"
+        )
         occurrence_id_map = {}
         for row in cursor.fetchall():
             symbol_id, doc_id, start_line, start_char, occ_id = row
@@ -447,11 +482,16 @@ class SCIPDatabaseBuilder:
                         if occ.get("enclosing_range_start_line") is not None:
                             # Use protobuf enclosing_range
                             defn_info["start_line"] = occ["enclosing_range_start_line"]
-                            defn_info["end_line"] = occ.get("enclosing_range_end_line", occ["enclosing_range_start_line"])
+                            defn_info["end_line"] = occ.get(
+                                "enclosing_range_end_line",
+                                occ["enclosing_range_start_line"],
+                            )
                             definitions_with_ranges.append(defn_info)
                         elif (doc_idx, from_symbol_name) in computed_ranges:
                             # Use computed enclosing_range
-                            start_line, end_line = computed_ranges[(doc_idx, from_symbol_name)]
+                            start_line, end_line = computed_ranges[
+                                (doc_idx, from_symbol_name)
+                            ]
                             defn_info["start_line"] = start_line
                             defn_info["end_line"] = end_line
                             definitions_with_ranges.append(defn_info)
@@ -493,7 +533,12 @@ class SCIPDatabaseBuilder:
                     # Get occurrence ID for this reference
                     doc_id = doc_map.get(doc_idx)
                     if doc_id is not None:
-                        occ_key = (to_symbol_id, doc_id, occ["start_line"], occ["start_char"])
+                        occ_key = (
+                            to_symbol_id,
+                            doc_id,
+                            occ["start_line"],
+                            occ["start_char"],
+                        )
                         occurrence_id = occurrence_id_map.get(occ_key)
                     else:
                         occurrence_id = None
@@ -506,12 +551,14 @@ class SCIPDatabaseBuilder:
                     relationship_type = self._determine_relationship_type(occ["role"])
 
                     # Add edge to batch
-                    edges.append((
-                        from_symbol_id,
-                        to_symbol_id,
-                        relationship_type,
-                        occurrence_id,
-                    ))
+                    edges.append(
+                        (
+                            from_symbol_id,
+                            to_symbol_id,
+                            relationship_type,
+                            occurrence_id,
+                        )
+                    )
 
             # Also process references using proximity heuristic for ALL definitions
             # (This handles the 82.5% of references not covered by enclosing ranges)
@@ -524,7 +571,13 @@ class SCIPDatabaseBuilder:
                         occ_line = occ["start_line"]
                         if scope_start <= occ_line <= scope_end:
                             # Track which references are already covered by enclosing ranges
-                            references_covered_by_ranges.add((occ["symbol_name"], occ["start_line"], occ["start_char"]))
+                            references_covered_by_ranges.add(
+                                (
+                                    occ["symbol_name"],
+                                    occ["start_line"],
+                                    occ["start_char"],
+                                )
+                            )
 
             # For each reference NOT covered by enclosing ranges, use proximity heuristic
             for occ in doc_occurrences:
@@ -569,7 +622,12 @@ class SCIPDatabaseBuilder:
                 # Get occurrence ID for this reference
                 doc_id = doc_map.get(doc_idx)
                 if doc_id is not None:
-                    occ_key_db = (to_symbol_id, doc_id, occ["start_line"], occ["start_char"])
+                    occ_key_db = (
+                        to_symbol_id,
+                        doc_id,
+                        occ["start_line"],
+                        occ["start_char"],
+                    )
                     occurrence_id = occurrence_id_map.get(occ_key_db)
                 else:
                     occurrence_id = None
@@ -582,12 +640,14 @@ class SCIPDatabaseBuilder:
                 relationship_type = self._determine_relationship_type(occ["role"])
 
                 # Add edge to batch
-                edges.append((
-                    from_symbol_id,
-                    to_symbol_id,
-                    relationship_type,
-                    occurrence_id,
-                ))
+                edges.append(
+                    (
+                        from_symbol_id,
+                        to_symbol_id,
+                        relationship_type,
+                        occurrence_id,
+                    )
+                )
 
         # Batch insert all edges
         if edges:
@@ -627,35 +687,37 @@ class SCIPDatabaseBuilder:
         cursor = conn.cursor()
 
         # Get all AbstractMethod symbols (interface methods)
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, name, display_name
             FROM symbols
             WHERE kind = 'AbstractMethod'
-        """)
+        """
+        )
         interface_methods = cursor.fetchall()
 
         edges = []
 
         for interface_id, interface_name, interface_display_name in interface_methods:
             # Extract method signature (part after '#')
-            if '#' not in interface_name:
+            if "#" not in interface_name:
                 continue
 
-            method_sig = interface_name.split('#', 1)[1]
+            method_sig = interface_name.split("#", 1)[1]
 
             # Extract interface class name and package
             # Pattern: "prefix com/example/service/UserService#findById()."
             # Extract: "com/example/service/UserService"
-            prefix_end = interface_name.rfind(' ')
+            prefix_end = interface_name.rfind(" ")
             if prefix_end == -1:
                 # No space found, try parsing without prefix
-                class_part = interface_name.split('#')[0]
+                class_part = interface_name.split("#")[0]
             else:
-                class_part = interface_name[prefix_end + 1:].split('#')[0]
+                class_part = interface_name[prefix_end + 1 :].split("#")[0]
 
             # Extract class name (last part after /)
-            if '/' in class_part:
-                interface_class = class_part.split('/')[-1]
+            if "/" in class_part:
+                interface_class = class_part.split("/")[-1]
             else:
                 interface_class = class_part
 
@@ -665,13 +727,16 @@ class SCIPDatabaseBuilder:
             # 3. Same method signature after '#'
 
             # Search for implementation with /impl/ pattern and Impl suffix
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, name, display_name
                 FROM symbols
                 WHERE kind = 'Method'
                   AND name LIKE ?
                   AND name LIKE ?
-            """, (f'%/impl/%Impl#{method_sig}', f'%{interface_class}Impl#%'))
+            """,
+                (f"%/impl/%Impl#{method_sig}", f"%{interface_class}Impl#%"),
+            )
 
             impl_matches = cursor.fetchall()
 
@@ -679,14 +744,16 @@ class SCIPDatabaseBuilder:
                 # Create synthetic edge from interface to implementation
                 # Use NULL for occurrence_id since this is synthetic
                 # Use 'calls' as relationship type
-                edges.append((
-                    interface_id,
-                    impl_id,
-                    None,  # occurrence_id (synthetic edge)
-                    'calls',
-                    interface_display_name,
-                    impl_display_name,
-                ))
+                edges.append(
+                    (
+                        interface_id,
+                        impl_id,
+                        None,  # occurrence_id (synthetic edge)
+                        "calls",
+                        interface_display_name,
+                        impl_display_name,
+                    )
+                )
 
         # Batch insert synthetic edges
         if edges:
@@ -732,7 +799,9 @@ class SCIPDatabaseBuilder:
         display_name_map = {row[0]: row[1] for row in cursor.fetchall()}
 
         # Build occurrence ID map (track which occurrence each edge came from)
-        cursor.execute("SELECT symbol_id, document_id, start_line, start_char, id FROM occurrences")
+        cursor.execute(
+            "SELECT symbol_id, document_id, start_line, start_char, id FROM occurrences"
+        )
         occurrence_id_map = {}
         for row in cursor.fetchall():
             symbol_id, doc_id, start_line, start_char, occ_id = row
@@ -783,14 +852,16 @@ class SCIPDatabaseBuilder:
             relationship = self._determine_relationship_type(occ["role"])
 
             # Add edge to batch
-            edges.append((
-                caller_id,
-                callee_id,
-                occurrence_id,
-                relationship,
-                caller_display_name,
-                callee_display_name,
-            ))
+            edges.append(
+                (
+                    caller_id,
+                    callee_id,
+                    occurrence_id,
+                    relationship,
+                    caller_display_name,
+                    callee_display_name,
+                )
+            )
 
         # Batch insert all edges
         if edges:
@@ -972,7 +1043,11 @@ class SCIPDatabaseBuilder:
         # Extract first documentation string (SCIP allows multiple)
         documentation = None
         if symbol_info.documentation:
-            documentation = symbol_info.documentation[0] if len(symbol_info.documentation) > 0 else None
+            documentation = (
+                symbol_info.documentation[0]
+                if len(symbol_info.documentation) > 0
+                else None
+            )
 
         return {
             "name": symbol_info.symbol or "",

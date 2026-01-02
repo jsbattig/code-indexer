@@ -59,8 +59,7 @@ class TestSymbolDefinitionLookup:
         """Should support exact matching with qualified name."""
         # Act
         results = query_engine.find_definition(
-            "python test `example`/UserService#",
-            exact=True
+            "python test `example`/UserService#", exact=True
         )
 
         # Assert

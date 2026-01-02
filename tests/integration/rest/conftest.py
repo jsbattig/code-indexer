@@ -43,19 +43,17 @@ def test_repo_dir() -> Generator[Path, None, None]:
             ["git", "clone", "git@github.com:jsbattig/txt-db.git", str(repo_path)],
             check=True,
             capture_output=True,
-            timeout=60
+            timeout=60,
         )
 
         # Configure git user for commits
         subprocess.run(
-            ["git", "config", "user.name", "Test User"],
-            cwd=repo_path,
-            check=True
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
         )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=repo_path,
-            check=True
+            check=True,
         )
 
         yield repo_path
@@ -79,6 +77,7 @@ def mock_user():
 @pytest.fixture(scope="module")
 def test_app(mock_user):
     """Create FastAPI test app with authentication bypass."""
+
     def mock_get_current_user_dep():
         return mock_user
 
@@ -117,8 +116,6 @@ def activated_repo(test_repo_dir: Path) -> Generator[str, None, None]:
 
     # Mock ActivatedRepoManager.get_activated_repo_path to return test path
     with patch.object(
-        ActivatedRepoManager,
-        'get_activated_repo_path',
-        return_value=str(test_repo_dir)
+        ActivatedRepoManager, "get_activated_repo_path", return_value=str(test_repo_dir)
     ):
         yield alias

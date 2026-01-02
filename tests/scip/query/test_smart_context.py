@@ -49,7 +49,10 @@ class TestSmartContext:
         # Assert: Files are sorted by relevance (descending)
         if len(result.files) > 1:
             for i in range(len(result.files) - 1):
-                assert result.files[i].relevance_score >= result.files[i + 1].relevance_score
+                assert (
+                    result.files[i].relevance_score
+                    >= result.files[i + 1].relevance_score
+                )
 
 
 @pytest.fixture

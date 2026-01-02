@@ -29,7 +29,9 @@ class TestExpandWildcardPatterns:
 
     @pytest.fixture
     def mock_registry(self):
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.return_value = "/fake/golden/repos"
             with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_reg:
                 mock_instance = Mock()
@@ -45,7 +47,12 @@ class TestExpandWildcardPatterns:
 
     def test_asterisk_suffix_pattern(self, mock_registry):
         result = _expand_wildcard_patterns(["*-global"])
-        assert set(result) == {"evolution-global", "evo-mobile-global", "backend-global", "frontend-global"}
+        assert set(result) == {
+            "evolution-global",
+            "evo-mobile-global",
+            "backend-global",
+            "frontend-global",
+        }
 
     def test_asterisk_prefix_pattern(self, mock_registry):
         result = _expand_wildcard_patterns(["evo*"])
@@ -70,13 +77,17 @@ class TestExpandWildcardPatterns:
         assert result.count("evolution-global") == 1
 
     def test_no_golden_repos_dir_returns_unchanged(self):
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.return_value = None
             result = _expand_wildcard_patterns(["*-global"])
             assert result == ["*-global"]
 
     def test_registry_error_returns_unchanged(self):
-        with patch("code_indexer.server.mcp.handlers._get_golden_repos_dir") as mock_dir:
+        with patch(
+            "code_indexer.server.mcp.handlers._get_golden_repos_dir"
+        ) as mock_dir:
             mock_dir.return_value = "/fake/golden/repos"
             with patch("code_indexer.server.mcp.handlers.GlobalRegistry") as mock_reg:
                 mock_reg.side_effect = Exception("Registry failed")

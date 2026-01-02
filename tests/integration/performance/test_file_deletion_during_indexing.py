@@ -44,7 +44,9 @@ class TestFileDeletionDuringIndexing:
         )
 
         self.embedding_provider = MagicMock()
-        self.embedding_provider.get_embedding.return_value = [0.1] * EMBEDDING_DIMENSIONS
+        self.embedding_provider.get_embedding.return_value = [
+            0.1
+        ] * EMBEDDING_DIMENSIONS
         self.embedding_provider.get_current_model.return_value = "voyage-3"
         self.embedding_provider._get_model_token_limit.return_value = TOKEN_LIMIT
 
@@ -124,10 +126,10 @@ class TestFileDeletionDuringIndexing:
         assert stats is not None, "Processing should complete and return stats"
 
         # CRITICAL ASSERTION: skipped_files tracking works
-        assert hasattr(stats, 'skipped_files'), "Stats should track skipped_files"
-        assert stats.skipped_files == EXPECTED_SKIPPED_FILES, (
-            f"Expected {EXPECTED_SKIPPED_FILES} skipped file, got {stats.skipped_files}"
-        )
+        assert hasattr(stats, "skipped_files"), "Stats should track skipped_files"
+        assert (
+            stats.skipped_files == EXPECTED_SKIPPED_FILES
+        ), f"Expected {EXPECTED_SKIPPED_FILES} skipped file, got {stats.skipped_files}"
 
         # Verify hash results excluded the deleted file
         # Total attempted = 10 files
@@ -143,18 +145,22 @@ class TestFileDeletionDuringIndexing:
 
             deletion_mock = self._create_file_deletion_mock(file_to_delete)
 
-            with patch.object(
-                processor.file_identifier,
-                "get_file_metadata",
-                side_effect=deletion_mock,
-            ), patch.object(
-                processor.fixed_size_chunker,
-                "chunk_file",
-                side_effect=self._mock_chunk_file,
-            ), patch.object(
-                processor.embedding_provider,
-                "get_embedding",
-                return_value=[0.1] * EMBEDDING_DIMENSIONS,
+            with (
+                patch.object(
+                    processor.file_identifier,
+                    "get_file_metadata",
+                    side_effect=deletion_mock,
+                ),
+                patch.object(
+                    processor.fixed_size_chunker,
+                    "chunk_file",
+                    side_effect=self._mock_chunk_file,
+                ),
+                patch.object(
+                    processor.embedding_provider,
+                    "get_embedding",
+                    return_value=[0.1] * EMBEDDING_DIMENSIONS,
+                ),
             ):
                 # Process files - should NOT raise RuntimeError
                 stats = processor.process_files_high_throughput(

@@ -22,7 +22,9 @@ def load_awareness_template(platform: str) -> str:
     # (platform parameter kept for API compatibility)
     module_dir = Path(__file__).parent
     project_root = module_dir.parent.parent
-    template_path = project_root / "prompts" / "ai_instructions" / "awareness" / "awareness.md"
+    template_path = (
+        project_root / "prompts" / "ai_instructions" / "awareness" / "awareness.md"
+    )
 
     return template_path.read_text()
 

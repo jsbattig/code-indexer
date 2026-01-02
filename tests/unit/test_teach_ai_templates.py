@@ -59,7 +59,9 @@ class TestSkillsInstaller:
         # Count expected files from source template directory
         # Get source template directory
         code_indexer_root = Path(__file__).parent.parent.parent
-        template_dir = code_indexer_root / "prompts" / "ai_instructions" / "skills" / "cidx"
+        template_dir = (
+            code_indexer_root / "prompts" / "ai_instructions" / "skills" / "cidx"
+        )
 
         # Count all files in template directory (recursively)
         expected_count = sum(1 for _ in template_dir.rglob("*") if _.is_file())

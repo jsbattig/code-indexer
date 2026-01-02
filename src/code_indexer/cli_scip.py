@@ -227,7 +227,9 @@ def scip_generate(ctx, project: Optional[str], skip_verify: bool):
                                 for error in verify_result.errors[
                                     :3
                                 ]:  # Show first 3 errors
-                                    error_console.print(f"      - {error}", style="red dim")
+                                    error_console.print(
+                                        f"      - {error}", style="red dim"
+                                    )
                                 if verify_result.total_errors > 3:
                                     error_console.print(
                                         f"      ... and {verify_result.total_errors - 3} more errors",
@@ -243,10 +245,13 @@ def scip_generate(ctx, project: Optional[str], skip_verify: bool):
                                 if scip_file.exists():
                                     scip_file.unlink()
                                     console.print(
-                                        "    ✓ Cleaned up source .scip file", style="dim"
+                                        "    ✓ Cleaned up source .scip file",
+                                        style="dim",
                                     )
                         except Exception as e:
-                            error_console.print(f"    ✗ Verification error: {e}", style="red")
+                            error_console.print(
+                                f"    ✗ Verification error: {e}", style="red"
+                            )
                             verification_failed = True
 
         # Fail if verification failed
@@ -979,7 +984,9 @@ def scip_dependencies(
     help="Limit search to specific project path",
 )
 @click.pass_context
-def scip_dependents(ctx, symbol: str, limit: int, depth: int, exact: bool, project: Optional[str]):
+def scip_dependents(
+    ctx, symbol: str, limit: int, depth: int, exact: bool, project: Optional[str]
+):
     """Get symbols that depend on this symbol.
 
     Finds all symbols that reference or use the target symbol.
@@ -1172,9 +1179,7 @@ def scip_impact(
 @click.option(
     "--max-depth", default=10, help="Maximum chain length (default 10, max 20)"
 )
-@click.option(
-    "--limit", type=int, default=0, help="Maximum results (0 = unlimited)"
-)
+@click.option("--limit", type=int, default=0, help="Maximum results (0 = unlimited)")
 @click.option("--project", help="Filter to specific project path")
 @click.pass_context
 def scip_callchain(
@@ -1332,7 +1337,11 @@ def scip_callchain(
     )
 
     display_chain: CompositeCallChain
-    chains_to_show = min(limit, result.total_chains_found) if limit > 0 else result.total_chains_found
+    chains_to_show = (
+        min(limit, result.total_chains_found)
+        if limit > 0
+        else result.total_chains_found
+    )
     for i, display_chain in enumerate(result.chains[:chains_to_show], 1):
         console.print(f"Chain {i} ({display_chain.length} step(s)):", style="cyan bold")
         display_step: CallStep
