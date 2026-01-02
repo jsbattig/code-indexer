@@ -933,7 +933,9 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         # Extract parameters for path pattern building
         path = params.get("path", "")
-        recursive = params.get("recursive", True)  # Default to recursive for backward compatibility
+        recursive = params.get(
+            "recursive", True
+        )  # Default to recursive for backward compatibility
         user_path_pattern = params.get("path_pattern")  # Optional advanced filtering
 
         # Build path pattern combining path and user's pattern
@@ -1251,7 +1253,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
         # Relative patterns are simple globs (e.g., "*.py", "*.{py,java}")
         is_absolute_pattern = False
         if user_path_pattern:
-            is_absolute_pattern = "/" in user_path_pattern or user_path_pattern.startswith("**")
+            is_absolute_pattern = (
+                "/" in user_path_pattern or user_path_pattern.startswith("**")
+            )
 
         if path:
             # Base pattern for the specified directory

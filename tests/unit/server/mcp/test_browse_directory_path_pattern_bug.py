@@ -155,7 +155,9 @@ class TestBrowseDirectoryPathPatternCombination:
 
             # Should NOT duplicate the base path
             assert query_params.path_pattern == "code/src/**/*.java"
-            assert "code/src/dms/core/access/**/code/src" not in query_params.path_pattern
+            assert (
+                "code/src/dms/core/access/**/code/src" not in query_params.path_pattern
+            )
 
     @pytest.mark.asyncio
     async def test_path_pattern_without_path_unchanged(self, mock_user):
