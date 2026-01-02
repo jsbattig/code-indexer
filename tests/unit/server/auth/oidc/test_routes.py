@@ -206,7 +206,6 @@ class TestOIDCRoutes:
         assert response.status_code == 403
         assert "not authorized" in response.json()["detail"].lower()
 
-
     def test_sso_callback_uses_cidx_issuer_url_when_set(self):
         """Test that /auth/sso/callback uses CIDX_ISSUER_URL for token exchange when set."""
         from code_indexer.server.auth.oidc.routes import router

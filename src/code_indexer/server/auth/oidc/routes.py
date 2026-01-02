@@ -1,7 +1,6 @@
 """OIDC authentication routes for FastAPI."""
 
 import os
-from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from ...web.auth import get_session_manager

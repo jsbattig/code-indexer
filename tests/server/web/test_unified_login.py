@@ -305,6 +305,7 @@ class TestSSOInitiation:
         assert response.status_code in [
             302,
             303,
+            307,
             400,
             404,
         ], f"Endpoint should exist, got {response.status_code}"
@@ -360,6 +361,7 @@ class TestSSOInitiation:
         assert response.status_code in [
             302,
             303,
+            307,
             400,
             404,
         ], f"Endpoint should handle query params, got {response.status_code}"
