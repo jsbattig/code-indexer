@@ -1,5 +1,6 @@
 """OIDC authentication routes for FastAPI."""
 
+import os
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -54,8 +55,12 @@ async def sso_login(request: Request, redirect_uri: Optional[str] = None):
         {"code_verifier": code_verifier, "redirect_uri": redirect_uri or "/admin"}
     )
 
-    # Build callback URL
-    callback_url = str(request.url_for("sso_callback"))
+    # Build callback URL using CIDX_ISSUER_URL if set (for reverse proxy scenarios)
+    issuer_url = os.getenv("CIDX_ISSUER_URL")
+    if issuer_url:
+        callback_url = f"{issuer_url.rstrip('/')}/auth/sso/callback"
+    else:
+        callback_url = str(request.url_for("sso_callback"))
 
     # Build authorization URL
     auth_url = oidc_manager.provider.get_authorization_url(
@@ -81,8 +86,12 @@ async def sso_callback(code: str, state: str, request: Request):
         if not state_data:
             raise HTTPException(status_code=400, detail="Invalid state")
 
-    # Exchange authorization code for tokens (with PKCE verifier)
-    callback_url = str(request.url_for("sso_callback"))
+    # Build callback URL using CIDX_ISSUER_URL if set (for reverse proxy scenarios)
+    issuer_url = os.getenv("CIDX_ISSUER_URL")
+    if issuer_url:
+        callback_url = f"{issuer_url.rstrip('/')}/auth/sso/callback"
+    else:
+        callback_url = str(request.url_for("sso_callback"))
 
     # Use appropriate code_verifier based on flow type
     code_verifier = state_data.get("oidc_code_verifier") or state_data.get(
