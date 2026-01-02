@@ -94,7 +94,7 @@ async def sso_callback(code: str, state: str, request: Request):
             redirect_url = redirect_to
         elif user.role.value == "admin":
             # Admin user, no explicit redirect - go to admin dashboard
-            redirect_url = "/admin"
+            redirect_url = "/admin/"
         else:
             # Non-admin user - go to user interface
             redirect_url = "/user/api-keys"
