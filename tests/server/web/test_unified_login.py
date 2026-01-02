@@ -410,6 +410,126 @@ class TestSSOInitiation:
                 "This breaks OAuth parameter parsing when going through SSO."
             )
 
+    def test_sso_uses_cidx_issuer_url_when_set(self):
+        """
+        /login/sso uses CIDX_ISSUER_URL for callback URL when set.
+
+        This tests the fix for reverse proxy scenarios where the server
+        is behind HAProxy/nginx and needs to generate external-facing URLs.
+        """
+        import os
+        from unittest.mock import patch
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider
+        from code_indexer.server.auth.oidc.state_manager import StateManager
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from unittest.mock import Mock
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        # Create configured OIDC manager
+        config = OIDCProviderConfig(
+            enabled=True,
+            issuer_url="https://example.com",
+            client_id="test-client-id",
+        )
+        oidc_mgr = OIDCManager(config, None, None)
+        oidc_mgr.provider = Mock(spec=OIDCProvider)
+        oidc_mgr.provider.get_authorization_url = Mock(
+            return_value="https://example.com/authorize"
+        )
+
+        # Create state manager
+        state_mgr = StateManager()
+
+        # Inject managers into routes module
+        import code_indexer.server.auth.oidc.routes as oidc_routes_module
+
+        oidc_routes_module.oidc_manager = oidc_mgr
+        oidc_routes_module.state_manager = state_mgr
+
+        # Create test app
+        from code_indexer.server.web.routes import login_router
+
+        app = FastAPI()
+        app.include_router(login_router)
+        client = TestClient(app)
+
+        # Mock CIDX_ISSUER_URL environment variable
+        with patch.dict(os.environ, {"CIDX_ISSUER_URL": "https://linner.ddns.net:8383"}):
+            # Make request
+            client.get("/login/sso", follow_redirects=False)
+
+            # Verify get_authorization_url was called with CIDX_ISSUER_URL-based callback
+            oidc_mgr.provider.get_authorization_url.assert_called_once()
+            call_kwargs = oidc_mgr.provider.get_authorization_url.call_args[1]
+
+            # redirect_uri should be the callback URL using CIDX_ISSUER_URL
+            callback_url = call_kwargs["redirect_uri"]
+            assert callback_url == "https://linner.ddns.net:8383/auth/sso/callback"
+
+    def test_sso_uses_request_base_url_when_cidx_issuer_url_not_set(self):
+        """
+        /login/sso falls back to request.base_url when CIDX_ISSUER_URL not set.
+
+        This tests the default behavior when no reverse proxy configuration exists.
+        """
+        import os
+        from unittest.mock import patch
+        from code_indexer.server.auth.oidc.oidc_manager import OIDCManager
+        from code_indexer.server.auth.oidc.oidc_provider import OIDCProvider
+        from code_indexer.server.auth.oidc.state_manager import StateManager
+        from code_indexer.server.utils.config_manager import OIDCProviderConfig
+        from unittest.mock import Mock
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        # Create configured OIDC manager
+        config = OIDCProviderConfig(
+            enabled=True,
+            issuer_url="https://example.com",
+            client_id="test-client-id",
+        )
+        oidc_mgr = OIDCManager(config, None, None)
+        oidc_mgr.provider = Mock(spec=OIDCProvider)
+        oidc_mgr.provider.get_authorization_url = Mock(
+            return_value="https://example.com/authorize"
+        )
+
+        # Create state manager
+        state_mgr = StateManager()
+
+        # Inject managers into routes module
+        import code_indexer.server.auth.oidc.routes as oidc_routes_module
+
+        oidc_routes_module.oidc_manager = oidc_mgr
+        oidc_routes_module.state_manager = state_mgr
+
+        # Create test app
+        from code_indexer.server.web.routes import login_router
+
+        app = FastAPI()
+        app.include_router(login_router)
+        client = TestClient(app)
+
+        # Ensure CIDX_ISSUER_URL is NOT set
+        with patch.dict(os.environ, {}, clear=False):
+            if "CIDX_ISSUER_URL" in os.environ:
+                del os.environ["CIDX_ISSUER_URL"]
+
+            # Make request
+            client.get("/login/sso", follow_redirects=False)
+
+            # Verify get_authorization_url was called with request-based callback
+            oidc_mgr.provider.get_authorization_url.assert_called_once()
+            call_kwargs = oidc_mgr.provider.get_authorization_url.call_args[1]
+
+            # redirect_uri should be the callback URL from request.base_url
+            callback_url = call_kwargs["redirect_uri"]
+            assert callback_url.endswith("/auth/sso/callback")
+            # Should be http://testserver (TestClient default)
+            assert callback_url.startswith("http://testserver")
+
 
 # ==============================================================================
 # Phase 8: Backwards Compatibility Tests
