@@ -12,13 +12,13 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 from dataclasses import dataclass
 
-from src.code_indexer.scip.generator import GenerationResult
-from src.code_indexer.server.repositories.background_jobs import (
+from code_indexer.scip.generator import GenerationResult
+from code_indexer.server.repositories.background_jobs import (
     BackgroundJobManager,
     JobStatus,
 )
-from src.code_indexer.server.services.git_state_manager import GitStateManager
-from src.code_indexer.server.utils.config_manager import ServerConfigManager
+from code_indexer.server.services.git_state_manager import GitStateManager
+from code_indexer.server.utils.config_manager import ServerConfigManager
 
 logger = logging.getLogger(__name__)
 
