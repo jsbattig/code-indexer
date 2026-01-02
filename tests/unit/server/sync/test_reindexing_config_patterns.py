@@ -9,7 +9,6 @@ The critical bug being fixed:
 - pathspec: '**/*.json' DOES match 'config.json' (zero or more directories)
 """
 
-import pytest
 from code_indexer.server.sync.reindexing_config import ReindexingConfig
 
 
@@ -18,9 +17,7 @@ class TestReindexingConfigPatterns:
 
     def test_double_star_matches_zero_directories(self):
         """Test ** matches zero directories (pathspec behavior)."""
-        config = ReindexingConfig(
-            config_file_patterns={"**/*.json", "exact.txt"}
-        )
+        config = ReindexingConfig(config_file_patterns={"**/*.json", "exact.txt"})
 
         # Should match files at root
         assert config.is_config_file("config.json"), "** should match zero directories"
@@ -28,23 +25,23 @@ class TestReindexingConfigPatterns:
 
         # Should also match nested files
         assert config.is_config_file("src/config.json"), "** should match one directory"
-        assert config.is_config_file("deep/nested/config.json"), "** should match multiple directories"
+        assert config.is_config_file(
+            "deep/nested/config.json"
+        ), "** should match multiple directories"
 
     def test_double_star_prefix_pattern(self):
         """Test patterns like **/.gitignore match at any depth."""
-        config = ReindexingConfig(
-            config_file_patterns={"**/.gitignore"}
-        )
+        config = ReindexingConfig(config_file_patterns={"**/.gitignore"})
 
         assert config.is_config_file(".gitignore"), "** should match zero directories"
         assert config.is_config_file("src/.gitignore"), "** should match one directory"
-        assert config.is_config_file("a/b/c/.gitignore"), "** should match multiple directories"
+        assert config.is_config_file(
+            "a/b/c/.gitignore"
+        ), "** should match multiple directories"
 
     def test_star_matches_within_filename(self):
         """Test * matches within filename."""
-        config = ReindexingConfig(
-            config_file_patterns={"test_*.py"}
-        )
+        config = ReindexingConfig(config_file_patterns={"test_*.py"})
 
         assert config.is_config_file("test_auth.py")
         assert config.is_config_file("test_database.py")
@@ -52,9 +49,7 @@ class TestReindexingConfigPatterns:
 
     def test_question_mark_matches_single_char(self):
         """Test ? matches exactly one character."""
-        config = ReindexingConfig(
-            config_file_patterns={"config?.json"}
-        )
+        config = ReindexingConfig(config_file_patterns={"config?.json"})
 
         assert config.is_config_file("config1.json")
         assert config.is_config_file("config2.json")
@@ -83,9 +78,7 @@ class TestReindexingConfigPatterns:
 
     def test_bracket_expressions(self):
         """Test [abc] bracket expressions in patterns."""
-        config = ReindexingConfig(
-            config_file_patterns={"config[123].txt"}
-        )
+        config = ReindexingConfig(config_file_patterns={"config[123].txt"})
 
         assert config.is_config_file("config1.txt")
         assert config.is_config_file("config2.txt")
@@ -110,9 +103,7 @@ class TestReindexingConfigPatterns:
 
     def test_pattern_only_matches_filename_not_path(self):
         """Test patterns match against filename only, not full path."""
-        config = ReindexingConfig(
-            config_file_patterns={"*.json"}
-        )
+        config = ReindexingConfig(config_file_patterns={"*.json"})
 
         # Should match - filename is config.json
         assert config.is_config_file("/path/to/config.json")
@@ -125,9 +116,7 @@ class TestReindexingConfigPatterns:
 
     def test_complex_double_star_pattern(self):
         """Test complex ** patterns in config files."""
-        config = ReindexingConfig(
-            config_file_patterns={"**/*config*.json"}
-        )
+        config = ReindexingConfig(config_file_patterns={"**/*config*.json"})
 
         # All should match
         assert config.is_config_file("app-config-prod.json")
@@ -140,12 +129,7 @@ class TestReindexingConfigPatterns:
     def test_special_config_files(self):
         """Test special config file names with dots."""
         config = ReindexingConfig(
-            config_file_patterns={
-                ".env",
-                ".gitignore",
-                ".dockerignore",
-                "**/.env*"
-            }
+            config_file_patterns={".env", ".gitignore", ".dockerignore", "**/.env*"}
         )
 
         assert config.is_config_file(".env")
@@ -156,9 +140,7 @@ class TestReindexingConfigPatterns:
 
     def test_pattern_case_sensitivity(self):
         """Test that patterns are case-sensitive."""
-        config = ReindexingConfig(
-            config_file_patterns={"Config.json"}
-        )
+        config = ReindexingConfig(config_file_patterns={"Config.json"})
 
         assert config.is_config_file("Config.json")
         # fnmatch/pathspec is case-sensitive on Linux
@@ -166,9 +148,7 @@ class TestReindexingConfigPatterns:
 
     def test_is_config_file_extracts_filename(self):
         """Test is_config_file correctly extracts filename from full path."""
-        config = ReindexingConfig(
-            config_file_patterns={"package.json"}
-        )
+        config = ReindexingConfig(config_file_patterns={"package.json"})
 
         # All should match because filename is package.json
         assert config.is_config_file("package.json")

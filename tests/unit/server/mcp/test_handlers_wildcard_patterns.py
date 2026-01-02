@@ -9,7 +9,6 @@ The critical bug being fixed:
 - pathspec: '**/*.txt' DOES match 'file.txt' (zero or more directories)
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 from code_indexer.server.mcp.handlers import _expand_wildcard_patterns
 
@@ -78,9 +77,7 @@ class TestExpandWildcardPatterns:
 
     @patch("code_indexer.server.mcp.handlers._get_golden_repos_dir")
     @patch("code_indexer.server.mcp.handlers.GlobalRegistry")
-    def test_question_mark_matches_single_char(
-        self, mock_registry_class, mock_get_dir
-    ):
+    def test_question_mark_matches_single_char(self, mock_registry_class, mock_get_dir):
         """Test ? matches exactly one character."""
         mock_get_dir.return_value = "/fake/path"
         mock_registry = MagicMock()
@@ -211,6 +208,4 @@ class TestExpandWildcardPatterns:
         assert "org/prod" in result, "** should match zero directories"
         assert "org/team/prod" in result, "** should match one directory"
         assert "org/dept/team/prod" in result, "** should match multiple directories"
-        assert (
-            "company/prod" not in result
-        ), "Should not match different organization"
+        assert "company/prod" not in result, "Should not match different organization"
