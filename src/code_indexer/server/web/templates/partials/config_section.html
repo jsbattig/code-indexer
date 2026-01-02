@@ -430,7 +430,7 @@
                     </tr>
                     <tr>
                         <td class="config-label">Scopes</td>
-                        <td class="config-value">{{ config.oidc.scopes | join(', ') }}</td>
+                        <td class="config-value">{{ (config.oidc.scopes or []) | join(', ') }}</td>
                         <td class="config-note"></td>
                     </tr>
                     <tr>
@@ -504,7 +504,7 @@
                 </label>
                 <label for="oidc-scopes">
                     Scopes
-                    <input type="text" id="oidc-scopes" name="scopes" value="{{ config.oidc.scopes | join(' ') }}">
+                    <input type="text" id="oidc-scopes" name="scopes" value="{{ (config.oidc.scopes or []) | join(' ') }}">
                     <small>Space-separated (e.g., "openid profile email")</small>
                 </label>
                 <label for="oidc-email-claim">
@@ -552,6 +552,143 @@
             <div class="form-actions">
                 <button type="submit" class="primary">Save</button>
                 <button type="button" class="secondary" onclick="cancelEdit('oidc')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
+
+<details class="config-section" id="section-api-keys">
+    <summary>
+        <h2>CI/CD API Keys</h2>
+    </summary>
+    <article>
+        <!-- GitHub Actions -->
+        <h3>GitHub Actions</h3>
+        <div id="display-github-token">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Status</td>
+                        <td class="config-value">
+                            {% if github_token_data %}
+                                <span style="color: green;">Configured</span>
+                            {% else %}
+                                <span style="color: gray;">Not configured</span>
+                            {% endif %}
+                        </td>
+                        <td class="config-note"></td>
+                    </tr>
+                    {% if github_token_data %}
+                    <tr>
+                        <td class="config-label">Token</td>
+                        <td class="config-value">{{ github_token_data.token[:10] ~ ('*' * 26) }}</td>
+                        <td class="config-note"><small>Personal Access Token (classic) or Fine-grained PAT</small></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('github-token')">
+                    {% if github_token_data %}Update{% else %}Configure{% endif %}
+                </button>
+                {% if github_token_data %}
+                <button class="outline small danger"
+                        hx-delete="/admin/config/api-keys/github"
+                        hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
+                        hx-confirm="Are you sure you want to delete the GitHub API key?"
+                        hx-swap="outerHTML">Delete</button>
+                {% endif %}
+            </div>
+        </div>
+        <!-- Edit Mode for GitHub -->
+        <form id="edit-form-github-token" method="post" action="/admin/config/api-keys/github" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.api_keys %}
+            <div class="validation-error">{{ validation_errors.api_keys }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="github-token">
+                    GitHub Token
+                    <input type="password" id="github-token" name="token"
+                           placeholder="ghp_..."
+                           value="">
+                    <small>Personal Access Token (classic) or Fine-grained PAT with workflow permissions</small>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('github-token')">Cancel</button>
+            </div>
+        </form>
+
+        <!-- GitLab CI -->
+        <h3 style="margin-top: 2rem;">GitLab CI</h3>
+        <div id="display-gitlab-token">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Status</td>
+                        <td class="config-value">
+                            {% if gitlab_token_data %}
+                                <span style="color: green;">Configured</span>
+                            {% else %}
+                                <span style="color: gray;">Not configured</span>
+                            {% endif %}
+                        </td>
+                        <td class="config-note"></td>
+                    </tr>
+                    {% if gitlab_token_data %}
+                    <tr>
+                        <td class="config-label">Token</td>
+                        <td class="config-value">{{ gitlab_token_data.token[:10] ~ ('*' * 26) }}</td>
+                        <td class="config-note"><small>Personal Access Token or Project Access Token</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Instance URL</td>
+                        <td class="config-value">{{ gitlab_token_data.base_url or 'https://gitlab.com' }}</td>
+                        <td class="config-note"><small>GitLab instance URL (leave default for gitlab.com)</small></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('gitlab-token')">
+                    {% if gitlab_token_data %}Update{% else %}Configure{% endif %}
+                </button>
+                {% if gitlab_token_data %}
+                <button class="outline small danger"
+                        hx-delete="/admin/config/api-keys/gitlab"
+                        hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
+                        hx-confirm="Are you sure you want to delete the GitLab API key?"
+                        hx-swap="outerHTML">Delete</button>
+                {% endif %}
+            </div>
+        </div>
+        <!-- Edit Mode for GitLab -->
+        <form id="edit-form-gitlab-token" method="post" action="/admin/config/api-keys/gitlab" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.api_keys %}
+            <div class="validation-error">{{ validation_errors.api_keys }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="gitlab-token">
+                    GitLab Token
+                    <input type="password" id="gitlab-token" name="token"
+                           placeholder="glpat-..."
+                           value="">
+                    <small>Personal Access Token or Project Access Token with api scope</small>
+                </label>
+                <label for="gitlab-api-url">
+                    GitLab Instance URL
+                    <input type="text" id="gitlab-api-url" name="api_url"
+                           placeholder="https://gitlab.com"
+                           value="{{ gitlab_token_data.base_url if gitlab_token_data else 'https://gitlab.com' }}">
+                    <small>Custom GitLab instance URL (defaults to gitlab.com)</small>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('gitlab-token')">Cancel</button>
             </div>
         </form>
     </article>

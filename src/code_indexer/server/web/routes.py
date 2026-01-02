@@ -20,6 +20,7 @@ from .auth import (
     get_session_manager,
     SessionData,
 )
+from ..services.ci_token_manager import CITokenManager, TokenValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -3246,6 +3247,18 @@ def _create_config_page_response(
     csrf_token = generate_csrf_token()
     config = _get_current_config()
 
+    # Load API keys status - use same server_dir as config service
+    from ..services.config_service import get_config_service
+    config_service = get_config_service()
+    server_dir = str(config_service.config_manager.server_dir)
+
+    token_manager = CITokenManager(server_dir_path=server_dir)
+    api_keys_status = token_manager.list_tokens()
+
+    # Get token data for masking in template
+    github_token_data = token_manager.get_token('github')
+    gitlab_token_data = token_manager.get_token('gitlab')
+
     response = templates.TemplateResponse(
         "config.html",
         {
@@ -3258,6 +3271,9 @@ def _create_config_page_response(
             "success_message": success_message,
             "error_message": error_message,
             "validation_errors": validation_errors or {},
+            "api_keys_status": api_keys_status,
+            "github_token_data": github_token_data,
+            "gitlab_token_data": gitlab_token_data,
         },
     )
 
@@ -3443,6 +3459,16 @@ async def config_section_partial(
         csrf_token = generate_csrf_token()
     config = _get_current_config()
 
+    # Load API keys status - use same server_dir as config service
+    from ..services.config_service import get_config_service
+    config_service = get_config_service()
+    server_dir = str(config_service.config_manager.server_dir)
+
+    token_manager = CITokenManager(server_dir_path=server_dir)
+    api_keys_status = token_manager.list_tokens()
+    github_token_data = token_manager.get_token('github')
+    gitlab_token_data = token_manager.get_token('gitlab')
+
     response = templates.TemplateResponse(
         "partials/config_section.html",
         {
@@ -3450,11 +3476,132 @@ async def config_section_partial(
             "csrf_token": csrf_token,
             "config": config,
             "validation_errors": {},
+            "api_keys_status": api_keys_status,
+            "github_token_data": github_token_data,
+            "gitlab_token_data": gitlab_token_data,
         },
     )
 
     set_csrf_cookie(response, csrf_token)
     return response
+
+
+# =============================================================================
+# API Keys Management
+# =============================================================================
+
+
+@web_router.post("/config/api-keys/{platform}", response_class=HTMLResponse)
+async def save_api_key(
+    request: Request,
+    platform: str,
+    csrf_token: Optional[str] = Form(None),
+    token: str = Form(...),
+    api_url: Optional[str] = Form(None),
+):
+    """Save API key for CI/CD platform (GitHub or GitLab)."""
+    # Require admin authentication
+    session = _require_admin_session(request)
+    if not session:
+        return RedirectResponse(
+            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_config_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    # Validate platform
+    if platform not in ['github', 'gitlab']:
+        return _create_config_page_response(
+            request, session, error_message=f"Invalid platform: {platform}"
+        )
+
+    # Save token using CITokenManager - use same server_dir as config service
+    try:
+        from ..services.config_service import get_config_service
+        config_service = get_config_service()
+        server_dir = str(config_service.config_manager.server_dir)
+
+        token_manager = CITokenManager(server_dir_path=server_dir)
+        token_manager.save_token(platform, token, base_url=api_url)
+
+        platform_name = "GitHub" if platform == 'github' else "GitLab"
+        return _create_config_page_response(
+            request,
+            session,
+            success_message=f"{platform_name} API key saved successfully",
+        )
+    except TokenValidationError as e:
+        return _create_config_page_response(
+            request,
+            session,
+            error_message=f"Invalid token format: {str(e)}",
+            validation_errors={'api_keys': str(e)},
+        )
+    except Exception as e:
+        logger.error("Failed to save %s API key: %s", platform, e)
+        return _create_config_page_response(
+            request,
+            session,
+            error_message=f"Failed to save API key: {str(e)}",
+        )
+
+
+@web_router.delete("/config/api-keys/{platform}", response_class=HTMLResponse)
+async def delete_api_key(
+    request: Request,
+    platform: str,
+):
+    """Delete API key for CI/CD platform."""
+    # Require admin authentication
+    session = _require_admin_session(request)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+
+    # Validate CSRF token from header (HTMX sends it as X-CSRF-Token)
+    csrf_from_header = request.headers.get('X-CSRF-Token')
+    if not validate_login_csrf_token(request, csrf_from_header):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid CSRF token"
+        )
+
+    # Validate platform
+    if platform not in ['github', 'gitlab']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid platform: {platform}"
+        )
+
+    # Delete token using CITokenManager - use same server_dir as config service
+    try:
+        from ..services.config_service import get_config_service
+        config_service = get_config_service()
+        server_dir = str(config_service.config_manager.server_dir)
+
+        token_manager = CITokenManager(server_dir_path=server_dir)
+        token_manager.delete_token(platform)
+
+        platform_name = "GitHub" if platform == 'github' else "GitLab"
+        logger.info(f"{platform_name} API key deleted successfully")
+
+        # Return success HTML fragment (HTMX expects HTML response)
+        return HTMLResponse(
+            content=f'<div class="alert success">{platform_name} API key deleted</div>',
+            status_code=200
+        )
+    except Exception as e:
+        logger.error("Failed to delete %s API key: %s", platform, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete API key: {str(e)}"
+        )
 
 
 # =============================================================================
