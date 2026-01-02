@@ -200,7 +200,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "properties": {
                 "query_text": {
                     "type": "string",
-                    "description": "Search query text",
+                    "description": "Search query text. MULTI-TERM FTS QUERIES: When using search_mode='fts' with multiple terms (e.g., 'authenticate user'), ALL terms must match (AND semantics). Single-term queries match normally. For OR semantics, use separate queries or regex mode with '|' operator (e.g., 'term1|term2').",
                 },
                 "repository_alias": {
                     "oneOf": [
@@ -236,7 +236,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 },
                 "search_mode": {
                     "type": "string",
-                    "description": "Search mode: 'semantic' for natural language/conceptual queries ('how authentication works'), 'fts' for exact text/identifiers ('def authenticate_user'), 'hybrid' for both. Default: semantic.",
+                    "description": "Search mode: 'semantic' for natural language/conceptual queries ('how authentication works'), 'fts' for exact text/identifiers ('def authenticate_user'), 'hybrid' for both. Default: semantic. NOTE: FTS multi-term queries use AND semantics - all terms must match. Example: 'password reset' requires both words. For OR behavior, use regex mode.",
                     "enum": ["semantic", "fts", "hybrid"],
                     "default": "semantic",
                 },
