@@ -128,10 +128,23 @@ async def sso_callback(code: str, state: str, request: Request):
         return RedirectResponse(url=redirect_url, status_code=302)
 
     else:
-        # This is Admin UI flow - create session
+        # This is unified login or admin UI flow - create session
         session_manager = get_session_manager()
-        redirect_uri = state_data.get("redirect_uri", "/admin")
-        redirect_response = RedirectResponse(url=redirect_uri, status_code=302)
+
+        # Smart redirect logic (Phase 4: Login Consolidation)
+        redirect_to = state_data.get("redirect_to")
+
+        if redirect_to:
+            # Explicit redirect_to from unified login or admin flow
+            redirect_url = redirect_to
+        elif user.role.value == "admin":
+            # Admin user, no explicit redirect - go to admin dashboard
+            redirect_url = "/admin"
+        else:
+            # Non-admin user - go to user interface
+            redirect_url = "/user/api-keys"
+
+        redirect_response = RedirectResponse(url=redirect_url, status_code=302)
 
         session_manager.create_session(
             redirect_response,

@@ -62,7 +62,7 @@ from .auth.oauth.routes import router as oauth_router
 from .mcp.protocol import mcp_router
 from .global_routes.routes import router as global_routes_router
 from .global_routes.git_settings import router as git_settings_router
-from .web import web_router, user_router, init_session_manager
+from .web import web_router, user_router, login_router, init_session_manager
 from .routers.ssh_keys import router as ssh_keys_router
 from .routers.scip_queries import router as scip_queries_router
 from .routers.files import router as files_router
@@ -6641,6 +6641,9 @@ def create_app() -> FastAPI:
 
     # Include user router with /user prefix for non-admin self-service
     app.include_router(user_router, prefix="/user", tags=["user"])
+
+    # Include login router at root level for unified authentication
+    app.include_router(login_router, tags=["authentication"])
 
     # RFC 8414 compliance: OAuth discovery at root level for Claude.ai compatibility
     @app.get("/.well-known/oauth-authorization-server")

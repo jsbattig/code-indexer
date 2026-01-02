@@ -1,4 +1,4 @@
-{% extends "user_base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Login - CIDX{% endblock %}
 
@@ -21,8 +21,11 @@
         </div>
         {% endif %}
 
-        <form method="post" action="/user/login">
+        <form method="post" action="/login">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if redirect_to %}
+            <input type="hidden" name="redirect_to" value="{{ redirect_to }}">
+            {% endif %}
 
             <label for="username">
                 Username
@@ -36,6 +39,29 @@
 
             <button type="submit">Login</button>
         </form>
+
+        {% if sso_enabled %}
+        <div class="sso-section">
+            <div class="divider">
+                <span>OR</span>
+            </div>
+            <button type="button" class="sso-button" onclick="redirectToSSO()">
+                Sign in with SSO
+            </button>
+        </div>
+        {% endif %}
     </article>
 </div>
+
+<script>
+    function redirectToSSO() {
+        let url = '/login/sso';
+        {% if redirect_to %}
+        // Note: Use tojson to properly escape for JavaScript context (not HTML context)
+        // This prevents & from becoming &amp; which would break OAuth parameter parsing
+        url += '?redirect_to=' + encodeURIComponent({{ redirect_to | tojson }});
+        {% endif %}
+        window.location.href = url;
+    }
+</script>
 {% endblock %}

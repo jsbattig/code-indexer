@@ -57,8 +57,6 @@ from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
 import base64
-import html
-import json
 
 from .oauth_manager import OAuthManager, OAuthError, PKCEVerificationError
 from ..user_manager import UserManager
@@ -202,7 +200,12 @@ async def get_authorize_form(
     manager: OAuthManager = Depends(get_oauth_manager),
     request: Request = None,
 ):
-    """GET /oauth/authorize - Returns HTML login form for browser-based OAuth flow.
+    """GET /oauth/authorize - OAuth authorization endpoint (Phase 5: Login Consolidation).
+
+    Separates authentication from authorization per OAuth 2.1 best practices:
+    1. Check for existing session
+    2. If authenticated → show consent screen (authorization)
+    3. If not authenticated → redirect to unified /login (authentication)
 
     Per OAuth 2.1 spec: Validates client_id exists. If invalid, returns HTTP 401
     with error="invalid_client" to trigger Claude.ai re-registration.
@@ -218,107 +221,135 @@ async def get_authorize_form(
             },
         )
 
-    # Check if OIDC is enabled
-    from code_indexer.server.auth.oidc import routes as oidc_routes
+    # Check for existing session (Phase 5: Separate authentication from authorization)
+    from code_indexer.server.web import get_session_manager
 
-    oidc_enabled = False
-    oidc_provider_name = "SSO"
-    if oidc_routes.oidc_manager and hasattr(oidc_routes.oidc_manager, "is_enabled"):
-        oidc_enabled = oidc_routes.oidc_manager.is_enabled()
+    session_manager = get_session_manager()
+    session = session_manager.get_session(request)
 
-    # Escape parameters to prevent XSS vulnerabilities
-    # Use json.dumps for JavaScript context (properly escapes quotes and special chars)
-    client_id_js = json.dumps(client_id)[1:-1]  # Remove outer quotes from JSON string
-    redirect_uri_js = json.dumps(redirect_uri)[1:-1]
-    code_challenge_js = json.dumps(code_challenge)[1:-1]
-    response_type_js = json.dumps(response_type)[1:-1]
-    state_js = json.dumps(state)[1:-1]
+    if not session:
+        # Not authenticated - redirect to unified login
+        from urllib.parse import urlencode, quote
 
-    # Use html.escape for HTML attribute context
-    client_id_html = html.escape(client_id, quote=True)
-    redirect_uri_html = html.escape(redirect_uri, quote=True)
-    code_challenge_html = html.escape(code_challenge, quote=True)
-    response_type_html = html.escape(response_type, quote=True)
-    state_html = html.escape(state, quote=True)
+        # Preserve OAuth parameters in redirect_to
+        oauth_params = urlencode(
+            {
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+                "response_type": response_type,
+                "state": state,
+            }
+        )
+        oauth_authorize_url = f"/oauth/authorize?{oauth_params}"
 
-    # Build SSO button HTML if OIDC enabled
-    sso_button_html = ""
-    sso_divider_html = ""
-    if oidc_enabled:
-        sso_button_html = f"""
-        <button type="button" class="sso-button" onclick="redirectToSSO()">
-            Sign in with {oidc_provider_name}
-        </button>"""
-        sso_divider_html = """
-        <div class="divider">
-            <span>or</span>
-        </div>"""
+        # Redirect to unified login with OAuth authorize URL as redirect_to
+        redirect_url = f"/login?redirect_to={quote(oauth_authorize_url)}"
+        return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
-    html_content = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CIDX Authorization</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-               background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-               display: flex; justify-content: center; align-items: center;
-               min-height: 100vh; margin: 0; }}
-        .container {{ background: white; padding: 40px; border-radius: 10px;
-                      box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 400px; width: 100%; }}
-        h2 {{ margin: 0 0 10px 0; color: #333; }}
-        p {{ color: #666; margin: 0 0 30px 0; font-size: 14px; }}
-        input {{ width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd;
-                 border-radius: 5px; box-sizing: border-box; font-size: 14px; }}
-        input:focus {{ outline: none; border-color: #667eea; }}
-        button {{ width: 100%; padding: 14px; background: #667eea; color: white;
-                  border: none; border-radius: 5px; font-size: 16px; font-weight: 600;
-                  cursor: pointer; margin-top: 10px; }}
-        button:hover {{ background: #5568d3; }}
-        .sso-button {{ background: #4CAF50; margin-bottom: 10px; }}
-        .sso-button:hover {{ background: #45a049; }}
-        .divider {{ text-align: center; margin: 20px 0; position: relative; }}
-        .divider:before {{ content: ''; position: absolute; top: 50%; left: 0; right: 0;
-                          height: 1px; background: #ddd; }}
-        .divider span {{ background: white; padding: 0 10px; position: relative;
-                        color: #999; font-size: 14px; }}
-        .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #999; }}
-    </style>
-    <script>
-        function redirectToSSO() {{
-            const params = new URLSearchParams({{
-                client_id: '{client_id_js}',
-                redirect_uri: '{redirect_uri_js}',
-                code_challenge: '{code_challenge_js}',
-                response_type: '{response_type_js}',
-                state: '{state_js}'
-            }});
-            window.location.href = '/oauth/authorize/sso?' + params.toString();
-        }}
-    </script>
-</head>
-<body>
-    <div class="container">
-        <h2>CIDX Authorization</h2>
-        <p>CIDX Server is requesting access to your account</p>
-        {sso_button_html}
-        {sso_divider_html}
-        <form method="post" action="/oauth/authorize">
-            <input type="hidden" name="client_id" value="{client_id_html}">
-            <input type="hidden" name="redirect_uri" value="{redirect_uri_html}">
-            <input type="hidden" name="code_challenge" value="{code_challenge_html}">
-            <input type="hidden" name="response_type" value="{response_type_html}">
-            <input type="hidden" name="state" value="{state_html}">
-            <input type="text" name="username" placeholder="Username" required autofocus>
-            <input type="password" name="password" placeholder="Password" required>
-            <button type="submit">Authorize Access</button>
-        </form>
-        <div class="footer">CIDX Semantic Code Search</div>
-    </div>
-</body>
-</html>"""
-    return HTMLResponse(content=html_content)
+    # Authenticated - show consent screen (Phase 5: Separate authorization from authentication)
+    from code_indexer.server.web.routes import templates
+
+    return templates.TemplateResponse(
+        "oauth_authorize_consent.html",
+        {
+            "request": request,
+            "username": session.username,
+            "client_id": client_id,
+            "client_name": client.get("client_name", "Unknown Application"),
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "response_type": response_type,
+            "state": state,
+        },
+    )
+
+
+@router.post("/authorize/consent")
+async def authorize_consent(
+    client_id: str = Form(...),
+    redirect_uri: str = Form(...),
+    code_challenge: str = Form(...),
+    response_type: str = Form(...),
+    state: str = Form(...),
+    consent: str = Form(...),
+    request: Request = None,
+    manager: OAuthManager = Depends(get_oauth_manager),
+):
+    """POST /oauth/authorize/consent - Handle consent form submission (Phase 5: Login Consolidation).
+
+    User is already authenticated via unified login. This endpoint only handles authorization (consent).
+    Generates OAuth authorization code and redirects back to client.
+    """
+    # Check for existing session (required)
+    from code_indexer.server.web import get_session_manager
+
+    session_manager = get_session_manager()
+    session = session_manager.get_session(request)
+
+    if not session:
+        # Not authenticated - redirect to unified login
+        from urllib.parse import urlencode, quote
+
+        oauth_params = urlencode(
+            {
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+                "response_type": response_type,
+                "state": state,
+            }
+        )
+        oauth_authorize_url = f"/oauth/authorize?{oauth_params}"
+        redirect_url = f"/login?redirect_to={quote(oauth_authorize_url)}"
+        return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+
+    # Validate response_type
+    if response_type != "code":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid response_type. Must be 'code'",
+        )
+
+    # Validate PKCE
+    if not code_challenge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="code_challenge required (PKCE)",
+        )
+
+    # Check consent
+    if consent != "allow":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User denied consent"
+        )
+
+    try:
+        # Generate authorization code (user already authenticated via session)
+        code = manager.generate_authorization_code(
+            client_id=client_id,
+            user_id=session.username,
+            code_challenge=code_challenge,
+            redirect_uri=redirect_uri,
+            state=state,
+        )
+
+        # Audit log
+        ip_address = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent")
+        password_audit_logger.log_oauth_authorization(
+            username=session.username,
+            client_id=client_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        # Redirect back to client with authorization code
+        redirect_url = f"{redirect_uri}?code={code}&state={state}"
+        return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+
+    except OAuthError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/authorize/sso")

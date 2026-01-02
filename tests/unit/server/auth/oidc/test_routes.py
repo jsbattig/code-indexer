@@ -493,7 +493,7 @@ class TestOIDCRoutes:
         # Create state manager with valid state
         state_mgr = StateManager()
         state_token = state_mgr.create_state(
-            {"code_verifier": "test-code-verifier", "redirect_uri": "/admin"}
+            {"code_verifier": "test-code-verifier", "redirect_uri": None}
         )
 
         # Inject managers into routes module
@@ -516,9 +516,10 @@ class TestOIDCRoutes:
             follow_redirects=False,
         )
 
-        # Verify redirect
+        # Verify redirect - Phase 5: Smart redirect based on user role
+        # Normal users go to /user/api-keys, admins go to /admin/
         assert response.status_code == 302
-        assert response.headers["location"] == "/admin"
+        assert response.headers["location"] == "/user/api-keys"
 
         # Verify session cookie is set (same as password login)
         assert "session" in response.cookies

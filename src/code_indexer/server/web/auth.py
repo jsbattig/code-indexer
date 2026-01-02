@@ -258,15 +258,54 @@ def require_admin_session(request: Request) -> SessionData:
     session = session_manager.get_session(request)
 
     if not session:
+        # Redirect to unified login with current path as redirect_to
+        from urllib.parse import quote
+
+        current_path = str(request.url.path)
+        if request.url.query:
+            current_path += f"?{request.url.query}"
+        redirect_url = f"/login?redirect_to={quote(current_path)}"
         raise HTTPException(
             status_code=status.HTTP_303_SEE_OTHER,
-            headers={"Location": "/admin/login"},
+            headers={"Location": redirect_url},
         )
 
     if session.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
+        )
+
+    return session
+
+
+def require_user_session(request: Request) -> SessionData:
+    """
+    Dependency to require valid user session (any authenticated user).
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        SessionData for authenticated user
+
+    Raises:
+        HTTPException: If not authenticated
+    """
+    session_manager = get_session_manager()
+    session = session_manager.get_session(request)
+
+    if not session:
+        # Redirect to unified login with current path as redirect_to
+        from urllib.parse import quote
+
+        current_path = str(request.url.path)
+        if request.url.query:
+            current_path += f"?{request.url.query}"
+        redirect_url = f"/login?redirect_to={quote(current_path)}"
+        raise HTTPException(
+            status_code=status.HTTP_303_SEE_OTHER,
+            headers={"Location": redirect_url},
         )
 
     return session

@@ -8,6 +8,7 @@ import logging
 import secrets
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from fastapi import APIRouter, Request, Response, Form, HTTPException, status
@@ -32,6 +33,8 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 web_router = APIRouter()
 # Create user router for non-admin user routes
 user_router = APIRouter()
+# Create login router for unified authentication (root level /login)
+login_router = APIRouter()
 
 # CSRF cookie name and settings
 CSRF_COOKIE_NAME = "_csrf"
@@ -50,13 +53,14 @@ def generate_csrf_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def set_csrf_cookie(response: Response, token: str, path: str = "/admin") -> None:
+def set_csrf_cookie(response: Response, token: str, path: str = "/") -> None:
     """
     Set a signed CSRF token cookie.
 
     Args:
         response: FastAPI Response object
         token: CSRF token to sign and store
+        path: Cookie path (default: "/" for unified login)
     """
     serializer = _get_csrf_serializer()
     signed_value = serializer.dumps(token, salt="csrf-login")
@@ -68,7 +72,7 @@ def set_csrf_cookie(response: Response, token: str, path: str = "/admin") -> Non
         secure=False,  # Set to True in production with HTTPS
         samesite="lax",  # Changed from strict to allow HTMX partial requests
         max_age=CSRF_MAX_AGE_SECONDS,
-        path=path,  # Explicit path to ensure cookie is sent for all /admin/* routes
+        path=path,  # Cookie path (default "/" for unified login)
     )
 
 
@@ -145,129 +149,8 @@ def get_csrf_token_from_cookie(request: Request) -> Optional[str]:
         return None
 
 
-@web_router.get("/login", response_class=HTMLResponse)
-async def login_page(
-    request: Request,
-    error: Optional[str] = None,
-    info: Optional[str] = None,
-):
-    """
-    Render login page.
-
-    Shows login form with CSRF protection using signed cookies.
-    """
-    # Check if OIDC/SSO is enabled (lazy import, access module attribute for runtime-injected value)
-    from ..auth.oidc import routes as oidc_routes
-
-    sso_enabled = (
-        oidc_routes.oidc_manager is not None and oidc_routes.oidc_manager.is_enabled()
-    )
-
-    # Generate CSRF token for the form
-    csrf_token = generate_csrf_token()
-
-    # Check if there's an expired session
-    session_manager = get_session_manager()
-    if session_manager.is_session_expired(request):
-        info = "Session expired, please login again"
-
-    # Create response with CSRF token in signed cookie
-    response = templates.TemplateResponse(
-        "login.html",
-        {
-            "request": request,
-            "csrf_token": csrf_token,
-            "error": error,
-            "info": info,
-            "show_nav": False,
-            "sso_enabled": sso_enabled,
-        },
-    )
-
-    # Set CSRF token in signed cookie for validation on POST
-    set_csrf_cookie(response, csrf_token)
-
-    return response
-
-
-@web_router.post("/login", response_class=HTMLResponse)
-async def login_submit(
-    request: Request,
-    response: Response,
-    username: str = Form(...),
-    password: str = Form(...),
-    csrf_token: Optional[str] = Form(None),
-):
-    """
-    Process login form submission.
-
-    Validates credentials and creates session on success.
-    CSRF protection uses signed cookies for pre-session validation.
-    """
-    # CSRF validation - validate token against signed cookie
-    if not validate_login_csrf_token(request, csrf_token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF token missing or invalid",
-        )
-
-    # Get user manager from dependencies
-    user_manager = dependencies.user_manager
-    if not user_manager:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="User manager not available",
-        )
-
-    # Authenticate user
-    user = user_manager.authenticate_user(username, password)
-
-    if user is None:
-        # Invalid credentials - show error with new CSRF token
-        new_csrf_token = generate_csrf_token()
-        error_response = templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "csrf_token": new_csrf_token,
-                "error": "Invalid username or password",
-                "show_nav": False,
-            },
-            status_code=200,
-        )
-        set_csrf_cookie(error_response, new_csrf_token)
-        return error_response
-
-    # Check if user is admin
-    if user.role != UserRole.ADMIN:
-        # Non-admin - show error with new CSRF token
-        new_csrf_token = generate_csrf_token()
-        error_response = templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "csrf_token": new_csrf_token,
-                "error": "Admin access required",
-                "show_nav": False,
-            },
-            status_code=200,
-        )
-        set_csrf_cookie(error_response, new_csrf_token)
-        return error_response
-
-    # Create session
-    session_manager = get_session_manager()
-    redirect_response = RedirectResponse(
-        url="/admin/",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-    session_manager.create_session(
-        redirect_response,
-        username=user.username,
-        role=user.role.value,
-    )
-
-    return redirect_response
+# Old /admin/login routes removed - replaced by unified login at root level
+# See login_router below for unified login implementation
 
 
 @web_router.get("/logout")
@@ -275,11 +158,11 @@ async def logout(request: Request):
     """
     Logout and clear session.
 
-    Redirects to login page after clearing session.
+    Redirects to unified login page after clearing session.
     """
     session_manager = get_session_manager()
     response = RedirectResponse(
-        url="/admin/login",
+        url="/login",
         status_code=status.HTTP_303_SEE_OTHER,
     )
     session_manager.clear_session(response)
@@ -305,11 +188,8 @@ async def dashboard(request: Request):
     session = session_manager.get_session(request)
 
     if not session:
-        # Not authenticated - redirect to login
-        return RedirectResponse(
-            url="/admin/login",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+        # Not authenticated - redirect to unified login
+        return _create_login_redirect(request)
 
     if session.role != "admin":
         # Not admin - forbidden
@@ -346,9 +226,7 @@ async def dashboard_health_partial(request: Request):
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     dashboard_service = _get_dashboard_service()
     health_data = dashboard_service.get_health_partial()
@@ -382,9 +260,7 @@ async def dashboard_stats_partial(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     dashboard_service = _get_dashboard_service()
     stats_data = dashboard_service.get_stats_partial(
@@ -406,6 +282,18 @@ async def dashboard_stats_partial(
 
 # Placeholder routes for other admin pages
 # These will redirect to login if not authenticated
+
+
+def _create_login_redirect(request: Request) -> RedirectResponse:
+    """Create redirect to unified login with redirect_to parameter."""
+    from urllib.parse import quote
+
+    current_path = str(request.url.path)
+    if request.url.query:
+        current_path += f"?{request.url.query}"
+
+    redirect_url = f"/login?redirect_to={quote(current_path)}"
+    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
 
 def _require_admin_session(request: Request) -> Optional[SessionData]:
@@ -465,7 +353,7 @@ def _create_users_page_response(
         },
     )
 
-    set_csrf_cookie(response, csrf_token)
+    set_csrf_cookie(response, csrf_token, path="/")
     return response
 
 
@@ -474,9 +362,7 @@ async def users_page(request: Request):
     """Users management page - list all users with CRUD operations."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_users_page_response(request, session)
 
@@ -493,9 +379,7 @@ async def create_user(
     """Create a new user."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -545,9 +429,7 @@ async def update_user_role(
     """Update a user's role."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -598,9 +480,7 @@ async def change_user_password(
     """Change a user's password (admin only)."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -642,9 +522,7 @@ async def update_user_email(
     """Update a user's email (admin only). Empty string clears the email."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -684,9 +562,7 @@ async def delete_user(
     """Delete a user."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -738,9 +614,7 @@ async def users_list_partial(request: Request):
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Reuse existing CSRF token from cookie instead of generating new one
     csrf_token = get_csrf_token_from_cookie(request)
@@ -960,9 +834,7 @@ async def golden_repos_page(request: Request):
     """Golden repositories management page - list all golden repos with CRUD operations."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_golden_repos_page_response(request, session)
 
@@ -978,9 +850,7 @@ async def add_golden_repo(
     """Add a new golden repository."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -1034,9 +904,7 @@ async def delete_golden_repo(
     """Delete a golden repository."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -1074,9 +942,7 @@ async def refresh_golden_repo(
     """Refresh (re-index) a golden repository."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -1116,9 +982,7 @@ async def activate_golden_repo(
     """Activate a golden repository for a user."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -1174,9 +1038,7 @@ async def golden_repo_details(
     """Get details for a specific golden repository."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     try:
         manager = _get_golden_repo_manager()
@@ -1213,9 +1075,7 @@ async def golden_repos_list_partial(request: Request):
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Reuse existing CSRF token from cookie instead of generating new one
     csrf_token = get_csrf_token_from_cookie(request)
@@ -1426,9 +1286,7 @@ async def repos_page(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_repos_page_response(
         request,
@@ -1456,9 +1314,7 @@ async def repos_list_partial(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Reuse existing CSRF token from cookie instead of generating new one
     csrf_token = get_csrf_token_from_cookie(request)
@@ -1506,9 +1362,7 @@ async def repo_details(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     try:
         manager = _get_activated_repo_manager()
@@ -1557,9 +1411,7 @@ async def deactivate_repo(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -1743,9 +1595,7 @@ async def jobs_page(
     """Jobs monitoring page - view and manage background jobs."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_jobs_page_response(
         request,
@@ -1768,9 +1618,7 @@ async def jobs_list_partial(
     """Partial endpoint for jobs list - used by htmx for dynamic updates."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Reuse existing CSRF token from cookie instead of generating new one
     csrf_token = get_csrf_token_from_cookie(request)
@@ -1814,9 +1662,7 @@ async def cancel_job(
     """Cancel a running or pending job."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -2003,9 +1849,7 @@ async def query_page(request: Request):
     """Query testing interface page."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_query_page_response(request, session)
 
@@ -2034,9 +1878,7 @@ async def query_submit(
     """Process query form submission."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -2484,9 +2326,7 @@ async def query_results_partial(request: Request):
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     csrf_token = generate_csrf_token()
 
@@ -2716,9 +2556,7 @@ async def query_results_partial_post(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Note: csrf_token parameter is accepted but not validated for HTMX partials
     # See docstring above for security rationale
@@ -3270,9 +3108,7 @@ async def config_page(request: Request):
     """Configuration management page - view and edit CIDX configuration."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_config_page_response(request, session)
 
@@ -3288,9 +3124,7 @@ async def update_config_section(
 
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -3388,9 +3222,7 @@ async def reset_config(
 
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -3432,9 +3264,7 @@ async def config_section_partial(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Reuse existing CSRF token from cookie instead of generating new one
     csrf_token = get_csrf_token_from_cookie(request)
@@ -3471,9 +3301,7 @@ async def git_settings_page(request: Request):
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     from code_indexer.config import ConfigManager
 
@@ -3517,9 +3345,7 @@ async def file_content_limits_page(request: Request):
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     from ..services.file_content_limits_config_manager import (
         FileContentLimitsConfigManager,
@@ -3570,9 +3396,7 @@ async def update_file_content_limits(
     """
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -3675,9 +3499,7 @@ async def api_keys_page(request: Request):
     """API Keys management page - manage personal API keys."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_api_keys_page_response(request, session)
 
@@ -3728,6 +3550,61 @@ async def api_keys_list_partial(request: Request):
     return response
 
 
+@web_router.get("/mcp-credentials", response_class=HTMLResponse)
+async def admin_mcp_credentials_page(request: Request):
+    """Admin MCP Credentials management page - manage personal MCP credentials."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    return _create_admin_mcp_credentials_page_response(request, session)
+
+
+def _create_admin_mcp_credentials_page_response(
+    request: Request,
+    session: SessionData,
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> HTMLResponse:
+    """Create admin MCP credentials page response."""
+    username = session.username
+    credentials = dependencies.user_manager.get_mcp_credentials(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "admin_mcp_credentials.html",
+        {
+            "show_nav": True,
+            "current_page": "mcp-credentials",
+            "username": username,
+            "mcp_credentials": credentials,
+            "success_message": success_message,
+            "error_message": error_message,
+        },
+    )
+    return response
+
+
+@web_router.get("/partials/mcp-credentials-list", response_class=HTMLResponse)
+async def admin_mcp_credentials_list_partial(request: Request):
+    """Partial for admin MCP credentials list (HTMX refresh)."""
+    session = _require_admin_session(request)
+    if not session:
+        return HTMLResponse(
+            content="<p>Session expired. Please refresh the page.</p>", status_code=401
+        )
+
+    username = session.username
+    credentials = dependencies.user_manager.get_mcp_credentials(username)
+
+    response = templates.TemplateResponse(
+        request,
+        "partials/mcp_credentials_list.html",
+        {"mcp_credentials": credentials},
+    )
+    return response
+
+
 # =============================================================================
 # User Self-Service Routes (Any Authenticated User)
 # =============================================================================
@@ -3744,106 +3621,8 @@ def _require_authenticated_session(request: Request) -> Optional[SessionData]:
     return session
 
 
-@user_router.get("/login", response_class=HTMLResponse)
-async def user_login_page(
-    request: Request,
-    error: Optional[str] = None,
-    info: Optional[str] = None,
-):
-    """
-    Render user login page for non-admin users.
-
-    Shows login form with CSRF protection using signed cookies.
-    Accepts any role (normal_user, power_user, admin).
-    """
-    # Generate CSRF token for the form
-    csrf_token = generate_csrf_token()
-
-    # Check if there's an expired session
-    session_manager = get_session_manager()
-    if session_manager.is_session_expired(request):
-        info = "Session expired, please login again"
-
-    # Create response with CSRF token in signed cookie
-    response = templates.TemplateResponse(
-        "user_login.html",
-        {
-            "request": request,
-            "csrf_token": csrf_token,
-            "error": error,
-            "info": info,
-            "show_nav": False,
-        },
-    )
-
-    # Set CSRF token in signed cookie for validation on POST
-    set_csrf_cookie(response, csrf_token, path="/user")
-
-    return response
-
-
-@user_router.post("/login", response_class=HTMLResponse)
-async def user_login_submit(
-    request: Request,
-    response: Response,
-    username: str = Form(...),
-    password: str = Form(...),
-    csrf_token: Optional[str] = Form(None),
-):
-    """
-    Process user login form submission.
-
-    Validates credentials and creates session on success.
-    Accepts ANY role (normal_user, power_user, admin).
-    CSRF protection uses signed cookies for pre-session validation.
-    """
-    # CSRF validation - validate token against signed cookie
-    if not validate_login_csrf_token(request, csrf_token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF token missing or invalid",
-        )
-
-    # Get user manager from dependencies
-    user_manager = dependencies.user_manager
-    if not user_manager:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="User manager not available",
-        )
-
-    # Authenticate user (any role accepted)
-    user = user_manager.authenticate_user(username, password)
-
-    if user is None:
-        # Invalid credentials - show error with new CSRF token
-        new_csrf_token = generate_csrf_token()
-        error_response = templates.TemplateResponse(
-            "user_login.html",
-            {
-                "request": request,
-                "csrf_token": new_csrf_token,
-                "error": "Invalid username or password",
-                "show_nav": False,
-            },
-            status_code=200,
-        )
-        set_csrf_cookie(error_response, new_csrf_token, path="/user")
-        return error_response
-
-    # Create session for any authenticated user
-    session_manager = get_session_manager()
-    redirect_response = RedirectResponse(
-        url="/user/api-keys",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-    session_manager.create_session(
-        redirect_response,
-        username=user.username,
-        role=user.role.value,
-    )
-
-    return redirect_response
+# Old /user/login routes removed - replaced by unified login at root level
+# See login_router for unified login implementation
 
 
 @user_router.get("/api-keys", response_class=HTMLResponse)
@@ -3851,9 +3630,7 @@ async def user_api_keys_page(request: Request):
     """User API Keys management page - any authenticated user can manage their own API keys."""
     session = _require_authenticated_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_user_api_keys_page_response(request, session)
 
@@ -3909,9 +3686,7 @@ async def user_mcp_credentials_page(request: Request):
     """User MCP Credentials management page - any authenticated user can manage their own MCP credentials."""
     session = _require_authenticated_session(request)
     if not session:
-        return RedirectResponse(
-            url="/user/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     return _create_user_mcp_credentials_page_response(request, session)
 
@@ -3967,11 +3742,11 @@ async def user_logout(request: Request):
     """
     Logout and clear session for user portal.
 
-    Redirects to login page after clearing session.
+    Redirects to unified login page after clearing session.
     """
     session_manager = get_session_manager()
     response = RedirectResponse(
-        url="/admin/login",
+        url="/login",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3987,9 +3762,7 @@ async def ssh_keys_page(request: Request):
     """SSH Keys management page - view migration status and manage SSH keys."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Generate fresh CSRF token
     csrf_token = generate_csrf_token()
@@ -4088,9 +3861,7 @@ async def create_ssh_key(
     """Create a new SSH key."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -4142,9 +3913,7 @@ async def delete_ssh_key(
     """Delete an SSH key."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -4180,9 +3949,7 @@ async def assign_host_to_key(
     """Assign a host to an SSH key."""
     session = _require_admin_session(request)
     if not session:
-        return RedirectResponse(
-            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
-        )
+        return _create_login_redirect(request)
 
     # Validate CSRF token
     if not validate_login_csrf_token(request, csrf_token):
@@ -4210,3 +3977,270 @@ async def assign_host_to_key(
         return _create_ssh_keys_page_response(
             request, session, error_message=f"Failed to assign host: {e}"
         )
+
+
+# ============================================================================
+# Unified Login Routes (Phase 2: Login Consolidation)
+# ============================================================================
+
+
+@login_router.get("/login", response_class=HTMLResponse)
+async def unified_login_page(
+    request: Request,
+    redirect_to: Optional[str] = None,
+    error: Optional[str] = None,
+    info: Optional[str] = None,
+):
+    """
+    Unified login page for all contexts (admin, user, OAuth).
+
+    Supports:
+    - SSO via OIDC (if enabled)
+    - Username/password authentication
+    - Smart redirect after login based on redirect_to parameter or user role
+
+    Args:
+        request: FastAPI Request object
+        redirect_to: Optional URL to redirect after successful login
+        error: Optional error message to display
+        info: Optional info message to display
+    """
+    # Generate CSRF token for the form
+    csrf_token = generate_csrf_token()
+
+    # Check if there's an expired session
+    session_manager = get_session_manager()
+    if not info and session_manager.is_session_expired(request):
+        info = "Session expired, please login again"
+
+    # Check if OIDC is enabled
+    from ..auth.oidc import routes as oidc_routes
+
+    sso_enabled = False
+    if oidc_routes.oidc_manager and hasattr(oidc_routes.oidc_manager, "is_enabled"):
+        sso_enabled = oidc_routes.oidc_manager.is_enabled()
+
+    # Create response with CSRF token in signed cookie
+    response = templates.TemplateResponse(
+        "unified_login.html",
+        {
+            "request": request,
+            "csrf_token": csrf_token,
+            "redirect_to": redirect_to,
+            "error": error,
+            "info": info,
+            "sso_enabled": sso_enabled,
+        },
+    )
+
+    # Set CSRF token in signed cookie for validation on POST
+    set_csrf_cookie(response, csrf_token, path="/")
+
+    return response
+
+
+@login_router.post("/login", response_class=HTMLResponse)
+async def unified_login_submit(
+    request: Request,
+    response: Response,
+    username: str = Form(...),
+    password: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+    redirect_to: Optional[str] = Form(None),
+):
+    """
+    Process unified login form submission.
+
+    Validates credentials and creates session on success.
+    Accepts ANY role (normal_user, power_user, admin).
+    Redirects based on redirect_to parameter or user role.
+
+    Args:
+        request: FastAPI Request object
+        response: FastAPI Response object
+        username: Username from form
+        password: Password from form
+        csrf_token: CSRF token from form
+        redirect_to: Optional redirect URL from form
+    """
+    # CSRF validation - validate token against signed cookie
+    if not validate_login_csrf_token(request, csrf_token):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF token missing or invalid",
+        )
+
+    # Get user manager from dependencies
+    user_manager = dependencies.user_manager
+    if not user_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User manager not available",
+        )
+
+    # Authenticate user (any role accepted)
+    user = user_manager.authenticate_user(username, password)
+
+    if user is None:
+        # Invalid credentials - show error with new CSRF token
+        new_csrf_token = generate_csrf_token()
+
+        # Check if OIDC is enabled
+        from ..auth.oidc import routes as oidc_routes
+
+        sso_enabled = False
+        if oidc_routes.oidc_manager and hasattr(oidc_routes.oidc_manager, "is_enabled"):
+            sso_enabled = oidc_routes.oidc_manager.is_enabled()
+
+        error_response = templates.TemplateResponse(
+            "unified_login.html",
+            {
+                "request": request,
+                "csrf_token": new_csrf_token,
+                "redirect_to": redirect_to,
+                "error": "Invalid username or password",
+                "sso_enabled": sso_enabled,
+            },
+            status_code=200,
+        )
+        set_csrf_cookie(error_response, new_csrf_token, path="/")
+        return error_response
+
+    # Validate redirect_to URL (prevent open redirect)
+    safe_redirect = None
+    if redirect_to:
+        # Only allow relative URLs starting with /
+        if redirect_to.startswith("/") and not redirect_to.startswith("//"):
+            safe_redirect = redirect_to
+
+    # Smart redirect logic
+    if safe_redirect:
+        # Explicit redirect_to parameter takes precedence
+        redirect_url = safe_redirect
+    elif user.role.value == "admin":
+        # Admin users go to admin dashboard
+        redirect_url = "/admin/"
+    else:
+        # Non-admin users go to user interface
+        redirect_url = "/user/api-keys"
+
+    # Create session for authenticated user
+    session_manager = get_session_manager()
+    redirect_response = RedirectResponse(
+        url=redirect_url,
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    session_manager.create_session(
+        redirect_response,
+        username=user.username,
+        role=user.role.value,
+    )
+
+    return redirect_response
+
+
+@login_router.get("/login/sso")
+async def unified_login_sso(
+    request: Request,
+    redirect_to: Optional[str] = None,
+):
+    """
+    Initiate OIDC SSO flow from unified login page.
+
+    Preserves redirect_to parameter through OIDC flow by storing
+    it in the OIDC state parameter.
+
+    Args:
+        request: FastAPI Request object
+        redirect_to: Optional URL to redirect after SSO completes
+    """
+    from ..auth.oidc import routes as oidc_routes
+
+    # Check if OIDC is enabled
+    if not oidc_routes.oidc_manager or not oidc_routes.oidc_manager.is_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SSO is not enabled on this server",
+        )
+
+    # Ensure OIDC provider is initialized
+    try:
+        await oidc_routes.oidc_manager.ensure_provider_initialized()
+    except Exception as e:
+        logger.error(f"Failed to initialize OIDC provider: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SSO provider is currently unavailable",
+        )
+
+    # Generate PKCE code verifier and challenge for OAuth 2.1 security
+    import hashlib
+    import base64
+
+    code_verifier = secrets.token_urlsafe(32)
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .decode()
+        .rstrip("=")
+    )
+
+    # Validate redirect_to parameter (prevent open redirect)
+    # Note: redirect_to is URL-encoded by JavaScript's encodeURIComponent, decode it
+    from urllib.parse import unquote
+
+    safe_redirect = None
+    if redirect_to:
+        # URL-decode (JavaScript's encodeURIComponent encoding)
+        decoded_redirect = unquote(redirect_to)
+        if decoded_redirect.startswith("/") and not decoded_redirect.startswith("//"):
+            safe_redirect = decoded_redirect
+
+    # Store state with code_verifier and redirect_to using OIDC state manager
+    state_data = {
+        "code_verifier": code_verifier,
+        "redirect_to": safe_redirect or "/user/api-keys",  # Default redirect
+    }
+    state_token = oidc_routes.state_manager.create_state(state_data)
+
+    # Build OIDC authorization URL
+    callback_url = str(request.base_url).rstrip("/") + "/auth/sso/callback"
+    oidc_auth_url = oidc_routes.oidc_manager.provider.get_authorization_url(
+        state=state_token, redirect_uri=callback_url, code_challenge=code_challenge
+    )
+
+    return RedirectResponse(url=oidc_auth_url)
+
+
+# ==============================================================================
+# Backwards Compatibility Redirects (Phase 8: Login Consolidation)
+# ==============================================================================
+
+
+@login_router.get("/admin/login")
+async def redirect_admin_login(redirect_to: Optional[str] = None):
+    """
+    Backwards compatibility redirect: /admin/login → /login.
+
+    301 Permanent Redirect to inform clients to update their URLs.
+    """
+    if redirect_to:
+        return RedirectResponse(
+            url=f"/login?redirect_to={quote(redirect_to)}",
+            status_code=status.HTTP_301_MOVED_PERMANENTLY,
+        )
+    return RedirectResponse(url="/login", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
+@login_router.get("/user/login")
+async def redirect_user_login(redirect_to: Optional[str] = None):
+    """
+    Backwards compatibility redirect: /user/login → /login.
+
+    301 Permanent Redirect to inform clients to update their URLs.
+    """
+    if redirect_to:
+        return RedirectResponse(
+            url=f"/login?redirect_to={quote(redirect_to)}",
+            status_code=status.HTTP_301_MOVED_PERMANENTLY,
+        )
+    return RedirectResponse(url="/login", status_code=status.HTTP_301_MOVED_PERMANENTLY)
