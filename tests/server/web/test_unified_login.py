@@ -333,11 +333,17 @@ class TestSSOInitiation:
         assert response.status_code == 200
 
         # Verify the JavaScript has the correct URL (not double-encoded)
-        # After fix: encodeURIComponent('/query?repo=backend&query=auth')
+        # After fix with | tojson: encodeURIComponent("/query?repo=backend\u0026query=auth")
+        # (Note: tojson uses double quotes and Unicode escapes \u0026 for &)
         # Before fix (broken): encodeURIComponent('/query%3Frepo%3Dbackend%26query%3Dauth')
         assert (
-            "encodeURIComponent('/query?repo=backend" in response.text
-        ), "JavaScript should have unencoded URL for encodeURIComponent to handle"
+            'encodeURIComponent("/query?repo=backend' in response.text
+        ), "JavaScript should have JSON-escaped URL for encodeURIComponent to handle"
+
+        # Verify tojson is being used (produces Unicode escapes or raw chars, not HTML entities)
+        assert (
+            r"\u0026" in response.text or "&query=" in response.text
+        ), "Should use Unicode escape \\u0026 or raw & (from tojson), not HTML entities"
 
         # Verify no double-encoding (the broken state we're fixing)
         assert (
@@ -357,6 +363,52 @@ class TestSSOInitiation:
             400,
             404,
         ], f"Endpoint should handle query params, got {response.status_code}"
+
+    def test_sso_with_oauth_parameters_no_html_entity_encoding(
+        self, web_client: TestClient
+    ):
+        """
+        SSO flow preserves OAuth parameters without HTML entity encoding.
+
+        This tests the specific issue where redirect_to containing OAuth
+        authorize parameters with ampersands was getting HTML-entity-encoded
+        (&amp;) in the JavaScript, breaking parameter parsing.
+
+        Root cause: Jinja2 auto-HTML-escapes values, so {{ redirect_to }}
+        converted & to &amp;. Fix: Use | tojson for JavaScript context.
+        """
+        # Simulate OAuth authorization flow redirect_to with multiple params
+        oauth_url = "/oauth/authorize?client_id=test123&redirect_uri=http://localhost:8000/callback&code_challenge=xyz&response_type=code&state=abc"
+
+        from urllib.parse import quote
+
+        response = web_client.get(f"/login?redirect_to={quote(oauth_url, safe='')}")
+        assert response.status_code == 200
+
+        # CRITICAL: JavaScript should have proper JSON-escaped string, not HTML entities
+        # After fix with | tojson: encodeURIComponent("/oauth/authorize?client_id=test123\u0026redirect_uri=...")
+        # Before fix (broken): encodeURIComponent("/oauth/authorize?client_id=test123&amp;redirect_uri=...")
+
+        # Verify the JavaScript uses Unicode escapes (\u0026), not HTML entities (&amp;)
+        assert 'encodeURIComponent("/oauth/authorize?client_id=test123' in response.text, (
+            "JavaScript should have the OAuth authorize URL"
+        )
+
+        # The key fix: tojson escapes & as \u0026 (Unicode escape) not &amp; (HTML entity)
+        assert r"\u0026" in response.text or "&" in response.text, (
+            "JavaScript should use either raw & or Unicode escape \\u0026, not HTML entities"
+        )
+
+        # Verify NO HTML entities in JavaScript context
+        # Note: &amp; may still appear in HTML form fields (correct), but not in <script> blocks
+        script_start = response.text.find("<script>")
+        script_end = response.text.find("</script>")
+        if script_start != -1 and script_end != -1:
+            script_content = response.text[script_start:script_end]
+            assert "&amp;" not in script_content, (
+                "JavaScript <script> block should NOT contain HTML entities (&amp;). "
+                "This breaks OAuth parameter parsing when going through SSO."
+            )
 
 
 # ==============================================================================
