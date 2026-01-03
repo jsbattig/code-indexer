@@ -957,14 +957,18 @@ class GitOperationsService:
             Dict with success flag and staged_files list
 
         Raises:
+            ValueError: If .code-indexer files are in file_paths
             GitCommandError: If git add fails
         """
         try:
-            cmd = ["git", "add"] + file_paths
+            # Validate no .code-indexer files before staging
+            validated_paths = self._validate_no_code_indexer_files(file_paths)
+
+            cmd = ["git", "add"] + validated_paths
 
             run_git_command(cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True)
 
-            return {"success": True, "staged_files": file_paths}
+            return {"success": True, "staged_files": validated_paths}
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
@@ -1031,9 +1035,34 @@ class GitOperationsService:
 
         Raises:
             GitCommandError: If git commit fails
-            ValueError: If user_email is missing, empty, or has invalid format
+            ValueError: If user_email is missing, empty, has invalid format, or .code-indexer files are staged
         """
         try:
+            # Check for staged .code-indexer files before committing
+            staged_result = run_git_command(
+                ["git", "diff", "--cached", "--name-only"],
+                cwd=repo_path,
+                timeout=DEFAULT_TIMEOUT,
+                check=True,
+            )
+            staged_files = [
+                f.strip() for f in staged_result.stdout.splitlines() if f.strip()
+            ]
+
+            # Validate no .code-indexer files are staged
+            forbidden_patterns = [".code-indexer/", ".code-indexer-override.yaml"]
+            forbidden_staged = [
+                f
+                for f in staged_files
+                if any(pattern in f for pattern in forbidden_patterns)
+            ]
+
+            if forbidden_staged:
+                raise ValueError(
+                    f"Commit blocked: .code-indexer files are staged. "
+                    f"These files should never be committed. Blocked files: {forbidden_staged}"
+                )
+
             # Story #641 AC #3: Validate co_author_email parameter is MANDATORY
             if user_email is None or user_email == "":
                 raise ValueError(
@@ -1628,6 +1657,34 @@ class GitOperationsService:
             raise GitCommandError(
                 f"git branch delete timed out after {e.timeout}s", stderr=""
             )
+
+    # .code-indexer Protection System
+
+    def _validate_no_code_indexer_files(self, file_paths: List[str]) -> List[str]:
+        """
+        Filter out and warn about .code-indexer files.
+
+        Args:
+            file_paths: List of file paths to validate
+
+        Returns:
+            Filtered list without .code-indexer files
+
+        Raises:
+            ValueError: If .code-indexer files are detected
+        """
+        forbidden_patterns = [".code-indexer/", ".code-indexer-override.yaml"]
+        forbidden_files = [
+            f for f in file_paths if any(pattern in f for pattern in forbidden_patterns)
+        ]
+
+        if forbidden_files:
+            raise ValueError(
+                f"Cannot stage .code-indexer files - these are local index files and should never be committed. "
+                f"Blocked files: {forbidden_files}"
+            )
+
+        return file_paths
 
     # Confirmation Token System
 
