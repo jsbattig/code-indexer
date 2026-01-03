@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Set, Dict, Tuple, Any
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from .reindexing_models import ChangeSet
 from ...utils.git_runner import run_git_command, is_git_repository
 
@@ -74,7 +75,10 @@ class GitChangeAnalyzer:
             return self._analyze_commit_range(commit_range)
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Git command failed during change analysis: {e}")
+            logger.error(
+                f"Git command failed during change analysis: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError(f"Failed to analyze git changes: {e}")
 
     def analyze_changes_since(self, commits_back: int) -> ChangeSet:
@@ -92,7 +96,10 @@ class GitChangeAnalyzer:
             return self._analyze_commit_range(commit_range)
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Git command failed during historical analysis: {e}")
+            logger.error(
+                f"Git command failed during historical analysis: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError(f"Failed to analyze historical changes: {e}")
 
     def analyze_changes_between_commits(
@@ -113,7 +120,10 @@ class GitChangeAnalyzer:
             return self._analyze_commit_range(commit_range)
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Git command failed during commit range analysis: {e}")
+            logger.error(
+                f"Git command failed during commit range analysis: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError(f"Failed to analyze changes between commits: {e}")
 
     def _analyze_commit_range(self, commit_range: str) -> ChangeSet:
@@ -225,7 +235,10 @@ class GitChangeAnalyzer:
             return files_changed, files_added, files_deleted
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to get file changes: {e}")
+            logger.error(
+                f"Failed to get file changes: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return [], [], []
 
     def _count_total_files(self) -> int:
@@ -246,7 +259,10 @@ class GitChangeAnalyzer:
                 return 0
 
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Failed to count total files: {e}")
+            logger.warning(
+                f"Failed to count total files: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return 1000  # Default estimate to avoid division by zero
 
     def _analyze_directory_changes(
@@ -331,7 +347,10 @@ class GitChangeAnalyzer:
             return file_moves
 
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Failed to analyze file moves: {e}")
+            logger.warning(
+                f"Failed to analyze file moves: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     def _detect_config_changes(self, change_set: ChangeSet) -> None:
@@ -494,7 +513,10 @@ class GitChangeAnalyzer:
             return commit_info
 
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Failed to get commit details: {e}")
+            logger.warning(
+                f"Failed to get commit details: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {"commit_range": commit_range, "error": str(e)}
 
     def analyze_repository_health(self) -> Dict[str, Any]:
@@ -549,5 +571,8 @@ class GitChangeAnalyzer:
             return health
 
         except Exception as e:
-            logger.warning(f"Failed to analyze repository health: {e}")
+            logger.warning(
+                f"Failed to analyze repository health: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {"error": str(e)}

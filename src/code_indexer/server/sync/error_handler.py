@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional, Any
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +110,8 @@ class SyncError(Exception):
 
         logger.error(
             f"SyncError [{self.error_code}]: {message} "
-            f"(severity={severity.value}, category={category.value})"
+            f"(severity={severity.value}, category={category.value})",
+            extra={"correlation_id": get_correlation_id()},
         )
 
 
@@ -979,7 +982,10 @@ def create_error_context(
             "process_id": os.getpid(),
         }
     except Exception as e:
-        logger.warning(f"Failed to collect system info for error context: {e}")
+        logger.warning(
+            f"Failed to collect system info for error context: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         context.system_info = {"error": f"Failed to collect system info: {str(e)}"}
 
     # Add additional diagnostic info

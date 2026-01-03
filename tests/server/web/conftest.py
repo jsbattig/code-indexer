@@ -94,6 +94,10 @@ class WebTestInfrastructure:
 
         self.user_manager = test_user_manager
 
+        # Initialize log database path for logs routes (Story #664, #665, #667)
+        log_db_path = self.temp_dir / "logs.db"
+        self.app.state.log_db_path = str(log_db_path)
+
         # Create test client - IMPORTANT: don't follow redirects by default
         # so we can test redirect behavior
         self.client = TestClient(self.app, follow_redirects=False)
@@ -201,23 +205,23 @@ class WebTestInfrastructure:
         self, client: TestClient, username: str, password: str
     ) -> None:
         """
-        Authenticate via normal /admin/login flow.
+        Authenticate via unified /login flow (Issue #662 login consolidation).
 
         Used for admin users. Performs CSRF token extraction and login POST.
         """
-        login_response = client.get("/admin/login")
+        login_response = client.get("/login")
         csrf_token = self.extract_csrf_token(login_response.text)
 
         if not csrf_token:
             raise ValueError("Could not extract CSRF token from login page")
 
-        # Perform login
+        # Perform login via unified /login endpoint
         login_data = {
             "username": username,
             "password": password,
             "csrf_token": csrf_token,
         }
-        client.post("/admin/login", data=login_data)
+        client.post("/login", data=login_data)
 
     def get_authenticated_client(self, username: str, password: str) -> TestClient:
         """

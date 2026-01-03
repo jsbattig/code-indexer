@@ -1,0 +1,77 @@
+<h2>Log Entries</h2>
+
+<table class="logs-table">
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Level</th>
+            <th>Logger</th>
+            <th>Message</th>
+            <th>User</th>
+            <th>Source</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if logs %}
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.timestamp[:19] if log.timestamp else 'N/A' }}</td>
+            <td class="level-cell">
+                {% if log.level == 'DEBUG' %}
+                <span class="level-indicator level-debug">DEBUG</span>
+                {% elif log.level == 'INFO' %}
+                <span class="level-indicator level-info">INFO</span>
+                {% elif log.level == 'WARNING' %}
+                <span class="level-indicator level-warning">WARNING</span>
+                {% elif log.level == 'ERROR' %}
+                <span class="level-indicator level-error">ERROR</span>
+                {% elif log.level == 'CRITICAL' %}
+                <span class="level-indicator level-critical">CRITICAL</span>
+                {% else %}
+                <span class="level-indicator">{{ log.level }}</span>
+                {% endif %}
+            </td>
+            <td>{{ log.logger_name or 'N/A' }}</td>
+            <td class="message-cell">{{ log.message or '' }}</td>
+            <td>{{ log.user or 'N/A' }}</td>
+            <td>
+                {% if log.filename and log.lineno %}
+                {{ log.filename }}:{{ log.lineno }}
+                {% else %}
+                N/A
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="6" class="no-data">No logs found. Logs will appear here as the system runs.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{% if total_pages is defined and total_pages > 1 %}
+<!-- Pagination -->
+<nav class="pagination">
+    <ul>
+        {% if page > 1 %}
+        <li>
+            <a href="/admin/logs?page={{ page - 1 }}{% if level %}&level={{ level }}{% endif %}{% if logger %}&logger={{ logger }}{% endif %}{% if search %}&search={{ search }}{% endif %}">&laquo; Previous</a>
+        </li>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+        <li>
+            <a href="/admin/logs?page={{ p }}{% if level %}&level={{ level }}{% endif %}{% if logger %}&logger={{ logger }}{% endif %}{% if search %}&search={{ search }}{% endif %}" {% if p == page %}aria-current="page"{% endif %}>{{ p }}</a>
+        </li>
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <li>
+            <a href="/admin/logs?page={{ page + 1 }}{% if level %}&level={{ level }}{% endif %}{% if logger %}&logger={{ logger }}{% endif %}{% if search %}&search={{ search }}{% endif %}">Next &raquo;</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

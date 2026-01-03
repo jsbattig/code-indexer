@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from ..jobs.models import PhaseStatus
 
 
@@ -230,7 +231,7 @@ class SyncPhaseTracker:
             duration = phase_info.completed_at - phase_info.started_at
             phase_info.duration_seconds = duration.total_seconds()
 
-        logger.error(f"Phase '{phase_name}' failed: {error_message}")
+        logger.error(f"Phase '{phase_name}' failed: {error_message}", extra={"correlation_id": get_correlation_id()})
         return phase_info
 
     def skip_phase(self, phase_name: str, reason: str) -> PhaseProgressInfo:

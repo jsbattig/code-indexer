@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Logs - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="logs-header">
+    <h1>System Logs</h1>
+    <div class="logs-actions">
+        <button
+            id="refresh-btn"
+            class="outline"
+            hx-get="/admin/partials/logs-list"
+            hx-target="#logs-list-section"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-indicator"
+            hx-include="#filter-form"
+        >
+            Refresh
+        </button>
+        <span id="refresh-indicator" class="htmx-indicator">Loading...</span>
+
+        <!-- Export Controls -->
+        <select id="export-format" name="export_format">
+            <option value="json">JSON</option>
+            <option value="csv">CSV</option>
+        </select>
+        <button
+            id="export-btn"
+            class="secondary"
+            onclick="exportLogs()"
+        >
+            Export
+        </button>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Filters Section -->
+<section id="filters-section" class="filters-section">
+    <form id="filter-form" method="get" action="/admin/logs">
+        <div class="filter-row">
+            <div class="filter-item">
+                <label for="level">Level</label>
+                <select
+                    id="level"
+                    name="level"
+                    hx-get="/admin/partials/logs-list"
+                    hx-target="#logs-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="change"
+                    hx-include="#filter-form"
+                >
+                    <option value="">All Levels</option>
+                    <option value="DEBUG" {% if level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                    <option value="INFO" {% if level == 'INFO' %}selected{% endif %}>INFO</option>
+                    <option value="WARNING" {% if level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                    <option value="ERROR" {% if level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                    <option value="CRITICAL" {% if level == 'CRITICAL' %}selected{% endif %}>CRITICAL</option>
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <label for="logger">Logger</label>
+                <input
+                    type="text"
+                    id="logger"
+                    name="logger"
+                    placeholder="Filter by logger name..."
+                    value="{{ logger or '' }}"
+                    hx-get="/admin/partials/logs-list"
+                    hx-target="#logs-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="keyup changed delay:300ms"
+                    hx-include="#filter-form"
+                >
+            </div>
+
+            <div class="filter-item">
+                <label for="search">Search</label>
+                <input
+                    type="search"
+                    id="search"
+                    name="search"
+                    placeholder="Search by message..."
+                    value="{{ search or '' }}"
+                    hx-get="/admin/partials/logs-list"
+                    hx-target="#logs-list-section"
+                    hx-swap="innerHTML"
+                    hx-trigger="keyup changed delay:300ms"
+                    hx-include="#filter-form"
+                >
+            </div>
+
+            <div class="filter-item filter-actions">
+                <label>&nbsp;</label>
+                <button type="button" class="outline" onclick="clearFilters()">Clear Filters</button>
+            </div>
+        </div>
+    </form>
+</section>
+
+<!-- Logs List Section -->
+<section id="logs-list-section">
+    {% include "partials/logs_list.html" %}
+</section>
+
+<script>
+function clearFilters() {
+    document.getElementById('level').value = '';
+    document.getElementById('logger').value = '';
+    document.getElementById('search').value = '';
+    // Trigger htmx request to refresh list
+    htmx.ajax('GET', '/admin/partials/logs-list', {target: '#logs-list-section', swap: 'innerHTML'});
+}
+
+function exportLogs() {
+    // Get selected format
+    const format = document.getElementById('export-format').value;
+
+    // Get current filter values
+    const level = document.getElementById('level').value;
+    const search = document.getElementById('search').value;
+
+    // Build export URL with query parameters
+    let exportUrl = '/admin/logs/export?format=' + format;
+
+    if (level) {
+        exportUrl += '&level=' + encodeURIComponent(level);
+    }
+    if (search) {
+        exportUrl += '&search=' + encodeURIComponent(search);
+    }
+
+    // Trigger download by navigating to export URL
+    window.location.href = exportUrl;
+}
+</script>
+{% endblock %}

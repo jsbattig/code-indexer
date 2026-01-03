@@ -5758,6 +5758,160 @@ async def get_tool_categories(args: Dict[str, Any], user: User) -> Dict[str, Any
 HANDLER_REGISTRY["get_tool_categories"] = get_tool_categories
 
 
+# =============================================================================
+# ADMIN LOG MANAGEMENT TOOLS
+# =============================================================================
+
+
+async def handle_admin_logs_query(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Query operational logs with pagination and filtering.
+
+    Requires admin role. Returns logs from SQLite database with filters for search,
+    level, correlation_id, and pagination controls.
+
+    Args:
+        args: Query parameters (page, page_size, search, level, sort_order)
+        user: Authenticated user (must be admin)
+
+    Returns:
+        MCP-compliant response with logs array and pagination metadata
+    """
+    # Permission check: admin only
+    if user.role != UserRole.ADMIN:
+        return _mcp_response({
+            "success": False,
+            "error": "Permission denied. Admin role required to query logs."
+        })
+
+    # Get log database path from app.state
+    log_db_path = getattr(app_module.app.state, "log_db_path", None)
+    if not log_db_path:
+        return _mcp_response({
+            "success": False,
+            "error": "Log database not configured"
+        })
+
+    # Initialize service
+    from code_indexer.server.services.log_aggregator_service import LogAggregatorService
+    service = LogAggregatorService(log_db_path)
+
+    # Extract parameters
+    page = args.get("page", 1)
+    page_size = args.get("page_size", 50)
+    sort_order = args.get("sort_order", "desc")
+    search = args.get("search")
+    level = args.get("level")
+    correlation_id = args.get("correlation_id")
+
+    # Parse level (comma-separated string to list)
+    levels = None
+    if level:
+        levels = [l.strip() for l in level.split(",")]
+
+    # Query logs
+    result = service.query(
+        page=page,
+        page_size=page_size,
+        sort_order=sort_order,
+        levels=levels,
+        correlation_id=correlation_id,
+        search=search
+    )
+
+    return _mcp_response({
+        "success": True,
+        "logs": result["logs"],
+        "pagination": result["pagination"]
+    })
+
+
+async def admin_logs_export(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Export operational logs in JSON or CSV format.
+
+    Requires admin role. Returns ALL logs matching filter criteria (no pagination)
+    formatted as JSON or CSV for offline analysis or external tool import.
+
+    Args:
+        args: Export parameters (format, search, level, correlation_id)
+        user: Authenticated user (must be admin)
+
+    Returns:
+        MCP-compliant response with format, count, data, and filters metadata
+    """
+    # Permission check: admin only
+    if user.role != UserRole.ADMIN:
+        return _mcp_response({
+            "success": False,
+            "error": "Permission denied. Admin role required to export logs."
+        })
+
+    # Get log database path from app.state
+    log_db_path = getattr(app_module.app.state, "log_db_path", None)
+    if not log_db_path:
+        return _mcp_response({
+            "success": False,
+            "error": "Log database not configured"
+        })
+
+    # Initialize services
+    from code_indexer.server.services.log_aggregator_service import LogAggregatorService
+    from code_indexer.server.services.log_export_formatter import LogExportFormatter
+
+    service = LogAggregatorService(log_db_path)
+    formatter = LogExportFormatter()
+
+    # Extract parameters
+    export_format = args.get("format", "json")
+    search = args.get("search")
+    level = args.get("level")
+    correlation_id = args.get("correlation_id")
+
+    # Validate format
+    if export_format not in ["json", "csv"]:
+        return _mcp_response({
+            "success": False,
+            "error": f"Invalid format '{export_format}'. Must be 'json' or 'csv'."
+        })
+
+    # Parse level (comma-separated string to list)
+    levels = None
+    if level:
+        levels = [l.strip() for l in level.split(",")]
+
+    # Query ALL logs matching filters (no pagination)
+    logs = service.query_all(
+        levels=levels,
+        correlation_id=correlation_id,
+        search=search
+    )
+
+    # Format output
+    filters = {
+        "search": search,
+        "level": level,
+        "correlation_id": correlation_id
+    }
+
+    if export_format == "json":
+        data = formatter.to_json(logs, filters)
+    else:  # csv
+        data = formatter.to_csv(logs)
+
+    return _mcp_response({
+        "success": True,
+        "format": export_format,
+        "count": len(logs),
+        "data": data,
+        "filters": filters
+    })
+
+
+HANDLER_REGISTRY["admin_logs_query"] = handle_admin_logs_query
+HANDLER_REGISTRY["admin_logs_export"] = admin_logs_export
+
+
 # Register SCIP handlers
 HANDLER_REGISTRY["scip_definition"] = scip_definition
 HANDLER_REGISTRY["scip_references"] = scip_references

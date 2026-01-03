@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Callable, Any, List, cast
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 from ..git.git_sync_executor import GitSyncExecutor, GitSyncResult, GitSyncError
 from ..jobs.manager import SyncJobManager
 from ..jobs.models import JobType, JobStatus
@@ -120,7 +122,10 @@ class SyncExecutionOrchestrator:
                 self.error_reporter = ErrorReporter()
                 logger.info("Comprehensive error handling and recovery enabled")
             except Exception as e:
-                logger.warning(f"Failed to initialize error handling: {e}")
+                logger.warning(
+                    f"Failed to initialize error handling: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 self.enable_comprehensive_error_handling = False
                 self.recovery_orchestrator = None
                 self.error_reporter = None
@@ -144,7 +149,10 @@ class SyncExecutionOrchestrator:
                 self.git_analyzer = GitChangeAnalyzer(self.repository_path)
                 logger.info("Intelligent re-indexing enabled")
             except Exception as e:
-                logger.warning(f"Failed to initialize intelligent re-indexing: {e}")
+                logger.warning(
+                    f"Failed to initialize intelligent re-indexing: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 self.enable_intelligent_reindexing = False
                 self.reindexing_engine = None
                 self.git_analyzer = None
@@ -182,14 +190,18 @@ class SyncExecutionOrchestrator:
                     logger.info("Index validation enabled")
                 else:
                     logger.warning(
-                        "Failed to load config for validation - disabling validation"
+                        "Failed to load config for validation - disabling validation",
+                        extra={"correlation_id": get_correlation_id()},
                     )
                     self.enable_validation = False
                     self.validation_engine = None
                     self.auto_recovery_engine = None
 
             except Exception as e:
-                logger.warning(f"Failed to initialize validation components: {e}")
+                logger.warning(
+                    f"Failed to initialize validation components: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 self.enable_validation = False
                 self.validation_engine = None
                 self.auto_recovery_engine = None
@@ -344,7 +356,10 @@ class SyncExecutionOrchestrator:
                             error_message=f"Indexing error: {str(e)}",
                             error_code="INDEXING_ERROR",
                         )
-                        logger.error(f"Indexing failed for job {job_id}: {e}")
+                        logger.error(
+                            f"Indexing failed for job {job_id}: {e}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
 
                 elif not git_result.changes_detected:
                     # Skip indexing - no changes
@@ -407,7 +422,9 @@ class SyncExecutionOrchestrator:
 
         except Exception as e:
             error_message = f"Sync orchestration failed: {str(e)}"
-            logger.error(error_message, exc_info=True)
+            logger.error(
+                error_message, exc_info=True, extra={"correlation_id": get_correlation_id()}
+            )
 
             # Try to mark job as failed if it was created
             if hasattr(self, "_current_job_id") and self._current_job_id:
@@ -476,7 +493,7 @@ class SyncExecutionOrchestrator:
                                 f"Released repository lock for job {job_id} before retry"
                             )
                 except Exception as e:
-                    logger.warning(f"Could not release repository lock for retry: {e}")
+                    logger.warning(f"Could not release repository lock for retry: {e}", extra={"correlation_id": get_correlation_id()})
 
             # Create a new job with same parameters (retry creates new job)
             return self.execute_sync(
@@ -529,7 +546,7 @@ class SyncExecutionOrchestrator:
 
             # Health checks
             if not embedding_provider.health_check():
-                logger.error("Embedding provider health check failed")
+                logger.error("Embedding provider health check failed", extra={"correlation_id": get_correlation_id()})
                 return False
 
             # Create SmartIndexer
@@ -574,11 +591,11 @@ class SyncExecutionOrchestrator:
                 )
                 return True
             else:
-                logger.warning("Internal CIDX indexing was cancelled or failed")
+                logger.warning("Internal CIDX indexing was cancelled or failed", extra={"correlation_id": get_correlation_id()})
                 return False
 
         except Exception as e:
-            logger.error(f"Internal CIDX indexing failed: {e}", exc_info=True)
+            logger.error(f"Internal CIDX indexing failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
             return False
 
     def _determine_indexing_mode(
@@ -640,7 +657,7 @@ class SyncExecutionOrchestrator:
             return indexing_mode, decision
 
         except Exception as e:
-            logger.warning(f"Failed to make intelligent reindexing decision: {e}")
+            logger.warning(f"Failed to make intelligent reindexing decision: {e}", extra={"correlation_id": get_correlation_id()})
             # Fall back to simple logic
             mode = "full" if force_full_index else "incremental"
             return mode, None
@@ -655,7 +672,7 @@ class SyncExecutionOrchestrator:
                         commits_back=git_result.commits_pulled
                     )
                 except Exception as e:
-                    logger.warning(f"Git analyzer failed, using simple analysis: {e}")
+                    logger.warning(f"Git analyzer failed, using simple analysis: {e}", extra={"correlation_id": get_correlation_id()})
 
             # Build basic change set from git result
             # Estimate total files based on changed files (conservative estimate)
@@ -672,7 +689,7 @@ class SyncExecutionOrchestrator:
             )
 
         except Exception as e:
-            logger.warning(f"Failed to build change set: {e}")
+            logger.warning(f"Failed to build change set: {e}", extra={"correlation_id": get_correlation_id()})
             # Minimal fallback - ensure we don't have division by zero
             total_files = max(100, len(git_result.files_changed) * 5)
             return ChangeSet(
@@ -714,7 +731,7 @@ class SyncExecutionOrchestrator:
                 )
 
         except Exception as e:
-            logger.warning(f"Failed to get index metrics: {e}")
+            logger.warning(f"Failed to get index metrics: {e}", extra={"correlation_id": get_correlation_id()})
             # Conservative defaults
             return IndexMetrics(
                 search_accuracy=0.8, index_age_days=15, corruption_detected=False
@@ -751,7 +768,7 @@ class SyncExecutionOrchestrator:
             )
 
         except Exception as e:
-            logger.warning(f"Failed to create reindexing context: {e}")
+            logger.warning(f"Failed to create reindexing context: {e}", extra={"correlation_id": get_correlation_id()})
             # Minimal context
             return ReindexingContext(
                 repository_path=self.repository_path,
@@ -796,7 +813,7 @@ class SyncExecutionOrchestrator:
 
             # Run comprehensive validation
             if self.validation_engine is None:
-                logger.warning("Validation engine not available - skipping validation")
+                logger.warning("Validation engine not available - skipping validation", extra={"correlation_id": get_correlation_id()})
                 return None
 
             validation_result = self.validation_engine.validate_comprehensive(
@@ -840,7 +857,8 @@ class SyncExecutionOrchestrator:
                     },
                 )
                 logger.warning(
-                    f"Validation failed with health score {validation_result.overall_health_score:.2f}"
+                    f"Validation failed with health score {validation_result.overall_health_score:.2f}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
 
                 # Attempt auto-recovery if enabled and required
@@ -886,11 +904,12 @@ class SyncExecutionOrchestrator:
                                 )
                             else:
                                 logger.error(
-                                    f"Auto-recovery failed: {recovery_result.error_message}"
+                                    f"Auto-recovery failed: {recovery_result.error_message}",
+                                    extra={"correlation_id": get_correlation_id()},
                                 )
 
                     except Exception as e:
-                        logger.error(f"Auto-recovery execution failed: {e}")
+                        logger.error(f"Auto-recovery execution failed: {e}", extra={"correlation_id": get_correlation_id()})
 
             return validation_result
 
@@ -903,7 +922,7 @@ class SyncExecutionOrchestrator:
                 error_message=error_message,
                 error_code="VALIDATION_ERROR",
             )
-            logger.error(f"Validation phase failed for job {job_id}: {e}")
+            logger.error(f"Validation phase failed for job {job_id}: {e}", extra={"correlation_id": get_correlation_id()})
 
             # Return a failed validation result
             from ..validation.models import ValidationResult, ValidationError
@@ -931,7 +950,7 @@ class SyncExecutionOrchestrator:
             config_manager = ConfigManager.create_with_backtrack(self.repository_path)
             return config_manager.load()
         except Exception as e:
-            logger.warning(f"Failed to load CIDX config: {e}")
+            logger.warning(f"Failed to load CIDX config: {e}", extra={"correlation_id": get_correlation_id()})
             return None
 
     def _handle_error_with_recovery(
@@ -1016,20 +1035,24 @@ class SyncExecutionOrchestrator:
                     return True, "recovered", sync_error, recovery_attempts
                 else:
                     logger.warning(
-                        f"Recovery failed for {sync_error.error_code}: {recovery_result.outcome.value}"
+                        f"Recovery failed for {sync_error.error_code}: {recovery_result.outcome.value}",
+                        extra={"correlation_id": get_correlation_id()},
                     )
 
             # No recovery possible or recovery failed
             logger.error(
                 f"Error handling completed for {sync_error.error_code} - "
-                f"no recovery possible (severity: {sync_error.severity.value})"
+                f"no recovery possible (severity: {sync_error.severity.value})",
+                extra={"correlation_id": get_correlation_id()},
             )
 
             return False, None, sync_error, recovery_attempts
 
         except Exception as handling_error:
             logger.error(
-                f"Error handling system failed: {handling_error}", exc_info=True
+                f"Error handling system failed: {handling_error}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
             )
             # Fallback to basic error classification
             fallback_error = classify_error(error)
@@ -1070,7 +1093,7 @@ class SyncExecutionOrchestrator:
                 report_data = json.loads(report_json)
                 base_result.error_report_id = report_data.get("report_id")
             except Exception as e:
-                logger.warning(f"Failed to generate error report: {e}")
+                logger.warning(f"Failed to generate error report: {e}", extra={"correlation_id": get_correlation_id()})
 
         return base_result
 
@@ -1093,7 +1116,7 @@ class SyncExecutionOrchestrator:
                 self.error_reporter.aggregator.get_error_statistics(time_window_hours),
             )
         except Exception as e:
-            logger.error(f"Failed to get error statistics: {e}")
+            logger.error(f"Failed to get error statistics: {e}", extra={"correlation_id": get_correlation_id()})
             return {"error": str(e)}
 
     def generate_error_report(
@@ -1138,7 +1161,7 @@ class SyncExecutionOrchestrator:
             )
 
         except Exception as e:
-            logger.error(f"Failed to generate error report: {e}")
+            logger.error(f"Failed to generate error report: {e}", extra={"correlation_id": get_correlation_id()})
             return f"Error generating report: {str(e)}"
 
     def get_user_friendly_error_message(self, error: SyncError) -> str:
@@ -1157,5 +1180,5 @@ class SyncExecutionOrchestrator:
         try:
             return self.error_reporter.get_user_friendly_error_message(error)
         except Exception as e:
-            logger.error(f"Failed to format user-friendly error message: {e}")
+            logger.error(f"Failed to format user-friendly error message: {e}", extra={"correlation_id": get_correlation_id()})
             return f"Error: {error.message}"

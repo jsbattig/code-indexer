@@ -8,6 +8,7 @@ when full re-indexing is needed instead of incremental indexing.
 import logging
 from typing import Optional, List, TypedDict
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from .reindexing_config import ReindexingConfig
 from .reindexing_models import (
     ReindexingDecision,
@@ -136,7 +137,10 @@ class ReindexingDecisionEngine:
             decision.should_reindex = True
             decision.add_trigger_reason("corruption_detected")
             decision.confidence_score = 1.0
-            logger.warning("Index corruption detected - full re-index required")
+            logger.warning(
+                "Index corruption detected - full re-index required",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _analyze_config_changes(
         self, decision: ReindexingDecision, change_set: ChangeSet

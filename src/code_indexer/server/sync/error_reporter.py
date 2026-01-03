@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import threading
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from .error_handler import SyncError, ErrorSeverity, ErrorCategory, ErrorContext
 from .recovery_strategies import RecoveryResult
 
@@ -337,7 +338,10 @@ class DiagnosticCollector:
             diagnostics.log_excerpts = self._collect_log_excerpts(error)
 
         except Exception as e:
-            self.logger.error(f"Failed to collect diagnostics: {e}")
+            self.logger.error(
+                f"Failed to collect diagnostics: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             diagnostics.system_environment["diagnostic_collection_error"] = str(e)
 
         return diagnostics
@@ -600,7 +604,8 @@ class ErrorReporter:
                 self.logger.debug(f"Diagnostics collected for error {error.error_code}")
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to collect diagnostics for {error.error_code}: {e}"
+                    f"Failed to collect diagnostics for {error.error_code}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
 
     def generate_report(

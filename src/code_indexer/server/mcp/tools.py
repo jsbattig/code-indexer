@@ -5881,3 +5881,153 @@ TOOL_REGISTRY["get_index_status"] = {
     },
     "required_permission": "repository:read",
 }
+
+# =============================================================================
+# ADMIN LOG MANAGEMENT TOOLS
+# =============================================================================
+
+TOOL_REGISTRY["admin_logs_query"] = {
+    "name": "admin_logs_query",
+    "description": (
+        "Query operational logs from SQLite database with pagination and filtering. "
+        "USE CASES: (1) View recent server logs, (2) Search for specific errors/events, (3) Trace requests by correlation_id, (4) Filter by log level. "
+        "RETURNS: Paginated array of log entries with timestamp, level, source, message, correlation_id, user_id, request_path. "
+        "PERMISSIONS: Requires admin role (admin only). "
+        'EXAMPLE: {"page": 1, "page_size": 50, "search": "SSO", "level": "ERROR"}'
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "page": {
+                "type": "integer",
+                "description": "Page number (1-indexed, default 1)"
+            },
+            "page_size": {
+                "type": "integer",
+                "description": "Number of logs per page (default 50, max 1000)"
+            },
+            "sort_order": {
+                "type": "string",
+                "description": "Sort order: 'asc' (oldest first) or 'desc' (newest first, default)",
+                "enum": ["asc", "desc"]
+            },
+            "search": {
+                "type": "string",
+                "description": "Text search across message and correlation_id (case-insensitive)"
+            },
+            "level": {
+                "type": "string",
+                "description": "Filter by log level(s), comma-separated (e.g., 'ERROR' or 'ERROR,WARNING')"
+            },
+            "correlation_id": {
+                "type": "string",
+                "description": "Filter by exact correlation ID"
+            }
+        },
+        "additionalProperties": False,
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Operation success status"
+            },
+            "logs": {
+                "type": "array",
+                "description": "Array of log entries",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "timestamp": {"type": "string"},
+                        "level": {"type": "string"},
+                        "source": {"type": "string"},
+                        "message": {"type": "string"},
+                        "correlation_id": {"type": ["string", "null"]},
+                        "user_id": {"type": ["string", "null"]},
+                        "request_path": {"type": ["string", "null"]}
+                    }
+                }
+            },
+            "pagination": {
+                "type": "object",
+                "description": "Pagination metadata",
+                "properties": {
+                    "page": {"type": "integer"},
+                    "page_size": {"type": "integer"},
+                    "total": {"type": "integer"},
+                    "total_pages": {"type": "integer"}
+                }
+            }
+        },
+        "required": ["success", "logs", "pagination"],
+    },
+    "required_permission": "manage_users",  # admin only
+}
+
+TOOL_REGISTRY["admin_logs_export"] = {
+    "name": "admin_logs_export",
+    "description": (
+        "Export operational logs in JSON or CSV format for offline analysis or external tool import. "
+        "USE CASES: (1) Download filtered logs for support tickets, (2) Import into Excel/log analysis tools, (3) Share error logs with team, (4) Archive logs. "
+        "RETURNS: ALL logs matching filter criteria (no pagination) formatted as JSON or CSV. Includes export metadata with count and applied filters. "
+        "PERMISSIONS: Requires admin role (admin only). "
+        'EXAMPLE: {"format": "json", "search": "OAuth", "level": "ERROR"}'
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "format": {
+                "type": "string",
+                "description": "Export format: 'json' (default) or 'csv'",
+                "enum": ["json", "csv"]
+            },
+            "search": {
+                "type": "string",
+                "description": "Text search across message and correlation_id (case-insensitive)"
+            },
+            "level": {
+                "type": "string",
+                "description": "Filter by log level(s), comma-separated (e.g., 'ERROR' or 'ERROR,WARNING')"
+            },
+            "correlation_id": {
+                "type": "string",
+                "description": "Filter by exact correlation ID"
+            }
+        },
+        "additionalProperties": False,
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Operation success status"
+            },
+            "format": {
+                "type": "string",
+                "description": "Export format used (json or csv)"
+            },
+            "count": {
+                "type": "integer",
+                "description": "Total number of logs exported"
+            },
+            "data": {
+                "type": "string",
+                "description": "Exported log data as JSON string (with metadata) or CSV string (with BOM)"
+            },
+            "filters": {
+                "type": "object",
+                "description": "Filters applied to export",
+                "properties": {
+                    "search": {"type": ["string", "null"]},
+                    "level": {"type": ["string", "null"]},
+                    "correlation_id": {"type": ["string", "null"]}
+                }
+            }
+        },
+        "required": ["success", "format", "count", "data", "filters"],
+    },
+    "required_permission": "manage_users",  # admin only
+}

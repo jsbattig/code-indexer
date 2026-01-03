@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable, Union
 import json
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from .error_handler import SyncError, ErrorSeverity, ErrorCategory, ErrorContext
 
 
@@ -305,7 +306,8 @@ class RetryWithBackoffStrategy(RecoveryStrategy):
                     attempts.append(attempt)
 
                     self.logger.warning(
-                        f"Error type changed to non-retriable, escalating: {retry_error.error_code}"
+                        f"Error type changed to non-retriable, escalating: {retry_error.error_code}",
+                        extra={"correlation_id": get_correlation_id()},
                     )
 
                     return RecoveryResult(
@@ -322,14 +324,16 @@ class RetryWithBackoffStrategy(RecoveryStrategy):
                 attempts.append(attempt)
 
                 self.logger.warning(
-                    f"Retry attempt {attempt_num} failed: {retry_exception}"
+                    f"Retry attempt {attempt_num} failed: {retry_exception}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
 
         # All retries exhausted
         recovery_time = time.time() - start_time
 
         self.logger.error(
-            f"All {self.retry_policy.max_attempts} retry attempts exhausted in {recovery_time:.2f}s"
+            f"All {self.retry_policy.max_attempts} retry attempts exhausted in {recovery_time:.2f}s",
+            extra={"correlation_id": get_correlation_id()},
         )
 
         return RecoveryResult(
@@ -430,7 +434,8 @@ class RollbackStrategy(RecoveryStrategy):
                     recovery_time = time.time() - start_time
 
                     self.logger.warning(
-                        f"Rollback succeeded but retry failed in {recovery_time:.2f}s"
+                        f"Rollback succeeded but retry failed in {recovery_time:.2f}s",
+                        extra={"correlation_id": get_correlation_id()},
                     )
 
                     return RecoveryResult(
@@ -450,7 +455,10 @@ class RollbackStrategy(RecoveryStrategy):
 
                 recovery_time = time.time() - start_time
 
-                self.logger.error(f"Rollback failed in {recovery_time:.2f}s")
+                self.logger.error(
+                    f"Rollback failed in {recovery_time:.2f}s",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
                 return RecoveryResult(
                     success=False,
@@ -470,7 +478,8 @@ class RollbackStrategy(RecoveryStrategy):
             recovery_time = time.time() - start_time
 
             self.logger.error(
-                f"Rollback recovery failed with exception in {recovery_time:.2f}s: {rollback_exception}"
+                f"Rollback recovery failed with exception in {recovery_time:.2f}s: {rollback_exception}",
+                extra={"correlation_id": get_correlation_id()},
             )
 
             return RecoveryResult(
@@ -511,12 +520,16 @@ class RollbackStrategy(RecoveryStrategy):
                 return self._rollback_file_operations(error, context, progress_callback)
             else:
                 self.logger.warning(
-                    f"No rollback strategy for category {error.category}"
+                    f"No rollback strategy for category {error.category}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return False
 
         except Exception as e:
-            self.logger.error(f"Rollback operation failed: {e}")
+            self.logger.error(
+                f"Rollback operation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def _rollback_git_operations(
@@ -549,11 +562,17 @@ class RollbackStrategy(RecoveryStrategy):
                 self.logger.info("Git rollback: reset to HEAD successful")
                 return True
             except Exception as e:
-                self.logger.error(f"Git rollback failed: {e}")
+                self.logger.error(
+                    f"Git rollback failed: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
         except Exception as e:
-            self.logger.error(f"Git rollback operation failed: {e}")
+            self.logger.error(
+                f"Git rollback operation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def _rollback_indexing_operations(
@@ -581,7 +600,10 @@ class RollbackStrategy(RecoveryStrategy):
             return True
 
         except Exception as e:
-            self.logger.error(f"Indexing rollback operation failed: {e}")
+            self.logger.error(
+                f"Indexing rollback operation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def _rollback_file_operations(
@@ -607,7 +629,10 @@ class RollbackStrategy(RecoveryStrategy):
             return True
 
         except Exception as e:
-            self.logger.error(f"File system rollback operation failed: {e}")
+            self.logger.error(
+                f"File system rollback operation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
 
@@ -735,7 +760,9 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
             attempts.append(attempt)
 
             self.logger.error(
-                f"Checkpoint recovery failed: {checkpoint_exception}", exc_info=True
+                f"Checkpoint recovery failed: {checkpoint_exception}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
             )
 
             return RecoveryResult(
@@ -784,7 +811,10 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
             self.logger.info(f"Created checkpoint {checkpoint.checkpoint_id}")
 
         except Exception as e:
-            self.logger.error(f"Failed to save checkpoint: {e}")
+            self.logger.error(
+                f"Failed to save checkpoint: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         return checkpoint
 
@@ -808,7 +838,10 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
             )
 
         except Exception as e:
-            self.logger.error(f"Failed to load checkpoint for job {job_id}: {e}")
+            self.logger.error(
+                f"Failed to load checkpoint for job {job_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return None
 
     def _restore_from_checkpoint(
@@ -835,7 +868,8 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
 
         except Exception as e:
             self.logger.error(
-                f"Failed to restore from checkpoint {checkpoint.checkpoint_id}: {e}"
+                f"Failed to restore from checkpoint {checkpoint.checkpoint_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
             )
             return False
 
@@ -856,7 +890,10 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
             # Restore index from backup
             pass  # TODO: Implement index restore logic
         else:
-            self.logger.warning(f"Unknown rollback action type: {action_type}")
+            self.logger.warning(
+                f"Unknown rollback action type: {action_type}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
 
 class RecoveryOrchestrator:
@@ -913,7 +950,10 @@ class RecoveryOrchestrator:
         ]
 
         if not applicable_strategies:
-            self.logger.warning("No recovery strategies available for this error")
+            self.logger.warning(
+                "No recovery strategies available for this error",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return RecoveryResult(
                 success=False,
                 action_taken=RecoveryAction.ESCALATE,
@@ -961,7 +1001,8 @@ class RecoveryOrchestrator:
 
                 else:
                     self.logger.warning(
-                        f"Recovery strategy {strategy.name} failed: {result.outcome.value}"
+                        f"Recovery strategy {strategy.name} failed: {result.outcome.value}",
+                        extra={"correlation_id": get_correlation_id()},
                     )
 
                     # If this strategy escalated, don't try others
@@ -977,13 +1018,15 @@ class RecoveryOrchestrator:
 
             except Exception as strategy_exception:
                 self.logger.error(
-                    f"Recovery strategy {strategy.name} threw exception: {strategy_exception}"
+                    f"Recovery strategy {strategy.name} threw exception: {strategy_exception}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 # Continue to next strategy
 
         # All strategies exhausted
         self.logger.error(
-            f"All {len(applicable_strategies)} recovery strategies exhausted"
+            f"All {len(applicable_strategies)} recovery strategies exhausted",
+            extra={"correlation_id": get_correlation_id()},
         )
 
         return RecoveryResult(

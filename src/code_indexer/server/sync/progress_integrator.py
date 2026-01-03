@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from ..jobs.manager import SyncJobManager
 from .progress_tracker import SyncPhaseTracker
 
@@ -180,7 +181,10 @@ class ProgressCallbackIntegrator:
 
         except Exception as e:
             # Don't let progress callback errors break the operation
-            logger.warning(f"Progress callback integration error: {e}")
+            logger.warning(
+                f"Progress callback integration error: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _detect_phase_from_info(self, info: str) -> str:
         """
@@ -228,7 +232,10 @@ class ProgressCallbackIntegrator:
                 info=info,
             )
         except Exception as e:
-            logger.warning(f"Failed to update phase info for {phase}: {e}")
+            logger.warning(
+                f"Failed to update phase info for {phase}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _update_phase_progress(
         self,
@@ -269,7 +276,10 @@ class ProgressCallbackIntegrator:
             )
 
         except Exception as e:
-            logger.warning(f"Failed to update phase progress for {phase}: {e}")
+            logger.warning(
+                f"Failed to update phase progress for {phase}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _extract_indexing_metrics(self, info: str) -> Dict[str, Any]:
         """
@@ -449,7 +459,8 @@ class ProgressCallbackIntegrator:
 
         except Exception as e:
             logger.warning(
-                f"Failed to create recovery checkpoint for job {self.job_id}: {e}"
+                f"Failed to create recovery checkpoint for job {self.job_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def get_phase_tracker_summary(self) -> Dict[str, Any]:
@@ -462,7 +473,10 @@ class ProgressCallbackIntegrator:
         try:
             return self.phase_tracker.get_progress_summary()
         except Exception as e:
-            logger.error(f"Error getting phase tracker summary: {e}")
+            logger.error(
+                f"Error getting phase tracker summary: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {"overall_progress": 0.0, "error": str(e)}
 
     def start_phase(self, phase_name: str) -> None:
@@ -480,7 +494,10 @@ class ProgressCallbackIntegrator:
             logger.info(f"Manually started phase '{phase_name}' for job {self.job_id}")
 
         except Exception as e:
-            logger.error(f"Error manually starting phase {phase_name}: {e}")
+            logger.error(
+                f"Error manually starting phase {phase_name}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def complete_phase(
         self, phase_name: str, result: Optional[Dict[str, Any]] = None
@@ -515,7 +532,10 @@ class ProgressCallbackIntegrator:
             )
 
         except Exception as e:
-            logger.error(f"Error manually completing phase {phase_name}: {e}")
+            logger.error(
+                f"Error manually completing phase {phase_name}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def fail_phase(
         self, phase_name: str, error_message: str, error_code: Optional[str] = None
@@ -543,8 +563,12 @@ class ProgressCallbackIntegrator:
             )
 
             logger.error(
-                f"Manually failed phase '{phase_name}' for job {self.job_id}: {error_message}"
+                f"Manually failed phase '{phase_name}' for job {self.job_id}: {error_message}",
+                extra={"correlation_id": get_correlation_id()},
             )
 
         except Exception as e:
-            logger.error(f"Error manually failing phase {phase_name}: {e}")
+            logger.error(
+                f"Error manually failing phase {phase_name}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )

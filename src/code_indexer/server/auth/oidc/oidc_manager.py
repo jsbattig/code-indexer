@@ -1,6 +1,7 @@
 """OIDC manager for orchestrating OIDC authentication flow."""
 
 from pathlib import Path
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 
 class OIDCManager:
@@ -44,6 +45,7 @@ class OIDCManager:
                 logger.error(
                     f"Failed to initialize SSO provider: {e}",
                     exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 # Don't set self.provider - leave it None so we can retry
                 raise
@@ -134,7 +136,8 @@ class OIDCManager:
                 else:
                     # Stale OIDC link (defensive check - should be cleaned up on user deletion)
                     logger.warning(
-                        f"Stale OIDC link found for subject={user_info.subject}, deleting"
+                        f"Stale OIDC link found for subject={user_info.subject}, deleting",
+                        extra={"correlation_id": get_correlation_id()},
                     )
                     await db.execute(
                         "DELETE FROM oidc_identity_links WHERE subject = ?",
@@ -171,7 +174,8 @@ class OIDCManager:
             # If username_claim is configured but not present in userinfo, fail
             if not user_info.username:
                 logger.error(
-                    f"Username claim '{self.config.username_claim}' not found in OIDC userinfo. Available claims: {list(user_info.__dict__.keys())}"
+                    f"Username claim '{self.config.username_claim}' not found in OIDC userinfo. Available claims: {list(user_info.__dict__.keys())}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return None
 
@@ -185,7 +189,8 @@ class OIDCManager:
                 logger.error(
                     f"JIT provisioning failed: Username '{base_username}' already exists. "
                     f"OIDC subject={user_info.subject}, email={user_info.email}. "
-                    f"Admin must manually link accounts or resolve username conflict."
+                    f"Admin must manually link accounts or resolve username conflict.",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return None
 
