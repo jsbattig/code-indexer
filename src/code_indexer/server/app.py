@@ -93,6 +93,7 @@ from .services.stats_service import stats_service
 from .services.file_service import file_service
 from .services.search_service import search_service
 from .services.health_service import health_service
+from .services.sqlite_log_handler import SQLiteLogHandler
 from .managers.composite_file_listing import _list_composite_files
 
 
@@ -1779,6 +1780,25 @@ def create_app() -> FastAPI:
             "CIDX_SERVER_DATA_DIR", str(Path.home() / ".cidx-server")
         )
         golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
+
+        # Startup: Initialize SQLite log handler FIRST (to capture all startup logs)
+        logger.info("Server startup: Initializing SQLite log handler")
+        try:
+            log_db_path = Path(server_data_dir) / "logs.db"
+            sqlite_handler = SQLiteLogHandler(log_db_path)
+            sqlite_handler.setLevel(logging.INFO)
+            logging.getLogger().addHandler(sqlite_handler)
+
+            # Set app state for web routes to access
+            app.state.log_db_path = log_db_path
+
+            logger.info(f"SQLite log handler initialized: {log_db_path}")
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to initialize SQLite log handler: {e}", exc_info=True
+            )
 
         # Startup: Migrate legacy cidx-meta and bootstrap if needed
         logger.info("Server startup: Checking cidx-meta migration and bootstrap")
