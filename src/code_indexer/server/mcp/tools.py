@@ -5894,21 +5894,6 @@ TOOL_REGISTRY["admin_logs_query"] = {
         "RETURNS: Paginated array of log entries with timestamp, level, source, message, correlation_id, user_id, request_path. "
         "PERMISSIONS: Requires admin role (admin only). "
         'EXAMPLE: {"page": 1, "page_size": 50, "search": "SSO", "level": "ERROR"}'
-
-# GITHUB ACTIONS MONITORING TOOLS (Story #633)
-# =============================================================================
-
-TOOL_REGISTRY["gh_actions_list_runs"] = {
-    "name": "gh_actions_list_runs",
-    "description": (
-        "TL;DR: List recent GitHub Actions workflow runs with optional filtering by branch and status. "
-        "QUICK START: gh_actions_list_runs(repository='owner/repo') returns recent runs. "
-        "USE CASES: (1) Monitor CI/CD status, (2) Find failed workflows, (3) Check workflow history. "
-        "FILTERS: branch='main' (filter by branch), status='failure' (filter by conclusion). "
-        "RETURNS: List of workflow runs with id, name, status, conclusion, branch, created_at. "
-        "PERMISSIONS: Requires repository:read. "
-        "AUTHENTICATION: Uses stored GitHub token from token storage. "
-        "EXAMPLE: gh_actions_list_runs(repository='owner/repo', branch='main', status='failure')"
     ),
     "inputSchema": {
         "type": "object",
@@ -5940,21 +5925,6 @@ TOOL_REGISTRY["gh_actions_list_runs"] = {
             }
         },
         "additionalProperties": False,
-
-            "repository": {
-                "type": "string",
-                "description": "Repository in 'owner/repo' format",
-            },
-            "branch": {
-                "type": "string",
-                "description": "Optional branch filter",
-            },
-            "status": {
-                "type": "string",
-                "description": "Optional status filter (e.g., 'failure', 'success')",
-            },
-        },
-        "required": ["repository"],
     },
     "outputSchema": {
         "type": "object",
@@ -5966,10 +5936,6 @@ TOOL_REGISTRY["gh_actions_list_runs"] = {
             "logs": {
                 "type": "array",
                 "description": "Array of log entries",
-
-            "success": {"type": "boolean"},
-            "runs": {
-                "type": "array",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -6008,29 +5974,6 @@ TOOL_REGISTRY["admin_logs_export"] = {
         "RETURNS: ALL logs matching filter criteria (no pagination) formatted as JSON or CSV. Includes export metadata with count and applied filters. "
         "PERMISSIONS: Requires admin role (admin only). "
         'EXAMPLE: {"format": "json", "search": "OAuth", "level": "ERROR"}'
-
-                        "name": {"type": "string"},
-                        "status": {"type": "string"},
-                        "conclusion": {"type": "string"},
-                        "branch": {"type": "string"},
-                        "created_at": {"type": "string"},
-                    },
-                },
-            },
-        },
-    },
-    "required_permission": "repository:read",
-}
-
-TOOL_REGISTRY["gh_actions_get_run"] = {
-    "name": "gh_actions_get_run",
-    "description": (
-        "TL;DR: Get detailed information for a specific GitHub Actions workflow run. "
-        "QUICK START: gh_actions_get_run(repository='owner/repo', run_id=12345) returns detailed run info. "
-        "USE CASES: (1) Investigate specific workflow run, (2) Get timing information, (3) Find jobs URL. "
-        "RETURNS: Detailed run information including jobs_url, updated_at, run_started_at. "
-        "PERMISSIONS: Requires repository:read. "
-        "EXAMPLE: gh_actions_get_run(repository='owner/repo', run_id=12345)"
     ),
     "inputSchema": {
         "type": "object",
@@ -6054,17 +5997,6 @@ TOOL_REGISTRY["gh_actions_get_run"] = {
             }
         },
         "additionalProperties": False,
-
-            "repository": {
-                "type": "string",
-                "description": "Repository in 'owner/repo' format",
-            },
-            "run_id": {
-                "type": "integer",
-                "description": "Workflow run ID",
-            },
-        },
-        "required": ["repository", "run_id"],
     },
     "outputSchema": {
         "type": "object",
@@ -6098,7 +6030,92 @@ TOOL_REGISTRY["gh_actions_get_run"] = {
         "required": ["success", "format", "count", "data", "filters"],
     },
     "required_permission": "manage_users",  # admin only
+}
 
+# =============================================================================
+# GITHUB ACTIONS MONITORING TOOLS (Story #633)
+# =============================================================================
+
+TOOL_REGISTRY["gh_actions_list_runs"] = {
+    "name": "gh_actions_list_runs",
+    "description": (
+        "TL;DR: List recent GitHub Actions workflow runs with optional filtering by branch and status. "
+        "QUICK START: gh_actions_list_runs(repository='owner/repo') returns recent runs. "
+        "USE CASES: (1) Monitor CI/CD status, (2) Find failed workflows, (3) Check workflow history. "
+        "FILTERS: branch='main' (filter by branch), status='failure' (filter by conclusion). "
+        "RETURNS: List of workflow runs with id, name, status, conclusion, branch, created_at. "
+        "PERMISSIONS: Requires repository:read. "
+        "AUTHENTICATION: Uses stored GitHub token from token storage. "
+        "EXAMPLE: gh_actions_list_runs(repository='owner/repo', branch='main', status='failure')"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "branch": {
+                "type": "string",
+                "description": "Optional branch filter",
+            },
+            "status": {
+                "type": "string",
+                "description": "Optional status filter (e.g., 'failure', 'success')",
+            },
+        },
+        "required": ["repository"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "runs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "status": {"type": "string"},
+                        "conclusion": {"type": "string"},
+                        "branch": {"type": "string"},
+                        "created_at": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+    "required_permission": "repository:read",
+}
+
+TOOL_REGISTRY["gh_actions_get_run"] = {
+    "name": "gh_actions_get_run",
+    "description": (
+        "TL;DR: Get detailed information for a specific GitHub Actions workflow run. "
+        "QUICK START: gh_actions_get_run(repository='owner/repo', run_id=12345) returns detailed run info. "
+        "USE CASES: (1) Investigate specific workflow run, (2) Get timing information, (3) Find jobs URL. "
+        "RETURNS: Detailed run information including jobs_url, updated_at, run_started_at. "
+        "PERMISSIONS: Requires repository:read. "
+        "EXAMPLE: gh_actions_get_run(repository='owner/repo', run_id=12345)"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "repository": {
+                "type": "string",
+                "description": "Repository in 'owner/repo' format",
+            },
+            "run_id": {
+                "type": "integer",
+                "description": "Workflow run ID",
+            },
+        },
+        "required": ["repository", "run_id"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
             "success": {"type": "boolean"},
             "run": {
                 "type": "object",

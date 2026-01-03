@@ -77,9 +77,7 @@ class TestAdminMCPCredentialsListCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             # Configure mock to return credentials
@@ -140,9 +138,7 @@ class TestAdminMCPCredentialsListCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             # Configure mock to return credentials
@@ -200,9 +196,7 @@ class TestAdminMCPCredentialsListCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -247,9 +241,7 @@ class TestAdminMCPCredentialsCreateCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -306,9 +298,7 @@ class TestAdminMCPCredentialsCreateCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -366,9 +356,7 @@ class TestAdminMCPCredentialsCreateCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -419,9 +407,7 @@ class TestAdminMCPCredentialsRevokeCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -468,9 +454,7 @@ class TestAdminMCPCredentialsRevokeCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -521,9 +505,7 @@ class TestAdminMCPCredentialsListAllCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -589,9 +571,7 @@ class TestAdminMCPCredentialsListAllCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()
@@ -650,9 +630,7 @@ class TestAdminMCPCredentialsListAllCommand:
                 "code_indexer.cli._load_admin_credentials",
                 return_value=({"username": "admin", "password": "pass"}, "http://test"),
             ),
-            patch(
-                "code_indexer.api_clients.admin_client.AdminAPIClient"
-            ) as mock_admin_client,
+            patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
 
             mock_client_instance = MagicMock()

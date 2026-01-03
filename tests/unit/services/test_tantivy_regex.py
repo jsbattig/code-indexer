@@ -252,7 +252,7 @@ class TestTantivyRegex:
         results = indexed_manager.search(
             query_text=r"def",  # Match "def" token
             use_regex=True,
-            exclude_paths=["*/tests/*"],
+            exclude_paths=["tests/*"],  # Fixed: Use tests/* instead of */tests/* to match files starting with tests/
             snippet_lines=0,
         )
 
