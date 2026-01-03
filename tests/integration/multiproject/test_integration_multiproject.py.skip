@@ -10,8 +10,8 @@ import pytest
 
 from ...conftest import local_temporary_directory
 from pathlib import Path
-from code_indexer.services.docker_manager import DockerManager
-from code_indexer.config import ConfigManager
+from src.code_indexer.services.docker_manager import DockerManager
+from src.code_indexer.config import ConfigManager
 
 # Import new test infrastructure to eliminate duplication
 from .infrastructure import (

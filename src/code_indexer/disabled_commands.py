@@ -105,31 +105,31 @@ COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
         "proxy": False,
         "uninitialized": False,
     },
-    "jobs": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
-    # Admin commands - remote only since they manage server-side administration
-    "admin": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
+    "jobs": {"local": True, "remote": True, "proxy": False, "uninitialized": False},
+    # Admin commands - available in both local and remote modes for testing
+    "admin": {"local": True, "remote": True, "proxy": False, "uninitialized": False},
     "admin_group": {
-        "local": False,
+        "local": True,
         "remote": True,
         "proxy": False,
         "uninitialized": False,
     },
     "admin_users": {
-        "local": False,
+        "local": True,
         "remote": True,
         "proxy": False,
         "uninitialized": False,
     },
     "admin_repos": {
-        "local": False,
+        "local": True,
         "remote": True,
         "proxy": False,
         "uninitialized": False,
     },
-    # Repository management commands - remote only since they manage server-side repositories
-    "repos": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
-    # System health commands - remote only since they check server-side system health
-    "system": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
+    # Repository management commands - available in both local and remote modes
+    "repos": {"local": True, "remote": True, "proxy": False, "uninitialized": False},
+    # System health commands - available in both local and remote modes for testing
+    "system": {"local": True, "remote": True, "proxy": False, "uninitialized": False},
     # Repository configuration commands - local only since they manage local .code-indexer/config.json
     "config": {
         "local": True,

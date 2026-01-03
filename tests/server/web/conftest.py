@@ -283,6 +283,10 @@ class WebTestInfrastructure:
                 if value is not None:
                     setattr(dependencies, key, value)
 
+        # Reset config service singleton to ensure next test gets fresh instance
+        from code_indexer.server.services.config_service import reset_config_service
+        reset_config_service()
+
         # Restore original environment
         if self._original_cidx_server_dir is not None:
             os.environ["CIDX_SERVER_DATA_DIR"] = self._original_cidx_server_dir

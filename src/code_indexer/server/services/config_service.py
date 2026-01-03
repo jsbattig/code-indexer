@@ -138,6 +138,10 @@ class ConfigService:
                 "enable_jit_provisioning": config.oidc_provider_config.enable_jit_provisioning,
                 "default_role": config.oidc_provider_config.default_role,
             },
+            # SCIP workspace cleanup (Story #647)
+            "scip_cleanup": {
+                "scip_workspace_retention_days": config.scip_workspace_retention_days,
+            },
         }
 
         return settings
@@ -173,6 +177,8 @@ class ConfigService:
             self._update_claude_cli_setting(config, key, value)
         elif category == "oidc":
             self._update_oidc_setting(config, key, value)
+        elif category == "scip_cleanup":
+            self._update_scip_cleanup_setting(config, key, value)
         else:
             raise ValueError(f"Unknown category: {category}")
 
@@ -335,6 +341,15 @@ class ConfigService:
         else:
             raise ValueError(f"Unknown OIDC setting: {key}")
 
+    def _update_scip_cleanup_setting(
+        self, config: ServerConfig, key: str, value: Any
+    ) -> None:
+        """Update a SCIP cleanup setting (Story #647)."""
+        if key == "scip_workspace_retention_days":
+            config.scip_workspace_retention_days = int(value)
+        else:
+            raise ValueError(f"Unknown SCIP cleanup setting: {key}")
+
     def save_all_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
         """
         Save all settings at once.
@@ -382,3 +397,14 @@ def get_config_service() -> ConfigService:
     if _config_service is None:
         _config_service = ConfigService()
     return _config_service
+
+
+def reset_config_service() -> None:
+    """
+    Reset the global ConfigService singleton.
+
+    This is primarily used for testing to ensure each test gets a fresh
+    config service instance with its own server directory.
+    """
+    global _config_service
+    _config_service = None

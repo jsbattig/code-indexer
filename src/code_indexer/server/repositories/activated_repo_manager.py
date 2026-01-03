@@ -223,6 +223,7 @@ class ActivatedRepoManager:
             user_alias=user_alias,
             # Job submitter
             submitter_username=username,
+            repo_alias=user_alias,  # AC5: Fix unknown repo bug
         )
 
         return job_id
@@ -259,6 +260,7 @@ class ActivatedRepoManager:
             user_alias=user_alias,
             # Job submitter
             submitter_username=username,
+            repo_alias=user_alias,  # AC5: Fix unknown repo bug
         )
 
         return job_id
@@ -603,6 +605,7 @@ class ActivatedRepoManager:
             username=username,
             user_alias=user_alias,
             submitter_username=username,
+            repo_alias=user_alias,  # AC5: Fix unknown repo bug
         )
 
         return job_id

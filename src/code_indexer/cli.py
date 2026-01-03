@@ -5,7 +5,6 @@ import getpass
 import json
 import logging
 import os
-import subprocess
 import sys
 import signal
 import time
@@ -16202,14 +16201,16 @@ def global_regex_search(
 
         # Create service and execute search
         service = RegexSearchService(repo_path)
-        result = service.search(
-            pattern=pattern,
-            path=path,
-            include_patterns=list(include_patterns) if include_patterns else None,
-            exclude_patterns=list(exclude_patterns) if exclude_patterns else None,
-            case_sensitive=case_sensitive,
-            context_lines=context_lines,
-            max_results=max_results,
+        result = run_async(
+            service.search(
+                pattern=pattern,
+                path=path,
+                include_patterns=list(include_patterns) if include_patterns else None,
+                exclude_patterns=list(exclude_patterns) if exclude_patterns else None,
+                case_sensitive=case_sensitive,
+                context_lines=context_lines,
+                max_results=max_results,
+            )
         )
 
         if output_json:

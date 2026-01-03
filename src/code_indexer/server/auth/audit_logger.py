@@ -426,6 +426,211 @@ class PasswordChangeAuditLogger:
         }
         self.audit_logger.info(f"OAUTH_TOKEN_REVOCATION: {json.dumps(log_entry)}")
 
+    def log_pr_creation_success(
+        self,
+        job_id: str,
+        repo_alias: str,
+        branch_name: str,
+        pr_url: str,
+        commit_hash: str,
+        files_modified: list,
+        additional_context: Optional[dict] = None,
+    ) -> None:
+        """
+        Log successful PR creation for SCIP self-healing.
+
+        Args:
+            job_id: Unique identifier for SCIP fix job
+            repo_alias: Repository alias
+            branch_name: Name of fix branch created
+            pr_url: URL of created pull request
+            commit_hash: Git commit hash of the fix
+            files_modified: List of file paths that were modified
+            additional_context: Additional context information
+        """
+        log_entry = {
+            "event_type": "pr_creation_success",
+            "job_id": job_id,
+            "repo_alias": repo_alias,
+            "branch_name": branch_name,
+            "pr_url": pr_url,
+            "commit_hash": commit_hash,
+            "files_modified": files_modified,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "additional_context": additional_context or {},
+        }
+
+        self.audit_logger.info(f"PR_CREATION_SUCCESS: {json.dumps(log_entry)}")
+
+    def log_pr_creation_failure(
+        self,
+        job_id: str,
+        repo_alias: str,
+        reason: str,
+        branch_name: Optional[str] = None,
+        additional_context: Optional[dict] = None,
+    ) -> None:
+        """
+        Log failed PR creation attempt.
+
+        Args:
+            job_id: Unique identifier for SCIP fix job
+            repo_alias: Repository alias
+            reason: Reason for PR creation failure
+            branch_name: Name of fix branch (if created before failure)
+            additional_context: Additional context information
+        """
+        log_entry = {
+            "event_type": "pr_creation_failure",
+            "job_id": job_id,
+            "repo_alias": repo_alias,
+            "reason": reason,
+            "branch_name": branch_name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "additional_context": additional_context or {},
+        }
+
+        self.audit_logger.warning(f"PR_CREATION_FAILURE: {json.dumps(log_entry)}")
+
+    def log_pr_creation_disabled(
+        self,
+        job_id: str,
+        repo_alias: str,
+        additional_context: Optional[dict] = None,
+    ) -> None:
+        """
+        Log that PR creation was skipped due to configuration.
+
+        Args:
+            job_id: Unique identifier for SCIP fix job
+            repo_alias: Repository alias
+            additional_context: Additional context information
+        """
+        log_entry = {
+            "event_type": "pr_creation_disabled",
+            "job_id": job_id,
+            "repo_alias": repo_alias,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "additional_context": additional_context or {},
+        }
+
+        self.audit_logger.info(f"PR_CREATION_DISABLED: {json.dumps(log_entry)}")
+
+    def log_cleanup(
+        self,
+        repo_path: str,
+        files_cleared: list,
+        additional_context: Optional[dict] = None,
+    ) -> None:
+        """
+        Log git repository cleanup operation.
+
+        Args:
+            repo_path: Path to repository that was cleaned
+            files_cleared: List of files that were cleared/reset
+            additional_context: Additional context information
+        """
+        log_entry = {
+            "event_type": "git_cleanup",
+            "repo_path": repo_path,
+            "files_cleared": files_cleared,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "additional_context": additional_context or {},
+        }
+
+        self.audit_logger.info(f"GIT_CLEANUP: {json.dumps(log_entry)}")
+
+    def get_pr_logs(
+        self,
+        repo_alias: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list:
+        """
+        Query PR creation audit logs with filtering and pagination.
+
+        Args:
+            repo_alias: Filter by repository alias (optional)
+            limit: Maximum number of records to return
+            offset: Number of records to skip
+
+        Returns:
+            List of PR creation log entries (dicts)
+        """
+        logs = self._parse_logs_by_prefix("PR_CREATION")
+
+        # Filter by repo_alias if provided
+        if repo_alias:
+            logs = [log for log in logs if log.get("repo_alias") == repo_alias]
+
+        # Apply pagination
+        return logs[offset : offset + limit]
+
+    def get_cleanup_logs(
+        self,
+        repo_path: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list:
+        """
+        Query git cleanup audit logs with filtering and pagination.
+
+        Args:
+            repo_path: Filter by repository path (optional)
+            limit: Maximum number of records to return
+            offset: Number of records to skip
+
+        Returns:
+            List of git cleanup log entries (dicts)
+        """
+        logs = self._parse_logs_by_prefix("GIT_CLEANUP")
+
+        # Filter by repo_path if provided
+        if repo_path:
+            logs = [log for log in logs if log.get("repo_path") == repo_path]
+
+        # Apply pagination
+        return logs[offset : offset + limit]
+
+    def _parse_logs_by_prefix(self, prefix: str) -> list:
+        """
+        Parse log file and extract entries matching given prefix.
+
+        Args:
+            prefix: Log prefix to filter by (e.g., "PR_CREATION", "GIT_CLEANUP")
+
+        Returns:
+            List of parsed log entries (dicts) in reverse chronological order
+        """
+        log_entries = []
+        log_file = Path(self.log_file_path)
+
+        if not log_file.exists():
+            return []
+
+        try:
+            with open(log_file, "r") as f:
+                for line in f:
+                    if prefix in line:
+                        # Extract JSON from log line
+                        # Format: "timestamp - level - PREFIX: {json}"
+                        try:
+                            json_start = line.index("{")
+                            json_str = line[json_start:]
+                            log_entry = json.loads(json_str)
+                            log_entries.append(log_entry)
+                        except (ValueError, json.JSONDecodeError):
+                            # Skip malformed log lines
+                            continue
+
+            # Return in reverse chronological order (newest first)
+            return list(reversed(log_entries))
+
+        except Exception as e:
+            # Log the error for debugging, but return empty list for graceful degradation
+            self.audit_logger.warning(f"Failed to parse log file: {e}")
+            return []
+
 
 # Global audit logger instance
 password_audit_logger = PasswordChangeAuditLogger()

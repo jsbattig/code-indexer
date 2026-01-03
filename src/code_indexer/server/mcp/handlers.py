@@ -36,8 +36,12 @@ from code_indexer.server.services.git_operations_service import (
 from code_indexer.server.repositories.activated_repo_manager import (
     ActivatedRepoManager,
 )
+from code_indexer.server.repositories.scip_audit import SCIPAuditRepository
 
 logger = logging.getLogger(__name__)
+
+# Initialize SCIP Audit Repository singleton
+scip_audit_repository = SCIPAuditRepository()
 
 
 def _parse_json_string_array(value: Any) -> Any:
@@ -826,6 +830,7 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             operation_type="sync_repository",
             func=sync_job_wrapper,
             submitter_username=user.username,
+            repo_alias=repo_id,  # AC5: Fix unknown repo bug
         )
         return _mcp_response(
             {
@@ -5912,6 +5917,92 @@ HANDLER_REGISTRY["admin_logs_query"] = handle_admin_logs_query
 HANDLER_REGISTRY["admin_logs_export"] = admin_logs_export
 
 
+async def get_scip_audit_log(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Get SCIP dependency installation audit log with filtering.
+
+    Admin-only endpoint for querying SCIP dependency installation history.
+    Supports filtering by job_id, repo_alias, project_language, and project_build_system.
+
+    Args:
+        params: Query parameters (job_id, repo_alias, project_language,
+                project_build_system, limit, offset)
+        user: Authenticated user (must be admin)
+
+    Returns:
+        MCP response with audit records, total count, and applied filters
+    """
+    try:
+        # Check admin permission
+        if user.role != UserRole.ADMIN:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "Permission denied. Admin access required for audit logs.",
+                }
+            )
+
+        # Extract filter parameters
+        job_id = params.get("job_id")
+        repo_alias = params.get("repo_alias")
+        project_language = params.get("project_language")
+        project_build_system = params.get("project_build_system")
+
+        # Extract and validate pagination parameters
+        limit = params.get("limit", 100)
+        offset = params.get("offset", 0)
+
+        # Convert and validate pagination params
+        try:
+            limit = int(limit)
+            offset = int(offset)
+            # Ensure positive and bounded limit (1-1000)
+            limit = max(1, min(limit, 1000))
+            # Ensure non-negative offset
+            offset = max(0, offset)
+        except (ValueError, TypeError):
+            # Use defaults if conversion fails
+            limit = 100
+            offset = 0
+
+        # Query audit repository
+        records, total = scip_audit_repository.query_audit_records(
+            job_id=job_id,
+            repo_alias=repo_alias,
+            project_language=project_language,
+            project_build_system=project_build_system,
+            limit=limit,
+            offset=offset,
+        )
+
+        # Build filters dict (echo applied filters in response)
+        filters = {}
+        if job_id:
+            filters["job_id"] = job_id
+        if repo_alias:
+            filters["repo_alias"] = repo_alias
+        if project_language:
+            filters["project_language"] = project_language
+        if project_build_system:
+            filters["project_build_system"] = project_build_system
+
+        return _mcp_response(
+            {
+                "success": True,
+                "records": records,
+                "total": total,
+                "filters": filters,
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error retrieving SCIP audit log: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["get_scip_audit_log"] = get_scip_audit_log
+
+
 # Register SCIP handlers
 HANDLER_REGISTRY["scip_definition"] = scip_definition
 HANDLER_REGISTRY["scip_references"] = scip_references
@@ -5920,3 +6011,1718 @@ HANDLER_REGISTRY["scip_dependents"] = scip_dependents
 HANDLER_REGISTRY["scip_impact"] = scip_impact
 HANDLER_REGISTRY["scip_callchain"] = scip_callchain
 HANDLER_REGISTRY["scip_context"] = scip_context
+
+
+# Story #633: GitHub Actions Monitoring Handlers
+async def handle_gh_actions_list_runs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gh_actions_list_runs tool.
+
+    Lists workflow runs for a repository with optional filtering by branch and status.
+    Implements AC1-AC3 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - repository (str): Repository in "owner/repo" format
+            - branch (str, optional): Filter by branch name
+            - status (str, optional): Filter by run status
+            - limit (int, optional): Maximum runs to return (default 10)
+        user: Authenticated user
+
+    Returns:
+        MCP response with workflow runs list
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        repository = args.get("repository")
+        if not repository:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GH_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Extract optional parameters
+        branch = args.get("branch")
+        status = args.get("status")
+        limit = args.get("limit", 10)
+
+        # Create client and list runs
+        client = GitHubActionsClient(token)
+        runs = await client.list_runs(
+            repository=repository, branch=branch, status=status
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "repository": repository,
+                "runs": runs,
+                "count": len(runs),
+                "filters": {
+                    "branch": branch,
+                    "status": status,
+                    "limit": limit,
+                },
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{repository}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gh_actions_list_runs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gh_actions_get_run(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Handler for gh_actions_get_run tool.
+
+    Gets detailed information about a specific workflow run.
+    Implements AC4 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - repository (str): Repository in "owner/repo" format
+            - run_id (int): Workflow run ID
+        user: Authenticated user
+
+    Returns:
+        MCP response with detailed run information
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        repository = args.get("repository")
+        run_id = args.get("run_id")
+        if not repository:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GH_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and get run details
+        client = GitHubActionsClient(token)
+        run_info = await client.get_run(repository=repository, run_id=run_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "repository": repository,
+                "run_id": run_id,
+                "run": run_info,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{repository}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gh_actions_get_run: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gh_actions_search_logs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gh_actions_search_logs tool.
+
+    Searches workflow run logs using ripgrep pattern matching.
+    Implements AC5 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - repository (str): Repository in "owner/repo" format
+            - run_id (int): Workflow run ID
+            - pattern (str): Search pattern (regex)
+            - context_lines (int, optional): Context lines around matches (default 2)
+        user: Authenticated user
+
+    Returns:
+        MCP response with search matches
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        repository = args.get("repository")
+        run_id = args.get("run_id")
+        pattern = args.get("pattern")
+        if not repository:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+        if not pattern:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: pattern"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GH_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and search logs
+        client = GitHubActionsClient(token)
+        matches = await client.search_logs(
+            repository=repository,
+            run_id=run_id,
+            pattern=pattern,
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "repository": repository,
+                "run_id": run_id,
+                "pattern": pattern,
+                "matches": matches,
+                "match_count": len(matches),
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{repository}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gh_actions_search_logs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gh_actions_get_job_logs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gh_actions_get_job_logs tool.
+
+    Gets complete logs for a specific job within a workflow run.
+    Implements AC6 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - repository (str): Repository in "owner/repo" format
+            - job_id (int): Job ID
+        user: Authenticated user
+
+    Returns:
+        MCP response with job logs
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        repository = args.get("repository")
+        job_id = args.get("job_id")
+        if not repository:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository"}
+            )
+        if not job_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: job_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GH_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and get job logs
+        client = GitHubActionsClient(token)
+        logs = await client.get_job_logs(repository=repository, job_id=job_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "repository": repository,
+                "job_id": job_id,
+                "logs": logs,
+                "log_length": len(logs),
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{repository}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gh_actions_get_job_logs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gh_actions_retry_run(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gh_actions_retry_run tool.
+
+    Retries a failed workflow run.
+    Implements AC7 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - repository (str): Repository in "owner/repo" format
+            - run_id (int): Workflow run ID to retry
+        user: Authenticated user
+
+    Returns:
+        MCP response confirming retry operation
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        repository = args.get("repository")
+        run_id = args.get("run_id")
+        if not repository:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GH_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and retry run
+        client = GitHubActionsClient(token)
+        result = await client.retry_run(repository=repository, run_id=run_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "repository": repository,
+                "run_id": run_id,
+                "message": "Workflow run retry triggered successfully",
+                "result": result,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{repository}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gh_actions_retry_run: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gh_actions_cancel_run(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gh_actions_cancel_run tool.
+
+    Cancels a running or queued workflow run.
+    Implements AC8 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - repository (str): Repository in "owner/repo" format
+            - run_id (int): Workflow run ID to cancel
+        user: Authenticated user
+
+    Returns:
+        MCP response confirming cancellation operation
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        repository = args.get("repository")
+        run_id = args.get("run_id")
+        if not repository:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repository"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GH_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and cancel run
+        client = GitHubActionsClient(token)
+        result = await client.cancel_run(repository=repository, run_id=run_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "repository": repository,
+                "run_id": run_id,
+                "message": "Workflow run cancelled successfully",
+                "result": result,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{repository}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gh_actions_cancel_run: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Register GitHub Actions handlers
+HANDLER_REGISTRY["gh_actions_list_runs"] = handle_gh_actions_list_runs
+HANDLER_REGISTRY["gh_actions_get_run"] = handle_gh_actions_get_run
+HANDLER_REGISTRY["gh_actions_search_logs"] = handle_gh_actions_search_logs
+HANDLER_REGISTRY["gh_actions_get_job_logs"] = handle_gh_actions_get_job_logs
+HANDLER_REGISTRY["gh_actions_retry_run"] = handle_gh_actions_retry_run
+HANDLER_REGISTRY["gh_actions_cancel_run"] = handle_gh_actions_cancel_run
+
+
+# ============================================================================
+# GitLab CI Handlers (Story #634)
+# ============================================================================
+
+
+async def handle_gitlab_ci_list_pipelines(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gitlab_ci_list_pipelines tool.
+
+    Lists pipelines for a GitLab project with optional filtering by ref and status.
+    Implements AC1-AC3 of Story #634.
+
+    Args:
+        args: Tool arguments containing:
+            - project_id (str): GitLab project ID or path (e.g., "gitlab-org/gitlab")
+            - ref (str, optional): Filter by branch/tag name
+            - status (str, optional): Filter by pipeline status
+            - limit (int, optional): Maximum pipelines to return (default 10)
+        user: Authenticated user
+
+    Returns:
+        MCP response with pipelines list
+    """
+    from code_indexer.server.clients.gitlab_ci_client import (
+        GitLabCIClient,
+        GitLabAuthenticationError,
+        GitLabProjectNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        project_id = args.get("project_id")
+        if not project_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: project_id"}
+            )
+
+        # Resolve GitLab token
+        token = TokenAuthenticator.resolve_token("gitlab")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitLab token not found. Set GITLAB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Extract optional parameters
+        ref = args.get("ref")
+        status = args.get("status")
+        limit = args.get("limit", 10)
+
+        # Create client and list pipelines (CRITICAL: await keyword)
+        client = GitLabCIClient(token)
+        pipelines = await client.list_pipelines(
+            project_id=project_id, ref=ref, status=status
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "project_id": project_id,
+                "pipelines": pipelines,
+                "count": len(pipelines),
+                "filters": {
+                    "ref": ref,
+                    "status": status,
+                    "limit": limit,
+                },
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitLabAuthenticationError as e:
+        logger.error(f"GitLab authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitLab authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitLabProjectNotFoundError as e:
+        logger.error(f"GitLab project not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Project '{project_id}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gitlab_ci_list_pipelines: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gitlab_ci_get_pipeline(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gitlab_ci_get_pipeline tool.
+
+    Gets detailed information about a specific pipeline including jobs.
+    Implements AC4 of Story #634.
+
+    Args:
+        args: Tool arguments containing:
+            - project_id (str): GitLab project ID or path
+            - pipeline_id (int): Pipeline ID
+        user: Authenticated user
+
+    Returns:
+        MCP response with detailed pipeline information
+    """
+    from code_indexer.server.clients.gitlab_ci_client import (
+        GitLabCIClient,
+        GitLabAuthenticationError,
+        GitLabProjectNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        project_id = args.get("project_id")
+        pipeline_id = args.get("pipeline_id")
+        if not project_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: project_id"}
+            )
+        if not pipeline_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: pipeline_id"}
+            )
+
+        # Resolve GitLab token
+        token = TokenAuthenticator.resolve_token("gitlab")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitLab token not found. Set GITLAB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and get pipeline details (CRITICAL: await keyword)
+        client = GitLabCIClient(token)
+        pipeline_info = await client.get_pipeline(
+            project_id=project_id, pipeline_id=pipeline_id
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "project_id": project_id,
+                "pipeline_id": pipeline_id,
+                "pipeline": pipeline_info,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitLabAuthenticationError as e:
+        logger.error(f"GitLab authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitLab authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitLabProjectNotFoundError as e:
+        logger.error(f"GitLab project not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Project '{project_id}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gitlab_ci_get_pipeline: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gitlab_ci_search_logs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gitlab_ci_search_logs tool.
+
+    Searches pipeline job logs using ripgrep patterns.
+    Implements AC5 of Story #634.
+
+    Args:
+        args: Tool arguments containing:
+            - project_id (str): GitLab project ID or path
+            - pipeline_id (int): Pipeline ID
+            - pattern (str): Ripgrep search pattern
+            - case_sensitive (bool, optional): Case-sensitive search (default True)
+        user: Authenticated user
+
+    Returns:
+        MCP response with matching log lines
+    """
+    from code_indexer.server.clients.gitlab_ci_client import (
+        GitLabCIClient,
+        GitLabAuthenticationError,
+        GitLabProjectNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        project_id = args.get("project_id")
+        pipeline_id = args.get("pipeline_id")
+        pattern = args.get("pattern")
+        if not project_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: project_id"}
+            )
+        if not pipeline_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: pipeline_id"}
+            )
+        if not pattern:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: pattern"}
+            )
+
+        # Resolve GitLab token
+        token = TokenAuthenticator.resolve_token("gitlab")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitLab token not found. Set GITLAB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Extract optional parameters
+        case_sensitive = args.get("case_sensitive", True)
+
+        # Create client and search logs (CRITICAL: await keyword)
+        client = GitLabCIClient(token)
+        matches = await client.search_logs(
+            project_id=project_id,
+            pipeline_id=pipeline_id,
+            pattern=pattern,
+            case_sensitive=case_sensitive,
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "project_id": project_id,
+                "pipeline_id": pipeline_id,
+                "pattern": pattern,
+                "matches": matches,
+                "count": len(matches),
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitLabAuthenticationError as e:
+        logger.error(f"GitLab authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitLab authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitLabProjectNotFoundError as e:
+        logger.error(f"GitLab project not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Project '{project_id}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gitlab_ci_search_logs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Register first batch of GitLab CI handlers
+HANDLER_REGISTRY["gitlab_ci_list_pipelines"] = handle_gitlab_ci_list_pipelines
+HANDLER_REGISTRY["gitlab_ci_get_pipeline"] = handle_gitlab_ci_get_pipeline
+HANDLER_REGISTRY["gitlab_ci_search_logs"] = handle_gitlab_ci_search_logs
+
+
+async def handle_gitlab_ci_get_job_logs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gitlab_ci_get_job_logs tool.
+
+    Gets complete logs for a specific job.
+    Implements AC6 of Story #634.
+
+    Args:
+        args: Tool arguments containing:
+            - project_id (str): GitLab project ID or path
+            - job_id (int): Job ID
+        user: Authenticated user
+
+    Returns:
+        MCP response with complete job logs
+    """
+    from code_indexer.server.clients.gitlab_ci_client import (
+        GitLabCIClient,
+        GitLabAuthenticationError,
+        GitLabProjectNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        project_id = args.get("project_id")
+        job_id = args.get("job_id")
+        if not project_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: project_id"}
+            )
+        if not job_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: job_id"}
+            )
+
+        # Resolve GitLab token
+        token = TokenAuthenticator.resolve_token("gitlab")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitLab token not found. Set GITLAB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and get job logs (CRITICAL: await keyword)
+        client = GitLabCIClient(token)
+        logs = await client.get_job_logs(project_id=project_id, job_id=job_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "project_id": project_id,
+                "job_id": job_id,
+                "logs": logs,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitLabAuthenticationError as e:
+        logger.error(f"GitLab authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitLab authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitLabProjectNotFoundError as e:
+        logger.error(f"GitLab project not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Project '{project_id}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gitlab_ci_get_job_logs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gitlab_ci_retry_pipeline(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gitlab_ci_retry_pipeline tool.
+
+    Retries a failed pipeline.
+    Implements AC7 of Story #634.
+
+    Args:
+        args: Tool arguments containing:
+            - project_id (str): GitLab project ID or path
+            - pipeline_id (int): Pipeline ID to retry
+        user: Authenticated user
+
+    Returns:
+        MCP response confirming retry operation
+    """
+    from code_indexer.server.clients.gitlab_ci_client import (
+        GitLabCIClient,
+        GitLabAuthenticationError,
+        GitLabProjectNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        project_id = args.get("project_id")
+        pipeline_id = args.get("pipeline_id")
+        if not project_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: project_id"}
+            )
+        if not pipeline_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: pipeline_id"}
+            )
+
+        # Resolve GitLab token
+        token = TokenAuthenticator.resolve_token("gitlab")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitLab token not found. Set GITLAB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and retry pipeline (CRITICAL: await keyword)
+        client = GitLabCIClient(token)
+        result = await client.retry_pipeline(
+            project_id=project_id, pipeline_id=pipeline_id
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "project_id": project_id,
+                "pipeline_id": pipeline_id,
+                "message": "Pipeline retried successfully",
+                "result": result,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitLabAuthenticationError as e:
+        logger.error(f"GitLab authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitLab authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitLabProjectNotFoundError as e:
+        logger.error(f"GitLab project not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Project '{project_id}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gitlab_ci_retry_pipeline: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_gitlab_ci_cancel_pipeline(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for gitlab_ci_cancel_pipeline tool.
+
+    Cancels a running or pending pipeline.
+    Implements AC8 of Story #634.
+
+    Args:
+        args: Tool arguments containing:
+            - project_id (str): GitLab project ID or path
+            - pipeline_id (int): Pipeline ID to cancel
+        user: Authenticated user
+
+    Returns:
+        MCP response confirming cancellation operation
+    """
+    from code_indexer.server.clients.gitlab_ci_client import (
+        GitLabCIClient,
+        GitLabAuthenticationError,
+        GitLabProjectNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        project_id = args.get("project_id")
+        pipeline_id = args.get("pipeline_id")
+        if not project_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: project_id"}
+            )
+        if not pipeline_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: pipeline_id"}
+            )
+
+        # Resolve GitLab token
+        token = TokenAuthenticator.resolve_token("gitlab")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitLab token not found. Set GITLAB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Create client and cancel pipeline (CRITICAL: await keyword)
+        client = GitLabCIClient(token)
+        result = await client.cancel_pipeline(
+            project_id=project_id, pipeline_id=pipeline_id
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "project_id": project_id,
+                "pipeline_id": pipeline_id,
+                "message": "Pipeline cancelled successfully",
+                "result": result,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitLabAuthenticationError as e:
+        logger.error(f"GitLab authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitLab authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitLabProjectNotFoundError as e:
+        logger.error(f"GitLab project not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Project '{project_id}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in gitlab_ci_cancel_pipeline: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Register remaining GitLab CI handlers
+HANDLER_REGISTRY["gitlab_ci_get_job_logs"] = handle_gitlab_ci_get_job_logs
+HANDLER_REGISTRY["gitlab_ci_retry_pipeline"] = handle_gitlab_ci_retry_pipeline
+HANDLER_REGISTRY["gitlab_ci_cancel_pipeline"] = handle_gitlab_ci_cancel_pipeline
+
+
+# =============================================================================
+# GITHUB ACTIONS HANDLERS (Story #633)
+# =============================================================================
+
+
+async def handle_github_actions_list_runs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for github_actions_list_runs tool.
+
+    Lists workflow runs for a GitHub repository with optional filtering.
+    Implements AC1-AC3 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - owner (str): Repository owner
+            - repo (str): Repository name
+            - workflow_id (str, optional): Filter by workflow ID or filename
+            - status (str, optional): Filter by run status
+            - branch (str, optional): Filter by branch name
+            - limit (int, optional): Maximum runs to return (default 20)
+        user: Authenticated user
+
+    Returns:
+        MCP response with workflow runs list
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        owner = args.get("owner")
+        repo = args.get("repo")
+        if not owner:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: owner"}
+            )
+        if not repo:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repo"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GITHUB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Extract optional parameters
+        workflow_id = args.get("workflow_id")
+        status = args.get("status")
+        branch = args.get("branch")
+        limit = args.get("limit", 20)
+
+        # Combine owner and repo into repository format
+        repository = f"{owner}/{repo}"
+
+        # Create client and list runs (CRITICAL: await keyword)
+        client = GitHubActionsClient(token)
+        runs = await client.list_runs(
+            repository=repository, branch=branch, status=status
+        )
+
+        # Apply limit to results
+        if limit:
+            runs = runs[:limit]
+
+        return _mcp_response(
+            {
+                "success": True,
+                "owner": owner,
+                "repo": repo,
+                "runs": runs,
+                "count": len(runs),
+                "filters": {
+                    "workflow_id": workflow_id,
+                    "status": status,
+                    "branch": branch,
+                    "limit": limit,
+                },
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{owner}/{repo}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in github_actions_list_runs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_github_actions_get_run(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for github_actions_get_run tool.
+
+    Gets detailed information for a specific workflow run.
+    Implements AC4 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - owner (str): Repository owner
+            - repo (str): Repository name
+            - run_id (int): Workflow run ID
+        user: Authenticated user
+
+    Returns:
+        MCP response with detailed run information
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        owner = args.get("owner")
+        repo = args.get("repo")
+        run_id = args.get("run_id")
+        if not owner:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: owner"}
+            )
+        if not repo:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repo"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GITHUB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Combine owner and repo into repository format
+        repository = f"{owner}/{repo}"
+
+        # Create client and get run details (CRITICAL: await keyword)
+        client = GitHubActionsClient(token)
+        run_details = await client.get_run(repository=repository, run_id=run_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "owner": owner,
+                "repo": repo,
+                "run": run_details,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{owner}/{repo}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in github_actions_get_run: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_github_actions_search_logs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for github_actions_search_logs tool.
+
+    Searches workflow run logs for a pattern.
+    Implements AC5 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - owner (str): Repository owner
+            - repo (str): Repository name
+            - run_id (int): Workflow run ID
+            - query (str): Search query string
+        user: Authenticated user
+
+    Returns:
+        MCP response with matching log lines
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        owner = args.get("owner")
+        repo = args.get("repo")
+        run_id = args.get("run_id")
+        query = args.get("query")
+        if not owner:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: owner"}
+            )
+        if not repo:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repo"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+        if not query:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: query"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GITHUB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Combine owner and repo into repository format
+        repository = f"{owner}/{repo}"
+
+        # Create client and search logs (CRITICAL: await keyword)
+        client = GitHubActionsClient(token)
+        matches = await client.search_logs(
+            repository=repository, run_id=run_id, pattern=query
+        )
+
+        return _mcp_response(
+            {
+                "success": True,
+                "owner": owner,
+                "repo": repo,
+                "run_id": run_id,
+                "query": query,
+                "matches": matches,
+                "count": len(matches),
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{owner}/{repo}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in github_actions_search_logs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_github_actions_get_job_logs(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for github_actions_get_job_logs tool.
+
+    Gets full log output for a specific job.
+    Implements AC6 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - owner (str): Repository owner
+            - repo (str): Repository name
+            - job_id (int): Job ID
+        user: Authenticated user
+
+    Returns:
+        MCP response with full job logs
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        owner = args.get("owner")
+        repo = args.get("repo")
+        job_id = args.get("job_id")
+        if not owner:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: owner"}
+            )
+        if not repo:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repo"}
+            )
+        if not job_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: job_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GITHUB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Combine owner and repo into repository format
+        repository = f"{owner}/{repo}"
+
+        # Create client and get job logs (CRITICAL: await keyword)
+        client = GitHubActionsClient(token)
+        logs = await client.get_job_logs(repository=repository, job_id=job_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "owner": owner,
+                "repo": repo,
+                "job_id": job_id,
+                "logs": logs,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{owner}/{repo}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in github_actions_get_job_logs: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_github_actions_retry_run(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for github_actions_retry_run tool.
+
+    Retries a failed workflow run.
+    Implements AC7 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - owner (str): Repository owner
+            - repo (str): Repository name
+            - run_id (int): Workflow run ID to retry
+        user: Authenticated user
+
+    Returns:
+        MCP response confirming retry operation
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        owner = args.get("owner")
+        repo = args.get("repo")
+        run_id = args.get("run_id")
+        if not owner:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: owner"}
+            )
+        if not repo:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repo"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GITHUB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Combine owner and repo into repository format
+        repository = f"{owner}/{repo}"
+
+        # Create client and retry run (CRITICAL: await keyword)
+        client = GitHubActionsClient(token)
+        result = await client.retry_run(repository=repository, run_id=run_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "owner": owner,
+                "repo": repo,
+                "run_id": run_id,
+                "message": "Workflow run retry triggered successfully",
+                "result": result,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{owner}/{repo}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in github_actions_retry_run: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+async def handle_github_actions_cancel_run(
+    args: Dict[str, Any], user: User
+) -> Dict[str, Any]:
+    """
+    Handler for github_actions_cancel_run tool.
+
+    Cancels a running workflow.
+    Implements AC8 of Story #633.
+
+    Args:
+        args: Tool arguments containing:
+            - owner (str): Repository owner
+            - repo (str): Repository name
+            - run_id (int): Workflow run ID to cancel
+        user: Authenticated user
+
+    Returns:
+        MCP response confirming cancellation operation
+    """
+    from code_indexer.server.clients.github_actions_client import (
+        GitHubActionsClient,
+        GitHubAuthenticationError,
+        GitHubRepositoryNotFoundError,
+    )
+    from code_indexer.server.services.git_state_manager import TokenAuthenticator
+
+    try:
+        # Validate required parameters
+        owner = args.get("owner")
+        repo = args.get("repo")
+        run_id = args.get("run_id")
+        if not owner:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: owner"}
+            )
+        if not repo:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: repo"}
+            )
+        if not run_id:
+            return _mcp_response(
+                {"success": False, "error": "Missing required parameter: run_id"}
+            )
+
+        # Resolve GitHub token
+        token = TokenAuthenticator.resolve_token("github")
+        if not token:
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "GitHub token not found. Set GITHUB_TOKEN environment variable or configure token storage.",
+                }
+            )
+
+        # Combine owner and repo into repository format
+        repository = f"{owner}/{repo}"
+
+        # Create client and cancel run (CRITICAL: await keyword)
+        client = GitHubActionsClient(token)
+        result = await client.cancel_run(repository=repository, run_id=run_id)
+
+        return _mcp_response(
+            {
+                "success": True,
+                "owner": owner,
+                "repo": repo,
+                "run_id": run_id,
+                "message": "Workflow run cancelled successfully",
+                "result": result,
+                "rate_limit": client.last_rate_limit,
+            }
+        )
+
+    except GitHubAuthenticationError as e:
+        logger.error(f"GitHub authentication failed: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "GitHub authentication failed. Check token validity.",
+                "details": str(e),
+            }
+        )
+    except GitHubRepositoryNotFoundError as e:
+        logger.error(f"GitHub repository not found: {e}")
+        return _mcp_response(
+            {
+                "success": False,
+                "error": f"Repository '{owner}/{repo}' not found or not accessible.",
+                "details": str(e),
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error in github_actions_cancel_run: {e}")
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Register GitHub Actions handlers
+HANDLER_REGISTRY["github_actions_list_runs"] = handle_github_actions_list_runs
+HANDLER_REGISTRY["github_actions_get_run"] = handle_github_actions_get_run
+HANDLER_REGISTRY["github_actions_search_logs"] = handle_github_actions_search_logs
+HANDLER_REGISTRY["github_actions_get_job_logs"] = handle_github_actions_get_job_logs
+HANDLER_REGISTRY["github_actions_retry_run"] = handle_github_actions_retry_run
+HANDLER_REGISTRY["github_actions_cancel_run"] = handle_github_actions_cancel_run
