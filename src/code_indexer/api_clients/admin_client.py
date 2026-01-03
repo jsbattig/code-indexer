@@ -973,7 +973,9 @@ class AdminAPIClient(CIDXRemoteAPIClient):
                 error_detail = "Unknown error"
                 try:
                     error_data = response.json()
-                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                    error_detail = error_data.get(
+                        "detail", f"HTTP {response.status_code}"
+                    )
                 except Exception:
                     error_detail = f"HTTP {response.status_code}"
 
@@ -1035,7 +1037,9 @@ class AdminAPIClient(CIDXRemoteAPIClient):
                 error_detail = "Unknown error"
                 try:
                     error_data = response.json()
-                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                    error_detail = error_data.get(
+                        "detail", f"HTTP {response.status_code}"
+                    )
                 except Exception:
                     error_detail = f"HTTP {response.status_code}"
 
@@ -1094,7 +1098,9 @@ class AdminAPIClient(CIDXRemoteAPIClient):
                 error_detail = "Unknown error"
                 try:
                     error_data = response.json()
-                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                    error_detail = error_data.get(
+                        "detail", f"HTTP {response.status_code}"
+                    )
                 except Exception:
                     error_detail = f"HTTP {response.status_code}"
 
@@ -1147,7 +1153,9 @@ class AdminAPIClient(CIDXRemoteAPIClient):
                 error_detail = "Unknown error"
                 try:
                     error_data = response.json()
-                    error_detail = error_data.get("detail", f"HTTP {response.status_code}")
+                    error_detail = error_data.get(
+                        "detail", f"HTTP {response.status_code}"
+                    )
                 except Exception:
                     error_detail = f"HTTP {response.status_code}"
 

@@ -16,7 +16,6 @@ import pytest
 
 from src.code_indexer.server.services.git_state_manager import (
     GitStateManager,
-    CleanupResult,
     GitStateError,
 )
 
@@ -32,7 +31,7 @@ class TestGitStateManagerPreRefreshClearing:
 
         # Mock git commands to simulate dirty repository
         with patch(
-            "code_indexer.server.services.git_state_manager.run_git_command"
+            "src.code_indexer.server.services.git_state_manager.run_git_command"
         ) as mock_git:
             # First call: git status --porcelain (shows dirty state)
             # Second call: git reset --hard HEAD
@@ -71,7 +70,7 @@ class TestGitStateManagerPreRefreshClearing:
         manager = GitStateManager(config=config)
 
         with patch(
-            "code_indexer.server.services.git_state_manager.run_git_command"
+            "src.code_indexer.server.services.git_state_manager.run_git_command"
         ) as mock_git:
             # git status --porcelain returns empty (clean)
             mock_git.return_value = Mock(stdout="")
@@ -92,7 +91,7 @@ class TestGitStateManagerPreRefreshClearing:
         manager = GitStateManager(config=config)
 
         with patch(
-            "code_indexer.server.services.git_state_manager.run_git_command"
+            "src.code_indexer.server.services.git_state_manager.run_git_command"
         ) as mock_git:
             # First call: dirty state
             # Second call: git reset fails
@@ -117,7 +116,7 @@ class TestGitStateManagerPreRefreshClearing:
         manager = GitStateManager(config=config)
 
         with patch(
-            "code_indexer.server.services.git_state_manager.run_git_command"
+            "src.code_indexer.server.services.git_state_manager.run_git_command"
         ) as mock_git:
             # Dirty -> reset success -> clean fails
             mock_git.side_effect = [
@@ -142,7 +141,7 @@ class TestGitStateManagerPreRefreshClearing:
         manager = GitStateManager(config=config)
 
         with patch(
-            "code_indexer.server.services.git_state_manager.run_git_command"
+            "src.code_indexer.server.services.git_state_manager.run_git_command"
         ) as mock_git:
             # Dirty -> reset -> clean -> still dirty (should never happen)
             mock_git.side_effect = [
@@ -164,7 +163,7 @@ class TestTokenAuthenticator:
 
     def test_resolve_token_from_environment_github(self):
         """AC3: Resolve GitHub token from GH_TOKEN environment variable."""
-        from code_indexer.server.services.git_state_manager import TokenAuthenticator
+        from src.code_indexer.server.services.git_state_manager import TokenAuthenticator
 
         # ARRANGE
         with patch.dict("os.environ", {"GH_TOKEN": "env_token_12345"}):
@@ -176,7 +175,7 @@ class TestTokenAuthenticator:
 
     def test_resolve_token_from_environment_gitlab(self):
         """AC3: Resolve GitLab token from GITLAB_TOKEN environment variable."""
-        from code_indexer.server.services.git_state_manager import TokenAuthenticator
+        from src.code_indexer.server.services.git_state_manager import TokenAuthenticator
 
         # ARRANGE
         with patch.dict("os.environ", {"GITLAB_TOKEN": "gitlab_token_456"}):
@@ -188,7 +187,7 @@ class TestTokenAuthenticator:
 
     def test_resolve_token_not_found(self):
         """AC3: Return None if token not found."""
-        from code_indexer.server.services.git_state_manager import TokenAuthenticator
+        from src.code_indexer.server.services.git_state_manager import TokenAuthenticator
 
         # ARRANGE: No environment variable, no file
         with (
@@ -221,13 +220,13 @@ class TestGitStateManagerPRCreation:
         # Mock git operations
         with (
             patch(
-                "code_indexer.server.services.git_state_manager.run_git_command"
+                "src.code_indexer.server.services.git_state_manager.run_git_command"
             ) as mock_git,
             patch(
-                "code_indexer.server.services.git_state_manager.GitHubPRClient"
+                "src.code_indexer.server.services.git_state_manager.GitHubPRClient"
             ) as mock_pr_client,
             patch(
-                "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
+                "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
 
@@ -287,13 +286,13 @@ class TestGitStateManagerPRCreation:
         # Mock git operations
         with (
             patch(
-                "code_indexer.server.services.git_state_manager.run_git_command"
+                "src.code_indexer.server.services.git_state_manager.run_git_command"
             ) as mock_git,
             patch(
-                "code_indexer.server.services.git_state_manager.GitLabPRClient"
+                "src.code_indexer.server.services.git_state_manager.GitLabPRClient"
             ) as mock_mr_client,
             patch(
-                "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
+                "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
 
@@ -336,10 +335,10 @@ class TestGitStateManagerPRCreation:
 
         with (
             patch(
-                "code_indexer.server.services.git_state_manager.run_git_command"
+                "src.code_indexer.server.services.git_state_manager.run_git_command"
             ) as mock_git,
             patch(
-                "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
+                "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
 
@@ -382,13 +381,13 @@ class TestGitStateManagerPRCreation:
 
         with (
             patch(
-                "code_indexer.server.services.git_state_manager.run_git_command"
+                "src.code_indexer.server.services.git_state_manager.run_git_command"
             ) as mock_git,
             patch(
-                "code_indexer.server.services.git_state_manager.GitHubPRClient"
+                "src.code_indexer.server.services.git_state_manager.GitHubPRClient"
             ) as mock_pr_client,
             patch(
-                "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
+                "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
 
@@ -433,10 +432,10 @@ class TestGitStateManagerPRCreation:
 
         with (
             patch(
-                "code_indexer.server.services.git_state_manager.run_git_command"
+                "src.code_indexer.server.services.git_state_manager.run_git_command"
             ) as mock_git,
             patch(
-                "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
+                "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
 

@@ -11,7 +11,6 @@ Story #659: Git State Management for SCIP Self-Healing with PR Workflow
 """
 
 import httpx
-import json
 import logging
 import os
 import subprocess
@@ -527,18 +526,19 @@ class TokenAuthenticator:
                 logger.debug("Resolved GitLab token from environment variable")
                 return env_token
 
-        # Priority 2: File-based token storage
-        token_file = Path.home() / ".cidx-server" / "ci_tokens.json"
-        if token_file.exists():
-            try:
-                with open(token_file, "r") as f:
-                    tokens = json.load(f)
+        # Priority 2: File-based token storage (with decryption)
+        try:
+            from .ci_token_manager import CITokenManager
 
-                if platform in tokens:
-                    logger.debug(f"Resolved {platform} token from file storage")
-                    return tokens[platform]
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Failed to load tokens from {token_file}: {e}")
+            server_dir = Path.home() / ".cidx-server"
+            token_manager = CITokenManager(server_dir_path=str(server_dir))
+            token_data = token_manager.get_token(platform)
+
+            if token_data:
+                logger.debug(f"Resolved {platform} token from encrypted file storage")
+                return token_data.token
+        except Exception as e:
+            logger.warning(f"Failed to load token from encrypted storage: {e}")
 
         # No token found
         logger.warning(f"No {platform} token found in environment or file storage")

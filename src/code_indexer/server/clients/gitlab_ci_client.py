@@ -9,6 +9,13 @@ import re
 import logging
 import httpx
 from typing import Optional, List, Dict, Any
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception,
+    before_sleep_log,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,36 @@ class GitLabAuthenticationError(Exception):
 class GitLabProjectNotFoundError(Exception):
     """Raised when project is not found or not accessible (404)."""
     pass
+
+
+def _is_retryable_error(exception: Exception) -> bool:
+    """
+    Check if exception is retryable (network errors or server errors).
+
+    Retryable conditions:
+    - httpx.NetworkError (connection failures)
+    - Exceptions with status codes: 429, 500, 502, 503, 504
+
+    Non-retryable conditions:
+    - 401 (authentication errors)
+    - 404 (not found errors)
+    """
+    # Always retry network errors
+    if isinstance(exception, httpx.NetworkError):
+        return True
+
+    # Check for retryable HTTP status codes in exception message
+    error_message = str(exception)
+    retryable_codes = ["429", "500", "502", "503", "504"]
+    has_retryable_code = any(code in error_message for code in retryable_codes)
+
+    # Don't retry client errors (401, 404) - these are raised as custom exceptions
+    # GitLabAuthenticationError and GitLabProjectNotFoundError
+    non_retryable_types = (GitLabAuthenticationError, GitLabProjectNotFoundError)
+    if isinstance(exception, non_retryable_types):
+        return False
+
+    return has_retryable_code
 
 
 class GitLabCIClient:
@@ -59,6 +96,13 @@ class GitLabCIClient:
         """
         return self._last_rate_limit
 
+    @retry(
+        stop=stop_after_attempt(4),  # 1 initial + 3 retries
+        wait=wait_exponential(multiplier=1, min=1, max=4),  # 1s, 2s, 4s
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def list_pipelines(
         self,
         project_id: str,
@@ -155,6 +199,13 @@ class GitLabCIClient:
 
             return pipelines
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def get_pipeline(
         self,
         project_id: str,
@@ -234,6 +285,13 @@ class GitLabCIClient:
                 "jobs": jobs,
             }
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def search_logs(
         self,
         project_id: str,
@@ -313,6 +371,13 @@ class GitLabCIClient:
 
             return matches
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def get_job_logs(
         self,
         project_id: str,
@@ -348,6 +413,13 @@ class GitLabCIClient:
 
             return response.text
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def retry_pipeline(
         self,
         project_id: str,
@@ -388,6 +460,13 @@ class GitLabCIClient:
                 "pipeline_id": pipeline_id,
             }
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def cancel_pipeline(
         self,
         project_id: str,

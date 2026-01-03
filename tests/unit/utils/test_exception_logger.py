@@ -127,7 +127,8 @@ class TestExceptionLoggerInitialization:
         # Basic validation that timestamp is reasonable
         assert len(date_part) == 8
         assert len(time_part) == 6
-        assert date_part.startswith("2025")  # Current year
+        current_year = str(datetime.now().year)
+        assert date_part.startswith(current_year)  # Current year
 
 
 class TestExceptionLogging:

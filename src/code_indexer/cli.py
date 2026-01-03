@@ -6134,9 +6134,7 @@ def teach_ai(
                 style="green",
             )
             console.print(f"   Awareness file: {target_path}", style="dim")
-            console.print(
-                "   Skills directory: ~/.claude/skills/cidx/", style="dim"
-            )
+            console.print("   Skills directory: ~/.claude/skills/cidx/", style="dim")
         except Exception as e:
             console.print(f"❌ Failed to write instruction file: {e}", style="red")
             sys.exit(1)
@@ -12650,12 +12648,8 @@ def _load_admin_credentials(project_root: Path):
 
         username_for_creds = remote_config.get("username")
         if not username_for_creds:
-            console.print(
-                "❌ No username found in remote configuration", style="red"
-            )
-            console.print(
-                "Run 'cidx auth login' to authenticate first", style="dim"
-            )
+            console.print("❌ No username found in remote configuration", style="red")
+            console.print("Run 'cidx auth login' to authenticate first", style="dim")
             sys.exit(1)
 
         decrypted_creds = credential_manager.decrypt_credentials(
@@ -13781,10 +13775,13 @@ def admin_mcp_credentials_list(ctx, user: str, format: str):
         error_str = str(e).lower()
         if "user" in error_str and "not found" in error_str:
             console.print(f"💡 User '{user}' not found", style="dim")
-        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
@@ -13809,7 +13806,9 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
             server_url=server_url, credentials=credentials, project_root=project_root
         )
         try:
-            response = await admin_client.create_mcp_credential(username=user, name=name)
+            response = await admin_client.create_mcp_credential(
+                username=user, name=name
+            )
             return response
         finally:
             await admin_client.close()
@@ -13830,7 +13829,10 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
         else:
             console.print("✅ MCP Credential Created Successfully", style="green bold")
             console.print()
-            console.print("⚠️  WARNING: Save these credentials now. The secret will not be shown again!", style="yellow bold")
+            console.print(
+                "⚠️  WARNING: Save these credentials now. The secret will not be shown again!",
+                style="yellow bold",
+            )
             console.print()
 
             table = Table(show_header=False, box=None)
@@ -13844,17 +13846,22 @@ def admin_mcp_credentials_create(ctx, user: str, name: Optional[str], format: st
 
             console.print(table)
             console.print()
-            console.print("💡 Provide these credentials to the user securely", style="dim")
+            console.print(
+                "💡 Provide these credentials to the user securely", style="dim"
+            )
 
     except Exception as e:
         console.print(f"❌ Failed to create MCP credential: {e}", style="red")
         error_str = str(e).lower()
         if "user" in error_str and "not found" in error_str:
             console.print(f"💡 User '{user}' not found", style="dim")
-        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
@@ -13873,7 +13880,9 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
             server_url=server_url, credentials=credentials, project_root=project_root
         )
         try:
-            await admin_client.revoke_mcp_credential(username=user, credential_id=credential_id)
+            await admin_client.revoke_mcp_credential(
+                username=user, credential_id=credential_id
+            )
         finally:
             await admin_client.close()
 
@@ -13895,10 +13904,13 @@ def admin_mcp_credentials_revoke(ctx, user: str, credential_id: str):
         error_str = str(e).lower()
         if "credential not found" in error_str or "not found" in error_str:
             console.print("💡 Credential not found", style="dim")
-        elif "insufficient privileges" in error_str or "admin role required" in error_str:
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
@@ -13963,7 +13975,9 @@ def admin_mcp_credentials_list_all(ctx, limit: int, format: str):
                     )
 
                 console.print(table)
-                console.print(f"\nShowing {len(credentials_list)} credentials", style="dim")
+                console.print(
+                    f"\nShowing {len(credentials_list)} credentials", style="dim"
+                )
 
     except Exception as e:
         console.print(f"❌ Failed to list all MCP credentials: {e}", style="red")
@@ -13972,6 +13986,7 @@ def admin_mcp_credentials_list_all(ctx, limit: int, format: str):
             console.print("💡 You need admin privileges", style="dim")
         if ctx.obj.get("verbose"):
             import traceback
+
             console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
@@ -15862,14 +15877,16 @@ def global_regex_search(
 
         # Create service and execute search
         service = RegexSearchService(repo_path)
-        result = service.search(
-            pattern=pattern,
-            path=path,
-            include_patterns=list(include_patterns) if include_patterns else None,
-            exclude_patterns=list(exclude_patterns) if exclude_patterns else None,
-            case_sensitive=case_sensitive,
-            context_lines=context_lines,
-            max_results=max_results,
+        result = run_async(
+            service.search(
+                pattern=pattern,
+                path=path,
+                include_patterns=list(include_patterns) if include_patterns else None,
+                exclude_patterns=list(exclude_patterns) if exclude_patterns else None,
+                case_sensitive=case_sensitive,
+                context_lines=context_lines,
+                max_results=max_results,
+            )
         )
 
         if output_json:

@@ -65,13 +65,19 @@ print_success "Python version checked"
 
 # 1. Install dependencies (same as GitHub Actions)
 print_step "Installing dependencies"
-if pip install -e ".[dev]" --break-system-packages 2>/dev/null; then
+# Workaround for pip editable install path resolution issue:
+# Install from parent directory to avoid path doubling bug
+PROJECT_DIR=$(pwd)
+PROJECT_NAME=$(basename "$PROJECT_DIR")
+cd ..
+if pip install -e "./$PROJECT_NAME[dev]" --break-system-packages 2>/dev/null; then
     :
-elif pip install -e ".[dev]" --user 2>/dev/null; then
+elif pip install -e "./$PROJECT_NAME[dev]" --user 2>/dev/null; then
     :
 else
-    pip install -e ".[dev]"
+    pip install -e "./$PROJECT_NAME[dev]"
 fi
+cd "$PROJECT_DIR"
 print_success "Dependencies installed"
 
 # 2. Lint CLI-related code with ruff

@@ -10,8 +10,45 @@ import logging
 import httpx
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception,
+    before_sleep_log,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _is_retryable_error(exception: Exception) -> bool:
+    """
+    Check if exception is retryable (network errors or server errors).
+
+    Retryable conditions:
+    - httpx.NetworkError (connection failures)
+    - Exceptions with status codes: 429, 500, 502, 503, 504
+
+    Non-retryable conditions:
+    - 401 (authentication errors)
+    - 404 (not found errors)
+    """
+    # Always retry network errors
+    if isinstance(exception, httpx.NetworkError):
+        return True
+
+    # Check for retryable HTTP status codes in exception message
+    error_message = str(exception)
+    retryable_codes = ["429", "500", "502", "503", "504"]
+    has_retryable_code = any(code in error_message for code in retryable_codes)
+
+    # Don't retry client errors (401, 404) - these are raised as custom exceptions
+    # GitHubAuthenticationError and GitHubRepositoryNotFoundError
+    non_retryable_types = (GitHubAuthenticationError, GitHubRepositoryNotFoundError)
+    if isinstance(exception, non_retryable_types):
+        return False
+
+    return has_retryable_code
 
 
 class GitHubAuthenticationError(Exception):
@@ -60,6 +97,13 @@ class GitHubActionsClient:
         """
         return self._last_rate_limit
 
+    @retry(
+        stop=stop_after_attempt(4),  # 1 initial + 3 retries
+        wait=wait_exponential(multiplier=1, min=1, max=4),  # 1s, 2s, 4s
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def list_runs(
         self,
         repository: str,
@@ -248,6 +292,13 @@ class GitHubActionsClient:
             logger.error(f"Error fetching artifacts for run {run_id}: {e}")
             return []
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def get_run(
         self,
         repository: str,
@@ -324,6 +375,13 @@ class GitHubActionsClient:
                 "run_started_at": data["run_started_at"],
             }
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def search_logs(
         self,
         repository: str,
@@ -331,9 +389,9 @@ class GitHubActionsClient:
         pattern: str,
     ) -> List[Dict[str, Any]]:
         """
-        Search workflow run logs for a pattern using ripgrep-style matching.
+        Search workflow run logs for a pattern using Python regex.
 
-        AC5: Search logs with ripgrep
+        AC5: Search logs with pattern matching
 
         Args:
             repository: Repository in "owner/repo" format
@@ -400,6 +458,13 @@ class GitHubActionsClient:
 
             return matches
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def get_job_logs(
         self,
         repository: str,
@@ -434,6 +499,13 @@ class GitHubActionsClient:
 
             return response.text
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def retry_run(
         self,
         repository: str,
@@ -473,6 +545,13 @@ class GitHubActionsClient:
                 "run_id": run_id,
             }
 
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_retryable_error),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+        reraise=True,
+    )
     async def cancel_run(
         self,
         repository: str,
