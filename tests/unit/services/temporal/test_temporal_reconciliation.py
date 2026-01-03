@@ -10,6 +10,19 @@ from src.code_indexer.services.temporal.temporal_reconciliation import (
     reconcile_temporal_index,
 )
 from src.code_indexer.services.temporal.models import CommitInfo
+from src.code_indexer.storage.temporal_metadata_store import TemporalMetadataStore
+
+
+def _create_v2_metadata_store(collection_path, vector_files_data):
+    """Helper to create temporal_metadata.db for v2 format tests.
+
+    Args:
+        collection_path: Path to collection directory
+        vector_files_data: List of tuples (point_id, payload_dict)
+    """
+    metadata_store = TemporalMetadataStore(collection_path)
+    for point_id, payload in vector_files_data:
+        metadata_store.save_metadata(point_id, payload)
 
 
 class TestDiscoverIndexedCommitsFromDisk:
@@ -216,14 +229,20 @@ class TestReconcileTemporalIndex:
         collection_path.mkdir(parents=True)
 
         # Create 2 indexed commits
+        metadata_entries = []
         for i, commit_hash in enumerate(["commit1", "commit2"]):
             vector_file = collection_path / f"vector_{i:03d}.json"
+            point_id = f"project:diff:{commit_hash}:file.py:0"
             vector_data = {
-                "id": f"project:diff:{commit_hash}:file.py:0",
+                "id": point_id,
                 "vector": [0.1],
-                "payload": {},
+                "payload": {"commit_hash": commit_hash, "path": "file.py", "chunk_index": 0},
             }
             vector_file.write_text(json.dumps(vector_data))
+            metadata_entries.append((point_id, vector_data["payload"]))
+
+        # Create metadata db to mark as v2 format (prevents v1 cleanup)
+        _create_v2_metadata_store(collection_path, metadata_entries)
 
         # Mock vector store base_path
         vector_store.base_path = index_dir
@@ -259,12 +278,16 @@ class TestReconcileTemporalIndex:
 
         # Index only middle commit
         vector_file = collection_path / "vector_001.json"
+        point_id = "project:diff:commit3:file.py:0"
         vector_data = {
-            "id": "project:diff:commit3:file.py:0",
+            "id": point_id,
             "vector": [0.1],
-            "payload": {},
+            "payload": {"commit_hash": "commit3", "path": "file.py", "chunk_index": 0},
         }
         vector_file.write_text(json.dumps(vector_data))
+
+        # Create metadata db to mark as v2 format (prevents v1 cleanup)
+        _create_v2_metadata_store(collection_path, [(point_id, vector_data["payload"])])
 
         vector_store.base_path = index_dir
 
@@ -301,14 +324,20 @@ class TestReconcileTemporalIndex:
         collection_path.mkdir(parents=True)
 
         # Index all commits
+        metadata_entries = []
         for i, commit_hash in enumerate(["commit1", "commit2", "commit3"]):
             vector_file = collection_path / f"vector_{i:03d}.json"
+            point_id = f"project:diff:{commit_hash}:file.py:0"
             vector_data = {
-                "id": f"project:diff:{commit_hash}:file.py:0",
+                "id": point_id,
                 "vector": [0.1],
-                "payload": {},
+                "payload": {"commit_hash": commit_hash, "path": "file.py", "chunk_index": 0},
             }
             vector_file.write_text(json.dumps(vector_data))
+            metadata_entries.append((point_id, vector_data["payload"]))
+
+        # Create metadata db to mark as v2 format (prevents v1 cleanup)
+        _create_v2_metadata_store(collection_path, metadata_entries)
 
         vector_store.base_path = index_dir
 
@@ -482,14 +511,20 @@ class TestReconcileTemporalIndex:
             meta_file.write_text("stale metadata")
 
         # Create vector files for indexed commits
+        metadata_entries = []
         for i, commit_hash in enumerate(["commit1", "commit2"]):
             vector_file = collection_path / f"vector_{i:03d}.json"
+            point_id = f"project:diff:{commit_hash}:file.py:0"
             vector_data = {
-                "id": f"project:diff:{commit_hash}:file.py:0",
+                "id": point_id,
                 "vector": [0.1, 0.2, 0.3],
-                "payload": {},
+                "payload": {"commit_hash": commit_hash, "path": "file.py", "chunk_index": 0},
             }
             vector_file.write_text(json.dumps(vector_data))
+            metadata_entries.append((point_id, vector_data["payload"]))
+
+        # Create metadata db to mark as v2 format (prevents v1 cleanup)
+        _create_v2_metadata_store(collection_path, metadata_entries)
 
         all_commits = [
             CommitInfo("commit1", 1000, "A", "a@test.com", "M1", ""),

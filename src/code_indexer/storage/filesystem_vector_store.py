@@ -19,6 +19,7 @@ import msgpack
 
 from .vector_quantizer import VectorQuantizer
 from .projection_matrix_manager import ProjectionMatrixManager
+from .temporal_metadata_store import TemporalMetadataStore
 
 
 class PathIndex:
@@ -202,6 +203,10 @@ class FilesystemVectorStore:
         # Structure: {collection_name: PathIndex}
         self._path_indexes: Dict[str, PathIndex] = {}
         self._path_index_lock = threading.Lock()
+
+        # Story #669: Temporal metadata store for v2 format (lazy-initialized)
+        self._temporal_metadata_store: Optional[TemporalMetadataStore] = None
+        self._temporal_metadata_lock = threading.Lock()
 
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
@@ -565,6 +570,24 @@ class FilesystemVectorStore:
         except (json.JSONDecodeError, KeyError):
             return (-2.0, 2.0)
 
+    def _get_temporal_metadata_store(self) -> TemporalMetadataStore:
+        """Get or initialize temporal metadata store (lazy initialization).
+
+        Returns:
+            TemporalMetadataStore instance for temporal collection
+
+        Story #669: Lazy-initialize metadata store for temporal collection only
+        """
+        with self._temporal_metadata_lock:
+            if self._temporal_metadata_store is None:
+                temporal_collection_path = (
+                    self.base_path / TemporalMetadataStore.TEMPORAL_COLLECTION_NAME
+                )
+                self._temporal_metadata_store = TemporalMetadataStore(
+                    temporal_collection_path
+                )
+            return self._temporal_metadata_store
+
     def upsert_points(
         self,
         collection_name: Optional[str],
@@ -788,8 +811,16 @@ class FilesystemVectorStore:
                 dir_path = dir_path / segment
             dir_path.mkdir(parents=True, exist_ok=True)
 
-            # Create vector file path
-            vector_file = dir_path / f"vector_{point_id.replace('/', '_')}.json"
+            # Story #669: Use hash-based filenames for temporal collections (v2 format)
+            # This prevents OSError when point_ids exceed 255 characters
+            if TemporalMetadataStore.is_temporal_collection(collection_name):
+                # V2 format: hash-based filename (28 chars total)
+                metadata_store = self._get_temporal_metadata_store()
+                hash_prefix = metadata_store.save_metadata(point_id, payload)
+                vector_file = dir_path / f"vector_{hash_prefix}.json"
+            else:
+                # Original format: point_id with slashes replaced (non-temporal collections)
+                vector_file = dir_path / f"vector_{point_id.replace('/', '_')}.json"
 
             # Prepare vector data with git-aware storage (using batch results)
             vector_data = self._prepare_vector_data_batch(

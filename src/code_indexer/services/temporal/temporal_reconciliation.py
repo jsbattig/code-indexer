@@ -2,6 +2,10 @@
 
 This module provides disk-based commit discovery and reconciliation
 to enable recovery from crashed or interrupted temporal indexing jobs.
+
+Story #669: Fix Temporal Indexing Filename Length Issue
+- V1 format detection and cleanup during reconcile
+- Enables migration from v1 (long filenames) to v2 (hash-based)
 """
 
 import json
@@ -10,8 +14,57 @@ from pathlib import Path
 from typing import Set, Tuple, List
 
 from .models import CommitInfo
+from ...storage.temporal_metadata_store import TemporalMetadataStore
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_v1_format_files(collection_path: Path) -> int:
+    """Delete v1 format vector files during reconcile to enable v2 migration.
+
+    Story #669: V1 format uses long filenames that can exceed 255 characters.
+    During reconcile, we detect v1 format (no temporal_metadata.db) and delete
+    all v1 vector files so they can be re-indexed in v2 format (hash-based naming).
+
+    Args:
+        collection_path: Path to temporal collection directory
+
+    Returns:
+        Number of v1 files deleted
+
+    Detection:
+        V1 format: No temporal_metadata.db present
+        V2 format: temporal_metadata.db exists
+    """
+    # Check if v1 format (no metadata db)
+    format_version = TemporalMetadataStore.detect_format(collection_path)
+
+    if format_version == "v2":
+        # Already in v2 format, nothing to clean up
+        logger.debug("Temporal collection already in v2 format, skipping v1 cleanup")
+        return 0
+
+    # V1 format detected - delete all vector files for migration
+    logger.info("Detected v1 format temporal collection (legacy long filenames)")
+    logger.info("Cleaning up v1 vector files to enable v2 migration (hash-based naming)")
+
+    deleted_count = 0
+    try:
+        vector_files = list(collection_path.glob("vector_*.json"))
+        for vector_file in vector_files:
+            try:
+                vector_file.unlink()
+                deleted_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete v1 file {vector_file.name}: {e}")
+    except Exception as e:
+        logger.error(f"Error during v1 cleanup: {e}")
+
+    if deleted_count > 0:
+        logger.info(f"V1 migration: Deleted {deleted_count} legacy vector files")
+        logger.info("Will re-index all commits in v2 format (hash-based naming)")
+
+    return deleted_count
 
 
 def discover_indexed_commits_from_disk(collection_path: Path) -> Tuple[Set[str], int]:
@@ -103,6 +156,10 @@ def reconcile_temporal_index(
     PRESERVES: collection_meta.json (required for collection_exists()) and
     projection_matrix.npy (cannot be recreated - required for vector quantization).
 
+    Story #669: V1 to V2 Migration
+    During reconcile, detects v1 format (no temporal_metadata.db) and deletes all
+    v1 vector files to enable re-indexing in v2 format (hash-based naming).
+
     Args:
         vector_store: FilesystemVectorStore instance
         all_commits: Full list of commits from git history (chronological order)
@@ -113,6 +170,16 @@ def reconcile_temporal_index(
     """
     # Get collection path from vector store (base_path / collection_name)
     collection_path = vector_store.base_path / temporal_collection
+
+    # Story #669: Clean up v1 format files if detected (before metadata cleanup)
+    # This enables migration from v1 (long filenames) to v2 (hash-based naming)
+    if collection_path.exists():
+        v1_deleted = _cleanup_v1_format_files(collection_path)
+        if v1_deleted > 0:
+            logger.info(
+                f"V1 to V2 migration: Removed {v1_deleted} legacy files, "
+                "will re-index in v2 format"
+            )
 
     # Delete all metadata files to ensure clean reconciliation
     # These will be regenerated from scratch during end_indexing()
@@ -144,7 +211,7 @@ def reconcile_temporal_index(
     if deleted_count > 0:
         logger.info(f"Reconciliation: Deleted {deleted_count} stale metadata files")
 
-    # Discover commits from disk
+    # Discover commits from disk (will be empty after v1 cleanup, leading to full re-index)
     indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
 
     # Filter out already-indexed commits, preserving order
