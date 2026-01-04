@@ -279,6 +279,97 @@ class RegexSearchService:
 
         return self._parse_ripgrep_json_output(output, max_results, context_lines)
 
+    async def _find_files_by_patterns(
+        self,
+        search_path: Path,
+        include_patterns: List[str],
+        exclude_patterns: Optional[List[str]],
+        timeout_seconds: int,
+    ) -> List[str]:
+        """Use find command to get files matching path-based patterns."""
+        from code_indexer.server.services.subprocess_executor import (
+            SubprocessExecutor,
+            ExecutionStatus,
+        )
+
+        path_patterns = [pat for pat in include_patterns if '/' in pat]
+        simple_patterns = [pat for pat in include_patterns if '/' not in pat]
+
+        # Use "." since find runs from repo working directory
+        find_cmd = ["find", ".", "-type", "f"]
+
+        # Build OR expression for patterns
+        pattern_count = len(path_patterns) + len(simple_patterns)
+        if pattern_count > 0:
+            find_cmd.append("(")
+            pattern_index = 0
+
+            # Add path patterns
+            for pat in path_patterns:
+                if pattern_index > 0:
+                    find_cmd.append("-o")
+                find_cmd.extend(["-path", pat])
+                pattern_index += 1
+
+            # Add simple filename patterns
+            for pat in simple_patterns:
+                if pattern_index > 0:
+                    find_cmd.append("-o")
+                find_cmd.extend(["-name", pat])
+                pattern_index += 1
+
+            find_cmd.append(")")
+
+        if exclude_patterns:
+            for pat in exclude_patterns:
+                find_cmd.extend(["!", "-path", f"*{pat}*"])
+
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="grep_files_")
+        os.close(temp_fd)
+
+        try:
+            executor = SubprocessExecutor(max_workers=1)
+            try:
+                result = await executor.execute_with_limits(
+                    command=find_cmd,
+                    working_dir=str(self.repo_path),
+                    timeout_seconds=timeout_seconds,
+                    output_file_path=temp_path,
+                )
+                if result.status == ExecutionStatus.ERROR:
+                    logger.warning(f"Find command failed: {result.error_message}")
+                    return []
+                with open(temp_path, "r") as f:
+                    return [line.strip() for line in f if line.strip()]
+            finally:
+                executor.shutdown(wait=True)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    def _build_grep_command(
+        self,
+        pattern: str,
+        case_sensitive: bool,
+        context_lines: int,
+        recursive: bool,
+        file_list: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Build grep command with common flags."""
+        cmd = ["grep", "-E"]
+        if recursive:
+            cmd.append("-rn")
+        else:
+            cmd.append("-n")
+        if not case_sensitive:
+            cmd.append("-i")
+        if context_lines > 0:
+            cmd.extend(["-C", str(context_lines)])
+        cmd.append(pattern)
+        if file_list:
+            cmd.extend(file_list)
+        return cmd
+
     async def _search_grep(
         self,
         pattern: str,
@@ -296,22 +387,28 @@ class RegexSearchService:
             ExecutionStatus,
         )
 
-        cmd = ["grep", "-rn", "-E"]
+        timeout = timeout_seconds or DEFAULT_SEARCH_TIMEOUT_SECONDS
+        has_path_patterns = include_patterns and any('/' in pat for pat in include_patterns)
 
-        if not case_sensitive:
-            cmd.append("-i")
-        if context_lines > 0:
-            cmd.extend(["-C", str(context_lines)])
+        if has_path_patterns:
+            # Use find to get files matching all patterns (both path and simple)
+            file_list = await self._find_files_by_patterns(
+                search_path, include_patterns, exclude_patterns, timeout
+            )
+            if not file_list:
+                return [], 0
 
-        if include_patterns:
-            for pat in include_patterns:
-                cmd.extend(["--include", pat])
-        if exclude_patterns:
-            for pat in exclude_patterns:
-                cmd.extend(["--exclude", pat])
-
-        cmd.append(pattern)
-        cmd.append(str(search_path))
+            cmd = self._build_grep_command(pattern, case_sensitive, context_lines, False, file_list)
+        else:
+            # Original behavior: recursive grep with --include/--exclude
+            cmd = self._build_grep_command(pattern, case_sensitive, context_lines, True)
+            if include_patterns:
+                for pat in include_patterns:
+                    cmd.extend(["--include", pat])
+            if exclude_patterns:
+                for pat in exclude_patterns:
+                    cmd.extend(["--exclude", pat])
+            cmd.append(str(search_path))
 
         # Create temp file for output
         temp_fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="grep_search_")
@@ -324,7 +421,7 @@ class RegexSearchService:
                 result = await executor.execute_with_limits(
                     command=cmd,
                     working_dir=str(self.repo_path),
-                    timeout_seconds=timeout_seconds or DEFAULT_SEARCH_TIMEOUT_SECONDS,
+                    timeout_seconds=timeout,
                     output_file_path=temp_path,
                 )
 

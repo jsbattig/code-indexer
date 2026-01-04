@@ -156,3 +156,105 @@ class TestErrorHandling:
         """Test error raised for nonexistent path."""
         with pytest.raises(ValueError, match="Path does not exist"):
             await ripgrep_service.search("pattern", path="nonexistent")
+
+
+class TestGrepPathBasedIncludePatterns:
+    """Test grep backend handling of path-based include_patterns."""
+
+    @pytest.fixture
+    def test_repo_with_structure(self, tmp_path):
+        """Create test repository with nested directory structure."""
+        repo_path = tmp_path / "test-repo"
+        repo_path.mkdir()
+
+        # Create nested structure: src/widgets/Button.java
+        widgets_dir = repo_path / "src" / "widgets"
+        widgets_dir.mkdir(parents=True)
+        (widgets_dir / "Button.java").write_text("class Button { void click() {} }")
+        (widgets_dir / "Label.java").write_text("class Label { void setText() {} }")
+
+        # Create other directories that shouldn't match
+        utils_dir = repo_path / "src" / "utils"
+        utils_dir.mkdir(parents=True)
+        (utils_dir / "Helper.java").write_text("class Helper { void assist() {} }")
+
+        # Create root-level file that shouldn't match
+        (repo_path / "Main.java").write_text("class Main { void main() {} }")
+
+        return repo_path
+
+    @pytest.fixture
+    def grep_service(self, test_repo_with_structure):
+        """Create service with grep engine."""
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_side_effect(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_side_effect
+            yield RegexSearchService(test_repo_with_structure)
+
+    @pytest.mark.asyncio
+    async def test_grep_handles_path_based_include_patterns(self, grep_service, test_repo_with_structure):
+        """Test grep backend correctly handles path-based include patterns like **/widgets/*.java."""
+        # This test SHOULD pass after fix: grep backend should find files in widgets/ directory
+        result = await grep_service.search(
+            pattern="class",
+            include_patterns=["**/widgets/*.java"]
+        )
+
+        # Should find Button.java and Label.java in src/widgets/
+        assert result.total_matches >= 2, "Should find at least 2 matches in widgets directory"
+        matched_files = {match.file_path for match in result.matches}
+        assert any("widgets" in f and "Button.java" in f for f in matched_files), \
+            "Should match Button.java in widgets directory"
+        assert any("widgets" in f and "Label.java" in f for f in matched_files), \
+            "Should match Label.java in widgets directory"
+
+        # Should NOT find Helper.java or Main.java
+        assert not any("Helper.java" in f for f in matched_files), \
+            "Should not match Helper.java outside widgets directory"
+        assert not any("Main.java" in f for f in matched_files), \
+            "Should not match Main.java at root"
+
+    @pytest.mark.asyncio
+    async def test_grep_handles_multiple_path_patterns(self, grep_service, test_repo_with_structure):
+        """Test grep backend handles multiple path-based patterns."""
+        result = await grep_service.search(
+            pattern="class",
+            include_patterns=["**/widgets/*.java", "**/utils/*.java"]
+        )
+
+        # Should find files in both widgets/ and utils/ directories
+        matched_files = {match.file_path for match in result.matches}
+        assert any("widgets" in f for f in matched_files), "Should match widgets directory"
+        assert any("utils" in f for f in matched_files), "Should match utils directory"
+        assert not any(f.endswith("Main.java") for f in matched_files), \
+            "Should not match root-level files"
+
+    @pytest.mark.asyncio
+    async def test_grep_handles_simple_filename_patterns(self, grep_service, test_repo_with_structure):
+        """Test grep backend still handles simple filename patterns correctly."""
+        # Simple filename pattern without path separators should work as before
+        result = await grep_service.search(
+            pattern="class",
+            include_patterns=["*.java"]
+        )
+
+        # Should find all .java files
+        assert result.total_matches >= 4, "Should find all 4 .java files"
+
+    @pytest.mark.asyncio
+    async def test_grep_mixed_path_and_filename_patterns(self, grep_service, test_repo_with_structure):
+        """Test grep backend handles mixed path-based and simple filename patterns."""
+        # Mix of path-based pattern and simple filename pattern
+        result = await grep_service.search(
+            pattern="class",
+            include_patterns=["**/widgets/*.java", "Main.java"]
+        )
+
+        # Should find widgets files AND Main.java at root
+        matched_files = {match.file_path for match in result.matches}
+        assert any("widgets" in f for f in matched_files), "Should match widgets directory"
+        assert any(f.endswith("Main.java") for f in matched_files), "Should match Main.java"
+        # Should NOT find Helper.java (not in patterns)
+        assert not any("Helper.java" in f for f in matched_files), \
+            "Should not match Helper.java (not in patterns)"
