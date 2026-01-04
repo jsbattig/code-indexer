@@ -231,7 +231,7 @@ async def get_temporal_status(
         from code_indexer.server.services.dashboard_service import DashboardService
 
         service = DashboardService()
-        result = service.get_temporal_index_status(repo_alias=alias)
+        result = service.get_temporal_index_status(username=user.username, repo_alias=alias)
         return result
     except FileNotFoundError as e:
         logger.warning(f"Repository not found: {alias}")

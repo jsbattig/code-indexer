@@ -371,13 +371,14 @@ class DashboardService:
 
         return None
 
-    def get_temporal_index_status(self, repo_alias: str) -> Dict[str, Any]:
+    def get_temporal_index_status(self, username: str, repo_alias: str) -> Dict[str, Any]:
         """
         Get temporal indexing status for repository.
 
         Detects format (v1/v2/none) and returns status information.
 
         Args:
+            username: Username for repository lookup
             repo_alias: Repository alias
 
         Returns:
@@ -391,7 +392,7 @@ class DashboardService:
         if not activated_manager:
             raise FileNotFoundError(f"Repository not found: {repo_alias}")
 
-        repo_info = activated_manager.get_repository_by_alias(repo_alias)
+        repo_info = activated_manager.get_repository(username, repo_alias)
         if not repo_info:
             raise FileNotFoundError(f"Repository not found: {repo_alias}")
 

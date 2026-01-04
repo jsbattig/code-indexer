@@ -159,3 +159,33 @@ class TestTemporalStatusEndpoint:
             # Assert
             assert response.status_code == 404
             assert "not found" in response.json()["detail"].lower()
+
+    def test_temporal_status_endpoint_passes_username_to_service(self, client, mock_user):
+        """Test temporal status endpoint passes authenticated username to service.
+
+        This test verifies that the endpoint correctly extracts user.username from
+        the authenticated user and passes it to the service's get_temporal_index_status method.
+        """
+        # Arrange
+        repo_alias = "test-repo"
+
+        # Mock at source module
+        with patch("code_indexer.server.services.dashboard_service.DashboardService") as MockService:
+            mock_service_instance = MockService.return_value
+            mock_service_instance.get_temporal_index_status.return_value = {
+                "format": "v2",
+                "file_count": 100,
+                "needs_reindex": False,
+                "message": "Temporal indexing active"
+            }
+
+            # Act
+            response = client.get(f"/api/v1/repos/{repo_alias}/temporal-status")
+
+            # Assert
+            assert response.status_code == 200
+            # Verify service method was called with correct username and repo_alias
+            mock_service_instance.get_temporal_index_status.assert_called_once_with(
+                username=mock_user.username,
+                repo_alias=repo_alias
+            )
