@@ -8,6 +8,7 @@ Following CLAUDE.md Foundation #1: No mocks - uses real service integrations.
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from .health_service import health_service
@@ -369,6 +370,70 @@ class DashboardService:
                 continue
 
         return None
+
+    def get_temporal_index_status(self, repo_alias: str) -> Dict[str, Any]:
+        """
+        Get temporal indexing status for repository.
+
+        Detects format (v1/v2/none) and returns status information.
+
+        Args:
+            repo_alias: Repository alias
+
+        Returns:
+            Dict with format, file_count, needs_reindex, message
+
+        Raises:
+            FileNotFoundError: If repository not found
+        """
+        # Get repository info
+        activated_manager = self._get_activated_repo_manager()
+        if not activated_manager:
+            raise FileNotFoundError(f"Repository not found: {repo_alias}")
+
+        repo_info = activated_manager.get_repository_by_alias(repo_alias)
+        if not repo_info:
+            raise FileNotFoundError(f"Repository not found: {repo_alias}")
+
+        # Check if temporal collection exists
+        index_dir = Path(activated_manager.data_dir) / "index"
+        temporal_collection_name = "code-indexer-temporal"
+        temporal_collection_path = index_dir / temporal_collection_name
+
+        if not temporal_collection_path.exists():
+            return {
+                "format": "none",
+                "file_count": 0,
+                "needs_reindex": False,
+                "message": "No temporal index (git history not indexed)"
+            }
+
+        # Detect format using TemporalMetadataStore
+        from code_indexer.storage.temporal_metadata_store import TemporalMetadataStore
+
+        format_version = TemporalMetadataStore.detect_format(temporal_collection_path)
+
+        # Count vector files in temporal collection
+        from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+
+        store = FilesystemVectorStore(base_path=index_dir)
+        file_count = store.get_indexed_file_count_fast(temporal_collection_name)
+
+        # Return appropriate status based on format
+        if format_version == "v2":
+            return {
+                "format": "v2",
+                "file_count": file_count,
+                "needs_reindex": False,
+                "message": f"Temporal indexing active (v2 format) - {file_count} files indexed"
+            }
+        else:  # v1 format
+            return {
+                "format": "v1",
+                "file_count": file_count,
+                "needs_reindex": True,
+                "message": "Legacy temporal index format (v1) detected - Re-index required: cidx index --index-commits --reconcile"
+            }
 
 
 # Global service instance

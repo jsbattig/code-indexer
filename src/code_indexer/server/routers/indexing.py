@@ -200,3 +200,45 @@ async def get_index_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}",
         )
+
+
+@router.get(
+    "/temporal-status",
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"description": "Temporal status retrieved successfully"},
+        401: {"description": "Missing or invalid authentication"},
+        404: {"description": "Repository not found"},
+    },
+    summary="Get temporal indexing status",
+    description="Get the temporal indexing status (format version, file count, reindex requirement)",
+)
+async def get_temporal_status(
+    alias: str, user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Get temporal indexing status for repository.
+
+    Returns:
+        {
+            "format": "v1"|"v2"|"none",
+            "file_count": int,
+            "needs_reindex": bool,
+            "message": str
+        }
+    """
+    try:
+        # Import here to avoid circular dependencies
+        from code_indexer.server.services.dashboard_service import DashboardService
+
+        service = DashboardService()
+        result = service.get_temporal_index_status(repo_alias=alias)
+        return result
+    except FileNotFoundError as e:
+        logger.warning(f"Repository not found: {alias}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"Get temporal status failed for {alias}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
+        )
