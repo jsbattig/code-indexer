@@ -355,8 +355,13 @@ class RegexSearchService:
         recursive: bool,
         file_list: Optional[List[str]] = None,
     ) -> List[str]:
-        """Build grep command with common flags."""
-        cmd = ["grep", "-E"]
+        """Build grep command with common flags.
+
+        Always includes -H flag to force filename output even when searching
+        a single file. This ensures consistent parsing of grep output where
+        the regex expects 'filename:line:content' format.
+        """
+        cmd = ["grep", "-E", "-H"]
         if recursive:
             cmd.append("-rn")
         else:

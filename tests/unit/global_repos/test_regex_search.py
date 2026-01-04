@@ -8,6 +8,7 @@ GOAL: Test RegexSearchService init and error handling
 
 import pytest
 import json
+import shutil
 from unittest.mock import MagicMock, patch
 from code_indexer.global_repos.regex_search import (
     RegexSearchService,
@@ -105,6 +106,72 @@ class TestRegexSearchResultDataclass:
         assert len(result.matches) == 1
         assert result.total_matches == 10
         assert result.truncated is True
+
+
+class TestBuildGrepCommand:
+    """Test _build_grep_command method."""
+
+    @pytest.fixture
+    def grep_service(self, test_repo):
+        """Create service with grep engine."""
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_side_effect(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_side_effect
+            return RegexSearchService(test_repo)
+
+    def test_includes_h_flag_for_consistent_filename_output(self, grep_service):
+        """Test grep command always includes -H flag to force filename output.
+
+        The -H flag ensures grep outputs 'filename:line:content' format
+        even when searching a single file, preventing parsing failures.
+        """
+        cmd = grep_service._build_grep_command(
+            pattern="test",
+            case_sensitive=True,
+            context_lines=0,
+            recursive=False,
+            file_list=["single_file.py"]
+        )
+
+        assert "-H" in cmd, "Grep command must include -H flag for consistent filename output"
+        assert cmd.index("-H") < cmd.index("test"), "-H flag must appear before pattern"
+
+    def test_h_flag_present_with_single_file(self, grep_service):
+        """Test -H flag is present when searching single file."""
+        cmd = grep_service._build_grep_command(
+            pattern="pattern",
+            case_sensitive=True,
+            context_lines=0,
+            recursive=False,
+            file_list=["one_file.txt"]
+        )
+
+        assert "-H" in cmd, "Must include -H flag for single file"
+
+    def test_h_flag_present_with_multiple_files(self, grep_service):
+        """Test -H flag is present when searching multiple files."""
+        cmd = grep_service._build_grep_command(
+            pattern="pattern",
+            case_sensitive=True,
+            context_lines=0,
+            recursive=False,
+            file_list=["file1.txt", "file2.txt", "file3.txt"]
+        )
+
+        assert "-H" in cmd, "Must include -H flag for multiple files"
+
+    def test_h_flag_present_in_recursive_mode(self, grep_service):
+        """Test -H flag is present in recursive mode."""
+        cmd = grep_service._build_grep_command(
+            pattern="pattern",
+            case_sensitive=True,
+            context_lines=0,
+            recursive=True,
+            file_list=None
+        )
+
+        assert "-H" in cmd, "Must include -H flag in recursive mode"
 
 
 class TestErrorHandling:
@@ -258,3 +325,198 @@ class TestGrepPathBasedIncludePatterns:
         # Should NOT find Helper.java (not in patterns)
         assert not any("Helper.java" in f for f in matched_files), \
             "Should not match Helper.java (not in patterns)"
+
+
+class TestFindFilesDoubleStarPattern:
+    """Test _find_files_by_patterns method with ** glob patterns.
+
+    REGRESSION TEST: This reproduces the bug where **/filename.ext returns 0 matches
+    while the underlying find command works correctly.
+    """
+
+    @pytest.fixture
+    def deep_repo_structure(self, tmp_path):
+        """Create repository with deep nested structure matching production evidence."""
+        repo_path = tmp_path / "evolution-repo"
+        repo_path.mkdir()
+
+        # Create structure: v_*/code/src/dms/client/system/desktop/widgets/SalesGoalsWidget.java
+        for version in ["v_1766032745", "v_1766034456", "v_1766035123", "v_1766036789"]:
+            widget_path = (
+                repo_path / version / "code" / "src" / "dms" / "client" /
+                "system" / "desktop" / "widgets"
+            )
+            widget_path.mkdir(parents=True)
+            (widget_path / "SalesGoalsWidget.java").write_text(
+                "class SalesGoalsWidget { void render() {} }"
+            )
+
+        # Create other files that should NOT match
+        (repo_path / "v_1766032745" / "code" / "src" / "Main.java").write_text(
+            "class Main { void main() {} }"
+        )
+
+        return repo_path
+
+    @pytest.fixture
+    def grep_service_deep(self, deep_repo_structure):
+        """Create grep service for deep structure testing."""
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_side_effect(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_side_effect
+            yield RegexSearchService(deep_repo_structure)
+
+    @pytest.mark.asyncio
+    async def test_double_star_filename_pattern_finds_all_matches(
+        self, grep_service_deep, deep_repo_structure
+    ):
+        """Test **/filename.ext pattern finds files at any depth.
+
+        BUG REPRODUCTION: This test currently FAILS because the API returns 0 matches
+        even though the underlying find command works correctly.
+
+        Expected: 4 matches (one SalesGoalsWidget.java in each version directory)
+        Actual: 0 matches (BUG)
+        """
+        result = await grep_service_deep.search(
+            pattern="class",
+            include_patterns=["**/SalesGoalsWidget.java"]
+        )
+
+        # Should find all 4 SalesGoalsWidget.java files across different versions
+        assert result.total_matches == 4, (
+            f"Expected 4 matches for **/SalesGoalsWidget.java pattern, "
+            f"got {result.total_matches}"
+        )
+
+        matched_files = {match.file_path for match in result.matches}
+
+        # Verify each version's widget file was found
+        for version in ["v_1766032745", "v_1766034456", "v_1766035123", "v_1766036789"]:
+            assert any(
+                version in f and "SalesGoalsWidget.java" in f
+                for f in matched_files
+            ), f"Should find SalesGoalsWidget.java in {version}"
+
+        # Should NOT find Main.java
+        assert not any("Main.java" in f for f in matched_files), (
+            "Should not match Main.java (different filename)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_simple_filename_pattern_works_correctly(
+        self, grep_service_deep, deep_repo_structure
+    ):
+        """Test simple filename.ext pattern (without **/) works as baseline.
+
+        This test SHOULD PASS - verifies that simple patterns work correctly.
+        This provides evidence that the bug is specific to **/ prefix.
+        """
+        result = await grep_service_deep.search(
+            pattern="class",
+            include_patterns=["SalesGoalsWidget.java"]
+        )
+
+        # Simple pattern should find at least 1 match (current behavior)
+        assert result.total_matches >= 1, (
+            "Simple pattern SalesGoalsWidget.java should find at least 1 match"
+        )
+
+    @pytest.mark.asyncio
+    async def test_double_star_directory_pattern_works_correctly(
+        self, grep_service_deep, deep_repo_structure
+    ):
+        """Test **/directory/*.ext pattern works as baseline.
+
+        This test SHOULD PASS - verifies that **/ with directory works.
+        This confirms the bug is specific to **/filename.ext (no directory).
+        """
+        result = await grep_service_deep.search(
+            pattern="class",
+            include_patterns=["**/widgets/*.java"]
+        )
+
+        # Should find all 4 widget files
+        assert result.total_matches >= 4, (
+            "Pattern **/widgets/*.java should find at least 4 matches"
+        )
+
+    @pytest.fixture
+    def ripgrep_service_deep(self, deep_repo_structure):
+        """Create ripgrep service for deep structure testing."""
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/rg"
+            yield RegexSearchService(deep_repo_structure)
+
+    @pytest.mark.asyncio
+    async def test_single_file_pattern_grep_parsing_bug(
+        self, grep_service_deep, deep_repo_structure
+    ):
+        """Test pattern matching exactly ONE file triggers grep parsing bug.
+
+        BUG REPRODUCTION: When grep receives exactly 1 file, it outputs:
+            30:class Main { void main() {} }
+
+        But the parsing regex expects:
+            Main.java:30:class Main { void main() {} }
+
+        This causes 0 matches to be returned even though the file exists
+        and contains the pattern.
+
+        This is the ACTUAL bug - the test_double_star_filename_pattern_finds_all_matches
+        passes because it matches 4 files, and grep outputs filenames for multiple files.
+        """
+        result = await grep_service_deep.search(
+            pattern="class",
+            include_patterns=["**/Main.java"]
+        )
+
+        # BUG: This returns 0 matches because Main.java exists in only 1 version directory
+        # and grep doesn't output filename when given a single file
+        assert result.total_matches == 1, (
+            f"Expected 1 match for **/Main.java pattern (single file), "
+            f"got {result.total_matches} (BUG: grep single-file parsing)"
+        )
+
+        matched_files = {match.file_path for match in result.matches}
+        assert any("Main.java" in f for f in matched_files), (
+            "Should find Main.java in v_1766032745"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not shutil.which("rg"),
+        reason="ripgrep (rg) not available in PATH - test requires standalone rg binary"
+    )
+    async def test_double_star_filename_pattern_ripgrep(
+        self, ripgrep_service_deep, deep_repo_structure
+    ):
+        """Test **/filename.ext pattern with ripgrep engine.
+
+        Verifies that ripgrep's -g glob flag handles **/filename.ext correctly.
+        This tests the ripgrep code path (lines 235-237 in regex_search.py).
+
+        NOTE: This test is skipped if rg binary is not in PATH. The grep-based test
+        (test_double_star_filename_pattern_finds_all_matches) provides equivalent
+        coverage for the pattern matching logic.
+        """
+        result = await ripgrep_service_deep.search(
+            pattern="class",
+            include_patterns=["**/SalesGoalsWidget.java"]
+        )
+
+        # Should find all 4 SalesGoalsWidget.java files
+        assert result.total_matches == 4, (
+            f"Ripgrep with **/SalesGoalsWidget.java should find 4 matches, "
+            f"got {result.total_matches}"
+        )
+
+        matched_files = {match.file_path for match in result.matches}
+
+        # Verify each version's widget file was found
+        for version in ["v_1766032745", "v_1766034456", "v_1766035123", "v_1766036789"]:
+            assert any(
+                version in f and "SalesGoalsWidget.java" in f
+                for f in matched_files
+            ), f"Ripgrep should find SalesGoalsWidget.java in {version}"
