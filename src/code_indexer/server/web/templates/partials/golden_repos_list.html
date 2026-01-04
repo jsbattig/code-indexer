@@ -205,6 +205,32 @@
                             <div class="job-progress-details" id="job-progress-details-{{ repo.alias }}"></div>
                         </div>
                     </div>
+
+                    <!-- Temporal Status Section -->
+                    {% if repo.temporal_status and repo.global_alias %}
+                    <div class="temporal-status-section" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e0e0e0;">
+                        <h4>Temporal Indexing Status</h4>
+                        <div class="detail-item">
+                            {% if repo.temporal_status.format == 'v2' %}
+                            <span class="status-indicator status-active" title="Temporal indexing active with v2 format" style="background-color: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-weight: 500;">
+                                Active (v2) - {{ repo.temporal_status.file_count }} files indexed
+                            </span>
+                            {% elif repo.temporal_status.format == 'v1' %}
+                            <span class="status-indicator status-error" title="Legacy v1 format detected - non-functional" style="background-color: #f44336; color: white; padding: 4px 8px; border-radius: 4px; font-weight: 500;">
+                                Legacy v1 (non-functional) - Re-index required: cidx index --index-commits --reconcile
+                            </span>
+                            {% elif repo.temporal_status.format == 'error' %}
+                            <span class="status-indicator status-error" title="{{ repo.temporal_status.message }}" style="background-color: #f44336; color: white; padding: 4px 8px; border-radius: 4px; font-weight: 500;">
+                                Error: {{ repo.temporal_status.message }}
+                            </span>
+                            {% else %}
+                            <span style="color: #888; padding: 4px 8px;" title="Git history not indexed">
+                                Not enabled (git history not indexed)
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
                 </article>
             </td>
         </tr>

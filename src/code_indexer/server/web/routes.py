@@ -747,6 +747,28 @@ def _get_golden_repos_list():
                 # Use clone_path for non-global repos
                 index_path = repo.get("clone_path")
 
+            # Fetch temporal status for globally activated repos
+            if repo.get("global_alias"):
+                try:
+                    from code_indexer.server.services.dashboard_service import (
+                        DashboardService,
+                    )
+
+                    dashboard = DashboardService()
+                    temporal_status = dashboard.get_temporal_index_status(
+                        username="_global", repo_alias=repo["global_alias"]
+                    )
+                    repo["temporal_status"] = temporal_status
+                except Exception as e:
+                    logger.warning(
+                        "Failed to get temporal status for %s: %s",
+                        repo.get("alias"),
+                        e,
+                    )
+                    repo["temporal_status"] = {"format": "error", "message": str(e)}
+            else:
+                repo["temporal_status"] = {"format": "none"}
+
             # Check available indexes (factual check of filesystem)
             repo["has_semantic"] = False
             repo["has_fts"] = False
