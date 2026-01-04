@@ -113,6 +113,30 @@
                             <span class="error-text">{{ repo.error_message }}</span>
                         </div>
                         {% endif %}
+                        {% if repo.temporal_status %}
+                        <div class="detail-item">
+                            <label>Temporal Indexing:</label>
+                            {% if repo.temporal_status.format == 'v2' %}
+                            <span class="status-indicator status-active" title="Temporal indexing active with v2 format">
+                                Active (v2) - {{ repo.temporal_status.file_count }} files indexed
+                            </span>
+                            {% elif repo.temporal_status.format == 'v1' %}
+                            <span class="status-indicator status-error" title="Legacy v1 format detected - non-functional">
+                                Legacy v1 (non-functional) - Re-index required: cidx index --index-commits --reconcile
+                            </span>
+                            {% elif repo.temporal_status.format == 'none' %}
+                            <span style="color: #888;" title="Git history not indexed">
+                                Not enabled (git history not indexed)
+                            </span>
+                            {% elif repo.temporal_status.format == 'error' %}
+                            <span class="status-indicator status-error" title="{{ repo.temporal_status.error }}">
+                                Error: {{ repo.temporal_status.message }}
+                            </span>
+                            {% else %}
+                            <span style="color: #888;">{{ repo.temporal_status.message }}</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </div>
                 </article>
             </td>

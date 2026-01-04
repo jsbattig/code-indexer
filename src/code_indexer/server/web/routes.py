@@ -1119,12 +1119,14 @@ def _get_all_activated_repos() -> list:
     Get all activated repositories across all users.
 
     Returns:
-        List of activated repository dictionaries with username added
+        List of activated repository dictionaries with username added and temporal_status
     """
     import os
+    from ..services.dashboard_service import DashboardService
 
     try:
         manager = _get_activated_repo_manager()
+        dashboard_service = DashboardService()
         all_repos = []
 
         # Get base activated-repos directory
@@ -1145,6 +1147,32 @@ def _get_all_activated_repos() -> list:
                     # Set default status if not present
                     if "status" not in repo:
                         repo["status"] = "active"
+
+                    # Fetch temporal status for this repository
+                    try:
+                        temporal_status = dashboard_service.get_temporal_index_status(
+                            username=username,
+                            repo_alias=repo.get("user_alias", "")
+                        )
+                        repo["temporal_status"] = temporal_status
+                    except Exception as e:
+                        # Honest error handling - indicate failure clearly
+                        logger.error(
+                            "Failed to get temporal status for repo %s/%s: %s",
+                            username,
+                            repo.get("user_alias", "unknown"),
+                            e,
+                            exc_info=True
+                        )
+                        # Provide error temporal_status with honest error format
+                        repo["temporal_status"] = {
+                            "error": str(e),
+                            "format": "error",
+                            "file_count": 0,
+                            "needs_reindex": False,
+                            "message": f"Unable to determine temporal index status: {str(e)}"
+                        }
+
                     all_repos.append(repo)
 
         # Sort by activation date (newest first)
