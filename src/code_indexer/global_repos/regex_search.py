@@ -415,6 +415,100 @@ class RegexSearchService:
             cmd.extend(file_list)
         return cmd
 
+    def _parse_grep_output(
+        self,
+        output: str,
+        max_results: int,
+        context_lines: int,
+    ) -> tuple:
+        """Parse grep output into RegexMatch objects with context lines.
+
+        Handles grep's output format with:
+        - Match lines: filename:linenum:content (colon separators)
+        - Context lines: filename-linenum-content (dash separators)
+        - Group separators: -- (between match groups)
+
+        The -- separator indicates separate context groups. When encountered,
+        any subsequent context lines belong to the next match (context_before),
+        not the previous match (context_after).
+
+        When matches are adjacent and context overlaps, grep omits the --
+        separator. In this case, we limit context_after to context_lines count
+        to prevent over-collection.
+
+        Args:
+            output: Raw grep output text
+            max_results: Maximum number of matches to return
+            context_lines: Number of context lines requested (for limiting context_after)
+
+        Returns:
+            Tuple of (matches list, total count)
+        """
+        matches: List[RegexMatch] = []
+        total = 0
+        context_before: List[str] = []
+        collecting_context_after = False
+
+        for line in output.splitlines():
+            # Group separator indicates end of current match's context group
+            if line.strip() == "--":
+                collecting_context_after = False
+                context_before = []
+                continue
+
+            # Try matching as match line (colon separator)
+            match_line = re.match(r"^(.+?):(\d+):(.*)$", line)
+            if match_line:
+                total += 1
+                if len(matches) < max_results:
+                    file_path = match_line.group(1)
+                    try:
+                        rel_path = str(Path(file_path).relative_to(self.repo_path))
+                    except ValueError:
+                        rel_path = file_path
+
+                    # Parse line number with error handling
+                    try:
+                        line_num = int(match_line.group(2))
+                    except ValueError:
+                        logger.warning(f"Invalid line number in grep output: {line}")
+                        continue
+
+                    matches.append(
+                        RegexMatch(
+                            file_path=rel_path,
+                            line_number=line_num,
+                            column=1,
+                            line_content=match_line.group(3),
+                            context_before=context_before.copy(),
+                            context_after=[],
+                        )
+                    )
+                    context_before = []
+                    collecting_context_after = True
+                continue
+
+            # Try matching as context line (dash separator)
+            context_line = re.match(r"^(.+?)-(\d+)-(.*)$", line)
+            if context_line:
+                line_content = context_line.group(3)
+
+                # Determine if this is context_before or context_after
+                if collecting_context_after and matches:
+                    # Check if we've already collected enough context_after lines
+                    if len(matches[-1].context_after) < context_lines:
+                        # This is context AFTER the last match
+                        matches[-1].context_after.append(line_content)
+                    else:
+                        # We've collected enough context_after, this is context_before for next match
+                        context_before.append(line_content)
+                        collecting_context_after = False
+                else:
+                    # This is context BEFORE the next match
+                    context_before.append(line_content)
+
+        return matches, total
+
     async def _search_grep(
         self,
         pattern: str,
@@ -493,29 +587,6 @@ class RegexSearchService:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-        matches: List[RegexMatch] = []
-        total = 0
-
-        for line in output.splitlines():
-            match = re.match(r"^(.+?):(\d+):(.*)$", line)
-            if match:
-                total += 1
-                if len(matches) < max_results:
-                    file_path = match.group(1)
-                    try:
-                        rel_path = str(Path(file_path).relative_to(self.repo_path))
-                    except ValueError:
-                        rel_path = file_path
-
-                    matches.append(
-                        RegexMatch(
-                            file_path=rel_path,
-                            line_number=int(match.group(2)),
-                            column=1,
-                            line_content=match.group(3),
-                            context_before=[],
-                            context_after=[],
-                        )
-                    )
-
+        # Parse grep output with context line support
+        matches, total = self._parse_grep_output(output, max_results, context_lines)
         return matches, total

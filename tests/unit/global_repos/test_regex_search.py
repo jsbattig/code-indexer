@@ -642,6 +642,218 @@ class TestGlobPatternParity:
             "Should find TestHelper.java via **/pattern"
 
 
+class TestGrepContextLines:
+    """Test grep parser context line capture from -C flag output.
+
+    Tests verify that grep parser correctly captures context_before and context_after
+    from grep's -C flag output, restoring feature parity with ripgrep backend.
+
+    Grep output format:
+    - Match lines: filename:linenum:content (colon separators)
+    - Context lines: filename-linenum-content (dash separators)
+    - Group separators: -- (between match groups)
+    """
+
+    @pytest.fixture
+    def context_test_repo(self, tmp_path):
+        """Create test repository for context line testing."""
+        repo_path = tmp_path / "context-test-repo"
+        repo_path.mkdir()
+        return repo_path
+
+    @pytest.fixture
+    def grep_service_context(self, context_test_repo):
+        """Create grep service for context line testing."""
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_side_effect(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_side_effect
+            yield RegexSearchService(context_test_repo)
+
+    @pytest.mark.asyncio
+    async def test_grep_context_lines_basic(self, grep_service_context, context_test_repo):
+        """Test basic context line capture with 2 lines before and after match.
+
+        BUG REPRODUCTION: Currently returns empty context_before=[] and context_after=[].
+        Expected: context_before=["line 2", "line 3"], context_after=["line 5", "line 6"]
+        """
+        # Create test file with 7 lines, match will be on line 4
+        test_file = context_test_repo / "test.py"
+        test_file.write_text("line 1\nline 2\nline 3\nMATCH line 4\nline 5\nline 6\nline 7\n")
+
+        result = await grep_service_context.search(
+            pattern="MATCH",
+            context_lines=2,
+        )
+
+        # Should find 1 match
+        assert result.total_matches == 1, f"Expected 1 match, got {result.total_matches}"
+        assert len(result.matches) == 1, f"Expected 1 match object, got {len(result.matches)}"
+
+        match = result.matches[0]
+        assert match.line_number == 4, f"Expected line 4, got {match.line_number}"
+
+        # BUG: These assertions will FAIL with current implementation
+        assert match.context_before == ["line 2", "line 3"], \
+            f"Expected context_before=['line 2', 'line 3'], got {match.context_before}"
+        assert match.context_after == ["line 5", "line 6"], \
+            f"Expected context_after=['line 5', 'line 6'], got {match.context_after}"
+
+    @pytest.mark.asyncio
+    async def test_grep_context_lines_multiple_matches(self, grep_service_context, context_test_repo):
+        """Test context lines with multiple matches in same file.
+
+        BUG REPRODUCTION: Both matches return empty context arrays.
+        Expected: Each match has correct context_before and context_after.
+        """
+        # Create test file with 2 matches, separated by enough lines
+        test_file = context_test_repo / "multi.py"
+        test_file.write_text(
+            "line 1\n"
+            "line 2\n"
+            "MATCH line 3\n"  # First match
+            "line 4\n"
+            "line 5\n"
+            "line 6\n"
+            "MATCH line 7\n"  # Second match
+            "line 8\n"
+        )
+
+        result = await grep_service_context.search(
+            pattern="MATCH",
+            context_lines=1,
+        )
+
+        # Should find 2 matches
+        assert result.total_matches == 2, f"Expected 2 matches, got {result.total_matches}"
+        assert len(result.matches) == 2, f"Expected 2 match objects, got {len(result.matches)}"
+
+        # First match (line 3)
+        match1 = result.matches[0]
+        assert match1.line_number == 3, f"Expected line 3, got {match1.line_number}"
+        assert match1.context_before == ["line 2"], \
+            f"Expected context_before=['line 2'], got {match1.context_before}"
+        assert match1.context_after == ["line 4"], \
+            f"Expected context_after=['line 4'], got {match1.context_after}"
+
+        # Second match (line 7)
+        match2 = result.matches[1]
+        assert match2.line_number == 7, f"Expected line 7, got {match2.line_number}"
+        assert match2.context_before == ["line 6"], \
+            f"Expected context_before=['line 6'], got {match2.context_before}"
+        assert match2.context_after == ["line 8"], \
+            f"Expected context_after=['line 8'], got {match2.context_after}"
+
+    @pytest.mark.asyncio
+    async def test_grep_context_lines_file_boundaries(self, grep_service_context, context_test_repo):
+        """Test context lines at file boundaries (start and end of file).
+
+        BUG REPRODUCTION: Returns empty context arrays at boundaries.
+        Expected: Empty context_before for line 1, empty context_after for last line.
+        """
+        # Create test file with matches at boundaries
+        test_file = context_test_repo / "boundary.py"
+        test_file.write_text(
+            "MATCH line 1\n"  # Match at start (no context before)
+            "line 2\n"
+            "line 3\n"
+            "MATCH line 4\n"  # Match at end (no context after)
+        )
+
+        result = await grep_service_context.search(
+            pattern="MATCH",
+            context_lines=1,
+        )
+
+        # Should find 2 matches
+        assert result.total_matches == 2, f"Expected 2 matches, got {result.total_matches}"
+        assert len(result.matches) == 2, f"Expected 2 match objects, got {len(result.matches)}"
+
+        # First match (line 1) - no context before
+        match1 = result.matches[0]
+        assert match1.line_number == 1, f"Expected line 1, got {match1.line_number}"
+        assert match1.context_before == [], \
+            f"Expected empty context_before at file start, got {match1.context_before}"
+        assert match1.context_after == ["line 2"], \
+            f"Expected context_after=['line 2'], got {match1.context_after}"
+
+        # Second match (line 4) - no context after (last line)
+        match2 = result.matches[1]
+        assert match2.line_number == 4, f"Expected line 4, got {match2.line_number}"
+        assert match2.context_before == ["line 3"], \
+            f"Expected context_before=['line 3'], got {match2.context_before}"
+        assert match2.context_after == [], \
+            f"Expected empty context_after at file end, got {match2.context_after}"
+
+    @pytest.mark.asyncio
+    async def test_grep_context_lines_zero(self, grep_service_context, context_test_repo):
+        """Test that context_lines=0 returns empty context arrays.
+
+        This should PASS with current implementation (no context requested).
+        """
+        test_file = context_test_repo / "nocontext.py"
+        test_file.write_text("line 1\nMATCH line 2\nline 3\n")
+
+        result = await grep_service_context.search(
+            pattern="MATCH",
+            context_lines=0,
+        )
+
+        # Should find 1 match
+        assert result.total_matches == 1, f"Expected 1 match, got {result.total_matches}"
+        assert len(result.matches) == 1, f"Expected 1 match object, got {len(result.matches)}"
+
+        match = result.matches[0]
+        assert match.context_before == [], \
+            f"Expected empty context_before with context_lines=0, got {match.context_before}"
+        assert match.context_after == [], \
+            f"Expected empty context_after with context_lines=0, got {match.context_after}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not shutil.which("rg"),
+        reason="ripgrep (rg) not available - test requires rg for parity check"
+    )
+    async def test_context_lines_parity_grep_vs_ripgrep(self, context_test_repo):
+        """Test that grep and ripgrep return identical context lines.
+
+        BUG REPRODUCTION: Grep returns empty context, ripgrep returns correct context.
+        Expected: Both return identical context_before and context_after arrays.
+        """
+        # Create test file
+        test_file = context_test_repo / "parity.py"
+        test_file.write_text("line 1\nline 2\nMATCH line 3\nline 4\nline 5\n")
+
+        # Create grep service
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_grep(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_grep
+            grep_service = RegexSearchService(context_test_repo)
+
+        # Create ripgrep service
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/rg"
+            ripgrep_service = RegexSearchService(context_test_repo)
+
+        # Search with both backends
+        grep_result = await grep_service.search(pattern="MATCH", context_lines=1)
+        ripgrep_result = await ripgrep_service.search(pattern="MATCH", context_lines=1)
+
+        # Both should find 1 match
+        assert grep_result.total_matches == 1
+        assert ripgrep_result.total_matches == 1
+
+        # Context arrays should be identical
+        grep_match = grep_result.matches[0]
+        ripgrep_match = ripgrep_result.matches[0]
+
+        assert grep_match.context_before == ripgrep_match.context_before, \
+            f"Context before mismatch: grep={grep_match.context_before}, ripgrep={ripgrep_match.context_before}"
+        assert grep_match.context_after == ripgrep_match.context_after, \
+            f"Context after mismatch: grep={grep_match.context_after}, ripgrep={ripgrep_match.context_after}"
+
+
 class TestSubprocessGlobProtections:
     """Test subprocess-based glob implementation protections.
 
