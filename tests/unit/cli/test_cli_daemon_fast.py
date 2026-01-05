@@ -207,6 +207,102 @@ class TestMinimalArgumentParsing:
 
         assert result["filters"]["path_filter"] == "*/tests/*"
 
+    def test_parse_multiple_languages(self):
+        """Test parsing multiple --language flags (REGRESSION TEST)."""
+        from code_indexer.cli_daemon_fast import parse_query_args
+
+        args = ["search_term", "--language", "python", "--language", "javascript"]
+        result = parse_query_args(args)
+
+        # Should accumulate into list, not keep only last value
+        assert isinstance(result["filters"]["language"], list)
+        assert result["filters"]["language"] == ["python", "javascript"]
+
+    def test_parse_multiple_path_filters(self):
+        """Test parsing multiple --path-filter flags (REGRESSION TEST)."""
+        from code_indexer.cli_daemon_fast import parse_query_args
+
+        args = ["search_term", "--path-filter", "*/tests/*", "--path-filter", "*/src/*"]
+        result = parse_query_args(args)
+
+        # Should accumulate into list, not keep only last value
+        assert isinstance(result["filters"]["path_filter"], list)
+        assert result["filters"]["path_filter"] == ["*/tests/*", "*/src/*"]
+
+
+class TestDisplayFormatting:
+    """Test display formatting for multiple filter values."""
+
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
+    def test_display_multiple_filters_in_output(self, mock_connect, capsys):
+        """Test that multiple filter values are displayed with comma separation."""
+        # Arrange
+        mock_conn = Mock()
+        mock_conn.root.exposed_query.return_value = {
+            "results": [],
+            "timing": {"search_ms": 100, "total_ms": 120},
+        }
+        mock_connect.return_value = mock_conn
+
+        from code_indexer.cli_daemon_fast import execute_via_daemon
+
+        # Test multiple languages
+        argv = [
+            "cidx",
+            "query",
+            "test",
+            "--language",
+            "python",
+            "--language",
+            "javascript",
+        ]
+        config_path = Path("/fake/.code-indexer/config.json")
+
+        # Act
+        execute_via_daemon(argv, config_path)
+
+        # Assert - check output shows both languages with comma
+        captured = capsys.readouterr()
+        assert "Language filter: python, javascript" in captured.out, (
+            f"Expected 'Language filter: python, javascript' in output, "
+            f"but got: {captured.out}"
+        )
+
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
+    def test_display_multiple_path_filters_in_output(self, mock_connect, capsys):
+        """Test that multiple path filters are displayed with comma separation."""
+        # Arrange
+        mock_conn = Mock()
+        mock_conn.root.exposed_query.return_value = {
+            "results": [],
+            "timing": {"search_ms": 100, "total_ms": 120},
+        }
+        mock_connect.return_value = mock_conn
+
+        from code_indexer.cli_daemon_fast import execute_via_daemon
+
+        # Test multiple path filters
+        argv = [
+            "cidx",
+            "query",
+            "test",
+            "--path-filter",
+            "*/tests/*",
+            "--path-filter",
+            "*/src/*",
+        ]
+        config_path = Path("/fake/.code-indexer/config.json")
+
+        # Act
+        execute_via_daemon(argv, config_path)
+
+        # Assert - check output shows both paths with comma
+        captured = capsys.readouterr()
+        assert "Path filter: */tests/*, */src/*" in captured.out, (
+            f"Expected 'Path filter: */tests/*, */src/*' in output, "
+            f"but got: {captured.out}"
+        )
+
 
 class TestLightweightDelegationPerformance:
     """Test performance of lightweight delegation module."""

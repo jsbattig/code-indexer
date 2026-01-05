@@ -96,16 +96,60 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
                 result["limit"] = int(args[i + 1])
                 i += 1
             elif arg == "--language" and i + 1 < len(args):
-                result["filters"]["language"] = args[i + 1]
+                # Accumulate multiple values into list
+                if "language" not in result["filters"]:
+                    result["filters"]["language"] = args[i + 1]
+                else:
+                    # Convert to list on second occurrence
+                    if isinstance(result["filters"]["language"], str):
+                        result["filters"]["language"] = [
+                            result["filters"]["language"],
+                            args[i + 1],
+                        ]
+                    else:
+                        result["filters"]["language"].append(args[i + 1])
                 i += 1
             elif arg == "--path-filter" and i + 1 < len(args):
-                result["filters"]["path_filter"] = args[i + 1]
+                # Accumulate multiple values into list
+                if "path_filter" not in result["filters"]:
+                    result["filters"]["path_filter"] = args[i + 1]
+                else:
+                    # Convert to list on second occurrence
+                    if isinstance(result["filters"]["path_filter"], str):
+                        result["filters"]["path_filter"] = [
+                            result["filters"]["path_filter"],
+                            args[i + 1],
+                        ]
+                    else:
+                        result["filters"]["path_filter"].append(args[i + 1])
                 i += 1
             elif arg == "--exclude-language" and i + 1 < len(args):
-                result["filters"]["exclude_language"] = args[i + 1]
+                # Accumulate multiple values into list
+                if "exclude_language" not in result["filters"]:
+                    result["filters"]["exclude_language"] = args[i + 1]
+                else:
+                    # Convert to list on second occurrence
+                    if isinstance(result["filters"]["exclude_language"], str):
+                        result["filters"]["exclude_language"] = [
+                            result["filters"]["exclude_language"],
+                            args[i + 1],
+                        ]
+                    else:
+                        result["filters"]["exclude_language"].append(args[i + 1])
                 i += 1
             elif arg == "--exclude-path" and i + 1 < len(args):
-                result["filters"]["exclude_path"] = args[i + 1]
+                # Accumulate multiple values into list
+                if "exclude_path" not in result["filters"]:
+                    result["filters"]["exclude_path"] = args[i + 1]
+                else:
+                    # Convert to list on second occurrence
+                    if isinstance(result["filters"]["exclude_path"], str):
+                        result["filters"]["exclude_path"] = [
+                            result["filters"]["exclude_path"],
+                            args[i + 1],
+                        ]
+                    else:
+                        result["filters"]["exclude_path"].append(args[i + 1])
                 i += 1
             elif arg == "--snippet-lines" and i + 1 < len(args):
                 result["filters"]["snippet_lines"] = int(args[i + 1])
@@ -267,9 +311,21 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
 
             console.print(f"🔍 Searching for: '{query_text}'", style="dim")
             if filters.get("language"):
-                console.print(f"🏷️  Language filter: {filters['language']}", style="dim")
+                # Format multiple values with comma separation
+                lang_display = (
+                    ", ".join(filters["language"])
+                    if isinstance(filters["language"], list)
+                    else filters["language"]
+                )
+                console.print(f"🏷️  Language filter: {lang_display}", style="dim")
             if filters.get("path_filter"):
-                console.print(f"📁 Path filter: {filters['path_filter']}", style="dim")
+                # Format multiple values with comma separation
+                path_display = (
+                    ", ".join(filters["path_filter"])
+                    if isinstance(filters["path_filter"], list)
+                    else filters["path_filter"]
+                )
+                console.print(f"📁 Path filter: {path_display}", style="dim")
             console.print(f"📊 Limit: {limit}", style="dim")
 
             # Build options dict for daemon
