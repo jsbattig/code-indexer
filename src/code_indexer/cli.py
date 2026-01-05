@@ -990,7 +990,7 @@ def _execute_semantic_search(
             # Validate language parameters
             language_validator = LanguageValidator()
             language_mapper = LanguageMapper()
-            must_conditions = []
+            language_filters = []
 
             for lang in languages:
                 # Validate each language
@@ -1003,15 +1003,27 @@ def _execute_semantic_search(
 
                 # Build language filter
                 language_filter = language_mapper.build_language_filter(lang)
-                must_conditions.append(language_filter)
+                language_filters.append(language_filter)
 
-            if must_conditions:
-                filter_conditions["must"] = must_conditions
+            if language_filters:
+                # Multiple languages: wrap in "should" clause (OR logic)
+                # Single language: use directly (no wrapper needed)
+                if len(language_filters) > 1:
+                    filter_conditions["must"] = [{"should": language_filters}]
+                else:
+                    filter_conditions["must"] = language_filters
         if path_filter:
-            for pf in path_filter:
+            path_filters = [
+                {"key": "path", "match": {"text": pf}} for pf in path_filter
+            ]
+            if len(path_filters) > 1:
+                # Multiple path filters: wrap in "should" clause (OR logic)
                 filter_conditions.setdefault("must", []).append(
-                    {"key": "path", "match": {"text": pf}}
+                    {"should": path_filters}
                 )
+            else:
+                # Single path filter: append directly
+                filter_conditions.setdefault("must", []).extend(path_filters)
 
         # Build exclusion filters (must_not conditions)
         if exclude_languages:
@@ -1096,13 +1108,32 @@ def _execute_semantic_search(
             if languages:
                 language_mapper = LanguageMapper()
                 # Handle multiple languages by building OR conditions
-                for language in languages:
-                    language_filter = language_mapper.build_language_filter(language)
+                if len(languages) > 1:
+                    # Multiple languages: use OR logic (should clause)
+                    language_filters = [
+                        language_mapper.build_language_filter(lang)
+                        for lang in languages
+                    ]
+                    filter_conditions_list.append({"should": language_filters})  # type: ignore[dict-item]
+                else:
+                    # Single language: add directly
+                    language_filter = language_mapper.build_language_filter(
+                        languages[0]
+                    )
                     filter_conditions_list.append(language_filter)
+
             if path_filter:
-                for pf in path_filter:
+                # Multiple path filters should use OR logic
+                if len(path_filter) > 1:
+                    # Multiple path filters: use OR logic (should clause)
+                    path_filters = [
+                        {"key": "path", "match": {"text": pf}} for pf in path_filter
+                    ]
+                    filter_conditions_list.append({"should": path_filters})  # type: ignore[dict-item]
+                else:
+                    # Single path filter: add directly
                     filter_conditions_list.append(
-                        {"key": "path", "match": {"text": pf}}
+                        {"key": "path", "match": {"text": path_filter[0]}}
                     )
 
             # Build filter conditions preserving both must and must_not conditions
@@ -5321,7 +5352,7 @@ def query(
             # Validate language parameters
             language_validator = LanguageValidator()
             language_mapper = LanguageMapper()
-            must_conditions = []
+            language_filters = []
 
             for lang in languages:
                 # Validate each language
@@ -5338,15 +5369,27 @@ def query(
 
                 # For non-git path, handle language mapping
                 language_filter = language_mapper.build_language_filter(lang)
-                must_conditions.append(language_filter)
+                language_filters.append(language_filter)
 
-            if must_conditions:
-                filter_conditions["must"] = must_conditions
+            if language_filters:
+                # Multiple languages: wrap in "should" clause (OR logic)
+                # Single language: use directly (no wrapper needed)
+                if len(language_filters) > 1:
+                    filter_conditions["must"] = [{"should": language_filters}]
+                else:
+                    filter_conditions["must"] = language_filters
         if path_filter:
-            for pf in path_filter:
+            path_filters = [
+                {"key": "path", "match": {"text": pf}} for pf in path_filter
+            ]
+            if len(path_filters) > 1:
+                # Multiple path filters: wrap in "should" clause (OR logic)
                 filter_conditions.setdefault("must", []).append(
-                    {"key": "path", "match": {"text": pf}}
+                    {"should": path_filters}
                 )
+            else:
+                # Single path filter: append directly
+                filter_conditions.setdefault("must", []).extend(path_filters)
 
         # Build exclusion filters (must_not conditions)
         if exclude_languages:
@@ -5546,13 +5589,32 @@ def query(
             if languages:
                 language_mapper = LanguageMapper()
                 # Handle multiple languages by building OR conditions
-                for language in languages:
-                    language_filter = language_mapper.build_language_filter(language)
+                if len(languages) > 1:
+                    # Multiple languages: use OR logic (should clause)
+                    language_filters = [
+                        language_mapper.build_language_filter(lang)
+                        for lang in languages
+                    ]
+                    filter_conditions_list.append({"should": language_filters})  # type: ignore[dict-item]
+                else:
+                    # Single language: add directly
+                    language_filter = language_mapper.build_language_filter(
+                        languages[0]
+                    )
                     filter_conditions_list.append(language_filter)
+
             if path_filter:
-                for pf in path_filter:
+                # Multiple path filters should use OR logic
+                if len(path_filter) > 1:
+                    # Multiple path filters: use OR logic (should clause)
+                    path_filters = [
+                        {"key": "path", "match": {"text": pf}} for pf in path_filter
+                    ]
+                    filter_conditions_list.append({"should": path_filters})  # type: ignore[dict-item]
+                else:
+                    # Single path filter: add directly
                     filter_conditions_list.append(
-                        {"key": "path", "match": {"text": pf}}
+                        {"key": "path", "match": {"text": path_filter[0]}}
                     )
 
             # Build filter conditions preserving both must and must_not conditions
