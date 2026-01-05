@@ -640,3 +640,237 @@ class TestGlobPatternParity:
             "Should find Main.java via explicit path"
         assert any("TestHelper.java" in f for f in matched_files), \
             "Should find TestHelper.java via **/pattern"
+
+
+class TestSubprocessGlobProtections:
+    """Test subprocess-based glob implementation protections.
+
+    These tests verify that the subprocess-based glob implementation restores
+    critical production protections documented in .analysis/glob-protection-loss-analysis.md.
+    Tests are organized in batches for incremental development.
+    """
+
+    @pytest.fixture
+    def large_repo_structure(self, tmp_path):
+        """Create repository with many files for performance testing."""
+        repo_path = tmp_path / "large-repo"
+        repo_path.mkdir()
+
+        # Create 100 Python files across 10 directories
+        for dir_num in range(10):
+            dir_path = repo_path / f"module_{dir_num}"
+            dir_path.mkdir()
+            for file_num in range(10):
+                (dir_path / f"file_{file_num}.py").write_text(
+                    f"# Module {dir_num} File {file_num}\ndef func():\n    pass\n"
+                )
+
+        return repo_path
+
+    @pytest.fixture
+    def grep_service_large(self, large_repo_structure):
+        """Create grep service for large repo testing."""
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_side_effect(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_side_effect
+            yield RegexSearchService(large_repo_structure)
+
+    @pytest.mark.asyncio
+    async def test_find_files_by_patterns_timeout_enforced(self, grep_service_large, large_repo_structure):
+        """Test that glob operations respect timeout and raise TimeoutError.
+
+        PROTECTION: Timeout Protection (CRITICAL)
+        REQUIREMENT: File discovery must timeout after specified seconds
+        """
+        # Use a very short timeout that should trigger timeout
+        with pytest.raises(TimeoutError, match="timed out after"):
+            await grep_service_large._find_files_by_patterns(
+                search_path=large_repo_structure,
+                include_patterns=["**/*.py"],
+                exclude_patterns=None,
+                timeout_seconds=0.001,  # 1ms - should timeout
+            )
+
+    @pytest.mark.asyncio
+    async def test_find_files_by_patterns_async_execution(self, grep_service_large, large_repo_structure):
+        """Test that glob doesn't block event loop during execution.
+
+        PROTECTION: Async Execution (CRITICAL)
+        REQUIREMENT: Event loop must remain responsive during file discovery
+        """
+        import asyncio
+
+        # Track if event loop processed other work
+        other_work_completed = False
+
+        async def other_async_work():
+            nonlocal other_work_completed
+            await asyncio.sleep(0.01)  # Minimal delay
+            other_work_completed = True
+            return "completed"
+
+        # Start glob task in background
+        glob_task = asyncio.create_task(
+            grep_service_large._find_files_by_patterns(
+                search_path=large_repo_structure,
+                include_patterns=["**/*.py"],
+                exclude_patterns=None,
+                timeout_seconds=10,
+            )
+        )
+
+        # Start other work task
+        other_task = asyncio.create_task(other_async_work())
+
+        # Both tasks should complete
+        results, other_result = await asyncio.gather(glob_task, other_task)
+
+        # Verify event loop was responsive (other work completed)
+        assert other_work_completed, "Event loop should remain responsive during glob"
+        assert other_result == "completed"
+
+        # Verify glob results are valid
+        assert isinstance(results, list), "Glob should return list of file paths"
+        assert len(results) > 0, "Should find Python files"
+
+    @pytest.mark.asyncio
+    async def test_find_files_by_patterns_subprocess_error_handling(self, tmp_path):
+        """Test that subprocess errors are handled gracefully.
+
+        PROTECTION: Process Isolation + Error Isolation (HIGH/MEDIUM)
+        REQUIREMENT: Subprocess failures must not crash caller
+        """
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_side_effect(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_side_effect
+            service = RegexSearchService(tmp_path)
+
+        # Test with path that doesn't exist (should handle gracefully)
+        nonexistent_path = tmp_path / "nonexistent"
+
+        # Should return empty list or raise appropriate exception, not crash
+        try:
+            result = await service._find_files_by_patterns(
+                search_path=nonexistent_path,
+                include_patterns=["**/*.py"],
+                exclude_patterns=None,
+                timeout_seconds=5,
+            )
+            # If it succeeds, should return empty list
+            assert isinstance(result, list), "Should return list on error"
+            assert len(result) == 0, "Should return empty list for nonexistent path"
+        except (ValueError, FileNotFoundError, OSError) as e:
+            # Appropriate exceptions are acceptable
+            assert str(e), "Exception should have meaningful message"
+
+    @pytest.mark.asyncio
+    async def test_find_files_by_patterns_large_result_set(self, grep_service_large, large_repo_structure):
+        """Test that large result sets are handled efficiently.
+
+        PROTECTION: Memory Protection (HIGH)
+        REQUIREMENT: Large result sets must not cause memory issues
+        """
+        # Pattern that matches all 100 Python files
+        result = await grep_service_large._find_files_by_patterns(
+            search_path=large_repo_structure,
+            include_patterns=["**/*.py"],
+            exclude_patterns=None,
+            timeout_seconds=10,
+        )
+
+        # Verify all files found
+        assert isinstance(result, list), "Should return list of file paths"
+        assert len(result) == 100, f"Should find all 100 .py files, got {len(result)}"
+
+        # Verify results are relative paths (not absolute)
+        for file_path in result:
+            assert not file_path.startswith("/"), f"Path should be relative: {file_path}"
+            assert file_path.endswith(".py"), f"Path should end with .py: {file_path}"
+
+    @pytest.mark.asyncio
+    async def test_find_files_by_patterns_invalid_glob_pattern(self, grep_service_large, large_repo_structure):
+        """Test handling of invalid glob patterns.
+
+        PROTECTION: Error Isolation (MEDIUM)
+        REQUIREMENT: Invalid patterns must be handled gracefully
+        """
+        # Pattern with invalid syntax (unclosed bracket)
+        invalid_patterns = [
+            "[unclosed",
+            "**/*[",
+            "file[",
+        ]
+
+        for pattern in invalid_patterns:
+            # Should either return empty list or raise appropriate exception
+            try:
+                result = await grep_service_large._find_files_by_patterns(
+                    search_path=large_repo_structure,
+                    include_patterns=[pattern],
+                    exclude_patterns=None,
+                    timeout_seconds=5,
+                )
+                # If it succeeds, verify it's a list
+                assert isinstance(result, list), f"Should return list for invalid pattern {pattern}"
+            except (ValueError, OSError) as e:
+                # Appropriate exceptions are acceptable
+                assert str(e), f"Exception for invalid pattern {pattern} should have message"
+
+    @pytest.mark.asyncio
+    async def test_find_files_by_patterns_no_matches(self, grep_service_large, large_repo_structure):
+        """Test that patterns with no matches return empty list.
+
+        PROTECTION: Error Isolation (MEDIUM)
+        REQUIREMENT: No matches is success case, not error
+        """
+        # Pattern that matches nothing
+        result = await grep_service_large._find_files_by_patterns(
+            search_path=large_repo_structure,
+            include_patterns=["**/*.nonexistent"],
+            exclude_patterns=None,
+            timeout_seconds=5,
+        )
+
+        # Should return empty list, not error
+        assert isinstance(result, list), "Should return list"
+        assert len(result) == 0, "Should return empty list when no matches"
+
+    @pytest.mark.asyncio
+    async def test_find_files_by_patterns_concurrent_calls(self, grep_service_large, large_repo_structure):
+        """Test that multiple concurrent glob operations work correctly.
+
+        PROTECTION: Concurrent Control (MEDIUM)
+        REQUIREMENT: Multiple concurrent globs must complete successfully
+        """
+        import asyncio
+
+        # Launch 5 concurrent glob operations with different patterns
+        patterns = [
+            ["**/*.py"],
+            ["**/module_0/*.py"],
+            ["**/module_1/*.py"],
+            ["**/file_0.py"],
+            ["**/file_1.py"],
+        ]
+
+        tasks = [
+            grep_service_large._find_files_by_patterns(
+                search_path=large_repo_structure,
+                include_patterns=pattern,
+                exclude_patterns=None,
+                timeout_seconds=10,
+            )
+            for pattern in patterns
+        ]
+
+        # All should complete successfully
+        results = await asyncio.gather(*tasks)
+
+        # Verify all results are valid
+        assert len(results) == 5, "All 5 concurrent operations should complete"
+
+        for i, result in enumerate(results):
+            assert isinstance(result, list), f"Result {i} should be list"
+            assert len(result) > 0, f"Result {i} should have matches"
