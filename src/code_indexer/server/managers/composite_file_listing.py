@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Composite repository file listing implementation.
 
@@ -56,7 +57,7 @@ def _walk_directory(
                         )
                     )
                 except (OSError, ValueError) as e:
-                    logger.warning(f"Cannot access file {item}: {e}")
+                    logger.warning(f"Cannot access file {item}: {e}", extra={"correlation_id": get_correlation_id()})
                     continue
     else:
         # Single level listing
@@ -81,10 +82,10 @@ def _walk_directory(
                         )
                     )
                 except (OSError, ValueError) as e:
-                    logger.warning(f"Cannot access item {item}: {e}")
+                    logger.warning(f"Cannot access item {item}: {e}", extra={"correlation_id": get_correlation_id()})
                     continue
         except OSError as e:
-            logger.warning(f"Cannot access directory {directory}: {e}")
+            logger.warning(f"Cannot access directory {directory}: {e}", extra={"correlation_id": get_correlation_id()})
 
     return files
 
@@ -110,7 +111,7 @@ def _list_composite_files(
         proxy_config = ProxyConfigManager(repo.path)
         discovered_repos = proxy_config.get_repositories()
     except Exception as e:
-        logger.error(f"Failed to get discovered repos from {repo.path}: {e}")
+        logger.error(f"Failed to get discovered repos from {repo.path}: {e}", extra={"correlation_id": get_correlation_id()})
         return []
 
     # Walk each component repository
@@ -119,7 +120,7 @@ def _list_composite_files(
         target_path = subrepo_path / path if path else subrepo_path
 
         if not target_path.exists():
-            logger.debug(f"Path does not exist: {target_path}")
+            logger.debug(f"Path does not exist: {target_path}", extra={"correlation_id": get_correlation_id()})
             continue
 
         # Walk the component repository

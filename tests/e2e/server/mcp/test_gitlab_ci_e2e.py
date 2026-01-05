@@ -9,7 +9,6 @@ Story #634: GitLab CI Monitoring - E2E validation
 
 import os
 import pytest
-from typing import Dict, Any
 from unittest.mock import MagicMock
 
 # Check for GitLab token availability

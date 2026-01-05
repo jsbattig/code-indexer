@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Configuration Service for CIDX Server Admin UI.
 
@@ -186,7 +187,7 @@ class ConfigService:
         if not skip_validation:
             self.config_manager.validate_config(config)
             self.config_manager.save_config(config)
-            logger.info("Updated setting %s.%s to %s", category, key, value)
+            logger.info("Updated setting %s.%s to %s", category, key, value, extra={"correlation_id": get_correlation_id()})
         else:
             # Just update in memory, don't validate or save yet
             logger.debug(
@@ -194,6 +195,7 @@ class ConfigService:
                 category,
                 key,
                 value,
+            extra={"correlation_id": get_correlation_id()},
             )
 
     def _update_server_setting(
@@ -380,7 +382,7 @@ class ConfigService:
         # Validate and save
         self.config_manager.validate_config(config)
         self.config_manager.save_config(config)
-        logger.info("Saved all settings")
+        logger.info("Saved all settings", extra={"correlation_id": get_correlation_id()})
 
     def get_config_file_path(self) -> str:
         """Get the path to the configuration file."""

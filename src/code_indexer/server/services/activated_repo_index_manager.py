@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Activated Repository Index Manager for CIDX Server.
 
@@ -178,7 +179,7 @@ class ActivatedRepoIndexManager:
         self.logger.info(
             f"Reindex job {job_id} submitted for repository '{repo_alias}' "
             f"(types: {index_types}, clear: {clear})"
-        )
+        , extra={"correlation_id": get_correlation_id()})
 
         return job_id
 
@@ -254,7 +255,7 @@ class ActivatedRepoIndexManager:
             if progress_callback:
                 progress_callback(percent)
             if message:
-                self.logger.info(f"Reindex progress ({percent}%): {message}")
+                self.logger.info(f"Reindex progress ({percent}%): {message}", extra={"correlation_id": get_correlation_id()})
 
         try:
             update_progress(
@@ -289,7 +290,7 @@ class ActivatedRepoIndexManager:
 
         except Exception as e:
             error_msg = f"Failed to execute reindex job for '{repo_alias}': {str(e)}"
-            self.logger.error(error_msg)
+            self.logger.error(error_msg, extra={"correlation_id": get_correlation_id()})
 
             if progress_callback:
                 progress_callback(0)  # Reset progress to indicate failure
@@ -337,10 +338,10 @@ class ActivatedRepoIndexManager:
 
                 if not result.get("success", False):
                     error_msg = result.get("error", "Unknown error")
-                    self.logger.error(f"Failed to index {index_type}: {error_msg}")
+                    self.logger.error(f"Failed to index {index_type}: {error_msg}", extra={"correlation_id": get_correlation_id()})
             except Exception as e:
                 error_msg = f"Exception during {index_type} indexing: {str(e)}"
-                self.logger.error(error_msg)
+                self.logger.error(error_msg, extra={"correlation_id": get_correlation_id()})
                 results[index_type] = {"success": False, "error": error_msg}
 
             update_progress(next_progress, f"Completed {index_type} index")
@@ -380,7 +381,7 @@ class ActivatedRepoIndexManager:
 
             # Clear index if requested
             if clear and index_dir.exists():
-                self.logger.info(f"Clearing semantic index: {index_dir}")
+                self.logger.info(f"Clearing semantic index: {index_dir}", extra={"correlation_id": get_correlation_id()})
                 shutil.rmtree(index_dir)
 
             # Run cidx index command
@@ -517,7 +518,7 @@ class ActivatedRepoIndexManager:
                 "status": "up_to_date",
             }
         except Exception as e:
-            self.logger.warning(f"Failed to read semantic index metadata: {e}")
+            self.logger.warning(f"Failed to read semantic index metadata: {e}", extra={"correlation_id": get_correlation_id()})
             return {"status": "not_indexed"}
 
     def _get_fts_status(self, repo_path: Path) -> Dict[str, Any]:
@@ -552,7 +553,7 @@ class ActivatedRepoIndexManager:
                 "status": "up_to_date",
             }
         except Exception as e:
-            self.logger.warning(f"Failed to read FTS index status: {e}")
+            self.logger.warning(f"Failed to read FTS index status: {e}", extra={"correlation_id": get_correlation_id()})
             return {"status": "not_indexed"}
 
     def _get_temporal_status(self, repo_path: Path) -> Dict[str, Any]:
@@ -588,7 +589,7 @@ class ActivatedRepoIndexManager:
                 "status": status,
             }
         except Exception as e:
-            self.logger.warning(f"Failed to read temporal index metadata: {e}")
+            self.logger.warning(f"Failed to read temporal index metadata: {e}", extra={"correlation_id": get_correlation_id()})
             return {"status": "not_indexed"}
 
     def _get_scip_status(self, repo_path: Path) -> Dict[str, Any]:
@@ -622,5 +623,5 @@ class ActivatedRepoIndexManager:
                 "projects": projects,
             }
         except Exception as e:
-            self.logger.warning(f"Failed to read SCIP index status: {e}")
+            self.logger.warning(f"Failed to read SCIP index status: {e}", extra={"correlation_id": get_correlation_id()})
             return {"status": "FAILED", "project_count": 0, "error": str(e)}

@@ -8,7 +8,6 @@ before implementation.
 """
 
 import json
-import pytest
 from datetime import datetime, timezone
 from dataclasses import asdict
 

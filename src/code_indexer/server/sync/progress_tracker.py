@@ -98,7 +98,7 @@ class SyncPhaseTracker:
         for phase_name in phases:
             self._phase_info[phase_name] = PhaseProgressInfo(phase_name=phase_name)
 
-        logger.debug(f"SyncPhaseTracker initialized with phases: {phases}")
+        logger.debug(f"SyncPhaseTracker initialized with phases: {phases}", extra={"correlation_id": get_correlation_id()})
 
     @property
     def overall_progress(self) -> float:
@@ -128,7 +128,7 @@ class SyncPhaseTracker:
         phase_info.started_at = datetime.now(timezone.utc)
         phase_info.progress = 0
 
-        logger.info(f"Started phase '{phase_name}'")
+        logger.info(f"Started phase '{phase_name}'", extra={"correlation_id": get_correlation_id()})
         return phase_info
 
     def update_phase_progress(
@@ -164,7 +164,7 @@ class SyncPhaseTracker:
         # Update overall progress
         self._overall_progress = self._calculate_overall_progress()
 
-        logger.debug(f"Phase '{phase_name}' progress updated to {progress}%")
+        logger.debug(f"Phase '{phase_name}' progress updated to {progress}%", extra={"correlation_id": get_correlation_id()})
         return phase_info
 
     def complete_phase(
@@ -202,7 +202,7 @@ class SyncPhaseTracker:
 
         logger.info(
             f"Phase '{phase_name}' completed in {phase_info.duration_seconds:.1f}s"
-        )
+        , extra={"correlation_id": get_correlation_id()})
         return phase_info
 
     def fail_phase(
@@ -255,7 +255,7 @@ class SyncPhaseTracker:
         # Update overall progress
         self._overall_progress = self._calculate_overall_progress()
 
-        logger.info(f"Phase '{phase_name}' skipped: {reason}")
+        logger.info(f"Phase '{phase_name}' skipped: {reason}", extra={"correlation_id": get_correlation_id()})
         return phase_info
 
     def get_phase_status(self, phase_name: str) -> PhaseProgressInfo:
@@ -364,7 +364,7 @@ class SyncPhaseTracker:
         for phase_name in self.phases:
             self._phase_info[phase_name] = PhaseProgressInfo(phase_name=phase_name)
 
-        logger.info("SyncPhaseTracker reset to initial state")
+        logger.info("SyncPhaseTracker reset to initial state", extra={"correlation_id": get_correlation_id()})
 
     def _calculate_overall_progress(self) -> float:
         """

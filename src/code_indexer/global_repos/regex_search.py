@@ -531,7 +531,7 @@ class RegexSearchService:
 
         if has_path_patterns:
             # Use find to get files matching all patterns (both path and simple)
-            # Type assertion: has_path_patterns ensures include_patterns is not None
+            # Type assertion: include_patterns is not None here (checked by has_path_patterns)
             assert include_patterns is not None
             file_list = await self._find_files_by_patterns(
                 search_path, include_patterns, exclude_patterns, timeout

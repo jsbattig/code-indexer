@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SCIP Resolution Queue.
 
@@ -84,7 +85,8 @@ class SCIPResolutionQueue:
 
         logger.info(
             f"Enqueued {language} project at {project_path} for job {job_id} "
-            f"(queue size: {self.queue.qsize()})"
+            f"(queue size: {self.queue.qsize()})",
+            extra={"correlation_id": get_correlation_id()},
         )
 
     async def process_next_project(self) -> None:
@@ -107,7 +109,8 @@ class SCIPResolutionQueue:
 
             logger.info(
                 f"Processing {project.language} project at {project.project_path} "
-                f"for job {project.job_id}"
+                f"for job {project.job_id}",
+                extra={"correlation_id": get_correlation_id()},
             )
 
             # Create workspace for this project
@@ -138,7 +141,8 @@ class SCIPResolutionQueue:
 
             logger.info(
                 f"Completed processing {project.project_path} for job {project.job_id}, "
-                f"status: {response.status}"
+                f"status: {response.status}",
+                extra={"correlation_id": get_correlation_id()},
             )
 
         except asyncio.CancelledError:
@@ -146,7 +150,8 @@ class SCIPResolutionQueue:
             if item_retrieved and project:
                 logger.warning(
                     f"Worker cancelled while processing {project.project_path}, "
-                    "re-queuing project"
+                    "re-queuing project",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 await self.queue.put(project)
             raise
@@ -156,11 +161,13 @@ class SCIPResolutionQueue:
                 logger.error(
                     f"Error processing project {project.project_path}: {e}",
                     exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
                 )
             else:
                 logger.error(
                     f"Error before project retrieval: {e}",
                     exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
                 )
         finally:
             async with self._lock:
@@ -197,13 +204,13 @@ class SCIPResolutionQueue:
         Only one worker runs at a time.
         """
         if self.is_running:
-            logger.debug("Worker already running, ignoring start request")
+            logger.debug("Worker already running, ignoring start request", extra={"correlation_id": get_correlation_id()})
             return
 
         self.is_running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
 
-        logger.info("SCIP resolution queue worker started")
+        logger.info("SCIP resolution queue worker started", extra={"correlation_id": get_correlation_id()})
 
     async def stop_worker(self) -> None:
         """
@@ -213,7 +220,7 @@ class SCIPResolutionQueue:
         Currently processing project will be re-queued.
         """
         if not self.is_running:
-            logger.debug("Worker not running, ignoring stop request")
+            logger.debug("Worker not running, ignoring stop request", extra={"correlation_id": get_correlation_id()})
             return
 
         self.is_running = False
@@ -226,7 +233,7 @@ class SCIPResolutionQueue:
                 pass
             self.worker_task = None
 
-        logger.info("SCIP resolution queue worker stopped")
+        logger.info("SCIP resolution queue worker stopped", extra={"correlation_id": get_correlation_id()})
 
     async def _worker_loop(self) -> None:
         """
@@ -234,7 +241,7 @@ class SCIPResolutionQueue:
 
         Runs until is_running becomes False or task is cancelled.
         """
-        logger.debug("Worker loop started")
+        logger.debug("Worker loop started", extra={"correlation_id": get_correlation_id()})
 
         try:
             while self.is_running:
@@ -253,11 +260,11 @@ class SCIPResolutionQueue:
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    logger.error(f"Error in worker loop: {e}", exc_info=True)
+                    logger.error(f"Error in worker loop: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
                     # Continue processing other projects
 
         except asyncio.CancelledError:
-            logger.debug("Worker loop cancelled")
+            logger.debug("Worker loop cancelled", extra={"correlation_id": get_correlation_id()})
             raise
         finally:
-            logger.debug("Worker loop exited")
+            logger.debug("Worker loop exited", extra={"correlation_id": get_correlation_id()})

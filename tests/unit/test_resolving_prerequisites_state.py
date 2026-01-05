@@ -7,7 +7,6 @@ Following TDD methodology - these tests define the expected behavior
 before implementation.
 """
 
-import pytest
 from datetime import datetime, timezone
 
 from code_indexer.server.repositories.background_jobs import (

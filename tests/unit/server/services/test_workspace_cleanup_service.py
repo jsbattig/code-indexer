@@ -11,10 +11,7 @@ TDD Approach: Tests written FIRST, service implemented to pass tests.
 import os
 import shutil
 import time
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Dict, List, Any
-from unittest.mock import Mock, MagicMock
+from datetime import datetime
 
 import pytest
 
@@ -521,7 +518,6 @@ class TestWorkspaceCleanupServiceAC5:
         # Should be ISO format string
         assert isinstance(status["last_cleanup_time"], str)
         # Verify it can be parsed as datetime
-        from datetime import datetime
         datetime.fromisoformat(status["last_cleanup_time"].replace("Z", "+00:00"))
 
     def test_get_cleanup_status_counts_workspaces(

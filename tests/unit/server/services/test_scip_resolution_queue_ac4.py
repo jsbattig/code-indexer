@@ -13,11 +13,10 @@ AC4: Serialized Execution Queue
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 from code_indexer.server.services.scip_resolution_queue import (
     SCIPResolutionQueue,
-    QueuedProject,
 )
 
 

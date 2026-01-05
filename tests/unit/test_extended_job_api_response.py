@@ -5,13 +5,9 @@ Tests that BackgroundJobManager.get_job_status() and list_jobs() include
 extended self-healing fields when present.
 """
 
-import pytest
-from datetime import datetime, timezone
 
 from src.code_indexer.server.repositories.background_jobs import (
     BackgroundJobManager,
-    BackgroundJob,
-    JobStatus,
 )
 
 

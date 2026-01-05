@@ -16,6 +16,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 logger = logging.getLogger(__name__)
 
 

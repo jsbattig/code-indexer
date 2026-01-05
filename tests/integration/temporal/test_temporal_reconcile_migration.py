@@ -189,11 +189,11 @@ class TestTemporalReconcileMigration:
 
         # Debug: Print output if v1 files still exist
         if any((collection_path / v1_file).exists() for v1_file in v1_files):
-            print(f"\n=== DEBUG: Command output ===")
+            print("\n=== DEBUG: Command output ===")
             print(f"Return code: {result.returncode}")
             print(f"STDOUT:\n{result.stdout}")
             print(f"STDERR:\n{result.stderr}")
-            print(f"=== Files in collection ===")
+            print("=== Files in collection ===")
             for f in collection_path.glob("*"):
                 print(f"  {f.name}")
 

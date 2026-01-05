@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """MCP credential generation and validation manager."""
 
 import secrets
@@ -155,13 +156,13 @@ class MCPCredentialManager:
         result = self.get_credential_by_client_id(client_id)
         logger.debug(
             f"[verify_credential] client_id={client_id[:20]}... result={result is not None}"
-        )
+        , extra={"correlation_id": get_correlation_id()})
         if not result:
-            logger.debug("[verify_credential] Credential not found for client_id")
+            logger.debug("[verify_credential] Credential not found for client_id", extra={"correlation_id": get_correlation_id()})
             return None
 
         user_id, credential = result
-        logger.debug(f"[verify_credential] Found credential for user_id={user_id}")
+        logger.debug(f"[verify_credential] Found credential for user_id={user_id}", extra={"correlation_id": get_correlation_id()})
 
         # Verify secret against hash
         stored_hash = credential.get("client_secret_hash")

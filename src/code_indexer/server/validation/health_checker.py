@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Index Health Checker for CIDX Server - Story 9 Implementation.
 
@@ -53,7 +54,7 @@ class IndexHealthChecker:
         self.metadata_completeness_threshold = 0.9
         self.performance_threshold_ms = 100
 
-        logger.info("IndexHealthChecker initialized")
+        logger.info("IndexHealthChecker initialized", extra={"correlation_id": get_correlation_id()})
 
     def check_embedding_dimensions(self) -> HealthCheckResult:
         """
@@ -63,7 +64,7 @@ class IndexHealthChecker:
             HealthCheckResult with dimension consistency analysis
         """
         try:
-            logger.info("Checking embedding dimensions consistency")
+            logger.info("Checking embedding dimensions consistency", extra={"correlation_id": get_correlation_id()})
 
             # Get sample of embeddings from vector store
             sample_embeddings = self.vector_store_client.sample_vectors(
@@ -71,7 +72,7 @@ class IndexHealthChecker:
             )
 
             if not sample_embeddings:
-                logger.warning("No embeddings found in index for dimension checking")
+                logger.warning("No embeddings found in index for dimension checking", extra={"correlation_id": get_correlation_id()})
                 return HealthCheckResult(
                     is_healthy=False,
                     dimension_consistency_score=0.0,
@@ -116,7 +117,7 @@ class IndexHealthChecker:
             logger.info(
                 f"Dimension consistency check completed: "
                 f"{consistency_score:.2f} score, {len(dimension_violations)} violations"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             return HealthCheckResult(
                 is_healthy=is_healthy,
@@ -127,7 +128,7 @@ class IndexHealthChecker:
             )
 
         except Exception as e:
-            logger.error(f"Embedding dimension check failed: {e}", exc_info=True)
+            logger.error(f"Embedding dimension check failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
             raise IndexCorruptionError(
                 f"Failed to check embedding dimensions: {str(e)}",
                 corruption_type="dimension_check_failed",
@@ -141,7 +142,7 @@ class IndexHealthChecker:
             HealthCheckResult with vector quality analysis
         """
         try:
-            logger.info("Analyzing vector quality for corruption detection")
+            logger.info("Analyzing vector quality for corruption detection", extra={"correlation_id": get_correlation_id()})
 
             # Get sample of embeddings from Filesystem
             sample_embeddings = self.vector_store_client.sample_vectors(
@@ -149,7 +150,7 @@ class IndexHealthChecker:
             )
 
             if not sample_embeddings:
-                logger.warning("No embeddings found for vector quality analysis")
+                logger.warning("No embeddings found for vector quality analysis", extra={"correlation_id": get_correlation_id()})
                 return HealthCheckResult(
                     is_healthy=False,
                     quality_score=0.0,
@@ -198,7 +199,7 @@ class IndexHealthChecker:
                         corrupt_files.append(file_path)
 
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Failed to analyze vector for {file_path}: {e}")
+                    logger.warning(f"Failed to analyze vector for {file_path}: {e}", extra={"correlation_id": get_correlation_id()})
                     corrupt_files.append(file_path)
 
             # Calculate quality metrics
@@ -230,7 +231,7 @@ class IndexHealthChecker:
             logger.info(
                 f"Vector quality check completed: {overall_quality:.2f} score, "
                 f"{zero_vector_count} zero vectors, {nan_vector_count} NaN vectors"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             return HealthCheckResult(
                 is_healthy=is_healthy,
@@ -242,7 +243,7 @@ class IndexHealthChecker:
             )
 
         except Exception as e:
-            logger.error(f"Vector quality check failed: {e}", exc_info=True)
+            logger.error(f"Vector quality check failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
             raise IndexCorruptionError(
                 f"Failed to analyze vector quality: {str(e)}",
                 corruption_type="vector_quality_check_failed",
@@ -256,7 +257,7 @@ class IndexHealthChecker:
             HealthCheckResult with metadata integrity analysis
         """
         try:
-            logger.info("Checking metadata integrity")
+            logger.info("Checking metadata integrity", extra={"correlation_id": get_correlation_id()})
 
             # Get sample of embeddings with metadata
             sample_embeddings = self.vector_store_client.sample_vectors(
@@ -264,7 +265,7 @@ class IndexHealthChecker:
             )
 
             if not sample_embeddings:
-                logger.warning("No embeddings found for metadata integrity check")
+                logger.warning("No embeddings found for metadata integrity check", extra={"correlation_id": get_correlation_id()})
                 return HealthCheckResult(
                     is_healthy=False,
                     completeness_score=0.0,
@@ -383,7 +384,7 @@ class IndexHealthChecker:
             logger.info(
                 f"Metadata integrity check completed: {completeness_score:.2f} completeness, "
                 f"{missing_metadata_count} missing, {invalid_metadata_count} invalid"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             return HealthCheckResult(
                 is_healthy=is_healthy,
@@ -394,7 +395,7 @@ class IndexHealthChecker:
             )
 
         except Exception as e:
-            logger.error(f"Metadata integrity check failed: {e}", exc_info=True)
+            logger.error(f"Metadata integrity check failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
             raise IndexCorruptionError(
                 f"Failed to check metadata integrity: {str(e)}",
                 corruption_type="metadata_check_failed",
@@ -408,7 +409,7 @@ class IndexHealthChecker:
             HealthCheckResult with performance metrics
         """
         try:
-            logger.info("Measuring query performance")
+            logger.info("Measuring query performance", extra={"correlation_id": get_correlation_id()})
 
             # Generate test query vectors (random vectors for performance testing)
             query_times = []
@@ -444,7 +445,7 @@ class IndexHealthChecker:
                         )
 
                 except Exception as e:
-                    logger.warning(f"Query {i} failed: {e}")
+                    logger.warning(f"Query {i} failed: {e}", extra={"correlation_id": get_correlation_id()})
                     # Consider failed queries as very slow
                     query_times.append(10000.0)  # 10 second penalty
                     slow_queries.append(
@@ -486,7 +487,7 @@ class IndexHealthChecker:
             logger.info(
                 f"Query performance measurement completed: {average_query_time:.1f}ms average, "
                 f"{performance_score:.2f} score"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             return HealthCheckResult(
                 is_healthy=is_performant,
@@ -498,7 +499,7 @@ class IndexHealthChecker:
             )
 
         except Exception as e:
-            logger.error(f"Query performance measurement failed: {e}", exc_info=True)
+            logger.error(f"Query performance measurement failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
             # Return degraded performance result rather than raising exception
             return HealthCheckResult(
                 is_healthy=False,
@@ -517,7 +518,7 @@ class IndexHealthChecker:
             HealthCheckResult with detailed index statistics
         """
         try:
-            logger.info("Collecting index statistics")
+            logger.info("Collecting index statistics", extra={"correlation_id": get_correlation_id()})
 
             # Get collection info from Filesystem
             collection_info = self.vector_store_client.get_collection_info()
@@ -548,7 +549,7 @@ class IndexHealthChecker:
             logger.info(
                 f"Index statistics collected: {total_documents} documents, {total_vectors} vectors, "
                 f"{storage_usage_mb:.1f}MB estimated storage"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             return HealthCheckResult(
                 is_healthy=True,  # Statistics collection itself succeeded
@@ -561,7 +562,7 @@ class IndexHealthChecker:
             )
 
         except Exception as e:
-            logger.error(f"Failed to collect index statistics: {e}", exc_info=True)
+            logger.error(f"Failed to collect index statistics: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
             # Return empty statistics rather than raising exception
             return HealthCheckResult(
                 is_healthy=False,
@@ -581,7 +582,7 @@ class IndexHealthChecker:
             Combined HealthCheckResult with overall health assessment
         """
         try:
-            logger.info("Running comprehensive health check")
+            logger.info("Running comprehensive health check", extra={"correlation_id": get_correlation_id()})
 
             # Run all health checks
             dimension_result = self.check_embedding_dimensions()
@@ -672,7 +673,7 @@ class IndexHealthChecker:
             logger.info(
                 f"Comprehensive health check completed: {overall_health_score:.2f} health score, "
                 f"{len(critical_issues)} critical issues, {len(warnings)} warnings"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             # Combine all results into comprehensive result
             return HealthCheckResult(
@@ -715,7 +716,7 @@ class IndexHealthChecker:
         except IndexCorruptionError:
             raise  # Re-raise corruption errors
         except Exception as e:
-            logger.error(f"Comprehensive health check failed: {e}", exc_info=True)
+            logger.error(f"Comprehensive health check failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
             raise IndexCorruptionError(
                 f"Health check system failure: {str(e)}",
                 corruption_type="health_check_system_failure",

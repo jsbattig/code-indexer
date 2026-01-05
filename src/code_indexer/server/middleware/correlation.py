@@ -9,7 +9,7 @@ Following Story #666 AC2: CorrelationContextMiddleware Implementation
 
 import contextvars
 from typing import Optional
-from fastapi import Request, Response
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .error_formatters import generate_correlation_id

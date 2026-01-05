@@ -13,7 +13,6 @@ Follows Anti-Mock principle - uses real encryption, real HTTP requests.
 
 import pytest
 import re
-from pathlib import Path
 from typing import Dict, Any, Optional
 from fastapi.testclient import TestClient
 

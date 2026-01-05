@@ -5,15 +5,10 @@ Tests that BackgroundJobManager.submit_job() correctly handles repo_alias parame
 and validates against "unknown" values.
 """
 
-import pytest
 import logging
-from unittest.mock import Mock, patch
-from datetime import datetime, timezone
 
 from src.code_indexer.server.repositories.background_jobs import (
     BackgroundJobManager,
-    BackgroundJob,
-    JobStatus,
 )
 
 

@@ -20,7 +20,6 @@ import pytest
 
 from src.code_indexer.server.services.git_state_manager import (
     GitStateManager,
-    PRCreationResult,
 )
 
 

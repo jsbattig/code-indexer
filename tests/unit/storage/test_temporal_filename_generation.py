@@ -6,7 +6,6 @@ Tests v2 format hash-based filename generation to fix filesystem 255-character l
 import hashlib
 import tempfile
 from pathlib import Path
-import pytest
 
 from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
