@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Composite Repository Validator for CIDX Server.
 
@@ -91,12 +92,12 @@ class CompositeRepoValidator:
                     ]
                     logger.warning(
                         f"Blocked unsupported operation '{operation}' on composite repository: {repo_path}"
-                    )
+                    , extra={"correlation_id": get_correlation_id()})
                     raise HTTPException(status_code=400, detail=error_message)
 
         except json.JSONDecodeError as e:
             # If config file is malformed, log but don't block operation
             # This is a graceful degradation - we don't want to break operations
             # due to corrupted config files
-            logger.error(f"Failed to parse config file {config_file}: {e}")
+            logger.error(f"Failed to parse config file {config_file}: {e}", extra={"correlation_id": get_correlation_id()})
             return

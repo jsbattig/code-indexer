@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Web Admin UI Routes.
 
@@ -94,15 +95,16 @@ def validate_login_csrf_token(request: Request, submitted_token: Optional[str]) 
         submitted_token[:20] + "..." if submitted_token else None,
         CSRF_COOKIE_NAME in request.cookies,
         list(request.cookies.keys()),
+        extra={"correlation_id": get_correlation_id()},
     )
 
     if not submitted_token:
-        logger.debug("CSRF validation failed: no submitted_token")
+        logger.debug("CSRF validation failed: no submitted_token", extra={"correlation_id": get_correlation_id()})
         return False
 
     csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
     if not csrf_cookie:
-        logger.debug("CSRF validation failed: no csrf_cookie in request")
+        logger.debug("CSRF validation failed: no csrf_cookie in request", extra={"correlation_id": get_correlation_id()})
         return False
 
     try:
@@ -118,10 +120,11 @@ def validate_login_csrf_token(request: Request, submitted_token: Optional[str]) 
             result,
             stored_token[:20] + "..." if stored_token else None,
             submitted_token[:20] + "..." if submitted_token else None,
+            extra={"correlation_id": get_correlation_id()},
         )
         return result
     except (SignatureExpired, BadSignature) as e:
-        logger.debug("CSRF validation failed: %s", type(e).__name__)
+        logger.debug("CSRF validation failed: %s", type(e).__name__, extra={"correlation_id": get_correlation_id()})
         return False
 
 
@@ -687,7 +690,7 @@ def _get_golden_repos_list():
             registry = GlobalRegistry(str(golden_repos_dir))
             global_repos = {r["repo_name"]: r for r in registry.list_global_repos()}
         except Exception as e:
-            logger.warning("Could not load global registry: %s", e)
+            logger.warning("Could not load global registry: %s", e, extra={"correlation_id": get_correlation_id()})
             global_repos = {}
 
         # Get alias info for version and target path
@@ -732,7 +735,8 @@ def _get_golden_repos_list():
                         )
                     except Exception as e:
                         logger.warning(
-                            "Could not read alias file %s: %s", alias_file, e
+                            "Could not read alias file %s: %s", alias_file, e,
+                            extra={"correlation_id": get_correlation_id()},
                         )
                         repo["version"] = None
                         repo["last_refresh"] = None
@@ -764,6 +768,7 @@ def _get_golden_repos_list():
                         "Failed to get temporal status for %s: %s",
                         repo.get("alias"),
                         e,
+                        extra={"correlation_id": get_correlation_id()},
                     )
                     repo["temporal_status"] = {"format": "error", "message": str(e)}
             else:
@@ -819,7 +824,7 @@ def _get_golden_repos_list():
 
         return repos
     except Exception as e:
-        logger.error("Failed to get golden repos list: %s", e, exc_info=True)
+        logger.error("Failed to get golden repos list: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         return []
 
 
@@ -1085,7 +1090,8 @@ async def golden_repo_details(
         raise
     except Exception as e:
         logger.error(
-            "Failed to get golden repo details for '%s': %s", alias, e, exc_info=True
+            "Failed to get golden repo details for '%s': %s", alias, e, exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
         )
         raise HTTPException(status_code=404, detail=f"Repository '{alias}' not found")
 
@@ -1184,7 +1190,8 @@ def _get_all_activated_repos() -> list:
                             username,
                             repo.get("user_alias", "unknown"),
                             e,
-                            exc_info=True
+                            exc_info=True,
+                            extra={"correlation_id": get_correlation_id()},
                         )
                         # Provide error temporal_status with honest error format
                         repo["temporal_status"] = {
@@ -1202,7 +1209,7 @@ def _get_all_activated_repos() -> list:
         return all_repos
 
     except Exception as e:
-        logger.error("Failed to get activated repos: %s", e, exc_info=True)
+        logger.error("Failed to get activated repos: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         return []
 
 
@@ -1497,7 +1504,7 @@ def _get_background_job_manager():
 
         return background_job_manager
     except Exception as e:
-        logger.error("Failed to get background job manager: %s", e, exc_info=True)
+        logger.error("Failed to get background job manager: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         return None
 
 
@@ -1819,7 +1826,7 @@ def _get_all_activated_repos_for_query() -> list:
                 }
             )
     except Exception as e:
-        logger.warning("Could not load global repos for query: %s", e)
+        logger.warning("Could not load global repos for query: %s", e, extra={"correlation_id": get_correlation_id()})
 
     # Add user-activated repos
     user_repos = _get_all_activated_repos()
@@ -2069,7 +2076,8 @@ async def query_submit(
                             repo_path = global_repo_meta.get("index_path")
                     except Exception as e:
                         logger.warning(
-                            f"Failed to resolve global repo path for '{user_alias}': {e}"
+                            f"Failed to resolve global repo path for '{user_alias}': {e}",
+                            extra={"correlation_id": get_correlation_id()},
                         )
 
                 if not repo_path:
@@ -2219,11 +2227,13 @@ async def query_submit(
                                 "SCIP query failed - file not found: %s",
                                 e,
                                 exc_info=True,
+                                extra={"correlation_id": get_correlation_id()},
                             )
                             error_message = f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`"
                         except Exception as e:
                             logger.error(
-                                "SCIP query execution failed: %s", e, exc_info=True
+                                "SCIP query execution failed: %s", e, exc_info=True,
+                                extra={"correlation_id": get_correlation_id()},
                             )
                             error_message = f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`"
 
@@ -2298,7 +2308,7 @@ async def query_submit(
                                 }
                             )
                     except Exception as e:
-                        logger.error("Global repo query failed: %s", e, exc_info=True)
+                        logger.error("Global repo query failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
                         error_message = f"Query failed: {str(e)}"
             else:
                 repo_username = target_repo.get("username", session.username)
@@ -2341,7 +2351,7 @@ async def query_submit(
                     )
 
     except Exception as e:
-        logger.error("Query execution failed: %s", e, exc_info=True)
+        logger.error("Query execution failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         error_message = f"Query failed: {str(e)}"
 
     return _create_query_page_response(
@@ -2403,7 +2413,7 @@ def _get_semantic_query_manager():
 
         return semantic_query_manager
     except Exception as e:
-        logger.error("Failed to get semantic query manager: %s", e, exc_info=True)
+        logger.error("Failed to get semantic query manager: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         return None
 
 
@@ -2444,7 +2454,8 @@ def _execute_scip_query(
                 repo_path = global_repo_meta.get("index_path")
         except Exception as e:
             logger.warning(
-                f"Failed to resolve global repo path for '{user_alias}': {e}"
+                f"Failed to resolve global repo path for '{user_alias}': {e}",
+                extra={"correlation_id": get_correlation_id()},
             )
 
     if not repo_path:
@@ -2559,13 +2570,13 @@ def _execute_scip_query(
                 }
             )
     except FileNotFoundError as e:
-        logger.error("SCIP query failed - file not found: %s", e, exc_info=True)
+        logger.error("SCIP query failed - file not found: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         return (
             results,
             f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`",
         )
     except Exception as e:
-        logger.error("SCIP query execution failed: %s", e, exc_info=True)
+        logger.error("SCIP query execution failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         return (
             results,
             f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`",
@@ -2743,7 +2754,7 @@ async def query_results_partial_post(
                                 }
                             )
                     except Exception as e:
-                        logger.error("Global repo query failed: %s", e, exc_info=True)
+                        logger.error("Global repo query failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
                         error_message = f"Query failed: {str(e)}"
             else:
                 # Execute query for user-activated repositories
@@ -2786,7 +2797,7 @@ async def query_results_partial_post(
                     )
 
     except Exception as e:
-        logger.error("Query execution failed: %s", e, exc_info=True)
+        logger.error("Query execution failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
         error_message = f"Query failed: {str(e)}"
 
     csrf_token_new = generate_csrf_token()
@@ -2853,7 +2864,7 @@ async def _reload_oidc_configuration():
 
     # Only reload if OIDC is enabled
     if not config.oidc_provider_config.enabled:
-        logger.info("OIDC is disabled, skipping reload")
+        logger.info("OIDC is disabled, skipping reload", extra={"correlation_id": get_correlation_id()})
         # Clear the existing OIDC manager
         oidc_routes.oidc_manager = None
         oidc_routes.state_manager = None
@@ -2864,7 +2875,8 @@ async def _reload_oidc_configuration():
     from .. import app as app_module
 
     logger.info(
-        f"Creating new OIDC manager with config: email_claim={config.oidc_provider_config.email_claim}, username_claim={config.oidc_provider_config.username_claim}"
+        f"Creating new OIDC manager with config: email_claim={config.oidc_provider_config.email_claim}, username_claim={config.oidc_provider_config.username_claim}",
+        extra={"correlation_id": get_correlation_id()},
     )
 
     state_manager = StateManager()
@@ -2884,10 +2896,12 @@ async def _reload_oidc_configuration():
     oidc_routes.server_config = config
 
     logger.info(
-        f"OIDC configuration reloaded for provider: {config.oidc_provider_config.provider_name} (will initialize on next login)"
+        f"OIDC configuration reloaded for provider: {config.oidc_provider_config.provider_name} (will initialize on next login)",
+        extra={"correlation_id": get_correlation_id()},
     )
     logger.info(
-        f"New OIDC manager config - email_claim: {oidc_manager.config.email_claim}, username_claim: {oidc_manager.config.username_claim}"
+        f"New OIDC manager config - email_claim: {oidc_manager.config.email_claim}, username_claim: {oidc_manager.config.username_claim}",
+        extra={"correlation_id": get_correlation_id()},
     )
 
 
@@ -3244,10 +3258,10 @@ async def update_config_section(
             try:
                 # Try to reload with new config (don't save yet)
                 await _reload_oidc_configuration()
-                logger.info("OIDC configuration validated and reloaded successfully")
+                logger.info("OIDC configuration validated and reloaded successfully", extra={"correlation_id": get_correlation_id()})
             except Exception as e:
                 # Reload failed - reload original config from file to restore working state
-                logger.error(f"Failed to reload OIDC configuration: {e}", exc_info=True)
+                logger.error(f"Failed to reload OIDC configuration: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
                 config_service.load_config()  # Reload from file to undo in-memory changes
                 return _create_config_page_response(
                     request,
@@ -3257,7 +3271,7 @@ async def update_config_section(
 
         # Only save to file after validation and OIDC test (if applicable)
         config_service.config_manager.save_config(config)
-        logger.info(f"Saved {section} configuration with {len(data)} settings")
+        logger.info(f"Saved {section} configuration with {len(data)} settings", extra={"correlation_id": get_correlation_id()})
 
         return _create_config_page_response(
             request,
@@ -3271,7 +3285,7 @@ async def update_config_section(
             error_message=f"Failed to save configuration: {str(e)}",
         )
     except Exception as e:
-        logger.error("Failed to save config section %s: %s", section, e)
+        logger.error("Failed to save config section %s: %s", section, e, extra={"correlation_id": get_correlation_id()})
         return _create_config_page_response(
             request,
             session,
@@ -3311,7 +3325,7 @@ async def reset_config(
             success_message="Configuration reset to defaults successfully",
         )
     except Exception as e:
-        logger.error("Failed to reset config: %s", e)
+        logger.error("Failed to reset config: %s", e, extra={"correlation_id": get_correlation_id()})
         return _create_config_page_response(
             request,
             session,
@@ -3423,7 +3437,7 @@ async def save_api_key(
             validation_errors={'api_keys': str(e)},
         )
     except Exception as e:
-        logger.error("Failed to save %s API key: %s", platform, e)
+        logger.error("Failed to save %s API key: %s", platform, e, extra={"correlation_id": get_correlation_id()})
         return _create_config_page_response(
             request,
             session,
@@ -3470,7 +3484,7 @@ async def delete_api_key(
         token_manager.delete_token(platform)
 
         platform_name = "GitHub" if platform == 'github' else "GitLab"
-        logger.info(f"{platform_name} API key deleted successfully")
+        logger.info(f"{platform_name} API key deleted successfully", extra={"correlation_id": get_correlation_id()})
 
         # Return success HTML fragment (HTMX expects HTML response)
         return HTMLResponse(
@@ -3478,7 +3492,7 @@ async def delete_api_key(
             status_code=200
         )
     except Exception as e:
-        logger.error("Failed to delete %s API key: %s", platform, e)
+        logger.error("Failed to delete %s API key: %s", platform, e, extra={"correlation_id": get_correlation_id()})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete API key: {str(e)}"
@@ -3639,7 +3653,7 @@ async def update_file_content_limits(
             success_message="File content limits updated successfully",
         )
     except Exception as e:
-        logger.error("Failed to update file content limits: %s", e)
+        logger.error("Failed to update file content limits: %s", e, extra={"correlation_id": get_correlation_id()})
         return _create_file_content_limits_response(
             request,
             session,
@@ -3979,7 +3993,7 @@ async def ssh_keys_page(request: Request):
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
     except Exception as e:
-        logger.error(f"Failed to list SSH keys: {e}")
+        logger.error(f"Failed to list SSH keys: {e}", extra={"correlation_id": get_correlation_id()})
 
     response = templates.TemplateResponse(
         request,
@@ -4023,7 +4037,7 @@ def _create_ssh_keys_page_response(
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
     except Exception as e:
-        logger.error(f"Failed to list SSH keys: {e}")
+        logger.error(f"Failed to list SSH keys: {e}", extra={"correlation_id": get_correlation_id()})
 
     response = templates.TemplateResponse(
         request,
@@ -4096,7 +4110,7 @@ async def create_ssh_key(
             request, session, error_message=f"Key already exists: {e}"
         )
     except Exception as e:
-        logger.error(f"Failed to create SSH key: {e}")
+        logger.error(f"Failed to create SSH key: {e}", extra={"correlation_id": get_correlation_id()})
         return _create_ssh_keys_page_response(
             request, session, error_message=f"Failed to create key: {e}"
         )
@@ -4131,7 +4145,7 @@ async def delete_ssh_key(
             success_message=f"SSH key '{key_name}' deleted successfully.",
         )
     except Exception as e:
-        logger.error(f"Failed to delete SSH key: {e}")
+        logger.error(f"Failed to delete SSH key: {e}", extra={"correlation_id": get_correlation_id()})
         return _create_ssh_keys_page_response(
             request, session, error_message=f"Failed to delete key: {e}"
         )
@@ -4171,7 +4185,7 @@ async def assign_host_to_key(
             request, session, error_message=f"Host conflict: {e}"
         )
     except Exception as e:
-        logger.error(f"Failed to assign host to SSH key: {e}")
+        logger.error(f"Failed to assign host to SSH key: {e}", extra={"correlation_id": get_correlation_id()})
         return _create_ssh_keys_page_response(
             request, session, error_message=f"Failed to assign host: {e}"
         )
@@ -4594,7 +4608,7 @@ async def unified_login_sso(
     try:
         await oidc_routes.oidc_manager.ensure_provider_initialized()
     except Exception as e:
-        logger.error(f"Failed to initialize OIDC provider: {e}")
+        logger.error(f"Failed to initialize OIDC provider: {e}", extra={"correlation_id": get_correlation_id()})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="SSO provider is currently unavailable",

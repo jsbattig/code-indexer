@@ -120,7 +120,7 @@ class SyncExecutionOrchestrator:
             try:
                 self.recovery_orchestrator = RecoveryOrchestrator()
                 self.error_reporter = ErrorReporter()
-                logger.info("Comprehensive error handling and recovery enabled")
+                logger.info("Comprehensive error handling and recovery enabled", extra={"correlation_id": get_correlation_id()})
             except Exception as e:
                 logger.warning(
                     f"Failed to initialize error handling: {e}",
@@ -147,7 +147,7 @@ class SyncExecutionOrchestrator:
                     self._load_cidx_config()
                 )
                 self.git_analyzer = GitChangeAnalyzer(self.repository_path)
-                logger.info("Intelligent re-indexing enabled")
+                logger.info("Intelligent re-indexing enabled", extra={"correlation_id": get_correlation_id()})
             except Exception as e:
                 logger.warning(
                     f"Failed to initialize intelligent re-indexing: {e}",
@@ -187,7 +187,7 @@ class SyncExecutionOrchestrator:
                     else:
                         self.auto_recovery_engine = None
 
-                    logger.info("Index validation enabled")
+                    logger.info("Index validation enabled", extra={"correlation_id": get_correlation_id()})
                 else:
                     logger.warning(
                         "Failed to load config for validation - disabling validation",
@@ -211,7 +211,7 @@ class SyncExecutionOrchestrator:
 
         logger.info(
             f"SyncExecutionOrchestrator initialized for repository: {self.repository_path}"
-        )
+        , extra={"correlation_id": get_correlation_id()})
 
     def execute_sync(
         self,
@@ -262,7 +262,7 @@ class SyncExecutionOrchestrator:
             )
 
             self._current_job_id = job_id
-            logger.info(f"Created sync job {job_id} for user {username}")
+            logger.info(f"Created sync job {job_id} for user {username}", extra={"correlation_id": get_correlation_id()})
 
             # Create progress integrator for job updates
             from .progress_integrator import ProgressCallbackIntegrator
@@ -327,7 +327,7 @@ class SyncExecutionOrchestrator:
                             logger.info(
                                 f"Indexing decision: {indexing_mode} mode selected. "
                                 f"Triggers: {', '.join(indexing_decision.trigger_reasons)}"
-                            )
+                            , extra={"correlation_id": get_correlation_id()})
 
                         if indexing_triggered:
                             # Complete indexing phase
@@ -491,7 +491,7 @@ class SyncExecutionOrchestrator:
                             )
                             logger.info(
                                 f"Released repository lock for job {job_id} before retry"
-                            )
+                            , extra={"correlation_id": get_correlation_id()})
                 except Exception as e:
                     logger.warning(f"Could not release repository lock for retry: {e}", extra={"correlation_id": get_correlation_id()})
 
@@ -529,7 +529,7 @@ class SyncExecutionOrchestrator:
             from ...config import ConfigManager
             from pathlib import Path
 
-            logger.info(f"Starting internal CIDX indexing for {self.repository_path}")
+            logger.info(f"Starting internal CIDX indexing for {self.repository_path}", extra={"correlation_id": get_correlation_id()})
 
             # Get configuration for this repository
             config_manager = ConfigManager.create_with_backtrack(self.repository_path)
@@ -588,7 +588,7 @@ class SyncExecutionOrchestrator:
             if stats and not getattr(stats, "cancelled", False):
                 logger.info(
                     f"Internal CIDX indexing completed successfully: {stats.files_processed} files, {stats.chunks_created} chunks"
-                )
+                , extra={"correlation_id": get_correlation_id()})
                 return True
             else:
                 logger.warning("Internal CIDX indexing was cancelled or failed", extra={"correlation_id": get_correlation_id()})
@@ -652,7 +652,7 @@ class SyncExecutionOrchestrator:
             logger.info(
                 f"Intelligent reindexing decision: {indexing_mode} "
                 f"(confidence: {decision.confidence_score:.2f})"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             return indexing_mode, decision
 
@@ -841,7 +841,7 @@ class SyncExecutionOrchestrator:
                 )
                 logger.info(
                     f"Validation passed with health score {validation_result.overall_health_score:.2f}"
-                )
+                , extra={"correlation_id": get_correlation_id()})
             else:
                 # Validation failed but still complete the phase (with warnings)
                 self.job_manager.complete_phase(
@@ -901,7 +901,7 @@ class SyncExecutionOrchestrator:
                                 )
                                 logger.info(
                                     f"Auto-recovery completed successfully: {recovery_result.recovery_type}"
-                                )
+                                , extra={"correlation_id": get_correlation_id()})
                             else:
                                 logger.error(
                                     f"Auto-recovery failed: {recovery_result.error_message}",
@@ -1012,7 +1012,7 @@ class SyncExecutionOrchestrator:
                 ErrorSeverity.RECOVERABLE,
                 ErrorSeverity.WARNING,
             ]:
-                logger.info(f"Attempting recovery for {sync_error.error_code} error")
+                logger.info(f"Attempting recovery for {sync_error.error_code} error", extra={"correlation_id": get_correlation_id()})
 
                 recovery_result = self.recovery_orchestrator.attempt_recovery(
                     sync_error,
@@ -1031,7 +1031,7 @@ class SyncExecutionOrchestrator:
                 if recovery_result.success:
                     logger.info(
                         f"Successfully recovered from {sync_error.error_code} error"
-                    )
+                    , extra={"correlation_id": get_correlation_id()})
                     return True, "recovered", sync_error, recovery_attempts
                 else:
                     logger.warning(

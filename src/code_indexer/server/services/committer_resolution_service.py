@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Committer Resolution Service (Story #641).
 
@@ -75,26 +76,26 @@ class CommitterResolutionService:
         if hostname is None:
             self.logger.warning(
                 f"Cannot extract hostname from URL '{golden_repo_url}', using default email"
-            )
+            , extra={"correlation_id": get_correlation_id()})
             return default_email, None
 
-        self.logger.debug(f"Extracted hostname '{hostname}' from golden repo URL")
+        self.logger.debug(f"Extracted hostname '{hostname}' from golden repo URL", extra={"correlation_id": get_correlation_id()})
 
         # Step 2: Get all managed SSH keys with their metadata
         key_list_result = self.ssh_key_manager.list_keys()
         managed_keys = key_list_result.managed
 
         if not managed_keys:
-            self.logger.warning("No managed SSH keys found, using default email")
+            self.logger.warning("No managed SSH keys found, using default email", extra={"correlation_id": get_correlation_id()})
             return default_email, None
 
-        self.logger.debug(f"Found {len(managed_keys)} managed SSH keys to test")
+        self.logger.debug(f"Found {len(managed_keys)} managed SSH keys to test", extra={"correlation_id": get_correlation_id()})
 
         # Step 3: Test each key against hostname until one succeeds
         for key_metadata in managed_keys:
             self.logger.debug(
                 f"Testing SSH key '{key_metadata.name}' against hostname '{hostname}'"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             test_result = self.key_to_remote_tester.test_key_against_host(
                 key_path=key_metadata.private_path,
@@ -107,17 +108,17 @@ class CommitterResolutionService:
                     self.logger.info(
                         f"SSH key '{key_metadata.name}' authenticated successfully, "
                         f"using email '{key_metadata.email}'"
-                    )
+                    , extra={"correlation_id": get_correlation_id()})
                     return key_metadata.email, key_metadata.name
                 else:
                     self.logger.warning(
                         f"Working key '{key_metadata.name}' has no email configured, "
                         f"using default email"
-                    )
+                    , extra={"correlation_id": get_correlation_id()})
                     return default_email, key_metadata.name
 
         # Step 4: No key worked, use default
         self.logger.warning(
             f"No SSH key authenticated to {hostname}, using default email '{default_email}'"
-        )
+        , extra={"correlation_id": get_correlation_id()})
         return default_email, None

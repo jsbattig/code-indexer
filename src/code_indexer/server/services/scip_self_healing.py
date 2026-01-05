@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SCIP Self-Healing Service.
 
@@ -88,14 +89,16 @@ class SCIPSelfHealingService:
             # No failures to handle
             logger.info(
                 f"Job {job_id}: SCIP generation successful for all projects, "
-                "no self-healing needed"
+                "no self-healing needed",
+                extra={"correlation_id": get_correlation_id()}
             )
             return
 
         logger.info(
             f"Job {job_id}: Detected SCIP failures - "
             f"{generation_result.failed_projects} failed, "
-            f"{generation_result.successful_projects} succeeded"
+            f"{generation_result.successful_projects} succeeded",
+            extra={"correlation_id": get_correlation_id()}
         )
 
         # AC1: Extract per-project details for failed projects
@@ -125,7 +128,8 @@ class SCIPSelfHealingService:
 
                 logger.info(
                     f"Job {job_id}: Queued {project.language} project at "
-                    f"{project_path} for resolution (build system: {project.build_system})"
+                    f"{project_path} for resolution (build system: {project.build_system})",
+                    extra={"correlation_id": get_correlation_id()}
                 )
 
         # AC1: Update job with language_resolution_status and transition to RESOLVING_PREREQUISITES
@@ -138,7 +142,8 @@ class SCIPSelfHealingService:
 
                 logger.info(
                     f"Job {job_id}: Transitioned to RESOLVING_PREREQUISITES state, "
-                    f"tracking {len(language_resolution_status)} failed projects"
+                    f"tracking {len(language_resolution_status)} failed projects",
+                    extra={"correlation_id": get_correlation_id()},
                 )
 
     def build_project_prompt(
@@ -256,7 +261,8 @@ Status values:
             await process.wait()
             logger.error(
                 f"Job {job_id}: Claude Code timed out after "
-                f"{self.CLAUDE_TIMEOUT_SECONDS}s for {project_path}"
+                f"{self.CLAUDE_TIMEOUT_SECONDS}s for {project_path}",
+                extra={"correlation_id": get_correlation_id()},
             )
             raise
 
@@ -271,7 +277,8 @@ Status values:
         if status not in ("progress", "no_progress", "unresolvable"):
             logger.error(
                 f"Job {job_id}: Invalid status '{status}' in Claude response "
-                f"for {project_path}"
+                f"for {project_path}",
+                extra={"correlation_id": get_correlation_id()},
             )
             return ClaudeResponse(
                 status="unresolvable",
@@ -342,7 +349,8 @@ Status values:
 
         logger.info(
             f"Job {job_id}: Invoking Claude Code for {language} project at "
-            f"{project_path} (attempt {attempt}, workspace: {workspace})"
+            f"{project_path} (attempt {attempt}, workspace: {workspace})",
+            extra={"correlation_id": get_correlation_id()},
         )
 
         try:
@@ -352,7 +360,8 @@ Status values:
             response = self._parse_claude_response(stdout, job_id, project_path)
             logger.info(
                 f"Job {job_id}: Claude Code completed for {project_path}, "
-                f"status: {response.status}"
+                f"status: {response.status}",
+                extra={"correlation_id": get_correlation_id()},
             )
             return response
 
@@ -364,7 +373,8 @@ Status values:
             )
         except json.JSONDecodeError as e:
             logger.error(
-                f"Job {job_id}: Failed to parse Claude response for {project_path}: {e}"
+                f"Job {job_id}: Failed to parse Claude response for {project_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
             )
             return ClaudeResponse(
                 status="unresolvable",
@@ -373,7 +383,8 @@ Status values:
             )
         except (OSError, IOError) as e:
             logger.error(
-                f"Job {job_id}: I/O error invoking Claude Code for {project_path}: {e}"
+                f"Job {job_id}: I/O error invoking Claude Code for {project_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
             )
             return ClaudeResponse(
                 status="unresolvable",
@@ -420,7 +431,8 @@ Status values:
                 or project_path not in job.language_resolution_status
             ):
                 logger.error(
-                    f"Job {job_id}: Cannot handle response for unknown project {project_path}"
+                    f"Job {job_id}: Cannot handle response for unknown project {project_path}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return False
 
@@ -433,7 +445,8 @@ Status values:
     async def _handle_progress_response(self, job_id: str, project_path: str) -> None:
         """Handle 'progress' response: retry SCIP, mark resolved or re-queue."""
         logger.info(
-            f"Job {job_id}: Progress reported for {project_path}, attempting SCIP retry"
+            f"Job {job_id}: Progress reported for {project_path}, attempting SCIP retry",
+            extra={"correlation_id": get_correlation_id()},
         )
 
         scip_success = await self._retry_scip_for_project(job_id, project_path)
@@ -450,14 +463,16 @@ Status values:
             if scip_success:
                 job.language_resolution_status[project_path]["status"] = "resolved"
                 logger.info(
-                    f"Job {job_id}: Project {project_path} resolved successfully"
+                    f"Job {job_id}: Project {project_path} resolved successfully",
+                    extra={"correlation_id": get_correlation_id()},
                 )
             else:
                 job.language_resolution_status[project_path]["attempts"] += 1
                 job.language_resolution_status[project_path]["status"] = "resolving"
                 logger.warning(
                     f"Job {job_id}: SCIP retry failed for {project_path}, "
-                    f"attempt {job.language_resolution_status[project_path]['attempts']}"
+                    f"attempt {job.language_resolution_status[project_path]['attempts']}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
             self.job_manager._persist_jobs()
 
@@ -482,14 +497,16 @@ Status values:
                 project_status["status"] = "unresolvable"
                 logger.warning(
                     f"Job {job_id}: Project {project_path} marked unresolvable "
-                    f"after {project_status['attempts']} attempts"
+                    f"after {project_status['attempts']} attempts",
+                    extra={"correlation_id": get_correlation_id()},
                 )
             else:
                 project_status["attempts"] += 1
                 project_status["status"] = "resolving"
                 logger.info(
                     f"Job {job_id}: No progress for {project_path}, "
-                    f"will resume (attempt {project_status['attempts']})"
+                    f"will resume (attempt {project_status['attempts']})",
+                    extra={"correlation_id": get_correlation_id()},
                 )
             self.job_manager._persist_jobs()
 
@@ -508,7 +525,8 @@ Status values:
 
             job.language_resolution_status[project_path]["status"] = "unresolvable"
             logger.warning(
-                f"Job {job_id}: Project {project_path} marked unresolvable: {reasoning}"
+                f"Job {job_id}: Project {project_path} marked unresolvable: {reasoning}",
+                extra={"correlation_id": get_correlation_id()},
             )
             self.job_manager._persist_jobs()
 
@@ -532,7 +550,8 @@ Status values:
                 or project_path not in job.language_resolution_status
             ):
                 logger.error(
-                    f"Job {job_id}: Cannot retry SCIP for unknown project {project_path}"
+                    f"Job {job_id}: Cannot retry SCIP for unknown project {project_path}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return False
 
@@ -542,7 +561,8 @@ Status values:
 
         logger.info(
             f"Job {job_id}: Retrying SCIP for {language} project at {project_path} "
-            f"(build system: {build_system})"
+            f"(build system: {build_system})",
+            extra={"correlation_id": get_correlation_id()},
         )
 
         try:
@@ -556,7 +576,8 @@ Status values:
             project_dir = self.repo_root / project_path.rstrip("/")
             if not project_dir.exists():
                 logger.error(
-                    f"Job {job_id}: Project directory not found: {project_dir}"
+                    f"Job {job_id}: Project directory not found: {project_dir}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return False
 
@@ -567,19 +588,20 @@ Status values:
             # Get appropriate indexer for language
             indexer = generator._indexers.get(language)
             if not indexer:
-                logger.error(f"Job {job_id}: No SCIP indexer available for {language}")
+                logger.error(f"Job {job_id}: No SCIP indexer available for {language}", extra={"correlation_id": get_correlation_id()})
                 return False
 
             # Generate SCIP index for this specific project
             indexer_result = indexer.generate(project_dir, output_dir, build_system)
 
             if indexer_result.is_success():
-                logger.info(f"Job {job_id}: SCIP retry succeeded for {project_path}")
+                logger.info(f"Job {job_id}: SCIP retry succeeded for {project_path}", extra={"correlation_id": get_correlation_id()})
                 return True
             else:
                 logger.warning(
                     f"Job {job_id}: SCIP retry failed for {project_path}: "
-                    f"{indexer_result.stderr}"
+                    f"{indexer_result.stderr}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return False
 
@@ -587,6 +609,7 @@ Status values:
             logger.error(
                 f"Job {job_id}: Exception during SCIP retry for {project_path}: {e}",
                 exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
             )
             return False
 
@@ -600,7 +623,8 @@ Status values:
         """
         if not self.resolution_queue:
             logger.warning(
-                f"Job {job_id}: Resolution queue not available, cannot re-queue {project_path}"
+                f"Job {job_id}: Resolution queue not available, cannot re-queue {project_path}",
+                extra={"correlation_id": get_correlation_id()},
             )
             return
 
@@ -613,7 +637,8 @@ Status values:
                 or project_path not in job.language_resolution_status
             ):
                 logger.error(
-                    f"Job {job_id}: Cannot re-queue unknown project {project_path}"
+                    f"Job {job_id}: Cannot re-queue unknown project {project_path}",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return
 
@@ -631,12 +656,14 @@ Status values:
                 stderr=last_error,
             )
             logger.info(
-                f"Job {job_id}: Re-queued {project_path} for another resolution attempt"
+                f"Job {job_id}: Re-queued {project_path} for another resolution attempt",
+                extra={"correlation_id": get_correlation_id()},
             )
         except Exception as e:
             logger.error(
                 f"Job {job_id}: Failed to re-queue {project_path}: {e}",
                 exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def _record_partial_success_details(
@@ -687,11 +714,11 @@ Status values:
         with self.job_manager._lock:
             job = self.job_manager.jobs.get(job_id)
             if not job:
-                logger.error(f"Job {job_id} not found for completion determination")
+                logger.error(f"Job {job_id} not found for completion determination", extra={"correlation_id": get_correlation_id()})
                 return JobStatus.FAILED
 
             if not job.language_resolution_status:
-                logger.warning(f"Job {job_id} has no language_resolution_status")
+                logger.warning(f"Job {job_id} has no language_resolution_status", extra={"correlation_id": get_correlation_id()})
                 return JobStatus.FAILED
 
             # Count outcomes
@@ -712,28 +739,30 @@ Status values:
             if pending > 0:
                 logger.warning(
                     f"Job {job_id}: {pending} projects still in non-terminal state "
-                    "(should not happen at completion)"
+                    "(should not happen at completion)",
+                    extra={"correlation_id": get_correlation_id()},
                 )
 
             logger.info(
                 f"Job {job_id}: Resolution summary - "
-                f"{resolved}/{total_projects} resolved, {unresolvable} unresolvable, {pending} pending"
+                f"{resolved}/{total_projects} resolved, {unresolvable} unresolvable, {pending} pending",
+                extra={"correlation_id": get_correlation_id()},
             )
 
             # Determine final status
             final_status = None
             if resolved == total_projects:
-                logger.info(f"Job {job_id}: All {total_projects} projects resolved")
+                logger.info(f"Job {job_id}: All {total_projects} projects resolved", extra={"correlation_id": get_correlation_id()})
                 final_status = JobStatus.COMPLETED
 
             elif resolved > 0 and unresolvable > 0:
                 self._record_partial_success_details(job, resolved, total_projects)
-                logger.info(f"Job {job_id}: Partial success - {job.failure_reason}")
+                logger.info(f"Job {job_id}: Partial success - {job.failure_reason}", extra={"correlation_id": get_correlation_id()})
                 final_status = JobStatus.COMPLETED
 
             else:
                 job.failure_reason = "No projects could be resolved"
-                logger.warning(f"Job {job_id}: {job.failure_reason}")
+                logger.warning(f"Job {job_id}: {job.failure_reason}", extra={"correlation_id": get_correlation_id()})
                 final_status = JobStatus.FAILED
 
             # Story #659 Priority 4: Trigger PR creation on successful resolution
@@ -811,7 +840,8 @@ Status values:
             repo_alias = job.repo_alias
             if not repo_alias:
                 logger.warning(
-                    f"Job {job_id}: Cannot create PR - no repo_alias in job params"
+                    f"Job {job_id}: Cannot create PR - no repo_alias in job params",
+                    extra={"correlation_id": get_correlation_id()},
                 )
                 return
 
@@ -838,7 +868,8 @@ Status values:
             )
 
             logger.info(
-                f"Job {job_id}: PR creation triggered for {repo_alias} ({resolved}/{total_projects} resolved)"
+                f"Job {job_id}: PR creation triggered for {repo_alias} ({resolved}/{total_projects} resolved)",
+                extra={"correlation_id": get_correlation_id()},
             )
 
         except Exception as e:
@@ -846,4 +877,5 @@ Status values:
             logger.error(
                 f"Job {job_id}: Failed to create PR (non-blocking): {e}",
                 exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
             )

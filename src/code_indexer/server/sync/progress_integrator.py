@@ -89,7 +89,7 @@ class ProgressCallbackIntegrator:
             r"indexing completed",
         ]
 
-        logger.debug(f"ProgressCallbackIntegrator initialized for job {job_id}")
+        logger.debug(f"ProgressCallbackIntegrator initialized for job {job_id}", extra={"correlation_id": get_correlation_id()})
 
     def progress_callback(self, current: int, total: int, file_path: Path, info: str):
         """
@@ -311,7 +311,7 @@ class ProgressCallbackIntegrator:
                 metrics["total_files"] = int(files_match.group(2))
 
         except Exception as e:
-            logger.debug(f"Failed to extract metrics from '{info}': {e}")
+            logger.debug(f"Failed to extract metrics from '{info}': {e}", extra={"correlation_id": get_correlation_id()})
 
         return metrics
 
@@ -327,7 +327,7 @@ class ProgressCallbackIntegrator:
             if job.get("phases", {}).get(phase, {}).get("status") == "pending":
                 self.job_manager.start_phase(self.job_id, phase)
         except Exception as e:
-            logger.debug(f"Could not start phase {phase}: {e}")
+            logger.debug(f"Could not start phase {phase}: {e}", extra={"correlation_id": get_correlation_id()})
 
     def _complete_phase_if_needed(self, phase: str):
         """
@@ -348,10 +348,10 @@ class ProgressCallbackIntegrator:
                 self.job_manager.complete_phase(
                     job_id=self.job_id, phase=phase, result={"auto_completed": True}
                 )
-                logger.debug(f"Auto-completed phase {phase} at 100% progress")
+                logger.debug(f"Auto-completed phase {phase} at 100% progress", extra={"correlation_id": get_correlation_id()})
 
         except Exception as e:
-            logger.debug(f"Could not complete phase {phase}: {e}")
+            logger.debug(f"Could not complete phase {phase}: {e}", extra={"correlation_id": get_correlation_id()})
 
     def _handle_phase_transition(self, new_phase: str):
         """
@@ -380,10 +380,10 @@ class ProgressCallbackIntegrator:
                     )
                     logger.debug(
                         f"Auto-completed phase {current_phase} to transition to {new_phase}"
-                    )
+                    , extra={"correlation_id": get_correlation_id()})
 
         except Exception as e:
-            logger.debug(f"Could not handle phase transition to {new_phase}: {e}")
+            logger.debug(f"Could not handle phase transition to {new_phase}: {e}", extra={"correlation_id": get_correlation_id()})
 
     # Enhanced methods for SyncPhaseTracker integration
 
@@ -422,7 +422,7 @@ class ProgressCallbackIntegrator:
         try:
             self._ensure_phase_started(phase)
         except Exception as e:
-            logger.debug(f"Could not start legacy phase {phase}: {e}")
+            logger.debug(f"Could not start legacy phase {phase}: {e}", extra={"correlation_id": get_correlation_id()})
 
     def _create_recovery_checkpoint(
         self,
@@ -455,7 +455,7 @@ class ProgressCallbackIntegrator:
             self.job_manager.create_recovery_checkpoint(self.job_id, checkpoint_data)
             logger.debug(
                 f"Created recovery checkpoint for job {self.job_id} at {overall_progress:.1f}%"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
         except Exception as e:
             logger.warning(
@@ -491,7 +491,7 @@ class ProgressCallbackIntegrator:
                 self.phase_tracker.start_phase(phase_name)
 
             self._ensure_legacy_phase_started(phase_name)
-            logger.info(f"Manually started phase '{phase_name}' for job {self.job_id}")
+            logger.info(f"Manually started phase '{phase_name}' for job {self.job_id}", extra={"correlation_id": get_correlation_id()})
 
         except Exception as e:
             logger.error(
@@ -525,11 +525,11 @@ class ProgressCallbackIntegrator:
             try:
                 self.job_manager.complete_phase(self.job_id, phase_name, result or {})
             except Exception as e:
-                logger.debug(f"Legacy phase completion failed for {phase_name}: {e}")
+                logger.debug(f"Legacy phase completion failed for {phase_name}: {e}", extra={"correlation_id": get_correlation_id()})
 
             logger.info(
                 f"Manually completed phase '{phase_name}' for job {self.job_id}"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
         except Exception as e:
             logger.error(

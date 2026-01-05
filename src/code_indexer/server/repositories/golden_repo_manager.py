@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Golden Repository Manager for CIDX Server.
 
@@ -1573,7 +1574,7 @@ class GoldenRepoManager:
                         logger.warning(
                             f"Skipping malformed version directory: {v_dir} "
                             f"(expected format: v_TIMESTAMP, error: {e})"
-                        )
+                        , extra={"correlation_id": get_correlation_id()})
                         continue
 
                 if valid_versions:

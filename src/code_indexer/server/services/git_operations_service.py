@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 GitOperationsService: Comprehensive git operations service.
 
@@ -150,7 +151,7 @@ class GitOperationsService:
             if not metadata_file.exists():
                 logger.warning(
                     f"Cannot trigger migration: metadata file not found for {username}/{repo_alias}"
-                )
+                , extra={"correlation_id": get_correlation_id()})
                 return
 
             with open(metadata_file, "r") as f:
@@ -160,7 +161,7 @@ class GitOperationsService:
             if not golden_repo_alias:
                 logger.warning(
                     f"Cannot trigger migration: golden_repo_alias not found in metadata for {username}/{repo_alias}"
-                )
+                , extra={"correlation_id": get_correlation_id()})
                 return
 
             # Get golden repo path from golden repo manager
@@ -170,7 +171,7 @@ class GitOperationsService:
             ):
                 logger.warning(
                     f"Cannot trigger migration: golden repo '{golden_repo_alias}' not found for {username}/{repo_alias}"
-                )
+                , extra={"correlation_id": get_correlation_id()})
                 return
 
             self.activated_repo_manager.golden_repo_manager.golden_repos[
@@ -192,13 +193,13 @@ class GitOperationsService:
             if migrated:
                 logger.info(
                     f"Automatically migrated legacy remotes for {username}/{repo_alias}"
-                )
+                , extra={"correlation_id": get_correlation_id()})
 
         except Exception as e:
             # Don't fail the git operation if migration check fails
             logger.warning(
                 f"Failed to check/trigger migration for {username}/{repo_alias}: {str(e)}"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
     def get_status(self, repo_alias: str, username: str) -> Dict[str, Any]:
         """
@@ -365,17 +366,17 @@ class GitOperationsService:
                     user_email = subprocess.check_output(
                         ["git", "config", "user.email"], cwd=repo_path, text=True
                     ).strip()
-                    logger.debug(f"Using git config user.email: {user_email}")
+                    logger.debug(f"Using git config user.email: {user_email}", extra={"correlation_id": get_correlation_id()})
                 if not user_name:
                     user_name = subprocess.check_output(
                         ["git", "config", "user.name"], cwd=repo_path, text=True
                     ).strip()
-                    logger.debug(f"Using git config user.name: {user_name}")
+                    logger.debug(f"Using git config user.name: {user_name}", extra={"correlation_id": get_correlation_id()})
             except subprocess.CalledProcessError as e:
                 logger.debug(
                     f"Git config user.email/user.name not found: {e}. "
                     "Will use provided values (may fail validation if empty)."
-                )
+                , extra={"correlation_id": get_correlation_id()})
 
         result = self.git_commit(
             Path(repo_path),

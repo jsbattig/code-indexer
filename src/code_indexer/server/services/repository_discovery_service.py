@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Discovery Service for CIDX Server.
 
@@ -90,7 +91,7 @@ class RepositoryDiscoveryService:
         try:
             logger.debug(
                 f"Discovering repositories for URL: {repo_url}, User: {user.username}"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             # Normalize the git URL
             try:
@@ -98,7 +99,7 @@ class RepositoryDiscoveryService:
             except GitUrlNormalizationError as e:
                 raise RepositoryDiscoveryError(f"Invalid git URL: {str(e)}") from e
 
-            logger.debug(f"Normalized URL: {normalized_url.canonical_form}")
+            logger.debug(f"Normalized URL: {normalized_url.canonical_form}", extra={"correlation_id": get_correlation_id()})
 
             # Find matching repositories
             try:
@@ -129,7 +130,7 @@ class RepositoryDiscoveryService:
             logger.debug(
                 f"Discovery complete: {len(golden_repositories)} golden, "
                 f"{len(activated_repositories)} activated, {total_matches} total"
-            )
+            , extra={"correlation_id": get_correlation_id()})
 
             return RepositoryDiscoveryResponse(
                 query_url=repo_url,
@@ -143,7 +144,7 @@ class RepositoryDiscoveryService:
             raise
         except Exception as e:
             error_msg = f"Unexpected error during repository discovery: {str(e)}"
-            logger.error(error_msg)
+            logger.error(error_msg, extra={"correlation_id": get_correlation_id()})
             raise RepositoryDiscoveryError(error_msg) from e
 
     def _convert_match_result_to_repository_match(
@@ -195,7 +196,7 @@ class RepositoryDiscoveryService:
             raise
         except Exception as e:
             error_msg = f"Failed to validate repository access: {str(e)}"
-            logger.error(error_msg)
+            logger.error(error_msg, extra={"correlation_id": get_correlation_id()})
             raise RepositoryDiscoveryError(error_msg) from e
 
     async def get_repository_suggestions(
@@ -241,5 +242,5 @@ class RepositoryDiscoveryService:
             raise
         except Exception as e:
             error_msg = f"Failed to get repository suggestions: {str(e)}"
-            logger.error(error_msg)
+            logger.error(error_msg, extra={"correlation_id": get_correlation_id()})
             raise RepositoryDiscoveryError(error_msg) from e

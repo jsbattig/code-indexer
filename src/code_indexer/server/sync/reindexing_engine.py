@@ -53,7 +53,7 @@ class ReindexingDecisionEngine:
             config: Configuration for thresholds and behavior (uses defaults if None)
         """
         self.config = config or ReindexingConfig()
-        logger.info("ReindexingDecisionEngine initialized with config: %s", self.config)
+        logger.info("ReindexingDecisionEngine initialized with config: %s", self.config, extra={"correlation_id": get_correlation_id()})
 
     @classmethod
     def from_config(cls, cidx_config) -> "ReindexingDecisionEngine":
@@ -87,6 +87,7 @@ class ReindexingDecisionEngine:
             change_set.percentage_changed * 100,
             metrics.search_accuracy,
             metrics.index_age_days,
+            extra={"correlation_id": get_correlation_id()},
         )
 
         decision = ReindexingDecision(
@@ -112,6 +113,7 @@ class ReindexingDecisionEngine:
             "Re-indexing decision: %s (triggers: %s)",
             "FULL" if decision.should_reindex else "INCREMENTAL",
             ", ".join(decision.trigger_reasons) if decision.trigger_reasons else "none",
+            extra={"correlation_id": get_correlation_id()},
         )
 
         return decision
@@ -124,7 +126,7 @@ class ReindexingDecisionEngine:
             decision.should_reindex = True
             decision.add_trigger_reason("user_requested")
             decision.confidence_score = 1.0
-            logger.debug("User requested full re-index")
+            logger.debug("User requested full re-index", extra={"correlation_id": get_correlation_id()})
 
     def _analyze_corruption(
         self, decision: ReindexingDecision, metrics: IndexMetrics
@@ -170,6 +172,7 @@ class ReindexingDecisionEngine:
                     if config_files_changed
                     else "structural config changes"
                 ),
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def _analyze_change_percentage(
@@ -192,6 +195,7 @@ class ReindexingDecisionEngine:
                 "Change percentage %.1f%% exceeds threshold %.1f%%",
                 change_set.percentage_changed * 100,
                 self.config.change_percentage_threshold * 100,
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def _analyze_structural_changes(
@@ -206,7 +210,7 @@ class ReindexingDecisionEngine:
             decision.should_reindex = True
             decision.add_trigger_reason("structural_changes")
             decision.confidence_score = max(decision.confidence_score, 0.85)
-            logger.info("Structural changes detected (explicit flag)")
+            logger.info("Structural changes detected (explicit flag)", extra={"correlation_id": get_correlation_id()})
 
         # Check directory changes
         dir_changes = len(change_set.directories_added) + len(
@@ -217,7 +221,8 @@ class ReindexingDecisionEngine:
             decision.add_trigger_reason("structural_changes")
             decision.confidence_score = max(decision.confidence_score, 0.8)
             logger.info(
-                "Structural changes detected: %d directory changes", dir_changes
+                "Structural changes detected: %d directory changes", dir_changes,
+                extra={"correlation_id": get_correlation_id()},
             )
 
         # Check file moves
@@ -226,7 +231,8 @@ class ReindexingDecisionEngine:
             decision.add_trigger_reason("structural_changes")
             decision.confidence_score = max(decision.confidence_score, 0.75)
             logger.info(
-                "Structural changes detected: %d file moves", len(change_set.file_moves)
+                "Structural changes detected: %d file moves", len(change_set.file_moves),
+                extra={"correlation_id": get_correlation_id()},
             )
 
         # Check structural indicator files
@@ -245,6 +251,7 @@ class ReindexingDecisionEngine:
             logger.info(
                 "Structural indicator files changed: %s",
                 ", ".join(structural_files_changed),
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def _analyze_search_quality(
@@ -265,6 +272,7 @@ class ReindexingDecisionEngine:
                 "Search accuracy %.2f below threshold %.2f",
                 metrics.search_accuracy,
                 self.config.accuracy_threshold,
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def _analyze_index_age(
@@ -292,6 +300,7 @@ class ReindexingDecisionEngine:
                 "Index age %d days exceeds threshold %d days",
                 metrics.index_age_days,
                 self.config.max_index_age_days,
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def _finalize_decision(

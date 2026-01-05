@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """MCP Tool Handler Functions - Complete implementation for all 22 tools.
 
 All handlers return MCP-compliant responses with content arrays:
@@ -287,7 +288,7 @@ def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
     """
     golden_repos_dir = _get_golden_repos_dir()
     if not golden_repos_dir:
-        logger.debug("No golden_repos_dir, returning patterns unchanged")
+        logger.debug("No golden_repos_dir, returning patterns unchanged", extra={"correlation_id": get_correlation_id()})
         return patterns
 
     # Get available repos
@@ -295,7 +296,7 @@ def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
         registry = GlobalRegistry(golden_repos_dir)
         available_repos = [r["alias_name"] for r in registry.list_global_repos()]
     except Exception as e:
-        logger.warning(f"Failed to list global repos for wildcard expansion: {e}")
+        logger.warning(f"Failed to list global repos for wildcard expansion: {e}", extra={"correlation_id": get_correlation_id()})
         return patterns
 
     expanded = []
@@ -306,10 +307,10 @@ def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
             spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
             matches = [repo for repo in available_repos if spec.match_file(repo)]
             if matches:
-                logger.debug(f"Expanded wildcard '{pattern}' -> {matches}")
+                logger.debug(f"Expanded wildcard '{pattern}' -> {matches}", extra={"correlation_id": get_correlation_id()})
                 expanded.extend(matches)
             else:
-                logger.warning(f"Wildcard pattern '{pattern}' matched no repositories")
+                logger.warning(f"Wildcard pattern '{pattern}' matched no repositories", extra={"correlation_id": get_correlation_id()})
         else:
             # Keep literal pattern
             expanded.append(pattern)
@@ -379,7 +380,7 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
                     errors[repo_alias] = result_data.get("error", "Unknown error")
         except Exception as e:
             errors[repo_alias] = str(e)
-            logger.warning(f"Omni-search failed for {repo_alias}: {e}")
+            logger.warning(f"Omni-search failed for {repo_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
     # Aggregate results based on mode
     if aggregation_mode == "per_repo":
@@ -660,7 +661,7 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
             for repo in global_repos_data:
                 # Validate required fields exist
                 if "alias_name" not in repo or "repo_name" not in repo:
-                    logger.warning(f"Skipping malformed global repo entry: {repo}")
+                    logger.warning(f"Skipping malformed global repo entry: {repo}", extra={"correlation_id": get_correlation_id()})
                     continue
 
                 normalized = {
@@ -684,6 +685,7 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
             logger.warning(
                 f"Failed to load global repos from {golden_repos_dir}: {e}",
                 exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
             )
 
         # Merge activated and global repos
@@ -904,7 +906,7 @@ async def _omni_list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]
                     errors[repo_alias] = result_data.get("error", "Unknown error")
         except Exception as e:
             errors[repo_alias] = str(e)
-            logger.warning(f"Omni-list-files failed for {repo_alias}: {e}")
+            logger.warning(f"Omni-list-files failed for {repo_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
     # Get response_format parameter (default to "flat" for backward compatibility)
     response_format = params.get("response_format", "flat")
@@ -1713,7 +1715,7 @@ async def get_all_repositories_status(
 
             for repo in global_repos_data:
                 if "alias_name" not in repo or "repo_name" not in repo:
-                    logger.warning(f"Skipping malformed global repo entry: {repo}")
+                    logger.warning(f"Skipping malformed global repo entry: {repo}", extra={"correlation_id": get_correlation_id()})
                     continue
 
                 global_status = {
@@ -1728,7 +1730,7 @@ async def get_all_repositories_status(
                 }
                 status_summary.append(global_status)
         except Exception as e:
-            logger.warning(f"Failed to load global repos status: {e}", exc_info=True)
+            logger.warning(f"Failed to load global repos status: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
 
         return _mcp_response(
             {
@@ -1916,7 +1918,7 @@ async def handle_add_golden_repo_index(
         # AC4: Unknown alias, AC3: Invalid type, AC5: Already exists
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.error(f"Error adding index to golden repo: {e}")
+        logger.error(f"Error adding index to golden repo: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {"success": False, "error": f"Failed to add index: {str(e)}"}
         )
@@ -1951,7 +1953,7 @@ async def handle_get_golden_repo_indexes(
         # AC4: Unknown alias
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.error(f"Error getting golden repo indexes: {e}")
+        logger.error(f"Error getting golden repo indexes: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {"success": False, "error": f"Failed to get indexes: {str(e)}"}
         )
@@ -2007,7 +2009,7 @@ async def _omni_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any]
                     errors[repo_alias] = result_data.get("error", "Unknown error")
         except Exception as e:
             errors[repo_alias] = str(e)
-            logger.warning(f"Omni-regex failed for {repo_alias}: {e}")
+            logger.warning(f"Omni-regex failed for {repo_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
     elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -2111,7 +2113,7 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
         )
 
     except TimeoutError as e:
-        logger.warning(f"Search timeout in regex_search: {e}")
+        logger.warning(f"Search timeout in regex_search: {e}", extra={"correlation_id": get_correlation_id()})
         # Format timeout error response
         error_formatter = SearchErrorFormatter()
         config_manager = SearchLimitsConfigManager.get_instance()
@@ -2123,7 +2125,7 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
         return _mcp_response({"success": False, **error_data})
 
     except Exception as e:
-        logger.exception(f"Error in regex_search: {e}")
+        logger.exception(f"Error in regex_search: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2183,7 +2185,7 @@ async def handle_create_file(params: Dict[str, Any], user: User) -> Dict[str, An
             auto_watch_manager.start_watch(repo_path)
         except Exception as e:
             # Log but don't fail - auto-watch is enhancement, not critical
-            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}")
+            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
         # Call file CRUD service
         result = file_crud_service.create_file(
@@ -2196,19 +2198,19 @@ async def handle_create_file(params: Dict[str, Any], user: User) -> Dict[str, An
         return _mcp_response(result)
 
     except FileExistsError as e:
-        logger.warning(f"File creation failed - file already exists: {e}")
+        logger.warning(f"File creation failed - file already exists: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except PermissionError as e:
-        logger.warning(f"File creation failed - permission denied: {e}")
+        logger.warning(f"File creation failed - permission denied: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except CRUDOperationError as e:
-        logger.error(f"File creation failed - CRUD operation error: {e}")
+        logger.error(f"File creation failed - CRUD operation error: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except ValueError as e:
-        logger.warning(f"File creation failed - invalid parameters: {e}")
+        logger.warning(f"File creation failed - invalid parameters: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in handle_create_file: {e}")
+        logger.exception(f"Unexpected error in handle_create_file: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2276,7 +2278,7 @@ async def handle_edit_file(params: Dict[str, Any], user: User) -> Dict[str, Any]
             auto_watch_manager.start_watch(repo_path)
         except Exception as e:
             # Log but don't fail - auto-watch is enhancement, not critical
-            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}")
+            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
         # Call file CRUD service
         result = file_crud_service.edit_file(
@@ -2293,23 +2295,24 @@ async def handle_edit_file(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
     except HashMismatchError as e:
         logger.warning(
-            f"File edit failed - hash mismatch (concurrent modification): {e}"
+            f"File edit failed - hash mismatch (concurrent modification): {e}",
+            extra={"correlation_id": get_correlation_id()},
         )
         return _mcp_response({"success": False, "error": str(e)})
     except FileNotFoundError as e:
-        logger.warning(f"File edit failed - file not found: {e}")
+        logger.warning(f"File edit failed - file not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except ValueError as e:
-        logger.warning(f"File edit failed - validation error: {e}")
+        logger.warning(f"File edit failed - validation error: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except PermissionError as e:
-        logger.warning(f"File edit failed - permission denied: {e}")
+        logger.warning(f"File edit failed - permission denied: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except CRUDOperationError as e:
-        logger.error(f"File edit failed - CRUD operation error: {e}")
+        logger.error(f"File edit failed - CRUD operation error: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in handle_edit_file: {e}")
+        logger.exception(f"Unexpected error in handle_edit_file: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2361,7 +2364,7 @@ async def handle_delete_file(params: Dict[str, Any], user: User) -> Dict[str, An
             auto_watch_manager.start_watch(repo_path)
         except Exception as e:
             # Log but don't fail - auto-watch is enhancement, not critical
-            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}")
+            logger.warning(f"Failed to start auto-watch for {repository_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
         # Call file CRUD service
         result = file_crud_service.delete_file(
@@ -2374,22 +2377,22 @@ async def handle_delete_file(params: Dict[str, Any], user: User) -> Dict[str, An
         return _mcp_response(result)
 
     except HashMismatchError as e:
-        logger.warning(f"File deletion failed - hash mismatch (safety check): {e}")
+        logger.warning(f"File deletion failed - hash mismatch (safety check): {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except FileNotFoundError as e:
-        logger.warning(f"File deletion failed - file not found: {e}")
+        logger.warning(f"File deletion failed - file not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except PermissionError as e:
-        logger.warning(f"File deletion failed - permission denied: {e}")
+        logger.warning(f"File deletion failed - permission denied: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except CRUDOperationError as e:
-        logger.error(f"File deletion failed - CRUD operation error: {e}")
+        logger.error(f"File deletion failed - CRUD operation error: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except ValueError as e:
-        logger.warning(f"File deletion failed - invalid parameters: {e}")
+        logger.warning(f"File deletion failed - invalid parameters: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in handle_delete_file: {e}")
+        logger.exception(f"Unexpected error in handle_delete_file: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2481,7 +2484,7 @@ async def _omni_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
                     errors[repo_alias] = result_data.get("error", "Unknown error")
         except Exception as e:
             errors[repo_alias] = str(e)
-            logger.warning(f"Omni-git-log failed for {repo_alias}: {e}")
+            logger.warning(f"Omni-git-log failed for {repo_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
     # Sort by date descending and apply limit
     all_commits.sort(key=lambda x: x.get("date", ""), reverse=True)
@@ -2569,7 +2572,7 @@ async def handle_git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
 
     except Exception as e:
-        logger.exception(f"Error in git_log: {e}")
+        logger.exception(f"Error in git_log: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2648,7 +2651,7 @@ async def handle_git_show_commit(args: Dict[str, Any], user: User) -> Dict[str, 
     except ValueError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Error in git_show_commit: {e}")
+        logger.exception(f"Error in git_show_commit: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2705,7 +2708,7 @@ async def handle_git_file_at_revision(
     except ValueError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Error in git_file_at_revision: {e}")
+        logger.exception(f"Error in git_file_at_revision: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2886,7 +2889,7 @@ async def handle_git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
 
     except Exception as e:
-        logger.exception(f"Error in git_diff: {e}")
+        logger.exception(f"Error in git_diff: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -2955,7 +2958,7 @@ async def handle_git_blame(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except ValueError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Error in git_blame: {e}")
+        logger.exception(f"Error in git_blame: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3024,7 +3027,7 @@ async def handle_git_file_history(args: Dict[str, Any], user: User) -> Dict[str,
     except ValueError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Error in git_file_history: {e}")
+        logger.exception(f"Error in git_file_history: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3087,7 +3090,7 @@ async def _omni_git_search_commits(args: Dict[str, Any], user: User) -> Dict[str
                     errors[repo_alias] = result_data.get("error", "Unknown error")
         except Exception as e:
             errors[repo_alias] = str(e)
-            logger.warning(f"Omni-git-search failed for {repo_alias}: {e}")
+            logger.warning(f"Omni-git-search failed for {repo_alias}: {e}", extra={"correlation_id": get_correlation_id()})
 
     elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -3183,7 +3186,7 @@ async def handle_git_search_commits(args: Dict[str, Any], user: User) -> Dict[st
         )
 
     except Exception as e:
-        logger.exception(f"Error in git_search_commits: {e}")
+        logger.exception(f"Error in git_search_commits: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3277,7 +3280,7 @@ async def handle_git_search_diffs(args: Dict[str, Any], user: User) -> Dict[str,
     except ValueError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Error in git_search_diffs: {e}")
+        logger.exception(f"Error in git_search_diffs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3352,7 +3355,7 @@ async def handle_directory_tree(args: Dict[str, Any], user: User) -> Dict[str, A
     except ValueError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Error in directory_tree: {e}")
+        logger.exception(f"Error in directory_tree: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3497,7 +3500,7 @@ async def handle_ssh_key_create(args: Dict[str, Any], user: User) -> Dict[str, A
             {"success": False, "error": f"Key already exists: {str(e)}"}
         )
     except Exception as e:
-        logger.exception(f"Error creating SSH key: {e}")
+        logger.exception(f"Error creating SSH key: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3551,7 +3554,7 @@ async def handle_ssh_key_list(args: Dict[str, Any], user: User) -> Dict[str, Any
         )
 
     except Exception as e:
-        logger.exception(f"Error listing SSH keys: {e}")
+        logger.exception(f"Error listing SSH keys: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3587,7 +3590,7 @@ async def handle_ssh_key_delete(args: Dict[str, Any], user: User) -> Dict[str, A
         )
 
     except Exception as e:
-        logger.exception(f"Error deleting SSH key: {e}")
+        logger.exception(f"Error deleting SSH key: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3628,7 +3631,7 @@ async def handle_ssh_key_show_public(
     except KeyNotFoundError:
         return _mcp_response({"success": False, "error": f"Key not found: {name}"})
     except Exception as e:
-        logger.exception(f"Error getting public key: {e}")
+        logger.exception(f"Error getting public key: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3688,7 +3691,7 @@ async def handle_ssh_key_assign_host(
     except HostConflictError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Error assigning host to key: {e}")
+        logger.exception(f"Error assigning host to key: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -3798,7 +3801,7 @@ async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
                 all_results.extend(results)
             except Exception as e:
-                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
                 continue
 
         # Convert QueryResult objects to dicts
@@ -3825,7 +3828,7 @@ async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except Exception as e:
-        logger.exception(f"Error in scip_definition: {e}")
+        logger.exception(f"Error in scip_definition: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e), "results": []})
 
 
@@ -3885,7 +3888,7 @@ async def scip_references(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                     all_results = all_results[:limit]
                     break
             except Exception as e:
-                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
                 continue
 
         # Convert QueryResult objects to dicts
@@ -3912,7 +3915,7 @@ async def scip_references(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except Exception as e:
-        logger.exception(f"Error in scip_references: {e}")
+        logger.exception(f"Error in scip_references: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e), "results": []})
 
 
@@ -3967,7 +3970,7 @@ async def scip_dependencies(params: Dict[str, Any], user: User) -> Dict[str, Any
 
                 all_results.extend(results)
             except Exception as e:
-                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
                 continue
 
         # Convert QueryResult objects to dicts
@@ -3994,7 +3997,7 @@ async def scip_dependencies(params: Dict[str, Any], user: User) -> Dict[str, Any
             }
         )
     except Exception as e:
-        logger.exception(f"Error in scip_dependencies: {e}")
+        logger.exception(f"Error in scip_dependencies: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e), "results": []})
 
 
@@ -4049,7 +4052,7 @@ async def scip_dependents(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
                 all_results.extend(results)
             except Exception as e:
-                logger.warning(f"Failed to query SCIP file {scip_file}: {e}")
+                logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
                 continue
 
         # Convert QueryResult objects to dicts
@@ -4076,7 +4079,7 @@ async def scip_dependents(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except Exception as e:
-        logger.exception(f"Error in scip_dependents: {e}")
+        logger.exception(f"Error in scip_dependents: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e), "results": []})
 
 
@@ -4150,7 +4153,7 @@ async def scip_impact(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except Exception as e:
-        logger.exception(f"Error in scip_impact: {e}")
+        logger.exception(f"Error in scip_impact: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4245,7 +4248,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                         max_depth_reached = True
 
             except Exception as e:
-                logger.warning(f"Failed to trace call chain in {scip_file}: {e}")
+                logger.warning(f"Failed to trace call chain in {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
                 continue
 
         # Deduplicate chains by converting to set of path tuples
@@ -4302,7 +4305,7 @@ async def scip_callchain(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except Exception as e:
-        logger.exception(f"Error in scip_callchain: {e}")
+        logger.exception(f"Error in scip_callchain: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e), "chains": []})
 
 
@@ -4379,7 +4382,7 @@ async def scip_context(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except Exception as e:
-        logger.exception(f"Error in scip_context: {e}")
+        logger.exception(f"Error in scip_context: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e), "files": []})
 
 
@@ -4547,7 +4550,7 @@ async def quick_reference(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
 
     except Exception as e:
-        logger.exception(f"Error in quick_reference: {e}")
+        logger.exception(f"Error in quick_reference: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4625,7 +4628,8 @@ async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         elapsed_ms = int((time.time() - start_time) * 1000)
         logger.info(
             f"trigger_reindex completed in {elapsed_ms}ms - "
-            f"job_id={job_id}, repo={repo_alias}, types={index_types}"
+            f"job_id={job_id}, repo={repo_alias}, types={index_types}",
+            extra={"correlation_id": get_correlation_id()},
         )
 
         return _mcp_response(
@@ -4641,7 +4645,7 @@ async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     except ValueError as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.warning(f"trigger_reindex validation error in {elapsed_ms}ms: {e}")
+        logger.warning(f"trigger_reindex validation error in {elapsed_ms}ms: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4650,7 +4654,7 @@ async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
     except FileNotFoundError as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.warning(f"trigger_reindex repo not found in {elapsed_ms}ms: {e}")
+        logger.warning(f"trigger_reindex repo not found in {elapsed_ms}ms: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4659,7 +4663,7 @@ async def trigger_reindex(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         )
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.exception(f"trigger_reindex error in {elapsed_ms}ms: {e}")
+        logger.exception(f"trigger_reindex error in {elapsed_ms}ms: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4707,7 +4711,7 @@ async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.info(f"get_index_status completed in {elapsed_ms}ms - repo={repo_alias}")
+        logger.info(f"get_index_status completed in {elapsed_ms}ms - repo={repo_alias}", extra={"correlation_id": get_correlation_id()})
 
         # Build response with all index types
         response = {
@@ -4720,7 +4724,7 @@ async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
     except FileNotFoundError as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.warning(f"get_index_status repo not found in {elapsed_ms}ms: {e}")
+        logger.warning(f"get_index_status repo not found in {elapsed_ms}ms: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4729,7 +4733,7 @@ async def get_index_status(params: Dict[str, Any], user: User) -> Dict[str, Any]
         )
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.exception(f"get_index_status error in {elapsed_ms}ms: {e}")
+        logger.exception(f"get_index_status error in {elapsed_ms}ms: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4770,7 +4774,7 @@ async def git_status(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_status failed: {e}")
+        logger.error(f"git_status failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4783,7 +4787,7 @@ async def git_status(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_status: {e}")
+        logger.exception(f"Unexpected error in git_status: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -4811,7 +4815,7 @@ async def git_stage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_stage failed: {e}")
+        logger.error(f"git_stage failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4824,7 +4828,7 @@ async def git_stage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_stage: {e}")
+        logger.exception(f"Unexpected error in git_stage: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -4852,7 +4856,7 @@ async def git_unstage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_unstage failed: {e}")
+        logger.error(f"git_unstage failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4865,7 +4869,7 @@ async def git_unstage(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_unstage: {e}")
+        logger.exception(f"Unexpected error in git_unstage: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -4899,7 +4903,7 @@ async def git_commit(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_commit failed: {e}")
+        logger.error(f"git_commit failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4914,7 +4918,7 @@ async def git_commit(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_commit: {e}")
+        logger.exception(f"Unexpected error in git_commit: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -4939,7 +4943,7 @@ async def git_push(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_push failed: {e}")
+        logger.error(f"git_push failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4952,7 +4956,7 @@ async def git_push(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_push: {e}")
+        logger.exception(f"Unexpected error in git_push: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -4977,7 +4981,7 @@ async def git_pull(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_pull failed: {e}")
+        logger.error(f"git_pull failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -4990,7 +4994,7 @@ async def git_pull(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_pull: {e}")
+        logger.exception(f"Unexpected error in git_pull: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5011,7 +5015,7 @@ async def git_fetch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_fetch failed: {e}")
+        logger.error(f"git_fetch failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5024,7 +5028,7 @@ async def git_fetch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_fetch: {e}")
+        logger.exception(f"Unexpected error in git_fetch: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5081,7 +5085,7 @@ async def git_reset(args: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except GitCommandError as e:
-        logger.error(f"git_reset failed: {e}")
+        logger.error(f"git_reset failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5094,7 +5098,7 @@ async def git_reset(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_reset: {e}")
+        logger.exception(f"Unexpected error in git_reset: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5146,7 +5150,7 @@ async def git_clean(args: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except GitCommandError as e:
-        logger.error(f"git_clean failed: {e}")
+        logger.error(f"git_clean failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5159,7 +5163,7 @@ async def git_clean(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_clean: {e}")
+        logger.exception(f"Unexpected error in git_clean: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5181,7 +5185,7 @@ async def git_merge_abort(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_merge_abort failed: {e}")
+        logger.error(f"git_merge_abort failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5194,7 +5198,7 @@ async def git_merge_abort(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_merge_abort: {e}")
+        logger.exception(f"Unexpected error in git_merge_abort: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5222,7 +5226,7 @@ async def git_checkout_file(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_checkout_file failed: {e}")
+        logger.error(f"git_checkout_file failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5235,7 +5239,7 @@ async def git_checkout_file(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_checkout_file: {e}")
+        logger.exception(f"Unexpected error in git_checkout_file: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5258,7 +5262,7 @@ async def git_branch_list(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_branch_list failed: {e}")
+        logger.error(f"git_branch_list failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5271,7 +5275,7 @@ async def git_branch_list(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_branch_list: {e}")
+        logger.exception(f"Unexpected error in git_branch_list: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5302,7 +5306,7 @@ async def git_branch_create(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_branch_create failed: {e}")
+        logger.error(f"git_branch_create failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5315,7 +5319,7 @@ async def git_branch_create(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_branch_create: {e}")
+        logger.exception(f"Unexpected error in git_branch_create: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5346,7 +5350,7 @@ async def git_branch_switch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_branch_switch failed: {e}")
+        logger.error(f"git_branch_switch failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5359,7 +5363,7 @@ async def git_branch_switch(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_branch_switch: {e}")
+        logger.exception(f"Unexpected error in git_branch_switch: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5417,7 +5421,7 @@ async def git_branch_delete(args: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
         )
     except GitCommandError as e:
-        logger.error(f"git_branch_delete failed: {e}")
+        logger.error(f"git_branch_delete failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5430,7 +5434,7 @@ async def git_branch_delete(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_branch_delete: {e}")
+        logger.exception(f"Unexpected error in git_branch_delete: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5472,7 +5476,7 @@ async def git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_diff failed: {e}")
+        logger.error(f"git_diff failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5485,7 +5489,7 @@ async def git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_diff: {e}")
+        logger.exception(f"Unexpected error in git_diff: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5515,7 +5519,7 @@ async def git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
         return _mcp_response(result)
 
     except GitCommandError as e:
-        logger.error(f"git_log failed: {e}")
+        logger.error(f"git_log failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -5528,7 +5532,7 @@ async def git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     except FileNotFoundError as e:
         return _mcp_response({"success": False, "error": str(e)})
     except Exception as e:
-        logger.exception(f"Unexpected error in git_log: {e}")
+        logger.exception(f"Unexpected error in git_log: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -5996,7 +6000,7 @@ async def get_scip_audit_log(params: Dict[str, Any], user: User) -> Dict[str, An
         )
 
     except Exception as e:
-        logger.error(f"Error retrieving SCIP audit log: {e}")
+        logger.error(f"Error retrieving SCIP audit log: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6086,7 +6090,7 @@ async def handle_gh_actions_list_runs(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6095,7 +6099,7 @@ async def handle_gh_actions_list_runs(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6104,7 +6108,7 @@ async def handle_gh_actions_list_runs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gh_actions_list_runs: {e}")
+        logger.exception(f"Error in gh_actions_list_runs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6169,7 +6173,7 @@ async def handle_gh_actions_get_run(args: Dict[str, Any], user: User) -> Dict[st
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6178,7 +6182,7 @@ async def handle_gh_actions_get_run(args: Dict[str, Any], user: User) -> Dict[st
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6187,7 +6191,7 @@ async def handle_gh_actions_get_run(args: Dict[str, Any], user: User) -> Dict[st
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gh_actions_get_run: {e}")
+        logger.exception(f"Error in gh_actions_get_run: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6267,7 +6271,7 @@ async def handle_gh_actions_search_logs(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6276,7 +6280,7 @@ async def handle_gh_actions_search_logs(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6285,7 +6289,7 @@ async def handle_gh_actions_search_logs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gh_actions_search_logs: {e}")
+        logger.exception(f"Error in gh_actions_search_logs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6353,7 +6357,7 @@ async def handle_gh_actions_get_job_logs(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6362,7 +6366,7 @@ async def handle_gh_actions_get_job_logs(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6371,7 +6375,7 @@ async def handle_gh_actions_get_job_logs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gh_actions_get_job_logs: {e}")
+        logger.exception(f"Error in gh_actions_get_job_logs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6439,7 +6443,7 @@ async def handle_gh_actions_retry_run(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6448,7 +6452,7 @@ async def handle_gh_actions_retry_run(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6457,7 +6461,7 @@ async def handle_gh_actions_retry_run(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gh_actions_retry_run: {e}")
+        logger.exception(f"Error in gh_actions_retry_run: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6525,7 +6529,7 @@ async def handle_gh_actions_cancel_run(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6534,7 +6538,7 @@ async def handle_gh_actions_cancel_run(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6543,7 +6547,7 @@ async def handle_gh_actions_cancel_run(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gh_actions_cancel_run: {e}")
+        logger.exception(f"Error in gh_actions_cancel_run: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6633,7 +6637,7 @@ async def handle_gitlab_ci_list_pipelines(
         )
 
     except GitLabAuthenticationError as e:
-        logger.error(f"GitLab authentication failed: {e}")
+        logger.error(f"GitLab authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6642,7 +6646,7 @@ async def handle_gitlab_ci_list_pipelines(
             }
         )
     except GitLabProjectNotFoundError as e:
-        logger.error(f"GitLab project not found: {e}")
+        logger.error(f"GitLab project not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6651,7 +6655,7 @@ async def handle_gitlab_ci_list_pipelines(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gitlab_ci_list_pipelines: {e}")
+        logger.exception(f"Error in gitlab_ci_list_pipelines: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6720,7 +6724,7 @@ async def handle_gitlab_ci_get_pipeline(
         )
 
     except GitLabAuthenticationError as e:
-        logger.error(f"GitLab authentication failed: {e}")
+        logger.error(f"GitLab authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6729,7 +6733,7 @@ async def handle_gitlab_ci_get_pipeline(
             }
         )
     except GitLabProjectNotFoundError as e:
-        logger.error(f"GitLab project not found: {e}")
+        logger.error(f"GitLab project not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6738,7 +6742,7 @@ async def handle_gitlab_ci_get_pipeline(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gitlab_ci_get_pipeline: {e}")
+        logger.exception(f"Error in gitlab_ci_get_pipeline: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6822,7 +6826,7 @@ async def handle_gitlab_ci_search_logs(
         )
 
     except GitLabAuthenticationError as e:
-        logger.error(f"GitLab authentication failed: {e}")
+        logger.error(f"GitLab authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6831,7 +6835,7 @@ async def handle_gitlab_ci_search_logs(
             }
         )
     except GitLabProjectNotFoundError as e:
-        logger.error(f"GitLab project not found: {e}")
+        logger.error(f"GitLab project not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6840,7 +6844,7 @@ async def handle_gitlab_ci_search_logs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gitlab_ci_search_logs: {e}")
+        logger.exception(f"Error in gitlab_ci_search_logs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -6913,7 +6917,7 @@ async def handle_gitlab_ci_get_job_logs(
         )
 
     except GitLabAuthenticationError as e:
-        logger.error(f"GitLab authentication failed: {e}")
+        logger.error(f"GitLab authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6922,7 +6926,7 @@ async def handle_gitlab_ci_get_job_logs(
             }
         )
     except GitLabProjectNotFoundError as e:
-        logger.error(f"GitLab project not found: {e}")
+        logger.error(f"GitLab project not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -6931,7 +6935,7 @@ async def handle_gitlab_ci_get_job_logs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gitlab_ci_get_job_logs: {e}")
+        logger.exception(f"Error in gitlab_ci_get_job_logs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7001,7 +7005,7 @@ async def handle_gitlab_ci_retry_pipeline(
         )
 
     except GitLabAuthenticationError as e:
-        logger.error(f"GitLab authentication failed: {e}")
+        logger.error(f"GitLab authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7010,7 +7014,7 @@ async def handle_gitlab_ci_retry_pipeline(
             }
         )
     except GitLabProjectNotFoundError as e:
-        logger.error(f"GitLab project not found: {e}")
+        logger.error(f"GitLab project not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7019,7 +7023,7 @@ async def handle_gitlab_ci_retry_pipeline(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gitlab_ci_retry_pipeline: {e}")
+        logger.exception(f"Error in gitlab_ci_retry_pipeline: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7089,7 +7093,7 @@ async def handle_gitlab_ci_cancel_pipeline(
         )
 
     except GitLabAuthenticationError as e:
-        logger.error(f"GitLab authentication failed: {e}")
+        logger.error(f"GitLab authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7098,7 +7102,7 @@ async def handle_gitlab_ci_cancel_pipeline(
             }
         )
     except GitLabProjectNotFoundError as e:
-        logger.error(f"GitLab project not found: {e}")
+        logger.error(f"GitLab project not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7107,7 +7111,7 @@ async def handle_gitlab_ci_cancel_pipeline(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in gitlab_ci_cancel_pipeline: {e}")
+        logger.exception(f"Error in gitlab_ci_cancel_pipeline: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7211,7 +7215,7 @@ async def handle_github_actions_list_runs(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7220,7 +7224,7 @@ async def handle_github_actions_list_runs(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7229,7 +7233,7 @@ async def handle_github_actions_list_runs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in github_actions_list_runs: {e}")
+        logger.exception(f"Error in github_actions_list_runs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7305,7 +7309,7 @@ async def handle_github_actions_get_run(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7314,7 +7318,7 @@ async def handle_github_actions_get_run(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7323,7 +7327,7 @@ async def handle_github_actions_get_run(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in github_actions_get_run: {e}")
+        logger.exception(f"Error in github_actions_get_run: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7410,7 +7414,7 @@ async def handle_github_actions_search_logs(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7419,7 +7423,7 @@ async def handle_github_actions_search_logs(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7428,7 +7432,7 @@ async def handle_github_actions_search_logs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in github_actions_search_logs: {e}")
+        logger.exception(f"Error in github_actions_search_logs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7505,7 +7509,7 @@ async def handle_github_actions_get_job_logs(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7514,7 +7518,7 @@ async def handle_github_actions_get_job_logs(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7523,7 +7527,7 @@ async def handle_github_actions_get_job_logs(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in github_actions_get_job_logs: {e}")
+        logger.exception(f"Error in github_actions_get_job_logs: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7601,7 +7605,7 @@ async def handle_github_actions_retry_run(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7610,7 +7614,7 @@ async def handle_github_actions_retry_run(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7619,7 +7623,7 @@ async def handle_github_actions_retry_run(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in github_actions_retry_run: {e}")
+        logger.exception(f"Error in github_actions_retry_run: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 
@@ -7697,7 +7701,7 @@ async def handle_github_actions_cancel_run(
         )
 
     except GitHubAuthenticationError as e:
-        logger.error(f"GitHub authentication failed: {e}")
+        logger.error(f"GitHub authentication failed: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7706,7 +7710,7 @@ async def handle_github_actions_cancel_run(
             }
         )
     except GitHubRepositoryNotFoundError as e:
-        logger.error(f"GitHub repository not found: {e}")
+        logger.error(f"GitHub repository not found: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response(
             {
                 "success": False,
@@ -7715,7 +7719,7 @@ async def handle_github_actions_cancel_run(
             }
         )
     except Exception as e:
-        logger.exception(f"Error in github_actions_cancel_run: {e}")
+        logger.exception(f"Error in github_actions_cancel_run: {e}", extra={"correlation_id": get_correlation_id()})
         return _mcp_response({"success": False, "error": str(e)})
 
 

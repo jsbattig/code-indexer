@@ -1,3 +1,4 @@
+from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Global Repos Lifecycle Manager for CIDX Server.
 
@@ -70,7 +71,7 @@ class GlobalReposLifecycleManager:
 
         logger.debug(
             f"GlobalReposLifecycleManager initialized for {self.golden_repos_dir}"
-        )
+        , extra={"correlation_id": get_correlation_id()})
 
     def is_running(self) -> bool:
         """
@@ -92,21 +93,21 @@ class GlobalReposLifecycleManager:
         Idempotent: Safe to call multiple times
         """
         if self._running:
-            logger.debug("GlobalReposLifecycleManager already running")
+            logger.debug("GlobalReposLifecycleManager already running", extra={"correlation_id": get_correlation_id()})
             return
 
-        logger.info("Starting global repos background services")
+        logger.info("Starting global repos background services", extra={"correlation_id": get_correlation_id()})
 
         # Start CleanupManager first
         self.cleanup_manager.start()
-        logger.debug("CleanupManager started")
+        logger.debug("CleanupManager started", extra={"correlation_id": get_correlation_id()})
 
         # Start RefreshScheduler
         self.refresh_scheduler.start()
-        logger.debug("RefreshScheduler started")
+        logger.debug("RefreshScheduler started", extra={"correlation_id": get_correlation_id()})
 
         self._running = True
-        logger.info("Global repos background services started successfully")
+        logger.info("Global repos background services started successfully", extra={"correlation_id": get_correlation_id()})
 
     def stop(self) -> None:
         """
@@ -121,18 +122,18 @@ class GlobalReposLifecycleManager:
         Idempotent: Safe to call multiple times
         """
         if not self._running:
-            logger.debug("GlobalReposLifecycleManager already stopped")
+            logger.debug("GlobalReposLifecycleManager already stopped", extra={"correlation_id": get_correlation_id()})
             return
 
-        logger.info("Stopping global repos background services")
+        logger.info("Stopping global repos background services", extra={"correlation_id": get_correlation_id()})
 
         # Stop RefreshScheduler first (reverse order)
         self.refresh_scheduler.stop()
-        logger.debug("RefreshScheduler stopped")
+        logger.debug("RefreshScheduler stopped", extra={"correlation_id": get_correlation_id()})
 
         # Stop CleanupManager
         self.cleanup_manager.stop()
-        logger.debug("CleanupManager stopped")
+        logger.debug("CleanupManager stopped", extra={"correlation_id": get_correlation_id()})
 
         self._running = False
-        logger.info("Global repos background services stopped successfully")
+        logger.info("Global repos background services stopped successfully", extra={"correlation_id": get_correlation_id()})
