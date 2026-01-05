@@ -286,66 +286,97 @@ class RegexSearchService:
         exclude_patterns: Optional[List[str]],
         timeout_seconds: int,
     ) -> List[str]:
-        """Use find command to get files matching path-based patterns."""
-        from code_indexer.server.services.subprocess_executor import (
-            SubprocessExecutor,
-            ExecutionStatus,
-        )
+        """Use Python pathlib glob to get files matching patterns (like ripgrep -g).
 
-        path_patterns = [pat for pat in include_patterns if '/' in pat]
-        simple_patterns = [pat for pat in include_patterns if '/' not in pat]
+        Supports the following pattern types to match ripgrep's -g flag behavior:
+        - "**/file.java" - Recursive search from search_path
+        - "code/**/file.java" - Recursive search from search_path/code
+        - "code/src/file.java" - Explicit path (non-recursive)
+        - "*.java" - Simple pattern (recursive from search_path)
 
-        # Use "." since find runs from repo working directory
-        find_cmd = ["find", ".", "-type", "f"]
+        Args:
+            search_path: Base directory to search from. All patterns resolved relative to this path.
+            include_patterns: List of glob patterns following ripgrep -g flag syntax.
+            exclude_patterns: Optional list of patterns to exclude from results.
+            timeout_seconds: Maximum time to spend searching (currently unused in glob implementation).
 
-        # Build OR expression for patterns
-        pattern_count = len(path_patterns) + len(simple_patterns)
-        if pattern_count > 0:
-            find_cmd.append("(")
-            pattern_index = 0
+        Returns:
+            List of relative file paths as strings for all files matching include patterns
+            and not matching exclude patterns. Empty list if no matches found.
 
-            # Add path patterns
-            for pat in path_patterns:
-                if pattern_index > 0:
-                    find_cmd.append("-o")
-                find_cmd.extend(["-path", pat])
-                pattern_index += 1
+        Raises:
+            ValueError: If pattern contains invalid glob syntax (e.g., unclosed brackets).
+            PermissionError: If directories are not readable during traversal.
+        """
+        import fnmatch
 
-            # Add simple filename patterns
-            for pat in simple_patterns:
-                if pattern_index > 0:
-                    find_cmd.append("-o")
-                find_cmd.extend(["-name", pat])
-                pattern_index += 1
+        matched_files = set()
 
-            find_cmd.append(")")
+        for pattern in include_patterns:
+            # Handle different pattern types to match ripgrep -g behavior
+            if pattern.startswith("**/"):
+                # Pattern like **/filename.ext or **/dir/*.ext
+                # Use rglob for recursive matching from search_path
+                sub_pattern = pattern[3:]  # Remove **/ prefix
+                for file_path in search_path.rglob(sub_pattern):
+                    if file_path.is_file():
+                        matched_files.add(file_path)
 
+            elif "**" in pattern:
+                # Pattern like dir/**/filename.ext (** in middle)
+                # Split on /** and use rglob for the recursive part
+                parts = pattern.split("/**/")
+                if len(parts) == 2:
+                    prefix, suffix = parts
+                    # Find all directories matching prefix
+                    prefix_path = search_path / prefix if prefix else search_path
+                    if prefix_path.exists() and prefix_path.is_dir():
+                        # Use rglob from prefix_path for suffix pattern
+                        for file_path in prefix_path.rglob(suffix):
+                            if file_path.is_file():
+                                matched_files.add(file_path)
+                else:
+                    # Multiple ** in pattern - fall back to walking entire tree
+                    for file_path in search_path.rglob("*"):
+                        if file_path.is_file():
+                            rel_path = str(file_path.relative_to(search_path))
+                            if fnmatch.fnmatch(rel_path, pattern):
+                                matched_files.add(file_path)
+
+            elif "/" in pattern:
+                # Explicit path pattern like code/src/Main.java
+                # Use glob for non-recursive matching
+                for file_path in search_path.glob(pattern):
+                    if file_path.is_file():
+                        matched_files.add(file_path)
+
+            else:
+                # Simple filename pattern like *.java
+                # Use rglob to find at any depth
+                for file_path in search_path.rglob(pattern):
+                    if file_path.is_file():
+                        matched_files.add(file_path)
+
+        # Apply exclude patterns
         if exclude_patterns:
-            for pat in exclude_patterns:
-                find_cmd.extend(["!", "-path", f"*{pat}*"])
+            filtered_files = set()
+            for file_path in matched_files:
+                rel_path = str(file_path.relative_to(search_path))
+                excluded = False
+                for exclude_pattern in exclude_patterns:
+                    # Match exclude pattern anywhere in path
+                    if fnmatch.fnmatch(rel_path, f"*{exclude_pattern}*"):
+                        excluded = True
+                        break
+                if not excluded:
+                    filtered_files.add(file_path)
+            matched_files = filtered_files
 
-        temp_fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="grep_files_")
-        os.close(temp_fd)
-
-        try:
-            executor = SubprocessExecutor(max_workers=1)
-            try:
-                result = await executor.execute_with_limits(
-                    command=find_cmd,
-                    working_dir=str(self.repo_path),
-                    timeout_seconds=timeout_seconds,
-                    output_file_path=temp_path,
-                )
-                if result.status == ExecutionStatus.ERROR:
-                    logger.warning(f"Find command failed: {result.error_message}")
-                    return []
-                with open(temp_path, "r") as f:
-                    return [line.strip() for line in f if line.strip()]
-            finally:
-                executor.shutdown(wait=True)
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        # Convert to relative paths as strings (like find output)
+        return [
+            str(file_path.relative_to(search_path))
+            for file_path in sorted(matched_files)
+        ]
 
     def _build_grep_command(
         self,
@@ -397,6 +428,8 @@ class RegexSearchService:
 
         if has_path_patterns:
             # Use find to get files matching all patterns (both path and simple)
+            # Type assertion: has_path_patterns ensures include_patterns is not None
+            assert include_patterns is not None
             file_list = await self._find_files_by_patterns(
                 search_path, include_patterns, exclude_patterns, timeout
             )

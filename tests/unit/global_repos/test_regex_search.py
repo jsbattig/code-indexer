@@ -520,3 +520,123 @@ class TestFindFilesDoubleStarPattern:
                 version in f and "SalesGoalsWidget.java" in f
                 for f in matched_files
             ), f"Ripgrep should find SalesGoalsWidget.java in {version}"
+
+
+class TestGlobPatternParity:
+    """Test comprehensive glob pattern support matching ripgrep behavior.
+
+    These tests verify that grep backend matches ripgrep's -g flag behavior exactly,
+    covering patterns that currently fail with find-based implementation.
+    """
+
+    @pytest.fixture
+    def glob_test_repo(self, tmp_path):
+        """Create test repository with structure for glob pattern testing."""
+        repo_path = tmp_path / "glob-test-repo"
+        repo_path.mkdir()
+
+        # Create nested structure: code/src/dms/client/widgets/SalesGoalsWidget.java
+        widget_path = repo_path / "code" / "src" / "dms" / "client" / "widgets"
+        widget_path.mkdir(parents=True)
+        (widget_path / "SalesGoalsWidget.java").write_text("class SalesGoalsWidget { void render() {} }")
+
+        # Create explicit path file: code/src/Main.java
+        (repo_path / "code" / "src" / "Main.java").write_text("class Main { void main() {} }")
+
+        # Create another nested file: code/tests/TestHelper.java
+        test_path = repo_path / "code" / "tests"
+        test_path.mkdir(parents=True)
+        (test_path / "TestHelper.java").write_text("class TestHelper { void help() {} }")
+
+        return repo_path
+
+    @pytest.fixture
+    def grep_service_glob(self, glob_test_repo):
+        """Create grep service for glob pattern testing."""
+        with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+            def which_side_effect(cmd):
+                return "/usr/bin/grep" if cmd == "grep" else None
+            mock_which.side_effect = which_side_effect
+            yield RegexSearchService(glob_test_repo)
+
+    @pytest.mark.asyncio
+    async def test_glob_pattern_with_double_star_in_middle_of_path(
+        self, grep_service_glob, glob_test_repo
+    ):
+        """Test pattern with ** in MIDDLE of path: code/**/SalesGoalsWidget.java
+
+        REQUIREMENT: Pattern dir/**/file.ext must match file under dir at any depth.
+        CURRENT BUG: find -path doesn't expand ** in middle of path correctly.
+        """
+        result = await grep_service_glob.search(
+            pattern="class",
+            include_patterns=["code/**/SalesGoalsWidget.java"]
+        )
+
+        # Should find SalesGoalsWidget.java under code/ at any depth
+        assert result.total_matches == 1, (
+            f"Pattern code/**/SalesGoalsWidget.java should find 1 match, "
+            f"got {result.total_matches}"
+        )
+
+        matched_files = {match.file_path for match in result.matches}
+        assert any(
+            "SalesGoalsWidget.java" in f and "code" in f
+            for f in matched_files
+        ), "Should find code/src/dms/client/widgets/SalesGoalsWidget.java"
+
+    @pytest.mark.asyncio
+    async def test_glob_pattern_explicit_path(
+        self, grep_service_glob, glob_test_repo
+    ):
+        """Test explicit path pattern: code/src/Main.java
+
+        REQUIREMENT: Explicit path patterns must work like ripgrep -g.
+        CURRENT BUG: find -path requires ./ prefix and doesn't match explicit paths.
+        """
+        result = await grep_service_glob.search(
+            pattern="class",
+            include_patterns=["code/src/Main.java"]
+        )
+
+        # Should find exact file at code/src/Main.java
+        assert result.total_matches == 1, (
+            f"Pattern code/src/Main.java should find 1 match, "
+            f"got {result.total_matches}"
+        )
+
+        matched_files = {match.file_path for match in result.matches}
+        assert any(
+            "Main.java" in f and "code/src" in f
+            for f in matched_files
+        ), "Should find code/src/Main.java"
+
+    @pytest.mark.asyncio
+    async def test_glob_pattern_multiple_mixed_patterns(
+        self, grep_service_glob, glob_test_repo
+    ):
+        """Test multiple patterns with different glob types.
+
+        REQUIREMENT: Mixed patterns (explicit, **, simple) must all work together.
+        """
+        result = await grep_service_glob.search(
+            pattern="class",
+            include_patterns=[
+                "code/**/SalesGoalsWidget.java",  # ** in middle
+                "code/src/Main.java",              # Explicit path
+                "**/TestHelper.java"               # ** at start
+            ]
+        )
+
+        # Should find all 3 files
+        assert result.total_matches == 3, (
+            f"Mixed patterns should find 3 matches, got {result.total_matches}"
+        )
+
+        matched_files = {match.file_path for match in result.matches}
+        assert any("SalesGoalsWidget.java" in f for f in matched_files), \
+            "Should find SalesGoalsWidget.java via code/**/pattern"
+        assert any("Main.java" in f for f in matched_files), \
+            "Should find Main.java via explicit path"
+        assert any("TestHelper.java" in f for f in matched_files), \
+            "Should find TestHelper.java via **/pattern"
