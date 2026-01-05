@@ -4,6 +4,41 @@ from typing import List, Dict, Any
 from code_indexer.server.auth.user_manager import User
 
 # =============================================================================
+# REPOSITORY DISCOVERY WORKFLOW (HIGH PRIORITY)
+# =============================================================================
+"""
+CRITICAL: Unless the user explicitly specifies which repository to search,
+FIRST search cidx-meta-global to discover which repositories are relevant.
+
+MANDATORY WORKFLOW:
+1. search_code('topic', repository_alias='cidx-meta-global')
+   → Returns .md files describing each repository's contents
+
+2. Then search the specific repositories identified
+   → search_code('detailed query', repository_alias='identified-repo-global')
+
+EXCEPTION: Skip cidx-meta discovery ONLY if user explicitly names a repository.
+
+EXAMPLES:
+✓ User: "Find authentication code"
+  → search_code('authentication', repository_alias='cidx-meta-global') first
+  → Then search specific repos that handle auth
+
+✗ User: "Find authentication in backend-global"
+  → Skip cidx-meta, search backend-global directly (user specified repo)
+
+✓ User: "How does error handling work?"
+  → search_code('error handling', repository_alias='cidx-meta-global') first
+  → Then search identified repos
+
+WHY THIS MATTERS:
+- Prevents wasted searches in irrelevant repositories
+- Discovers which repos contain relevant code
+- Provides context about each repository's purpose
+- More efficient than guessing or listing all repos
+"""
+
+# =============================================================================
 # REPOSITORY ALIAS RULES AND PERMISSION SYSTEM
 # =============================================================================
 """
@@ -194,7 +229,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Tools 1-2: Search
     "search_code": {
         "name": "search_code",
-        "description": "TL;DR: Search code using pre-built indexes. Use semantic mode for conceptual queries, FTS for exact text. SEARCH MODE DECISION: 'authentication logic' (concept) -> semantic | 'def authenticate_user' (exact text) -> fts | unsure -> hybrid. CRITICAL - SEMANTIC SEARCH IS NOT TEXT SEARCH: Semantic mode finds code by MEANING, not exact text. Results are APPROXIMATE and help identify areas of concern for a topic. For exhaustive exact-text results, use FTS mode or regex_search tool. QUICK START: search_code('user authentication', repository_alias='myrepo-global', search_mode='semantic', limit=5). DISCOVERY: Run list_global_repos first to see available repositories. ALIAS FORMAT: Global repos end in '-global' (e.g., 'backend-global'). CIDX-META: For exploring unfamiliar codebases, cidx-meta-global contains .md descriptions of all repos - use browse_directory + get_file_content (NOT search_code) since it's a small catalog. TROUBLESHOOTING: (1) 0 results? Verify alias with list_global_repos, try broader terms, check filters. (2) Temporal queries empty? Check enable_temporal via global_repo_status. (3) Slow? Start with limit=5, use path_filter. WHEN NOT TO USE: (1) Need comprehensive pattern search with ALL matches -> use regex_search instead (not approximate), (2) Know exact text but want direct file search -> use regex_search (no index required), (3) Exploring directory structure -> use browse_directory or directory_tree first. RELATED TOOLS: regex_search (comprehensive pattern matching without index), git_search_diffs (find when code was added/removed).",
+        "description": "REPOSITORY SELECTION: If repository is not specified by user, search cidx-meta-global first to discover relevant repositories (search_code('topic', repository_alias='cidx-meta-global')), then search the specific repositories identified. Skip cidx-meta only if user explicitly names a repository. TL;DR: Search code using pre-built indexes. Use semantic mode for conceptual queries, FTS for exact text. SEARCH MODE DECISION: 'authentication logic' (concept) -> semantic | 'def authenticate_user' (exact text) -> fts | unsure -> hybrid. CRITICAL - SEMANTIC SEARCH IS NOT TEXT SEARCH: Semantic mode finds code by MEANING, not exact text. Results are APPROXIMATE and help identify areas of concern for a topic. For exhaustive exact-text results, use FTS mode or regex_search tool. QUICK START: search_code('user authentication', repository_alias='myrepo-global', search_mode='semantic', limit=5). DISCOVERY: Run list_global_repos first to see available repositories. ALIAS FORMAT: Global repos end in '-global' (e.g., 'backend-global'). CIDX-META: For exploring unfamiliar codebases, cidx-meta-global contains .md descriptions of all repos - use browse_directory + get_file_content (NOT search_code) since it's a small catalog. TROUBLESHOOTING: (1) 0 results? Verify alias with list_global_repos, try broader terms, check filters. (2) Temporal queries empty? Check enable_temporal via global_repo_status. (3) Slow? Start with limit=5, use path_filter. WHEN NOT TO USE: (1) Need comprehensive pattern search with ALL matches -> use regex_search instead (not approximate), (2) Know exact text but want direct file search -> use regex_search (no index required), (3) Exploring directory structure -> use browse_directory or directory_tree first. RELATED TOOLS: regex_search (comprehensive pattern matching without index), git_search_diffs (find when code was added/removed).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -2094,7 +2129,7 @@ RELATED TOOLS:
     },
     "list_global_repos": {
         "name": "list_global_repos",
-        "description": "List all globally accessible repositories. REPOSITORY STATES: Discovered (from discover_repositories, not yet indexed) -> Golden/Global (after add_golden_repo, immediately queryable as '{name}-global') -> Activated (optional, via activate_repository for branch selection or composites). TERMINOLOGY: Golden repositories are admin-registered source repos. Global repositories are the publicly queryable versions accessible via '{name}-global' alias. SPECIAL: 'cidx-meta-global' is the meta-directory catalog containing descriptions of ALL repositories. DISCOVERY WORKFLOW: (1) Query cidx-meta-global to discover which repositories contain content on your topic, (2) then query those specific repositories for detailed code. Example: search_code('authentication', repository_alias='cidx-meta-global') returns repositories that handle authentication, then search_code('OAuth implementation', repository_alias='backend-api-global') for actual code. STATUS: All listed global repos are ready for querying immediately; use global_repo_status for detailed info. TYPICAL WORKFLOW: (1) list_global_repos to see available repositories, (2) browse_directory(repository_alias='cidx-meta-global') to read repository descriptions, (3) search_code with specific repository_alias for code details. WHEN NOT TO USE: (1) Need detailed status of ONE repo (temporal support, refresh times) -> use global_repo_status instead, (2) Want to search code -> use search_code with repository_alias, (3) Looking for repo descriptions -> browse cidx-meta-global first.",
+        "description": "List all globally accessible repositories. REPOSITORY STATES: Discovered (from discover_repositories, not yet indexed) -> Golden/Global (after add_golden_repo, immediately queryable as '{name}-global') -> Activated (optional, via activate_repository for branch selection or composites). TERMINOLOGY: Golden repositories are admin-registered source repos. Global repositories are the publicly queryable versions accessible via '{name}-global' alias. SPECIAL: 'cidx-meta-global' is the meta-directory catalog containing descriptions of ALL repositories. DISCOVERY: Before calling this tool, search cidx-meta-global to discover which repositories are relevant (search_code('topic', repository_alias='cidx-meta-global')). Use list_global_repos() only when explicitly asked for the repo list or to verify a repo exists. DISCOVERY WORKFLOW: (1) Query cidx-meta-global to discover which repositories contain content on your topic, (2) then query those specific repositories for detailed code. Example: search_code('authentication', repository_alias='cidx-meta-global') returns repositories that handle authentication, then search_code('OAuth implementation', repository_alias='backend-api-global') for actual code. STATUS: All listed global repos are ready for querying immediately; use global_repo_status for detailed info. TYPICAL WORKFLOW: (1) search cidx-meta-global to discover relevant repos, (2) search specific repositories identified, (3) use list_global_repos only if needed to verify repo exists. WHEN NOT TO USE: (1) Need detailed status of ONE repo (temporal support, refresh times) -> use global_repo_status instead, (2) Want to search code -> use search_code with repository_alias, (3) Looking for repo descriptions -> search cidx-meta-global first.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
         "required_permission": "query_repos",
         "outputSchema": {
