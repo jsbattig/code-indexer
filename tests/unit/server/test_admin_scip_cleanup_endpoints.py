@@ -10,7 +10,7 @@ TDD Approach: Tests written FIRST, endpoints implemented to pass tests.
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 from code_indexer.server.app import create_app

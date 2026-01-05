@@ -6,9 +6,7 @@ Tests all acceptance criteria using TDD methodology.
 """
 
 import pytest
-import httpx
 from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime
 
 # Import will fail until we implement the client
 # This is expected in TDD - write the test first

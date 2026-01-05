@@ -11,7 +11,6 @@ Tests configurable retention period for SCIP self-healing workspace cleanup:
 
 import os
 import pytest
-from pathlib import Path
 
 from code_indexer.server.utils.config_manager import (
     ServerConfig,

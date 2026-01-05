@@ -15,7 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Generator
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import os
 
 import pytest

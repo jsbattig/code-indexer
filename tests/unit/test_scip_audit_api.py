@@ -8,7 +8,7 @@ Part of AC4: Enhanced Job Status API for Per-Language Audit Access.
 import pytest
 import json
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 from code_indexer.server.mcp.handlers import get_scip_audit_log
 from code_indexer.server.auth.user_manager import User, UserRole
 

@@ -13,8 +13,6 @@ Verifies:
 """
 
 import json
-import pytest
-from datetime import datetime, timezone
 
 from code_indexer.server.services.log_export_formatter import LogExportFormatter
 

@@ -13,11 +13,9 @@ Test Coverage:
 """
 
 import logging
-import sqlite3
 import tempfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Generator, List
+from typing import Generator
 
 import pytest
 

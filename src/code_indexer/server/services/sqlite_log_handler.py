@@ -195,7 +195,7 @@ class SQLiteLogHandler(logging.Handler):
 
             conn.commit()
 
-        except Exception as e:
+        except Exception:
             # Don't let logging failures crash the application
             # Use handleError to report the issue
             self.handleError(record)

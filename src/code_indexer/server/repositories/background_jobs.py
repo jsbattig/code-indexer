@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable, TYPE_CHECKING, List
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 
 if TYPE_CHECKING:
     from code_indexer.server.utils.config_manager import ServerResourceConfig

@@ -12,7 +12,6 @@ Provides glob-style pattern matching with cross-platform support:
 import pathspec
 from pathlib import PurePosixPath
 from typing import List
-import sys
 
 
 class PathPatternMatcher:

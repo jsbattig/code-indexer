@@ -7,7 +7,6 @@ Tests the /api/v1/repos/{alias}/temporal-status endpoint
 import pytest
 from unittest.mock import patch
 from datetime import datetime
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from code_indexer.server.app import app

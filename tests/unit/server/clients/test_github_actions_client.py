@@ -5,7 +5,7 @@ Story #633: Complete GitHub Actions Monitoring
 Tests acceptance criteria for GitHub Actions API client using strict TDD.
 """
 
-from unittest.mock import AsyncMock, Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 

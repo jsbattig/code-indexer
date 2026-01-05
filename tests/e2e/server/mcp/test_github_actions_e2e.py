@@ -9,7 +9,6 @@ Story #633: GitHub Actions Monitoring - E2E validation
 
 import os
 import pytest
-from typing import Dict, Any
 from unittest.mock import MagicMock
 
 # Check for GitHub token availability
