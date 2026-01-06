@@ -1,6 +1,6 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """OIDC provider implementation for generic OIDC-compliant providers."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from dataclasses import dataclass
 from typing import Optional
 

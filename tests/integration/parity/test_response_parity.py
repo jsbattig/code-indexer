@@ -12,7 +12,7 @@ def extract_mcp_response_schema(output_schema: dict) -> dict:
     Handles both direct properties and oneOf schemas (merges all properties from all options).
     """
     if "properties" in output_schema:
-        return output_schema["properties"]
+        return dict(output_schema["properties"])
     elif "oneOf" in output_schema:
         # Merge properties from all oneOf options
         merged_props = {}
@@ -28,7 +28,7 @@ def extract_rest_response_schema(model_class) -> dict:
     if model_class is None:
         return {}
     schema = model_class.schema()
-    return schema.get("properties", {})
+    return dict(schema.get("properties", {}))
 
 
 def assert_response_parity(mcp_tool: str, mcp_output_schema: dict, rest_model):

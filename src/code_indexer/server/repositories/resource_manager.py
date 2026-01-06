@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Comprehensive Resource Management for CIDX Server Operations.
 
@@ -26,6 +25,8 @@ Usage:
 
     # All resources automatically cleaned up on context exit
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import asyncio
 import gc

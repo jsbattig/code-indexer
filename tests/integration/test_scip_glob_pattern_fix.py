@@ -180,7 +180,7 @@ class TestCompositeQueriesBFSTraverse:
             MockEngine.return_value = mock_instance
 
             # Call analyze_impact which uses _bfs_traverse_dependents internally
-            result = analyze_impact(
+            analyze_impact(
                 symbol="test_symbol", scip_dir=scip_db_only_dir, depth=1
             )
 

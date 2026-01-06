@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 GitHub Actions API client.
 
@@ -6,6 +5,7 @@ Story #633: Complete GitHub Actions Monitoring
 Provides workflow run monitoring, log search, and workflow control operations.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import re
 import logging
 import httpx
@@ -22,7 +22,7 @@ from tenacity import (
 logger = logging.getLogger(__name__)
 
 
-def _is_retryable_error(exception: Exception) -> bool:
+def _is_retryable_error(exception: BaseException) -> bool:
     """
     Check if exception is retryable (network errors or server errors).
 

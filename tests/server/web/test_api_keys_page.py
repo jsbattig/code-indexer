@@ -13,6 +13,7 @@ class TestApiKeysPage:
     ):
         """Test that unauthenticated users are redirected to login."""
         client = web_infrastructure.client
+        assert client is not None  # Guaranteed by web_infrastructure fixture
         response = client.get("/admin/api-keys", follow_redirects=False)
         assert response.status_code in [302, 303]
         assert "/admin/login" in response.headers.get("location", "")
@@ -45,6 +46,7 @@ class TestApiKeysPage:
     ):
         """Test that partial endpoint requires authentication."""
         client = web_infrastructure.client
+        assert client is not None  # Guaranteed by web_infrastructure fixture
         response = client.get("/admin/partials/api-keys-list")
         assert response.status_code == 401
 

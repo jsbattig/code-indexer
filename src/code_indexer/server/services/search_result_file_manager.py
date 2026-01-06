@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Search Result File Manager for temp file management and size checking.
 
 Manages temporary output files from search operations with size limit
 enforcement and cleanup.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import os

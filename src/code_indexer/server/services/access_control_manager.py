@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Access Control Manager for CIDX Server.
 
 Provides access control logic for repository operations with proper
 user permission validation and role-based access control.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from typing import Dict, Any, Optional

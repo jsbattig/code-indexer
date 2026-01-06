@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Validation Metrics Collector for CIDX Server - Story 9 Implementation.
 
 Collects and aggregates validation metrics for analysis and trend detection.
 Following CLAUDE.md Foundation #1: Real metrics collection, not mocked data.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from datetime import datetime, timezone, timedelta

@@ -9,7 +9,7 @@ import logging
 import socket
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, cast
 from dataclasses import dataclass, asdict
 
 import jwt
@@ -229,7 +229,7 @@ class TestCIDXServer:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
             s.listen(1)
-            port = s.getsockname()[1]
+            port = cast(int, s.getsockname()[1])
         return port
 
     async def start(self) -> str:
@@ -362,9 +362,9 @@ class TestCIDXServer:
         self,
         job_id: str,
         job_status: str,
-        progress: int = None,
-        result: Dict[str, Any] = None,
-        error: str = None,
+        progress: Optional[int] = None,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
     ):
         """Update job status in the server.
 
@@ -489,7 +489,7 @@ class TestCIDXServer:
                     status_code=401, detail="Token not found in active tokens"
                 )
 
-            return payload
+            return cast(Dict[str, Any], payload)
         except jwt.ExpiredSignatureError:
             # Remove expired token from active tokens
             self.active_tokens.pop(token, None)
@@ -864,7 +864,7 @@ class TestCIDXServer:
         # Apply language filter if specified
         if language:
             mock_results = [
-                r for r in mock_results if r["file_path"].endswith(f".{language}")
+                r for r in mock_results if cast(str, r["file_path"]).endswith(f".{language}")
             ]
 
         # Apply path filter if specified

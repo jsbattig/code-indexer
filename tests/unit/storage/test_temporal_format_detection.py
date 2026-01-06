@@ -24,7 +24,7 @@ class TestTemporalFormatDetection:
             collection_path.mkdir()
 
             # Create temporal_metadata.db to indicate v2 format
-            metadata_store = TemporalMetadataStore(collection_path)
+            TemporalMetadataStore(collection_path)
 
             # When: Detecting format
             format_version = TemporalMetadataStore.detect_format(collection_path)
@@ -84,7 +84,7 @@ class TestTemporalFormatDetection:
             collection_path.mkdir()
 
             # Create metadata store (v2 format)
-            metadata_store = TemporalMetadataStore(collection_path)
+            TemporalMetadataStore(collection_path)
 
             # When/Then: Handling v2 format should not raise error
             try:
@@ -107,7 +107,7 @@ class TestTemporalFormatDetection:
             collection_path = Path(tmpdir) / "code-indexer-temporal"
 
             # When: Initializing metadata store
-            metadata_store = TemporalMetadataStore(collection_path)
+            TemporalMetadataStore(collection_path)
 
             # Then: Database file should exist
             db_path = collection_path / TemporalMetadataStore.METADATA_DB_NAME
@@ -133,7 +133,7 @@ class TestTemporalFormatDetection:
             collection_path = Path(tmpdir) / "code-indexer-temporal"
 
             # When: Initializing metadata store
-            metadata_store = TemporalMetadataStore(collection_path)
+            TemporalMetadataStore(collection_path)
 
             # Then: Indexes should exist
             import sqlite3

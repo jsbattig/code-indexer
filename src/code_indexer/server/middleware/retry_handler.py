@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Database retry handler middleware for CIDX Server.
 
 Handles database operation retries with exponential backoff following
 CLAUDE.md Foundation #1: No mocks - real retry logic with actual timing.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import time
 import random

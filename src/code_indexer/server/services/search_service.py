@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Semantic Search Service.
 
 Provides real semantic search operations following CLAUDE.md Foundation #1: No mocks.
 All operations use real vector embeddings and vector store searches.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import os
 from pathlib import Path
@@ -206,6 +207,8 @@ class SemanticSearchService:
             # Format results for response
             formatted_results = []
             for result in search_results:
+                if not isinstance(result, dict):
+                    continue  # Skip malformed results
                 payload = result.get("payload", {})
                 score = result.get("score", 0.0)
 
@@ -221,6 +224,8 @@ class SemanticSearchService:
                     score=score,
                     content=source_content or payload.get("snippet", ""),
                     language=self._detect_language_from_path(payload.get("path", "")),
+                    file_last_modified=payload.get("file_last_modified"),
+                    indexed_timestamp=payload.get("indexed_timestamp"),
                 )
                 formatted_results.append(search_item)
 

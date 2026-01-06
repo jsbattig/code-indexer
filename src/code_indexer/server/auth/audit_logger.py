@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Comprehensive audit logging for password change attempts.
 
@@ -6,6 +5,7 @@ Implements secure audit logging with IP addresses and timestamps.
 Following CLAUDE.md principles: NO MOCKS - Real audit logging implementation.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import logging
 import json
 from datetime import datetime, timezone

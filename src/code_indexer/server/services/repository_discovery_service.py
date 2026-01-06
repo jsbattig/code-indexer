@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Discovery Service for CIDX Server.
 
 Provides high-level business logic for discovering matching repositories
 by git URL with proper authentication and access control.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from typing import List, Optional

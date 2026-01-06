@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Health Check Service.
 
 Provides real system health monitoring following CLAUDE.md Foundation #1: No mocks.
 All operations use real system checks, database connections, and service monitoring.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import psutil
 import time
@@ -130,7 +131,9 @@ class HealthCheckService:
             else:
                 status = HealthStatus.UNHEALTHY
 
-            return ServiceHealthInfo(status=status, response_time_ms=response_time)
+            return ServiceHealthInfo(
+                status=status, response_time_ms=response_time, error_message=None
+            )
 
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
@@ -199,11 +202,7 @@ class HealthCheckService:
             return ServiceHealthInfo(
                 status=status,
                 response_time_ms=response_time,
-                metadata={
-                    "golden_repos": golden_count,
-                    "activated_repos": activated_count,
-                    "total_collections": total_collections,
-                },
+                error_message=None,
             )
 
         except Exception as e:

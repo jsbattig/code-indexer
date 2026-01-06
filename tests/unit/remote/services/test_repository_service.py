@@ -1,7 +1,7 @@
 """Tests for RemoteRepositoryService using real implementations."""
 
 import pytest
-from typing import Dict, Any
+from typing import Dict, Any, cast
 from unittest.mock import Mock, AsyncMock
 
 from src.code_indexer.remote.services.repository_service import (
@@ -81,7 +81,9 @@ class MockAPIClient:
 
     async def get(self, endpoint: str, **kwargs) -> MockResponse:
         """Get response for endpoint."""
-        return self._responses.get(endpoint, self._fallback_response)
+        return cast(
+            MockResponse, self._responses.get(endpoint, self._fallback_response)
+        )
 
 
 class TestRemoteRepositoryService:

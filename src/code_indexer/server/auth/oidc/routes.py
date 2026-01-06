@@ -1,24 +1,32 @@
 """OIDC authentication routes for FastAPI."""
 
 import os
+from typing import TYPE_CHECKING, Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from ...web.auth import get_session_manager
+
+if TYPE_CHECKING:
+    from .oidc_manager import OIDCManager
+    from ..state_manager import StateManager
 
 router = APIRouter(prefix="/auth/sso", tags=["sso"])
 
 
 # Global OIDC manager instance (injected by app.py)
-oidc_manager = None
+oidc_manager: Optional["OIDCManager"] = None
 
 
 # Global state manager instance (injected by app.py)
-state_manager = None
+state_manager: Optional["StateManager"] = None
 
 
 @router.get("/callback")
 async def sso_callback(code: str, state: str, request: Request):
     """Handle OIDC callback."""
+    if oidc_manager is None or state_manager is None:
+        raise HTTPException(status_code=500, detail="OIDC not configured")
+
     # Validate state token (CSRF protection)
     # Try both state managers (oidc_routes and oauth_routes)
     state_data = state_manager.validate_state(state)

@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -345,7 +345,7 @@ class CacheEntry:
             with open(meta_file) as f:
                 metadata = json.load(f)
 
-            return metadata.get("hnsw_index", {}).get("index_rebuild_uuid", "v0")
+            return cast(str, metadata.get("hnsw_index", {}).get("index_rebuild_uuid", "v0"))
 
         except (json.JSONDecodeError, KeyError, OSError):
             return "v0"  # Corrupted/missing metadata

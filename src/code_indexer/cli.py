@@ -11,7 +11,7 @@ import subprocess
 import time
 import threading
 from pathlib import Path
-from typing import Optional, Union, Callable, Dict, Any, List
+from typing import Optional, Union, Callable, Dict, Any, List, Literal, cast
 
 import click
 from rich.console import Console
@@ -2151,7 +2151,10 @@ def init(
         # Set vector store backend
         from .config import VectorStoreConfig
 
-        updates["vector_store"] = VectorStoreConfig(provider=vector_store).model_dump()
+        # Cast to Literal["filesystem"] - vector_store is validated by click.Choice to only allow "filesystem"
+        updates["vector_store"] = VectorStoreConfig(
+            provider=cast(Literal["filesystem"], vector_store)
+        ).model_dump()
 
         # Provider-specific configuration
         if embedding_provider == "voyage-ai":
@@ -5155,9 +5158,11 @@ def query(
                 # Add staleness info if available (EnhancedQueryResultItem)
                 if hasattr(result_item, "staleness_indicator"):
                     converted_result["staleness"] = {
-                        "is_stale": result_item.is_stale,
+                        "is_stale": getattr(result_item, "is_stale", False),
                         "staleness_indicator": result_item.staleness_indicator,
-                        "staleness_delta_seconds": result_item.staleness_delta_seconds,
+                        "staleness_delta_seconds": getattr(
+                            result_item, "staleness_delta_seconds", 0
+                        ),
                     }
 
                 converted_results.append(converted_result)

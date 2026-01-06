@@ -5,7 +5,7 @@ Following Story 2 requirements for path-as-vector quantization.
 """
 
 import numpy as np
-from typing import List
+from typing import List, cast
 
 
 class VectorQuantizer:
@@ -67,7 +67,7 @@ class VectorQuantizer:
         Returns:
             Reduced-dimension vector
         """
-        return vector @ projection_matrix
+        return cast(np.ndarray, vector @ projection_matrix)
 
     def _quantize_to_2bit(
         self, vector: np.ndarray, min_val: float = -2.0, max_val: float = 2.0

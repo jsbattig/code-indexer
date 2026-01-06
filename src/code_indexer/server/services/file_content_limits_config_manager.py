@@ -1,9 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 File Content Limits Configuration Manager for database persistence.
 
 Manages persistent storage of file content token limits configuration.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import sqlite3

@@ -167,7 +167,7 @@ class TestTemporalLongPathsIntegration:
         commit_file(git_repo, test_file, "def test():\n    pass\n", "Add test file")
 
         # Index
-        result = indexer.index_commits()
+        indexer.index_commits()
 
         # Verify metadata contains file path information
         temporal_collection_path = index_dir / "code-indexer-temporal"

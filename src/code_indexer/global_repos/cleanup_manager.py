@@ -11,7 +11,7 @@ import shutil
 import threading
 import time
 from pathlib import Path
-from typing import Set
+from typing import Optional, Set
 
 from .query_tracker import QueryTracker
 
@@ -41,7 +41,7 @@ class CleanupManager:
         self._cleanup_queue: Set[str] = set()
         self._queue_lock = threading.Lock()
         self._running = False
-        self._thread: threading.Thread | None = None
+        self._thread: Optional[threading.Thread] = None
 
     def schedule_cleanup(self, index_path: str) -> None:
         """

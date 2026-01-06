@@ -1,9 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SSH Key Migration Startup Service.
 
 Provides a simple entry point for running SSH key migration during server startup.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from pathlib import Path

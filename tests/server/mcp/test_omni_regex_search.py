@@ -111,7 +111,7 @@ class TestOmniRegexSearchDetection:
                 }
             )
 
-            result = await handle_regex_search(params, mock_user)
+            await handle_regex_search(params, mock_user)
 
             # Should call omni-regex search
             assert mock_omni.called

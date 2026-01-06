@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Global Repos Lifecycle Manager for CIDX Server.
 
@@ -9,6 +8,8 @@ Manages the lifecycle of all global repository background services:
 
 Coordinates startup, shutdown, and graceful cleanup of these services.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from pathlib import Path

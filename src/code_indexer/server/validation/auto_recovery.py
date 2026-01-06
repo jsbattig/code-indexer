@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Auto-Recovery Engine for CIDX Server - Story 9 Implementation.
 
@@ -6,6 +5,8 @@ Automated recovery system that triggers appropriate actions based on
 validation failures. Following CLAUDE.md Foundation #1: Real recovery
 with actual indexing operations, not mocked actions.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import shutil

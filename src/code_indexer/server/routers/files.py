@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 File CRUD REST API Router.
 
 Provides REST endpoints for file create, edit, and delete operations
 with OAuth authentication and service layer integration.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from typing import Optional

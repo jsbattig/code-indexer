@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Re-indexing REST API Router.
 
@@ -6,8 +5,10 @@ Provides REST endpoints for triggering re-indexing and querying index status
 with OAuth authentication and service layer integration.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -233,7 +234,7 @@ async def get_temporal_status(
 
         service = DashboardService()
         result = service.get_temporal_index_status(username=user.username, repo_alias=alias)
-        return result
+        return cast(Dict[str, Any], result)
     except FileNotFoundError as e:
         logger.warning(f"Repository not found: {alias}", extra={"correlation_id": get_correlation_id()})
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

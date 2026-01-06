@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Semantic Query Manager for CIDX Server.
 
 Provides semantic search functionality for activated repositories with user isolation,
 background job integration, and proper resource management.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import json
 import logging
@@ -13,7 +14,7 @@ import io
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 
 from ..repositories.activated_repo_manager import ActivatedRepoManager
@@ -1590,7 +1591,7 @@ class SemanticQueryManager:
             )
 
             # Convert FTS results to QueryResult objects
-            query_results = []
+            query_results: List[QueryResult] = []
             for result in fts_raw_results:
                 # FTS doesn't have similarity scores in the same sense as semantic search
                 # Use a normalized score based on result ordering (1.0 for first result)
@@ -1650,7 +1651,7 @@ class SemanticQueryManager:
         """
         # Use file_path + line_number as key for deduplication
         merged_results = []
-        rrf_scores = {}
+        rrf_scores: Dict[Tuple[str, int], float] = {}
 
         # Constant for RRF scoring (typically 60)
         k = 60

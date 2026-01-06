@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Branch service for retrieving git branch information.
 
 Provides branch listing functionality using real GitPython operations
 without mocking, following CLAUDE.md Foundation #1 (Anti-Mock).
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from pathlib import Path

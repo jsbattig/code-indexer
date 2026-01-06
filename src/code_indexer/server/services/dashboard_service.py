@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Dashboard Data Service.
 
 Aggregates data from various internal services for the admin dashboard.
 Following CLAUDE.md Foundation #1: No mocks - uses real service integrations.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from dataclasses import dataclass

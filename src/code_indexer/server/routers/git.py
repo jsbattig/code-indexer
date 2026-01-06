@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Git Operations REST API Router.
 
@@ -6,8 +5,10 @@ Provides REST endpoints for git operations with OAuth authentication
 and service layer integration.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from code_indexer.server.auth.dependencies import get_current_user
@@ -112,7 +113,7 @@ async def git_diff(
     try:
         service = git_operations_service
         # Build kwargs for optional parameters
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if context_lines is not None:
             kwargs["context_lines"] = context_lines
         if from_revision is not None:
@@ -175,7 +176,7 @@ async def git_log(
     try:
         service = git_operations_service
         # Build kwargs for optional parameters
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if limit is not None:
             kwargs["limit"] = limit
         if path is not None:

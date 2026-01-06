@@ -8,6 +8,8 @@ Following strict TDD: One test at a time, verify failure, implement, verify pass
 import json
 import pytest
 from pathlib import Path
+from typing import cast
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from datetime import datetime
 from unittest.mock import patch
@@ -111,7 +113,7 @@ class TestMultipleLanguageFilters:
     def test_multiple_languages_filters_results(self, test_client: TestClient):
         """Test that multiple language filters work with OR logic."""
         # Mock authentication and query execution
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         app.dependency_overrides[dependencies.get_current_user] = (
             override_get_current_user
         )
@@ -174,7 +176,7 @@ class TestMultipleLanguageFilters:
 
     def test_regex_with_semantic_mode_returns_400(self, test_client: TestClient):
         """Test that regex=True with search_mode=semantic returns 400 error."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         app.dependency_overrides[dependencies.get_current_user] = (
             override_get_current_user
         )
@@ -212,7 +214,7 @@ class TestMultiplePathFilters:
         from starlette.testclient import TestClient
 
         test_client = TestClient(app_with_indexed_repo)
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         app.dependency_overrides[dependencies.get_current_user] = (
             override_get_current_user
         )

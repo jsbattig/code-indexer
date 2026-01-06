@@ -219,8 +219,8 @@ class TestOmniCacheMemoryLimit:
         cache = OmniCache(ttl_seconds=60, max_entries=100)
 
         # Store some results
-        cursor1 = cache.store_results([{"id": 1}], query_params={"q": "1"})
-        cursor2 = cache.store_results([{"id": 2}], query_params={"q": "2"})
+        cache.store_results([{"id": 1}], query_params={"q": "1"})
+        cache.store_results([{"id": 2}], query_params={"q": "2"})
 
         stats = cache.get_stats()
 

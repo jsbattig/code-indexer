@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Committer Resolution Service (Story #641).
 
@@ -6,7 +5,10 @@ Resolves git committer email by testing SSH keys against remote hostnames.
 Implements automatic email discovery with fallback to default email.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
+from pathlib import Path
 from typing import Optional, Tuple
 
 from .ssh_key_manager import SSHKeyManager
@@ -98,7 +100,7 @@ class CommitterResolutionService:
             , extra={"correlation_id": get_correlation_id()})
 
             test_result = self.key_to_remote_tester.test_key_against_host(
-                key_path=key_metadata.private_path,
+                key_path=Path(key_metadata.private_path),
                 hostname=hostname,
             )
 

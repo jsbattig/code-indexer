@@ -15,7 +15,7 @@ import time
 import subprocess
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast
 from rich.console import Console
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def _get_socket_path(config_path: Path) -> Path:
     from code_indexer.config import ConfigManager
 
     config_manager = ConfigManager(config_path)
-    return config_manager.get_socket_path()
+    return cast(Path, config_manager.get_socket_path())
 
 
 def _connect_to_daemon(

@@ -216,7 +216,7 @@ class TestApiKeySync:
     def test_sync_api_key_uses_file_locking(self):
         """AC3: sync_api_key() uses file locking for atomic writes."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            lock_path = Path(tmpdir) / ".claude.json.lock"
+            Path(tmpdir) / ".claude.json.lock"
 
             manager = ClaudeCliManager(api_key="test-key", max_workers=1)
 

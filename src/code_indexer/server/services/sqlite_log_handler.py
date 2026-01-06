@@ -15,7 +15,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 
 class SQLiteLogHandler(logging.Handler):
@@ -115,7 +115,7 @@ class SQLiteLogHandler(logging.Handler):
                 check_same_thread=False,
                 timeout=30.0  # 30 second timeout for lock conflicts
             )
-        return self._local.connection
+        return cast(sqlite3.Connection, self._local.connection)
 
     def emit(self, record: logging.LogRecord) -> None:
         """

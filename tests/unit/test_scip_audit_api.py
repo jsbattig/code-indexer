@@ -177,7 +177,7 @@ class TestSCIPAuditLogAPI:
         mock_audit_repo.query_audit_records.return_value = ([], 0)
 
         params = {"limit": 50, "offset": 10}
-        response = await get_scip_audit_log(params, admin_user)
+        await get_scip_audit_log(params, admin_user)
 
         # Verify pagination params
         call_kwargs = mock_audit_repo.query_audit_records.call_args.kwargs
@@ -190,7 +190,7 @@ class TestSCIPAuditLogAPI:
         mock_audit_repo.query_audit_records.return_value = ([], 0)
 
         params = {}
-        response = await get_scip_audit_log(params, admin_user)
+        await get_scip_audit_log(params, admin_user)
 
         # Verify defaults
         call_kwargs = mock_audit_repo.query_audit_records.call_args.kwargs

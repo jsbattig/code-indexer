@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Resource-managed repository operations for CIDX server.
 
@@ -13,6 +12,8 @@ Following CLAUDE.md principles:
 - Genuine database connection handling
 - Comprehensive error handling with resource cleanup
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import asyncio
 import logging
@@ -110,7 +111,7 @@ class ResourceManagedGoldenRepoOperations:
                     "alias": alias,
                     "repo_url": repo_url,
                     "status": "completed",
-                    "clone_path": result.get("clone_path", ""),
+                    "job_id": result,  # result is job_id (str), not dict - clone_path available after job completes
                 }
                 json.dump(status_data, clone_status_file)
                 clone_status_file.flush()
@@ -118,7 +119,7 @@ class ResourceManagedGoldenRepoOperations:
                 logger.info(
                     f"Successfully added golden repository {alias} with resource management"
                 , extra={"correlation_id": get_correlation_id()})
-                return result
+                return {"job_id": result, "alias": alias, "status": "submitted"}
 
             except Exception as e:
                 # Log error to tracked files before cleanup

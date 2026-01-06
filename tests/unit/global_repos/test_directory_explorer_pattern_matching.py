@@ -172,7 +172,7 @@ class TestDirectoryExplorerPatternMatching:
 
         # Even without explicit exclude, default patterns should apply
         tree = service.generate_tree()
-        tree_str = str(tree)
+        str(tree)
 
         # node_modules should be excluded by default
         # (DirectoryExplorerService has DEFAULT_EXCLUDE_PATTERNS)

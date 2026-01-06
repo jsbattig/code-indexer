@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 from rpyc import Service
 
@@ -75,6 +75,11 @@ class CIDXDaemonService(Service):
 
         # Configuration (TODO: Load from config file)
         self.config = type("Config", (), {"auto_shutdown_on_idle": False})()
+
+        # Service dependencies (lazy-loaded on first use)
+        self.config_manager: Optional[Any] = None
+        self.vector_store: Optional[Any] = None
+        self.embedding_provider: Optional[Any] = None
 
         # Start TTL eviction thread
         self.eviction_thread = TTLEvictionThread(self, check_interval=60)
@@ -299,6 +304,8 @@ class CIDXDaemonService(Service):
                 or self.cache_entry.project_path != project_root
             ):
                 self._ensure_cache_loaded(project_path)
+
+            assert self.cache_entry is not None  # Guaranteed by _ensure_cache_loaded
 
             # Load temporal cache if not loaded
             temporal_collection_path = (
@@ -924,7 +931,7 @@ class CIDXDaemonService(Service):
 
         # Delegate to DaemonWatchManager for non-blocking operation
         # Config will be loaded by the manager
-        result = self.watch_manager.start_watch(project_path, None, **kwargs)
+        result = cast(dict[str, Any], self.watch_manager.start_watch(project_path, None, **kwargs))
 
         # Update legacy fields for compatibility
         if result["status"] == "success":
@@ -950,7 +957,7 @@ class CIDXDaemonService(Service):
         logger.info(f"exposed_watch_stop: project={project_path}")
 
         # Delegate to DaemonWatchManager
-        result = self.watch_manager.stop_watch()
+        result = cast(dict[str, Any], self.watch_manager.stop_watch())
 
         # Clear legacy fields for compatibility
         if result["status"] == "success":
@@ -1641,7 +1648,7 @@ class CIDXDaemonService(Service):
             )
 
             logger.info(f"FTS search returned {len(results)} results")
-            return results
+            return cast(list[dict[str, Any]], results)
 
         except Exception as e:
             logger.error(f"FTS search failed: {e}")
@@ -1754,7 +1761,7 @@ class CIDXDaemonService(Service):
                     language = extension if extension else "unknown"
 
                     # Create FTS document
-                    doc = {
+                    doc: Dict[str, Any] = {
                         "path": str(file_path),
                         "content": content,
                         "content_raw": content,

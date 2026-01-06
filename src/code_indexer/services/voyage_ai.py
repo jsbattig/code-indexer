@@ -122,7 +122,7 @@ class VoyageAIClient(EmbeddingProvider):
         payload = {"input": texts, "model": model_name}
 
         # Retry logic
-        last_exception = None
+        last_exception: Optional[Exception] = None
         for attempt in range(self.config.max_retries + 1):
             try:
                 with httpx.Client(

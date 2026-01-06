@@ -4,7 +4,7 @@ Covers both /mcp and /mcp-public endpoints and ensures Bearer auth is unaffected
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any
+from typing import Dict, Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +12,7 @@ from jose import jwt as jose_jwt
 
 
 def _make_cookie_token(secret: str, algorithm: str, claims: Dict[str, Any]) -> str:
-    return jose_jwt.encode(claims, secret, algorithm=algorithm)
+    return cast(str, jose_jwt.encode(claims, secret, algorithm=algorithm))
 
 
 @pytest.fixture

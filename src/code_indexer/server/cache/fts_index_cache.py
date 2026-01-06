@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 FTS Index Cache for Server-Side Performance Optimization.
 
@@ -17,6 +16,7 @@ Performance improvement: Eliminates reload() overhead on every search.
 Expected speedup: 5-50x for repeated FTS queries.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import json
 import logging
 import os

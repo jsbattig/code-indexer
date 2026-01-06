@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Listing Manager for CIDX Server.
 
 Provides repository listing functionality with search, filtering, and statistics.
 Handles both golden repositories and user activated repositories.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import os
 import subprocess

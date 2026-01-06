@@ -11,7 +11,7 @@ import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional, Union, TYPE_CHECKING, cast
 
 from code_indexer.config import ConfigManager
 from .alias_manager import AliasManager
@@ -99,10 +99,10 @@ class RefreshScheduler:
         # Support both ConfigManager (CLI) and GlobalRepoOperations (server)
         if isinstance(self.config_source, GlobalRepoOperations):
             config = self.config_source.get_config()
-            return config["refresh_interval"]
+            return cast(int, config["refresh_interval"])
         else:
             # ConfigManager (CLI)
-            return self.config_source.get_global_refresh_interval()
+            return cast(int, self.config_source.get_global_refresh_interval())
 
     def is_running(self) -> bool:
         """

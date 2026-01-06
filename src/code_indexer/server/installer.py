@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Server installation utilities for CIDX Server.
 
@@ -6,6 +5,7 @@ Handles server installation, port allocation, configuration setup,
 and startup script generation.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import getpass
 import logging
 import socket

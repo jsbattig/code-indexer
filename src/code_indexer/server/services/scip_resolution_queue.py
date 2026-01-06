@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SCIP Resolution Queue.
 
 Manages serialized FIFO queue for processing SCIP project resolution attempts
 one at a time to prevent conflicts. Part of Story #645 AC4.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import asyncio

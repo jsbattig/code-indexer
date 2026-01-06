@@ -1,10 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 FastAPI authentication dependencies.
 
 Provides dependency injection for JWT authentication and role-based access control.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from typing import Optional, TYPE_CHECKING, Dict, Any
 from fastapi import Depends, HTTPException, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

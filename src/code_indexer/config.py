@@ -959,7 +959,7 @@ code-indexer index --clear
         }
 
         # Update config with daemon configuration
-        config.daemon = DaemonConfig(**daemon_config_dict)
+        config.daemon = DaemonConfig.model_validate(daemon_config_dict)
 
         # Save configuration
         self.save()
@@ -970,12 +970,12 @@ code-indexer index --clear
 
         # If no daemon config exists, create one with enabled=False
         if config.daemon is None:
-            config.daemon = DaemonConfig(**{**self.DAEMON_DEFAULTS, "enabled": False})
+            config.daemon = DaemonConfig.model_validate({**self.DAEMON_DEFAULTS, "enabled": False})
         else:
             # Just update the enabled flag, preserve other settings
             daemon_dict = config.daemon.model_dump()
             daemon_dict["enabled"] = False
-            config.daemon = DaemonConfig(**daemon_dict)
+            config.daemon = DaemonConfig.model_validate(daemon_dict)
 
         self.save()
 
@@ -996,14 +996,14 @@ code-indexer index --clear
 
         # If no daemon config exists, create one with new TTL
         if config.daemon is None:
-            config.daemon = DaemonConfig(
-                **{**self.DAEMON_DEFAULTS, "ttl_minutes": ttl_minutes}
+            config.daemon = DaemonConfig.model_validate(
+                {**self.DAEMON_DEFAULTS, "ttl_minutes": ttl_minutes}
             )
         else:
             # Update TTL in existing config
             daemon_dict = config.daemon.model_dump()
             daemon_dict["ttl_minutes"] = ttl_minutes
-            config.daemon = DaemonConfig(**daemon_dict)
+            config.daemon = DaemonConfig.model_validate(daemon_dict)
 
         self.save()
 

@@ -6,7 +6,7 @@ Provides TTL-based caching with cursor pagination.
 
 import uuid
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from cachetools import TTLCache
 
 
@@ -30,7 +30,7 @@ class OmniCache:
         self.ttl_seconds = ttl_seconds
         self.max_entries = max_entries
         self.max_memory_mb = max_memory_mb
-        self.cache = TTLCache(maxsize=max_entries, ttl=ttl_seconds)
+        self.cache: TTLCache[str, Dict[str, Any]] = TTLCache(maxsize=max_entries, ttl=ttl_seconds)
         self.lock = threading.RLock()
 
     def store_results(
@@ -90,7 +90,7 @@ class OmniCache:
             return []
 
         end_idx = offset + limit
-        return results[offset:end_idx]
+        return cast(list[dict[Any, Any]], results[offset:end_idx])
 
     def get_metadata(self, cursor: str) -> Optional[Dict]:
         """

@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Matching Service for CIDX Server.
 
 Provides logic for finding and matching golden and activated repositories
 based on canonical git URLs with proper access control.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from typing import List, Tuple, Optional, Dict, Any
@@ -306,6 +307,7 @@ class RepositoryMatcher:
             default_branch=repo_data.get("default_branch", "main"),
             access_level=AccessLevel(access_level),
             last_indexed=last_indexed,
+            last_accessed=None,  # Golden repos don't have last_accessed
             created_at=created_at,
         )
 
@@ -369,6 +371,7 @@ class RepositoryMatcher:
             ),
             default_branch=repo_data.get("current_branch", "main"),
             access_level=AccessLevel(access_level),
+            last_indexed=None,  # Activated repos don't track last_indexed
             last_accessed=last_accessed,
             created_at=activated_at,
         )

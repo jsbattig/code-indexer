@@ -1,6 +1,6 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """DeploymentLock - deployment concurrency control via PID-based lock file."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from pathlib import Path
 import os
 import logging

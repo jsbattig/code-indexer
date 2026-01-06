@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Subprocess Executor Service for async command execution with timeout protection.
 
 Provides non-blocking subprocess execution with file-based output to prevent
 memory exhaustion and FastAPI event loop blocking.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import asyncio
 import logging

@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """MCP Tool Handler Functions - Complete implementation for all 22 tools.
 
 All handlers return MCP-compliant responses with content arrays:
@@ -11,6 +10,8 @@ All handlers return MCP-compliant responses with content arrays:
     ]
 }
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import difflib
 import json
@@ -261,11 +262,11 @@ def _has_wildcard(pattern: str) -> bool:
     return any(c in pattern for c in WILDCARD_CHARS)
 
 
-def _validate_symbol_format(symbol: str, param_name: str) -> Optional[str]:
+def _validate_symbol_format(symbol: Optional[str], param_name: str) -> Optional[str]:
     """Validate symbol format for call chain queries.
 
     Args:
-        symbol: The symbol string to validate
+        symbol: The symbol string to validate (can be None)
         param_name: Parameter name for error messages (e.g., "from_symbol", "to_symbol")
 
     Returns:
@@ -2397,7 +2398,8 @@ async def handle_delete_file(params: Dict[str, Any], user: User) -> Dict[str, An
 
 
 # Handler registry mapping tool names to handler functions
-HANDLER_REGISTRY = {
+# Type: Dict[str, Any] because handlers have varying signatures (2-param vs 3-param)
+HANDLER_REGISTRY: Dict[str, Any] = {
     "search_code": search_code,
     "discover_repositories": discover_repositories,
     "list_repositories": list_repositories,
@@ -2773,7 +2775,7 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
     if index_path:
         index_path_obj = Path(index_path)
         if _is_git_repo(index_path_obj):
-            return index_path
+            return str(index_path)
 
     # Get base directory (.cidx-server/)
     base_dir = Path(golden_repos_dir).parent.parent
@@ -2804,7 +2806,7 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
     if index_path:
         index_path_obj = Path(index_path)
         if index_path_obj.is_dir():
-            return index_path
+            return str(index_path)
 
     return None
 
@@ -3722,7 +3724,7 @@ def _get_golden_repos_scip_dir() -> Optional[Path]:
     return golden_repos_path if golden_repos_path.exists() else None
 
 
-def _find_scip_files(repository_alias: str = None) -> List[Path]:
+def _find_scip_files(repository_alias: Optional[str] = None) -> List[Path]:
     """Find all .scip.db files across golden repositories.
 
     Args:
@@ -3735,7 +3737,7 @@ def _find_scip_files(repository_alias: str = None) -> List[Path]:
     if not golden_repos_path:
         return []
 
-    scip_files = []
+    scip_files: List[Path] = []
     for repo_dir in golden_repos_path.iterdir():
         if not repo_dir.is_dir():
             continue
@@ -5728,7 +5730,7 @@ async def get_tool_categories(args: Dict[str, Any], user: User) -> Dict[str, Any
     def get_short_description(tool_name: str) -> str:
         """Extract short description from tool's full description."""
         tool_def = TOOL_REGISTRY.get(tool_name, {})
-        description = tool_def.get("description", "")
+        description = str(tool_def.get("description", ""))
         # Extract TL;DR if present, otherwise first sentence
         if "TL;DR:" in description:
             tldr_start = description.index("TL;DR:") + 6
@@ -5816,7 +5818,7 @@ async def handle_admin_logs_query(args: Dict[str, Any], user: User) -> Dict[str,
     # Parse level (comma-separated string to list)
     levels = None
     if level:
-        levels = [l.strip() for l in level.split(",")]
+        levels = [lv.strip() for lv in level.split(",")]
 
     # Query logs
     result = service.query(
@@ -5887,7 +5889,7 @@ async def admin_logs_export(args: Dict[str, Any], user: User) -> Dict[str, Any]:
     # Parse level (comma-separated string to list)
     levels = None
     if level:
-        levels = [l.strip() for l in level.split(",")]
+        levels = [lv.strip() for lv in level.split(",")]
 
     # Query ALL logs matching filters (no pagination)
     logs = service.query_all(

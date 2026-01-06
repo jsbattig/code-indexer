@@ -151,7 +151,7 @@ def test_concurrent_refreshes_different_repos_no_interference(
         ), f"Refreshes should run concurrently (took {elapsed_time}s)"
 
         # Verify overlap: repo2 should start before repo1 ends
-        repo1_start = refresh_events["repo1"][0][1]
+        refresh_events["repo1"][0][1]
         repo1_end = refresh_events["repo1"][1][1]
         repo2_start = refresh_events["repo2"][0][1]
 

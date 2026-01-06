@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Activated Repository Index Manager for CIDX Server.
 
 Manages manual re-indexing operations for activated repositories,
 supporting semantic, FTS, temporal, and SCIP indexes.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import json
 import logging
@@ -166,9 +167,9 @@ class ActivatedRepoIndexManager:
         # Submit background job
         # BackgroundJobManager accepts *args/**kwargs despite signature showing Callable[[], Dict[str, Any]]
         # The implementation uses inspect.signature() to detect and inject progress_callback parameter
-        job_id = self.background_job_manager.submit_job(  # type: ignore[arg-type]
+        job_id = self.background_job_manager.submit_job(
             "reindex",
-            self._execute_indexing_job,
+            self._execute_indexing_job,  # type: ignore[arg-type]
             repo_alias=repo_alias,
             repo_path=repo_path,
             index_types=index_types,

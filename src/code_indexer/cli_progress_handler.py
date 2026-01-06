@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TaskID
 from rich.console import Console
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class ClientProgressHandler:
         """
         self.console = console or Console()
         self.progress: Optional[Progress] = None
-        self.task_id: Optional[int] = None
+        self.task_id: Optional[TaskID] = None
 
     def create_progress_callback(self):
         """

@@ -244,6 +244,7 @@ class TestAuthenticationFlow:
         # If it's a redirect, follow it to get the error message
         if response.status_code in [302, 303]:
             # Create client that follows redirects for this check
+            assert web_infrastructure.app is not None
             follow_client = TestClient(web_infrastructure.app, follow_redirects=True)
             response = follow_client.post(
                 "/admin/login",

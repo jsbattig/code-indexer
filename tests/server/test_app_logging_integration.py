@@ -54,7 +54,7 @@ class TestSQLiteLogHandlerIntegration:
             app = create_app()
 
             # Use TestClient as context manager to trigger lifespan
-            with TestClient(app) as client:
+            with TestClient(app):
                 # Verify SQLiteLogHandler is attached to root logger
                 from code_indexer.server.services.sqlite_log_handler import SQLiteLogHandler
 
@@ -87,7 +87,7 @@ class TestSQLiteLogHandlerIntegration:
             app = create_app()
 
             # Use TestClient as context manager to trigger lifespan
-            with TestClient(app) as client:
+            with TestClient(app):
                 # Set root logger to INFO level (default is WARNING)
                 logging.getLogger().setLevel(logging.INFO)
 
@@ -143,7 +143,7 @@ class TestSQLiteLogHandlerIntegration:
             logging.getLogger().setLevel(logging.INFO)
 
             # Use TestClient as context manager to trigger lifespan
-            with TestClient(app) as client:
+            with TestClient(app):
                 # Flush all handlers to ensure logs are written
                 for handler in logging.getLogger().handlers:
                     handler.flush()

@@ -250,7 +250,7 @@ setup(name='test-package', version='0.0.1')
         )
 
         # Real pip install
-        result = executor.pip_install()
+        executor.pip_install()
 
         # May fail if virtual environment issues, but tests real execution
         # Don't assert result - just verify no exception raised

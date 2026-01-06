@@ -1,6 +1,6 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """AutoUpdateService - polling service for automatic CIDX server deployment."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from datetime import datetime
 from enum import Enum
 from pathlib import Path

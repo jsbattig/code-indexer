@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Index Health Checker for CIDX Server - Story 9 Implementation.
 
@@ -6,6 +5,8 @@ Specialized health checking for embedding quality, corruption detection,
 and performance analysis. Following CLAUDE.md Foundation #1: NO MOCKS -
 real health checking with actual data.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import time
@@ -39,6 +40,10 @@ class IndexHealthChecker:
         self.config = config
         self.vector_store_client = vector_store_client
 
+        # Resolve collection name (use first available collection or default to "voyage-3")
+        collections = vector_store_client.list_collections()
+        self.collection_name = collections[0] if collections else "voyage-3"
+
         # Health check configuration
         self.sample_size = getattr(config, "validation_sample_size", 100)
         self.performance_sample_queries = getattr(
@@ -54,7 +59,10 @@ class IndexHealthChecker:
         self.metadata_completeness_threshold = 0.9
         self.performance_threshold_ms = 100
 
-        logger.info("IndexHealthChecker initialized", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"IndexHealthChecker initialized with collection: {self.collection_name}",
+            extra={"correlation_id": get_correlation_id()}
+        )
 
     def check_embedding_dimensions(self) -> HealthCheckResult:
         """
@@ -68,7 +76,7 @@ class IndexHealthChecker:
 
             # Get sample of embeddings from vector store
             sample_embeddings = self.vector_store_client.sample_vectors(
-                self.sample_size
+                self.collection_name, self.sample_size
             )
 
             if not sample_embeddings:
@@ -146,7 +154,7 @@ class IndexHealthChecker:
 
             # Get sample of embeddings from Filesystem
             sample_embeddings = self.vector_store_client.sample_vectors(
-                self.sample_size
+                self.collection_name, self.sample_size
             )
 
             if not sample_embeddings:
@@ -235,10 +243,10 @@ class IndexHealthChecker:
 
             return HealthCheckResult(
                 is_healthy=is_healthy,
-                quality_score=overall_quality,
+                quality_score=float(overall_quality),
                 zero_vector_count=zero_vector_count,
                 nan_vector_count=nan_vector_count,
-                variance_score=normalized_variance_score,
+                variance_score=float(normalized_variance_score),
                 corrupt_files=list(set(corrupt_files)),  # Remove duplicates
             )
 
@@ -261,7 +269,7 @@ class IndexHealthChecker:
 
             # Get sample of embeddings with metadata
             sample_embeddings = self.vector_store_client.sample_vectors(
-                self.sample_size
+                self.collection_name, self.sample_size
             )
 
             if not sample_embeddings:
@@ -424,8 +432,8 @@ class IndexHealthChecker:
                 # Measure query time
                 start_time = time.time()
                 try:
-                    results = self.vector_store_client.search(
-                        collection_name=None,  # Let FilesystemVectorStore resolve the collection name
+                    results = self.vector_store_client.search(  # type: ignore[call-arg]
+                        collection_name=self.collection_name,
                         query_vector=query_vector,
                         limit=10,
                     )
@@ -521,7 +529,7 @@ class IndexHealthChecker:
             logger.info("Collecting index statistics", extra={"correlation_id": get_correlation_id()})
 
             # Get collection info from Filesystem
-            collection_info = self.vector_store_client.get_collection_info()
+            collection_info = self.vector_store_client.get_collection_info(self.collection_name)
 
             # Extract basic statistics
             total_documents = collection_info.get("points_count", 0)

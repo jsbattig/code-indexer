@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Composite Repository Validator for CIDX Server.
 
@@ -8,6 +7,8 @@ unsupported operations are properly blocked with clear error messages.
 Based on CLI's command_validator.py logic, this validator prevents
 operations that don't make sense in proxy/composite mode.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import json
 import logging

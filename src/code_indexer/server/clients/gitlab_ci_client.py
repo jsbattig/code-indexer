@@ -30,7 +30,7 @@ class GitLabProjectNotFoundError(Exception):
     pass
 
 
-def _is_retryable_error(exception: Exception) -> bool:
+def _is_retryable_error(exception: BaseException) -> bool:
     """
     Check if exception is retryable (network errors or server errors).
 

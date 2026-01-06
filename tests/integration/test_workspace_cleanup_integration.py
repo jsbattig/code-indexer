@@ -152,7 +152,7 @@ class TestWorkspaceCleanupAC3Integration:
             job_manager=job_manager,
             workspace_root=str(workspace_root),
         )
-        result = service.cleanup_workspaces()
+        service.cleanup_workspaces()
 
         # Verify workspace deleted
         assert not workspace.exists()
@@ -196,7 +196,7 @@ class TestWorkspaceCleanupAC3Integration:
             job_manager=job_manager,
             workspace_root=str(workspace_root),
         )
-        result = service.cleanup_workspaces()
+        service.cleanup_workspaces()
 
         # Verify workspace deleted
         assert not workspace.exists()

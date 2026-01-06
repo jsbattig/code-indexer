@@ -13,6 +13,7 @@ This follows Anti-Mock Rule #1: Real systems only, minimal mocking.
 
 import json
 from datetime import datetime
+from typing import cast
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -91,7 +92,7 @@ def mock_repo_manager():
 def _extract_response_data(mcp_response: dict) -> dict:
     """Extract actual response data from MCP wrapper."""
     content = mcp_response["content"][0]
-    return json.loads(content["text"])
+    return cast(dict, json.loads(content["text"]))
 
 
 class TestGitPushMigrationTrigger:

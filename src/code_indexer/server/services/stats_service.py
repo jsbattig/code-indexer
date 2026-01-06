@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Statistics Service.
 
 Provides real repository statistics following CLAUDE.md Foundation #1: No mocks.
 All operations use real file system, database, and Filesystem operations.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import os
 from pathlib import Path
@@ -114,7 +115,7 @@ class RepositoryStatsService:
             raise RuntimeError(f"Cannot initialize repository stats service: {e}")
 
     def get_repository_stats(
-        self, repo_id: str, username: str = None
+        self, repo_id: str, username: Optional[str] = None
     ) -> RepositoryStatsResponse:
         """
         Get comprehensive statistics for a repository.
@@ -153,7 +154,7 @@ class RepositoryStatsService:
             health=health_info,
         )
 
-    def _get_repository_path(self, repo_id: str, username: str = None) -> str:
+    def _get_repository_path(self, repo_id: str, username: Optional[str] = None) -> str:
         """
         Get file system path for repository from real database.
 
@@ -177,6 +178,8 @@ class RepositoryStatsService:
             repo_manager = ActivatedRepoManager()
 
             # Get activated repository path for user
+            if username is None:
+                raise ValueError("Username is required for activated repository lookup")
             activated_path = repo_manager.get_activated_repo_path(
                 username=username, user_alias=repo_id
             )

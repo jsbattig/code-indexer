@@ -13,6 +13,7 @@ All tests use mocked GitOperationsService to avoid real git operations.
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 import pytest
 
@@ -53,7 +54,7 @@ def mock_repo_manager():
 def _extract_response_data(mcp_response: dict) -> dict:
     """Extract actual response data from MCP wrapper."""
     content = mcp_response["content"][0]
-    return json.loads(content["text"])
+    return cast(dict, json.loads(content["text"]))
 
 
 class TestGitBranchListHandler:

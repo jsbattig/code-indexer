@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Index Validation Engine for CIDX Server - Story 9 Implementation.
 
@@ -6,6 +5,8 @@ Comprehensive index validation including completeness, quality, consistency,
 and performance checking. Following CLAUDE.md Foundation #1: NO MOCKS -
 real validation with actual data and systems.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from ...indexing.file_finder import FileFinder
 from ...storage.filesystem_vector_store import FilesystemVectorStore
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_COLLECTION_NAME = "voyage-3"
 
 
 class IndexValidationEngine:
@@ -52,6 +55,10 @@ class IndexValidationEngine:
         self.config = config
         self.vector_store_client = vector_store_client
         self.repository_path = Path(config.codebase_dir)
+
+        # Resolve collection name (use first available collection or default)
+        collections = vector_store_client.list_collections()
+        self.collection_name = collections[0] if collections else DEFAULT_COLLECTION_NAME
 
         # Initialize health checker
         self.health_checker = health_checker or IndexHealthChecker(
@@ -623,7 +630,7 @@ class IndexValidationEngine:
         try:
             # This would typically query Filesystem for all indexed file paths
             # For now, we'll mock this since we need the Filesystem client implementation
-            return self.vector_store_client.get_all_indexed_files()
+            return self.vector_store_client.get_all_indexed_files(self.collection_name)
 
         except Exception as e:
             logger.error(f"Failed to get indexed files from database: {e}", extra={"correlation_id": get_correlation_id()})
@@ -632,7 +639,7 @@ class IndexValidationEngine:
     def _get_file_index_timestamps(self) -> Dict[str, datetime]:
         """Get file index timestamps from Filesystem database."""
         try:
-            return self.vector_store_client.get_file_index_timestamps()
+            return self.vector_store_client.get_file_index_timestamps(self.collection_name)
 
         except Exception as e:
             logger.error(f"Failed to get file index timestamps: {e}", extra={"correlation_id": get_correlation_id()})

@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 GitOperationsService: Comprehensive git operations service.
 
@@ -15,6 +14,8 @@ Implements confirmation token system for destructive operations with:
 - Single-use validation
 - In-memory storage
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import json
 import logging

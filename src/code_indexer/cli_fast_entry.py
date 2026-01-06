@@ -142,6 +142,8 @@ def main() -> int:
         try:
             from .cli_daemon_fast import execute_via_daemon
 
+            # If is_daemon_mode is True, config_path is guaranteed to be non-None
+            assert config_path is not None
             return execute_via_daemon(sys.argv, config_path)
         except ConnectionRefusedError:
             # Expected exception for --repo queries (need full CLI)

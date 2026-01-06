@@ -52,7 +52,7 @@ class FixedSizeChunker:
         self.config = config
 
         # Determine chunk size based on embedding model
-        if hasattr(config, "embedding_provider"):
+        if isinstance(config, Config):
             # Full Config passed - can determine model-aware chunk size
             # Only VoyageAI supported in v8.0+
             embedding_provider = config.embedding_provider

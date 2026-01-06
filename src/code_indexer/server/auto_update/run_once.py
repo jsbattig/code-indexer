@@ -1,7 +1,7 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 #!/usr/bin/env python3
 """Auto-update service entry point - executes one polling iteration."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import sys
 import os
 import logging

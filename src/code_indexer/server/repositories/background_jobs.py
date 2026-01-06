@@ -802,7 +802,9 @@ class BackgroundJobManager:
 
             # Sort by completion time (newest first)
             recent_jobs.sort(
-                key=lambda x: x["completed_at"] if x["completed_at"] else "",
+                key=lambda x: (
+                    int(x["completed_at"]) if isinstance(x["completed_at"], (int, str)) and x["completed_at"] else 0
+                ),
                 reverse=True,
             )
 

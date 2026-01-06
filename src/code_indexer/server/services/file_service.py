@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 File Listing Service.
 
@@ -6,9 +5,11 @@ Provides real file listing operations following CLAUDE.md Foundation #1: No mock
 All operations use real file system operations with proper pagination and filtering.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any, Set
+from typing import List, Optional, Tuple, Dict, Any, Set, cast
 from datetime import datetime, timezone
 import logging
 import math
@@ -195,7 +196,7 @@ class FileListingService:
                     f"Repository '{repo_id}' not found for user '{username}'"
                 )
 
-            return activated_path
+            return cast(str, activated_path)
 
         except Exception as e:
             logger.error(f"Failed to get repository path for {repo_id}/{username}: {e}", extra={"correlation_id": get_correlation_id()})
@@ -510,6 +511,7 @@ class FileListingService:
         pagination_hint = ""
         if requires_pagination:
             if truncated:
+                assert truncated_at_line is not None, "truncated_at_line must be set when truncated=True"
                 pagination_hint = f"Content truncated at line {truncated_at_line} due to token limit. Use offset={truncated_at_line + 1} to continue reading."
             else:
                 next_offset = effective_offset + returned_lines

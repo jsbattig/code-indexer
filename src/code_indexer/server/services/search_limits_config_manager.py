@@ -1,9 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Search Limits Configuration Manager for database persistence.
 
 Manages persistent storage of search timeout and size limit configuration.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import sqlite3

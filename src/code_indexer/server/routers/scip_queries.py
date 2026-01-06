@@ -1,9 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SCIP Query REST API Router.
 
 Provides endpoints for SCIP call graph queries (definition, references, dependencies, dependents).
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from fastapi import APIRouter, Query

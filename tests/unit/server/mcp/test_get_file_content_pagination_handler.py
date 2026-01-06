@@ -14,6 +14,7 @@ Also tests:
 
 import json
 from datetime import datetime
+from typing import cast
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -47,7 +48,7 @@ def _extract_response_data(mcp_response: dict) -> dict:
         content = mcp_response["content"][0]
         if "text" in content:
             try:
-                return json.loads(content["text"])
+                return cast(dict, json.loads(content["text"]))
             except json.JSONDecodeError:
                 # If not JSON, return raw text
                 return {"text": content["text"]}

@@ -203,7 +203,7 @@ class LogAggregatorService:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM logs")
-            total = cursor.fetchone()[0]
+            total = int(cursor.fetchone()[0])
             conn.close()
             return total
 
@@ -295,7 +295,7 @@ class LogAggregatorService:
         """
         count_query = f"SELECT COUNT(*) FROM logs{where_sql}"
         cursor.execute(count_query, params)
-        return cursor.fetchone()[0]
+        return int(cursor.fetchone()[0])
 
     def _query_logs(
         self,

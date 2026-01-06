@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Service for golden repository branch operations.
 
 Provides branch listing functionality for golden repositories with proper
 git operations and branch classification, following CLAUDE.md Anti-Mock principles.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import subprocess

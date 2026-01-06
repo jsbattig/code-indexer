@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Git Pull Operations Implementation for CIDX Server Repository Sync.
 
@@ -13,6 +12,7 @@ This module implements Story 4: Git Pull Operations with comprehensive support f
 - Comprehensive error handling and logging
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import json
 import logging
 import os

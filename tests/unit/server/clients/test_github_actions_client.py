@@ -433,7 +433,7 @@ class TestGitHubActionsClientRateLimiting:
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
             client = GitHubActionsClient(token="fake-token")
             # Store rate limit in client instance
-            runs = await client.list_runs(repository="owner/repo")
+            await client.list_runs(repository="owner/repo")
 
             # Verify rate limit is tracked (accessed via property)
             rate_limit = client.last_rate_limit

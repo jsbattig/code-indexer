@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 HNSW Index Cache for Server-Side Performance Optimization.
 
@@ -15,6 +14,7 @@ Provides in-memory caching of hnswlib.Index objects with:
 Performance improvement: ~277ms → <1ms for repeated queries (1800x faster).
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import json
 import logging
 import os

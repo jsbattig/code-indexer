@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Configuration management for re-indexing decision engine.
 
 Provides configuration classes for managing re-indexing thresholds,
 triggers, and behavior customization.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import os
 from dataclasses import dataclass, field

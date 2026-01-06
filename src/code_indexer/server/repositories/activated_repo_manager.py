@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Activated Repository Manager for CIDX Server.
 
 Manages user-specific activated repositories created from golden repositories.
 Supports copy-on-write cloning, branch management, and integration with background jobs.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import json
 import os
@@ -577,7 +578,7 @@ class ActivatedRepoManager:
         Returns:
             List of dicts with username, user_alias, is_composite for each match
         """
-        matching_repos = []
+        matching_repos: List[Dict[str, Any]] = []
 
         if not os.path.exists(self.activated_repos_dir):
             return matching_repos
@@ -1427,7 +1428,7 @@ class ActivatedRepoManager:
             git_committer_email, ssh_key_used = (
                 committer_service.resolve_committer_email(
                     golden_repo_url=golden_repo.repo_url,
-                    default_email=git_config.default_committer_email,
+                    default_email=git_config.default_committer_email or "",
                 )
             )
 

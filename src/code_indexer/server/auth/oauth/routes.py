@@ -192,13 +192,13 @@ async def register_client(
 
 @router.get("/authorize", response_class=HTMLResponse)
 async def get_authorize_form(
+    request: Request,
     client_id: str,
     redirect_uri: str,
     code_challenge: str,
     response_type: str,
     state: str,
     manager: OAuthManager = Depends(get_oauth_manager),
-    request: Request = None,
 ):
     """GET /oauth/authorize - OAuth authorization endpoint (Phase 5: Login Consolidation).
 
@@ -267,13 +267,13 @@ async def get_authorize_form(
 
 @router.post("/authorize/consent")
 async def authorize_consent(
+    request: Request,
     client_id: str = Form(...),
     redirect_uri: str = Form(...),
     code_challenge: str = Form(...),
     response_type: str = Form(...),
     state: str = Form(...),
     consent: str = Form(...),
-    request: Request = None,
     manager: OAuthManager = Depends(get_oauth_manager),
 ):
     """POST /oauth/authorize/consent - Handle consent form submission (Phase 5: Login Consolidation).
@@ -411,6 +411,28 @@ async def authorize_endpoint(
             detail="code_challenge required (PKCE)",
         )
 
+    # Validate required parameters
+    if not username or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="username and password required",
+        )
+    if not client_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="client_id required",
+        )
+    if not redirect_uri:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="redirect_uri required",
+        )
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="state required",
+        )
+
     # Authenticate user
     user = user_manager.authenticate_user(username, password)
 
@@ -452,13 +474,13 @@ async def authorize_endpoint(
 
 @router.post("/token", response_model=TokenResponse)
 async def token_endpoint(
+    http_request: Request,
     grant_type: str = Form(...),
     code: Optional[str] = Form(None),
     code_verifier: Optional[str] = Form(None),
     client_id: Optional[str] = Form(None),
     client_secret: Optional[str] = Form(None),
     refresh_token: Optional[str] = Form(None),
-    http_request: Request = None,
     manager: OAuthManager = Depends(get_oauth_manager),
     mcp_credential_manager: MCPCredentialManager = Depends(get_mcp_credential_manager),
 ):

@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Description refresh scheduler for periodic regeneration of AI descriptions.
 
 Operates independently of the 10-minute repository refresh cycle,
 regenerating descriptions on a configurable cadence (default 24 hours).
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import threading

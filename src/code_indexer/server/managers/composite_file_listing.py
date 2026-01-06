@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Composite repository file listing implementation.
 
 Provides file listing functionality for composite repositories,
 supporting Story 3.3 of the Server Composite Repository Activation epic.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from pathlib import Path

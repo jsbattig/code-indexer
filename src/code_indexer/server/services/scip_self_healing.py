@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SCIP Self-Healing Service.
 
 Handles automatic resolution of SCIP indexing failures through Claude Code integration.
 Part of Story #645 - Core Self-Healing SCIP Loop.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import json

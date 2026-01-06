@@ -1,15 +1,16 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Web Admin UI Routes.
 
 Provides admin web interface routes for CIDX server administration.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
 import os
 import secrets
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, cast
 from urllib.parse import quote
 
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
@@ -149,7 +150,7 @@ def get_csrf_token_from_cookie(request: Request) -> Optional[str]:
             salt="csrf-login",
             max_age=CSRF_MAX_AGE_SECONDS,
         )
-        return token
+        return cast(Optional[str], token)
     except (SignatureExpired, BadSignature):
         return None
 
@@ -1763,7 +1764,7 @@ MAX_QUERY_HISTORY = 10
 
 def _get_session_query_history(session_username: str) -> list:
     """Get query history for a session."""
-    return _query_history.get(session_username, [])
+    return cast(list, _query_history.get(session_username, []))
 
 
 def _add_to_query_history(
@@ -2434,7 +2435,7 @@ def _execute_scip_query(
     from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
     import glob
 
-    results = []
+    results: List[Dict[str, Any]] = []
     repo_path = target_repo.get("path")
 
     # For global repos, resolve path from GlobalRegistry
@@ -3723,6 +3724,7 @@ def _create_api_keys_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create API keys page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     keys = dependencies.user_manager.get_api_keys(username)
 
@@ -3745,6 +3747,7 @@ def _create_api_keys_page_response(
 @web_router.get("/partials/api-keys-list", response_class=HTMLResponse)
 async def api_keys_list_partial(request: Request):
     """Partial for API keys list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_admin_session(request)
     if not session:
         return HTMLResponse(
@@ -3779,6 +3782,7 @@ def _create_admin_mcp_credentials_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create admin MCP credentials page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     credentials = dependencies.user_manager.get_mcp_credentials(username)
 
@@ -3800,6 +3804,7 @@ def _create_admin_mcp_credentials_page_response(
 @web_router.get("/partials/mcp-credentials-list", response_class=HTMLResponse)
 async def admin_mcp_credentials_list_partial(request: Request):
     """Partial for admin MCP credentials list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_admin_session(request)
     if not session:
         return HTMLResponse(
@@ -3854,6 +3859,7 @@ def _create_user_api_keys_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create user API keys page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     keys = dependencies.user_manager.get_api_keys(username)
 
@@ -3876,6 +3882,7 @@ def _create_user_api_keys_page_response(
 @user_router.get("/partials/api-keys-list", response_class=HTMLResponse)
 async def user_api_keys_list_partial(request: Request):
     """Partial for user API keys list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_authenticated_session(request)
     if not session:
         return HTMLResponse(
@@ -3910,6 +3917,7 @@ def _create_user_mcp_credentials_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create user MCP credentials page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     credentials = dependencies.user_manager.get_mcp_credentials(username)
 
@@ -3932,6 +3940,7 @@ def _create_user_mcp_credentials_page_response(
 @user_router.get("/partials/mcp-credentials-list", response_class=HTMLResponse)
 async def user_mcp_credentials_list_partial(request: Request):
     """Partial for user MCP credentials list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_authenticated_session(request)
     if not session:
         return HTMLResponse(
@@ -4637,6 +4646,7 @@ async def unified_login_sso(
             safe_redirect = decoded_redirect
 
     # Store state with code_verifier and redirect_to using OIDC state manager
+    assert oidc_routes.state_manager is not None, "state_manager must be initialized when oidc_manager is enabled"
     state_data = {
         "code_verifier": code_verifier,
     }

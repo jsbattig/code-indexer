@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Queue-based manager for Claude CLI invocations with concurrency control.
 
@@ -8,6 +7,8 @@ Provides:
 - Configurable worker pool for concurrency control
 - CLI availability checking with caching
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import fcntl
 import json

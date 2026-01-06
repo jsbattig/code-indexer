@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 CI Token Manager Service.
 
 Manages GitHub and GitLab API tokens with AES-256-CBC encryption.
 Tokens are stored in ~/.cidx-server/ci_tokens.json with 0600 permissions.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import base64
 import hashlib

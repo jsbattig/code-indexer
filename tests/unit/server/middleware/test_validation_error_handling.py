@@ -254,7 +254,7 @@ class TestValidationErrorHandling:
 
         validation_error = None
         try:
-            NestedModel(user={"name": "", "age": -1, "email": "bad"}, active="not_bool")
+            NestedModel(user={"name": "", "age": -1, "email": "bad"}, active="not_bool")  # type: ignore[arg-type]
         except PydanticValidationError as e:
             validation_error = e
 

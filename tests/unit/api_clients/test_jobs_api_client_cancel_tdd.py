@@ -8,7 +8,7 @@ Tests job cancellation functionality with real authentication and HTTP endpoints
 import pytest
 import pytest_asyncio
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, cast
 
 from code_indexer.api_clients.jobs_client import JobsAPIClient
 from code_indexer.api_clients.base_client import APIClientError, AuthenticationError
@@ -64,7 +64,7 @@ class TestJobsAPIClientCancelRealServer:
     @pytest.fixture
     def project_root(self, tmp_path) -> Path:
         """Provide temporary project root for testing."""
-        return tmp_path / "test_project"
+        return cast(Path, tmp_path / "test_project")
 
     @pytest_asyncio.fixture
     async def api_client(

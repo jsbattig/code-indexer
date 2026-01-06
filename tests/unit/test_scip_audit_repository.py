@@ -33,7 +33,7 @@ class TestSCIPAuditRepository:
 
     def test_init_creates_table(self, temp_db):
         """Test that initialization creates the audit table."""
-        repo = SCIPAuditRepository(db_path=temp_db)
+        SCIPAuditRepository(db_path=temp_db)
 
         # Verify table exists
         with sqlite3.connect(temp_db) as conn:
@@ -46,7 +46,7 @@ class TestSCIPAuditRepository:
 
     def test_init_creates_indexes(self, temp_db):
         """Test that initialization creates required indexes."""
-        repo = SCIPAuditRepository(db_path=temp_db)
+        SCIPAuditRepository(db_path=temp_db)
 
         # Verify indexes exist
         with sqlite3.connect(temp_db) as conn:
@@ -297,7 +297,7 @@ class TestSCIPAuditRepository:
     def test_query_audit_records_time_range(self, repository):
         """Test filtering audit records by time range."""
         # Create record
-        record_id = repository.create_audit_record(
+        repository.create_audit_record(
             job_id="job-1",
             repo_alias="test-repo",
             project_path="src/project",
@@ -373,7 +373,7 @@ class TestSCIPAuditRepository:
 
     def test_query_audit_records_returns_all_fields(self, repository):
         """Test that query returns all expected fields."""
-        record_id = repository.create_audit_record(
+        repository.create_audit_record(
             job_id="job-1",
             repo_alias="test-repo",
             project_path="src/myproject",

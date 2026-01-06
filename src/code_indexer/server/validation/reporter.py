@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Validation Reporter for CIDX Server - Story 9 Implementation.
 
 Generates comprehensive validation reports and recommendations.
 Following CLAUDE.md Foundation #1: Real reporting, not mocked output.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from datetime import datetime, timezone

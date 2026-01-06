@@ -4,6 +4,8 @@ Test MCP/REST parameter schema parity.
 Verifies that MCP inputSchema matches REST request models for all operations.
 """
 
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -27,7 +29,7 @@ def normalize_mcp_params(mcp_schema: dict) -> set:
 
 
 def normalize_rest_params(
-    model_class: BaseModel, include_path_params: list = None
+    model_class: BaseModel, include_path_params: Optional[list] = None
 ) -> set:
     """
     Extract parameter names from Pydantic model.
@@ -53,9 +55,9 @@ def assert_schema_parity(
     mcp_tool: str,
     mcp_schema: dict,
     rest_model: BaseModel,
-    path_params: list = None,
-    optional_in_rest: list = None,
-    rest_params_explicit: list = None,
+    path_params: Optional[list] = None,
+    optional_in_rest: Optional[list] = None,
+    rest_params_explicit: Optional[list] = None,
 ):
     """
     Assert that MCP and REST schemas have matching parameters.

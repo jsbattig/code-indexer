@@ -1,10 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """MCP credential generation and validation manager."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import secrets
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple, cast
 
 from .password_manager import PasswordManager
 
@@ -107,7 +107,7 @@ class MCPCredentialManager:
         if not user:
             return []
 
-        return self.user_manager.get_mcp_credentials(user_id)
+        return cast(list[Any], self.user_manager.get_mcp_credentials(user_id))
 
     def get_credential_by_client_id(self, client_id: str) -> Optional[Tuple[str, dict]]:
         """
@@ -193,4 +193,4 @@ class MCPCredentialManager:
         if not self.user_manager:
             return False
 
-        return self.user_manager.delete_mcp_credential(user_id, credential_id)
+        return cast(bool, self.user_manager.delete_mcp_credential(user_id, credential_id))

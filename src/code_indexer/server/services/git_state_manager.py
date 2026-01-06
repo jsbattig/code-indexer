@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 GitStateManager: Git state management for SCIP self-healing workflows.
 
@@ -11,6 +10,8 @@ Provides git operations orchestration for:
 Story #659: Git State Management for SCIP Self-Healing with PR Workflow
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import httpx
 import logging
 import os
@@ -19,7 +20,7 @@ import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Union, cast
 
 from code_indexer.utils.git_runner import run_git_command
 
@@ -320,7 +321,7 @@ class GitStateManager:
             )
             branch_name = result.stdout.strip()
             logger.debug(f"Current branch: {branch_name}", extra={"correlation_id": get_correlation_id()})
-            return branch_name
+            return cast(str, branch_name)
         except subprocess.CalledProcessError as e:
             raise GitStateError(f"Failed to get current branch: {e}")
 
@@ -392,7 +393,7 @@ class GitStateManager:
             )
             commit_hash = result.stdout.strip()
             logger.debug(f"Commit hash: {commit_hash}", extra={"correlation_id": get_correlation_id()})
-            return commit_hash
+            return cast(str, commit_hash)
 
         except subprocess.CalledProcessError as e:
             error_detail = e.stderr if hasattr(e, "stderr") else str(e)
@@ -460,6 +461,7 @@ class GitStateManager:
         base_branch = getattr(self.config, "pr_base_branch", self.config.default_branch)
 
         # Create PR/MR using platform-specific client
+        client: Union[GitHubPRClient, GitLabPRClient]
         if platform == "github":
             client = GitHubPRClient(repo_path, token)
             pr_url = client.create_pull_request(
@@ -629,7 +631,7 @@ class GitHubPRClient:
                 pr_number = pr_data["number"]
 
                 logger.info(f"Created GitHub PR #{pr_number}: {pr_url}", extra={"correlation_id": get_correlation_id()})
-                return pr_url
+                return cast(str, pr_url)
 
         except httpx.HTTPStatusError as e:
             error_body = e.response.text
@@ -734,7 +736,7 @@ class GitLabPRClient:
                 mr_iid = mr_data["iid"]
 
                 logger.info(f"Created GitLab MR !{mr_iid}: {mr_url}", extra={"correlation_id": get_correlation_id()})
-                return mr_url
+                return cast(str, mr_url)
 
         except httpx.HTTPStatusError as e:
             error_body = e.response.text

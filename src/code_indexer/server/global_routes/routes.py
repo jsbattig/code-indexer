@@ -11,7 +11,7 @@ Uses GlobalRepoOperations for shared business logic with CLI and MCP.
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, field_validator
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, cast
 
 from code_indexer.server.auth.dependencies import get_current_user
 from code_indexer.server.auth.user_manager import User
@@ -157,7 +157,7 @@ async def get_repo_status(
 
     try:
         status = ops.get_status(alias)
-        return status
+        return cast(Dict[str, Any], status)
     except ValueError as e:
         # Map ValueError (repo not found) to HTTP 404
         raise HTTPException(status_code=404, detail=str(e))

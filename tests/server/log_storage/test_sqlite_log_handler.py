@@ -164,9 +164,9 @@ class TestSQLiteLogHandlerWriting:
         logger.addHandler(log_handler)
         logger.setLevel(logging.INFO)
 
-        before_log = time.time()
+        time.time()
         logger.info("Timestamped message")
-        after_log = time.time()
+        time.time()
 
         # Verify timestamp is within expected range
         conn = sqlite3.connect(str(temp_db_path))

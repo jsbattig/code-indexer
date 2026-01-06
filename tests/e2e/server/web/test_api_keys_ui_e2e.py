@@ -13,7 +13,7 @@ Follows Anti-Mock principle - uses real encryption, real HTTP requests.
 
 import pytest
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, cast
 from fastapi.testclient import TestClient
 
 from src.code_indexer.server.services.ci_token_manager import CITokenManager
@@ -58,9 +58,9 @@ def token_manager(web_infrastructure):
 @pytest.fixture
 def admin_client_fixture(web_infrastructure, admin_user: Dict[str, Any]) -> TestClient:
     """Authenticated admin client using web_infrastructure."""
-    return web_infrastructure.get_authenticated_client(
+    return cast(TestClient, web_infrastructure.get_authenticated_client(
         admin_user["username"], admin_user["password"]
-    )
+    ))
 
 
 @pytest.fixture
@@ -68,9 +68,9 @@ def normal_user_client_fixture(
     web_infrastructure, normal_user: Dict[str, Any]
 ) -> TestClient:
     """Authenticated normal user client using web_infrastructure."""
-    return web_infrastructure.get_authenticated_client(
+    return cast(TestClient, web_infrastructure.get_authenticated_client(
         normal_user["username"], normal_user["password"]
-    )
+    ))
 
 
 class TestAPIKeysUIAccess:

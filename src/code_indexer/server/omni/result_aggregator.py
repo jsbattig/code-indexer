@@ -4,7 +4,7 @@ Result aggregation for omni-search.
 Aggregates search results from multiple repositories.
 """
 
-from typing import Dict, List
+from typing import Any, Dict, List
 import math
 
 
@@ -119,7 +119,7 @@ class ResultAggregator:
             repo_iterators[repo_alias] = iter(sorted_results[:allocation])
 
         # Interleave results
-        aggregated = []
+        aggregated: List[Dict[str, Any]] = []
         while len(aggregated) < self.limit and repo_iterators:
             for repo_alias in list(repo_iterators.keys()):
                 try:

@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 AutoWatchManager - Story #640.
 
@@ -6,11 +5,13 @@ Manages auto-watch lifecycle for server file operations, enabling automatic
 watch mode activation during file modifications with timeout-based auto-stop.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, cast
 
 from code_indexer.daemon.watch_manager import DaemonWatchManager
 from code_indexer.config import ConfigManager
@@ -126,9 +127,12 @@ class AutoWatchManager:
                 watch_instance = DaemonWatchManager()
 
                 # Start watch
-                result = watch_instance.start_watch(
-                    project_path=repo_path,
-                    config=config,
+                result = cast(
+                    dict[str, Any],
+                    watch_instance.start_watch(
+                        project_path=repo_path,
+                        config=config,
+                    ),
                 )
 
                 if result.get("status") != "success":

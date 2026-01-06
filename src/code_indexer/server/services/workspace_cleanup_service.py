@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Workspace Cleanup Service for SCIP Self-Healing (Story #647).
 
@@ -13,6 +12,8 @@ Features:
 - Graceful error handling (AC6)
 - Audit log preservation (AC3)
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import shutil
@@ -89,7 +90,7 @@ class WorkspaceCleanupService:
         Returns:
             List of workspace directory paths matching cidx-scip-* pattern
         """
-        workspaces = []
+        workspaces: List[Path] = []
 
         if not self.workspace_root.exists():
             logger.warning(
@@ -126,7 +127,7 @@ class WorkspaceCleanupService:
             age_seconds = current_time - modification_time
             age_days = age_seconds / (24 * 3600)
 
-            return age_days > self.retention_days
+            return bool(age_days > self.retention_days)
 
         except Exception as e:
             logger.error(
@@ -379,16 +380,12 @@ class WorkspaceCleanupService:
             - oldest_workspace_age: Age in days of oldest workspace or None
             - total_size_mb: Total size of all workspaces in MB
         """
-        status = {
-            "last_cleanup_time": None,
+        status: dict[str, Any] = {
+            "last_cleanup_time": None if self.last_cleanup_time is None else self.last_cleanup_time.isoformat(),
             "workspace_count": 0,
             "oldest_workspace_age": None,
             "total_size_mb": 0.0,
         }
-
-        # Convert last cleanup time to ISO format
-        if self.last_cleanup_time is not None:
-            status["last_cleanup_time"] = self.last_cleanup_time.isoformat()
 
         # Scan for current workspaces
         workspaces = self.scan_workspaces()

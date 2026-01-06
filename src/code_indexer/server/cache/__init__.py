@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Server-side cache module for CIDX server.
 
@@ -6,6 +5,7 @@ Story #526: Provides singleton HNSW index cache for server-wide performance opti
 Story #XXX: Provides singleton FTS (Tantivy) index cache for FTS query performance.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from .hnsw_index_cache import (
     HNSWIndexCache,
     HNSWIndexCacheConfig,

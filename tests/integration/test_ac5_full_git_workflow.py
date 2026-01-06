@@ -143,7 +143,7 @@ def test_ac5_commit_creation_with_real_git(mock_git_repo, git_state_manager):
     5. Verify file modifications are tracked
     """
     # Create a branch for testing
-    branch_name = git_state_manager._create_and_checkout_fix_branch(mock_git_repo.repo_path)
+    git_state_manager._create_and_checkout_fix_branch(mock_git_repo.repo_path)
 
     # Create new file with changes
     fix_file = mock_git_repo.repo_path / "fix.py"

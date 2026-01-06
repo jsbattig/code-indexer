@@ -1,6 +1,6 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """ChangeDetector - git change detection for auto-update service."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from pathlib import Path
 import subprocess
 import logging

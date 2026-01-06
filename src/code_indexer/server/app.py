@@ -6,7 +6,7 @@ Multi-user semantic code search server with JWT authentication and role-based ac
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, Query
+from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, Query, Body
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -1031,6 +1031,13 @@ class RepositoryListResponse(BaseModel):
     """Response model for repository listing endpoints."""
 
     repositories: List[ActivatedRepositoryInfo]
+    total: int
+
+
+class AvailableRepositoryListResponse(BaseModel):
+    """Response model for available repository listing endpoint."""
+
+    repositories: List[RepositoryInfo]
     total: int
 
 
@@ -2695,7 +2702,7 @@ def create_app() -> FastAPI:
     @app.post("/api/keys", response_model=CreateApiKeyResponse, status_code=201)
     async def create_api_key(
         current_user: dependencies.User = Depends(dependencies.get_current_user),
-        request: CreateApiKeyRequest = None,
+        request: CreateApiKeyRequest = Body(...),
     ):
         """
         Generate a new API key for the authenticated user.
@@ -2788,7 +2795,7 @@ def create_app() -> FastAPI:
         current_user: dependencies.User = Depends(
             dependencies.get_current_user_web_or_api
         ),
-        request: CreateMCPCredentialRequest = None,
+        request: CreateMCPCredentialRequest = Body(...),
     ):
         """
         Generate a new MCP client credential for the authenticated user.
@@ -3527,7 +3534,7 @@ def create_app() -> FastAPI:
         """
         try:
             # Submit background job for adding golden repo
-            func_kwargs = {
+            func_kwargs: Dict[str, Any] = {
                 "repo_url": repo_data.repo_url,
                 "alias": repo_data.alias,
                 "default_branch": repo_data.default_branch,
@@ -3895,13 +3902,13 @@ def create_app() -> FastAPI:
         total_jobs = len(filtered_jobs)
 
         # Count by status
-        by_status = {}
+        by_status: Dict[str, int] = {}
         for job in filtered_jobs:
             status = job.status.value
             by_status[status] = by_status.get(status, 0) + 1
 
         # Count by type
-        by_type = {}
+        by_type: Dict[str, int] = {}
         for job in filtered_jobs:
             job_type = job.operation_type
             by_type[job_type] = by_type.get(job_type, 0) + 1
@@ -6324,7 +6331,7 @@ def create_app() -> FastAPI:
             )
 
     # Repository Available Endpoint - must be defined BEFORE generic {user_alias} route
-    @app.get("/api/repos/available", response_model=RepositoryListResponse)
+    @app.get("/api/repos/available", response_model=AvailableRepositoryListResponse)
     async def list_available_repositories(
         search: Optional[str] = None,
         repo_status: Optional[str] = None,
@@ -6362,7 +6369,7 @@ def create_app() -> FastAPI:
                 for repo in result["repositories"]
             ]
 
-            return RepositoryListResponse(
+            return AvailableRepositoryListResponse(
                 repositories=repositories,
                 total=result["total"],
             )

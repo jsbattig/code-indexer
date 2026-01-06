@@ -881,7 +881,7 @@ class TestComputeEnclosingRanges:
         manager.create_schema()
 
         builder = SCIPDatabaseBuilder()
-        result = builder.build(scip_file, manager.db_path)
+        builder.build(scip_file, manager.db_path)
 
         # FIXED: Both tables should have edges (all reference types)
         conn = sqlite3.connect(manager.db_path)
@@ -1030,7 +1030,7 @@ class TestComputeEnclosingRanges:
         manager.create_schema()
 
         builder = SCIPDatabaseBuilder()
-        result = builder.build(scip_file, manager.db_path)
+        builder.build(scip_file, manager.db_path)
 
         # Verify the BUG: symbol_references has edges, call_graph is empty
         conn = sqlite3.connect(manager.db_path)
