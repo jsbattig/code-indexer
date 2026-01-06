@@ -203,9 +203,9 @@ async def dashboard(request: Request):
             detail="Admin access required",
         )
 
-    # Get aggregated dashboard data
+    # Get aggregated dashboard data (Bug #671: Pass user role to show all repos for admins)
     dashboard_service = _get_dashboard_service()
-    dashboard_data = dashboard_service.get_dashboard_data(session.username)
+    dashboard_data = dashboard_service.get_dashboard_data(session.username, session.role)
 
     return templates.TemplateResponse(
         "dashboard.html",

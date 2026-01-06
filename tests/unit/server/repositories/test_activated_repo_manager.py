@@ -664,3 +664,98 @@ class TestActivatedRepoManager:
         }
 
         assert result == expected
+
+    def test_list_all_activated_repositories_empty(self, activated_repo_manager):
+        """Test list_all_activated_repositories when no repositories exist."""
+        result = activated_repo_manager.list_all_activated_repositories()
+        assert result == []
+
+    def test_list_all_activated_repositories_single_user(
+        self, activated_repo_manager, temp_data_dir
+    ):
+        """Test list_all_activated_repositories with repos from single user."""
+        username = "user1"
+
+        # Create user directory with activated repos
+        user_dir = os.path.join(temp_data_dir, "activated-repos", username)
+        os.makedirs(user_dir, exist_ok=True)
+
+        repo1_data = {
+            "user_alias": "repo1",
+            "golden_repo_alias": "golden1",
+            "current_branch": "main",
+            "activated_at": "2024-01-01T12:00:00Z",
+            "last_accessed": "2024-01-01T13:00:00Z",
+        }
+
+        # Write metadata file and create directory
+        with open(os.path.join(user_dir, "repo1_metadata.json"), "w") as f:
+            json.dump(repo1_data, f)
+        os.makedirs(os.path.join(user_dir, "repo1"))
+
+        # Test listing all repos
+        result = activated_repo_manager.list_all_activated_repositories()
+
+        assert len(result) == 1
+        assert result[0]["user_alias"] == "repo1"
+        assert result[0]["golden_repo_alias"] == "golden1"
+
+    def test_list_all_activated_repositories_multiple_users(
+        self, activated_repo_manager, temp_data_dir
+    ):
+        """Test list_all_activated_repositories returns repos from all users."""
+        # Create repos for user1
+        user1_dir = os.path.join(temp_data_dir, "activated-repos", "user1")
+        os.makedirs(user1_dir, exist_ok=True)
+
+        user1_repo1 = {
+            "user_alias": "user1-repo1",
+            "golden_repo_alias": "golden1",
+            "current_branch": "main",
+            "activated_at": "2024-01-01T12:00:00Z",
+            "last_accessed": "2024-01-01T13:00:00Z",
+        }
+
+        user1_repo2 = {
+            "user_alias": "user1-repo2",
+            "golden_repo_alias": "golden2",
+            "current_branch": "develop",
+            "activated_at": "2024-01-02T12:00:00Z",
+            "last_accessed": "2024-01-02T13:00:00Z",
+        }
+
+        with open(os.path.join(user1_dir, "user1-repo1_metadata.json"), "w") as f:
+            json.dump(user1_repo1, f)
+        os.makedirs(os.path.join(user1_dir, "user1-repo1"))
+
+        with open(os.path.join(user1_dir, "user1-repo2_metadata.json"), "w") as f:
+            json.dump(user1_repo2, f)
+        os.makedirs(os.path.join(user1_dir, "user1-repo2"))
+
+        # Create repos for user2
+        user2_dir = os.path.join(temp_data_dir, "activated-repos", "user2")
+        os.makedirs(user2_dir, exist_ok=True)
+
+        user2_repo1 = {
+            "user_alias": "user2-repo1",
+            "golden_repo_alias": "golden3",
+            "current_branch": "main",
+            "activated_at": "2024-01-03T12:00:00Z",
+            "last_accessed": "2024-01-03T13:00:00Z",
+        }
+
+        with open(os.path.join(user2_dir, "user2-repo1_metadata.json"), "w") as f:
+            json.dump(user2_repo1, f)
+        os.makedirs(os.path.join(user2_dir, "user2-repo1"))
+
+        # Test listing all repos across all users
+        result = activated_repo_manager.list_all_activated_repositories()
+
+        # Should return 3 repos total from both users
+        assert len(result) == 3
+
+        # Verify all repos are present
+        user_aliases = [repo["user_alias"] for repo in result]
+        assert "user1-repo1" in user_aliases
+        assert "user1-repo2" in user_aliases
+        assert "user2-repo1" in user_aliases

@@ -61,12 +61,13 @@ class DashboardData:
 class DashboardService:
     """Service for aggregating dashboard data from various internal sources."""
 
-    def get_dashboard_data(self, username: str) -> DashboardData:
+    def get_dashboard_data(self, username: str, user_role: str = "user") -> DashboardData:
         """
         Get all dashboard data for display.
 
         Args:
             username: Current user's username
+            user_role: User role ('admin' or 'user'), defaults to 'user'
 
         Returns:
             DashboardData containing all sections
@@ -78,7 +79,7 @@ class DashboardService:
         job_counts = self._get_job_counts(username)
 
         # Get repository statistics
-        repo_counts = self._get_repo_counts(username)
+        repo_counts = self._get_repo_counts(username, user_role)
 
         # Get recent jobs
         recent_jobs = self._get_recent_jobs(username)
@@ -189,12 +190,13 @@ class DashboardService:
             logger.error(f"Failed to get job counts: {e}", extra={"correlation_id": get_correlation_id()})
             return JobCounts()
 
-    def _get_repo_counts(self, username: str) -> RepoCounts:
+    def _get_repo_counts(self, username: str, user_role: str = "user") -> RepoCounts:
         """
         Get repository count statistics.
 
         Args:
             username: Current user's username
+            user_role: User role ('admin' or 'user'), defaults to 'user'
 
         Returns:
             RepoCounts dataclass
@@ -216,11 +218,13 @@ class DashboardService:
         try:
             activated_manager = self._get_activated_repo_manager()
             if activated_manager:
-                # For admin, get all activated repos across all users
-                # If not admin, filter by username
-                activated_repos = activated_manager.list_activated_repositories(
-                    username
-                )
+                # Bug #671: Admin users see all activated repos across all users
+                if user_role == "admin":
+                    activated_repos = activated_manager.list_all_activated_repositories()
+                else:
+                    activated_repos = activated_manager.list_activated_repositories(
+                        username
+                    )
                 activated_count = len(activated_repos) if activated_repos else 0
 
                 # Story #541 AC1/AC2: Sum FilesystemVectorStore counts from all activated repos

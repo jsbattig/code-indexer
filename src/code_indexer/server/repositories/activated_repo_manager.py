@@ -526,6 +526,45 @@ class ActivatedRepoManager:
 
         return activated_repos
 
+    def list_all_activated_repositories(self) -> List[Dict[str, Any]]:
+        """
+        List activated repositories across all users (admin only).
+
+        This method is intended for admin users who need to see all activated
+        repositories regardless of which user activated them.
+
+        Returns:
+            List of activated repository dictionaries from all users
+        """
+        all_activated_repos = []
+
+        # Check if activated repos directory exists
+        if not os.path.exists(self.activated_repos_dir):
+            return []
+
+        # Iterate through all user directories
+        try:
+            for username in os.listdir(self.activated_repos_dir):
+                user_dir = os.path.join(self.activated_repos_dir, username)
+
+                # Skip if not a directory
+                if not os.path.isdir(user_dir):
+                    continue
+
+                # Get all repos for this user
+                user_repos = self.list_activated_repositories(username)
+                all_activated_repos.extend(user_repos)
+
+        except Exception as e:
+            self.logger.error(
+                f"Error listing all activated repositories: {str(e)}",
+                extra={"correlation_id": get_correlation_id()}
+            )
+            # Return what we have so far rather than failing completely
+            return all_activated_repos
+
+        return all_activated_repos
+
     def find_repos_by_golden_alias(
         self, golden_repo_alias: str
     ) -> List[Dict[str, Any]]:
