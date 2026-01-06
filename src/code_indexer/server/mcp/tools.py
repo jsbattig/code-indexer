@@ -252,6 +252,13 @@ Response formats:
 
 PERFORMANCE NOTE: Searching 5+ repos increases token usage proportionally. Start with limit=3-5 for multi-repo searches.
 
+NOISE FILTERING: Use exclude_path to filter out low-value files:
+- exclude_path='**/package-lock.json' (npm lockfiles)
+- exclude_path='**/yarn.lock' (yarn lockfiles)
+- exclude_path='**/node_modules/**' (dependencies)
+- exclude_path='**/test/fixtures/**' (test data)
+- exclude_path='**/*.min.js' (minified files)
+
 Use cases:
 - Microservices: Search across service repos for shared patterns
 - Monorepo + libs: Search main repo with dependency repos together
@@ -335,7 +342,7 @@ WHEN NOT TO USE: (1) Need ALL matches with pattern -> use regex_search, (2) Expl
                 },
                 "exclude_path": {
                     "type": "string",
-                    "description": "Exclude files matching path pattern. Supports glob patterns (*, **, ?, [seq]). Example: '*/tests/*' to exclude all test files, '*.min.js' to exclude minified JavaScript.",
+                    "description": "Exclude files matching path pattern. Supports glob patterns (*, **, ?, [seq]). COMMON NOISE FILTERS: '**/package-lock.json' (npm), '**/yarn.lock' (yarn), '**/node_modules/**' (deps), '**/test/fixtures/**' (test data), '**/*.min.js' (minified). Can combine with comma: 'pattern1,pattern2' or use multiple calls.",
                 },
                 "file_extensions": {
                     "type": "array",

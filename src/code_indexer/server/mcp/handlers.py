@@ -594,6 +594,9 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             response_results = []
             for r in results:
                 result_dict = r.to_dict()
+                result_dict["source_repo"] = (
+                    repository_alias  # Fix: Set source_repo for single-repo searches
+                )
                 response_results.append(result_dict)
 
             result = {
