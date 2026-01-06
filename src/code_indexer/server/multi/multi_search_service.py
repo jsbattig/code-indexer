@@ -158,8 +158,7 @@ class MultiSearchService:
 
         # Aggregate results with optional score filtering
         aggregator = MultiResultAggregator(
-            limit=request.limit,
-            min_score=request.min_score
+            limit=request.limit, min_score=request.min_score
         )
         aggregated_results = aggregator.aggregate(repo_results)
 
@@ -286,8 +285,8 @@ class MultiSearchService:
             # Get repository path
             repo_path = self._get_repository_path(repo_id)
 
-            # FTS index is in .code-indexer/fts-index
-            fts_index_dir = PathLib(repo_path) / ".code-indexer" / "fts-index"
+            # FTS index is in .code-indexer/tantivy_index
+            fts_index_dir = PathLib(repo_path) / ".code-indexer" / "tantivy_index"
 
             if not fts_index_dir.exists():
                 raise FileNotFoundError(
@@ -356,6 +355,7 @@ class MultiSearchService:
         )
         from ...config import ConfigManager
         from ...storage.filesystem_vector_store import FilesystemVectorStore
+        from ...services.embedding_factory import EmbeddingProviderFactory
 
         try:
             # Get repository path
@@ -363,6 +363,7 @@ class MultiSearchService:
 
             # Load repository configuration
             config_manager = ConfigManager.create_with_backtrack(repo_path)
+            config = config_manager.get_config()
 
             # Initialize vector store for temporal search
             index_dir = repo_path / ".code-indexer" / "index"
@@ -370,11 +371,16 @@ class MultiSearchService:
                 base_path=index_dir, project_root=repo_path
             )
 
+            # Create embedding provider for temporal search
+            embedding_provider = EmbeddingProviderFactory.create(config, console=None)
+
             # Create temporal service
             temporal_service = TemporalSearchService(
                 config_manager=config_manager,
                 project_root=repo_path,
                 vector_store_client=vector_store_client,
+                embedding_provider=embedding_provider,
+                collection_name=TemporalSearchService.TEMPORAL_COLLECTION_NAME,
             )
 
             # Check if temporal index exists
