@@ -229,7 +229,35 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Tools 1-2: Search
     "search_code": {
         "name": "search_code",
-        "description": "REPOSITORY SELECTION: If repository is not specified by user, search cidx-meta-global first to discover relevant repositories (search_code('topic', repository_alias='cidx-meta-global')), then search the specific repositories identified. Skip cidx-meta only if user explicitly names a repository. TL;DR: Search code using pre-built indexes. Use semantic mode for conceptual queries, FTS for exact text. SEARCH MODE DECISION: 'authentication logic' (concept) -> semantic | 'def authenticate_user' (exact text) -> fts | unsure -> hybrid. CRITICAL - SEMANTIC SEARCH IS NOT TEXT SEARCH: Semantic mode finds code by MEANING, not exact text. Results are APPROXIMATE and help identify areas of concern for a topic. For exhaustive exact-text results, use FTS mode or regex_search tool. QUICK START: search_code('user authentication', repository_alias='myrepo-global', search_mode='semantic', limit=5). DISCOVERY: Run list_global_repos first to see available repositories. ALIAS FORMAT: Global repos end in '-global' (e.g., 'backend-global'). CIDX-META: For exploring unfamiliar codebases, cidx-meta-global contains .md descriptions of all repos - use browse_directory + get_file_content (NOT search_code) since it's a small catalog. TROUBLESHOOTING: (1) 0 results? Verify alias with list_global_repos, try broader terms, check filters. (2) Temporal queries empty? Check enable_temporal via global_repo_status. (3) Slow? Start with limit=5, use path_filter. WHEN NOT TO USE: (1) Need comprehensive pattern search with ALL matches -> use regex_search instead (not approximate), (2) Know exact text but want direct file search -> use regex_search (no index required), (3) Exploring directory structure -> use browse_directory or directory_tree first. RELATED TOOLS: regex_search (comprehensive pattern matching without index), git_search_diffs (find when code was added/removed).",
+        "description": """REPOSITORY SELECTION DECISION TREE:
+1. User specified exact repo? -> Search that repo directly
+2. User mentioned topic WITHOUT repo? -> Search cidx-meta-global FIRST to discover relevant repos
+3. User wants comparison across repos? -> Use repository_alias as array + aggregation_mode='per_repo'
+4. User wants best matches anywhere? -> Use repository_alias as array + aggregation_mode='global'
+
+MULTI-REPO SEARCH (cross-cutting analysis):
+- Pass array: repository_alias=['backend-global', 'frontend-global'] OR use wildcard '*-global'
+- aggregation_mode='global': Returns top N results by score across ALL repos (default)
+- aggregation_mode='per_repo': Returns N results distributed evenly across repos (for comparison)
+
+CIDX-META DISCOVERY (when repo is unknown):
+1. search_code('your topic', repository_alias='cidx-meta-global') -> Finds .md files describing repos
+2. Read the relevant .md to understand which repo handles your topic
+3. Search the identified repo(s) for actual code
+
+TL;DR: Search code using pre-built indexes. Use semantic mode for conceptual queries, FTS for exact text.
+
+SEARCH MODE: 'authentication logic' (concept) -> semantic | 'def authenticate_user' (exact) -> fts | unsure -> hybrid
+
+CRITICAL: Semantic search finds code by MEANING, not exact text. Results are APPROXIMATE. For exhaustive exact-text results, use FTS mode or regex_search tool.
+
+QUICK START: search_code('user authentication', repository_alias='myrepo-global', search_mode='semantic', limit=5)
+
+DISCOVERY: Run list_global_repos first to see available repositories. ALIAS FORMAT: Global repos end in '-global'.
+
+TROUBLESHOOTING: (1) 0 results? Verify alias with list_global_repos, try broader terms. (2) Temporal queries empty? Check enable_temporal via global_repo_status. (3) Slow? Start with limit=5, use path_filter.
+
+WHEN NOT TO USE: (1) Need ALL matches with pattern -> use regex_search, (2) Exploring directory structure -> use browse_directory first.""",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -4727,11 +4755,14 @@ TOOL_REGISTRY["scip_context"] = {
 TOOL_REGISTRY["cidx_quick_reference"] = {
     "name": "cidx_quick_reference",
     "description": (
-        "TL;DR: Get quick reference documentation for CIDX MCP tools. Returns concise summaries of available tools with their purposes and when to use them. "
-        "USE CASES: (1) Discover what tools are available, (2) Understand tool purposes before using them, (3) Find the right tool for a specific task, (4) Filter tools by category. "
-        "CATEGORIES: search (semantic/FTS code search), scip (code intelligence - definitions, references, dependencies, call chains), git_exploration (repository exploration, commit history, diffs), git_operations (status, stage, commit, push, pull, branch management), files (CRUD operations - list, create, edit, delete, move files), repo_management (activate/deactivate repos), golden_repos (add/remove/refresh global repositories), system (health checks, job monitoring, statistics), user_management (create/delete users, manage roles), ssh_keys (manage SSH keys for git operations), meta (documentation, quick reference). "
-        "OUTPUT: Returns tool names with TL;DR descriptions extracted from full tool definitions. Use category filter to narrow results. "
-        'EXAMPLE: {"category": "scip"} returns all 7 SCIP tools with their TL;DR summaries. {"category": null} returns all 53 tools.'
+        "TL;DR: Get quick reference for CIDX MCP tools with decision guidance. "
+        "CRITICAL WORKFLOWS: "
+        "(1) DISCOVERY: When user doesn't specify a repo, search cidx-meta-global FIRST to find relevant repositories. "
+        "(2) SINGLE-REPO: For deep-diving into one codebase, use repository_alias as string. "
+        "(3) MULTI-REPO: For cross-cutting analysis, use repository_alias as array with aggregation_mode='per_repo' (comparison) or 'global' (best matches). "
+        "CATEGORIES: search, scip, git_exploration, git_operations, files, repo_management, golden_repos, system, user_management, ssh_keys, meta. "
+        "OUTPUT: Tool names with TL;DR descriptions. Use category filter to narrow results. "
+        'EXAMPLE: {"category": "search"} returns search tools with summaries.'
     ),
     "inputSchema": {
         "type": "object",
@@ -4904,6 +4935,24 @@ Step 7: For file editing - activate a repository
 
 Step 8: Make changes with git workflow
   create_file(...) -> edit_file(...) -> git_stage(...) -> git_commit(...) -> git_push(...)
+
+ESSENTIAL WORKFLOWS:
+
+WORKFLOW A - Unknown Repository (Discovery):
+1. search_code('your topic', repository_alias='cidx-meta-global')
+2. Read returned .md file to identify relevant repo
+3. search_code('your topic', repository_alias='identified-repo-global')
+
+WORKFLOW B - Cross-Cutting Analysis:
+1. list_global_repos() to see available repos
+2. search_code('topic', repository_alias=['repo1-global', 'repo2-global'], aggregation_mode='per_repo')
+3. Compare results across repos
+
+WORKFLOW C - Deep Dive (Single Repo):
+1. list_global_repos() to find repo name
+2. search_code('topic', repository_alias='specific-repo-global')
+3. get_file_content() to read full files
+4. Use SCIP tools for code navigation
 
 NEXT STEPS:
 - Use get_tool_categories() to discover more tools
