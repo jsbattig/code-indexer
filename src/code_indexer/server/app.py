@@ -69,6 +69,8 @@ from .routers.scip_queries import router as scip_queries_router
 from .routers.files import router as files_router
 from .routers.git import router as git_router
 from .routers.indexing import router as indexing_router
+from .routes.multi_query_routes import router as multi_query_router
+from .routes.scip_multi_routes import router as scip_multi_router
 from .models.branch_models import BranchListResponse
 from .models.activated_repository import ActivatedRepository
 from .services.branch_service import BranchService
@@ -6791,6 +6793,8 @@ def create_app() -> FastAPI:
     app.include_router(files_router)
     app.include_router(git_router)
     app.include_router(indexing_router)
+    app.include_router(multi_query_router)
+    app.include_router(scip_multi_router)
 
     # Mount Web Admin UI routes and static files
     from fastapi.staticfiles import StaticFiles

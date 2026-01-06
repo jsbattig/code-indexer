@@ -1832,6 +1832,325 @@ Response:
 }
 ```
 
+## Multi-Repository Search for AI Agents
+
+### Context Window Preservation
+
+When using multi-repository search in AI agent workflows, managing context window consumption is critical. This section provides data-driven recommendations for effective multi-repo queries.
+
+### Recommended Defaults for AI Agents
+
+These defaults provide optimal balance between result quality and context consumption based on semantic search best practices and VoyageAI embedding characteristics:
+
+| Parameter | Recommended Value | Rationale |
+|-----------|------------------|-----------|
+| `min_score` | `0.7` | Filters low-relevance results based on semantic similarity; values below 0.7 typically indicate weak conceptual matches |
+| `limit` | `5` per repository | Conservative starting point, scales linearly with repo count |
+| `aggregation_mode` | `per_repo` | Ensures balanced representation across repositories |
+| `accuracy` | `medium` or `high` | Trade speed for better embeddings when filtering aggressively |
+
+**Validation**: To validate these recommendations for your specific repositories, run the research script:
+```bash
+# Run from project root, pass path to an indexed repository
+python3 scripts/analysis/score_threshold_research.py --repo /path/to/your-project
+
+# Or analyze current directory (if it has .code-indexer/)
+python3 scripts/analysis/score_threshold_research.py --repo .
+```
+This will analyze actual score distributions in your codebase and provide data-driven threshold recommendations.
+
+### Context Consumption Calculation
+
+Average result sizes by search type (estimates based on typical code snippet sizes):
+
+| Search Type | Avg Tokens per Result | Typical Content |
+|-------------|----------------------|-----------------|
+| Semantic | ~500 tokens | Function/class with context |
+| FTS | ~300 tokens | Matching lines with snippets |
+| Regex | ~200 tokens | Line matches only |
+| Temporal | ~600 tokens | Code + commit metadata |
+
+**Formula for estimating context consumption:**
+
+```
+estimated_tokens = repositories × limit × avg_tokens_per_result
+```
+
+**Examples:**
+
+```
+5 repos × 5 limit × 500 tokens = 12,500 tokens (semantic)
+10 repos × 3 limit × 300 tokens = 9,000 tokens (FTS)
+3 repos × 10 limit × 600 tokens = 18,000 tokens (temporal)
+```
+
+**Budget Recommendations:**
+
+- Keep multi-repo query results under **50% of agent's context window**
+- Reserve remaining context for:
+  - Conversation history (20%)
+  - System prompts (10%)
+  - Response generation (20%)
+
+### Parameter Interactions and Impact
+
+#### min_score Filtering Impact
+
+Expected behavior at different thresholds (actual retention rates vary by repository and query type):
+
+| min_score | Expected Behavior | Use Case |
+|-----------|------------------|----------|
+| None (0.0) | No filtering | Broad exploration, high context consumption |
+| 0.5 | Permissive filtering | Good for exploratory queries, may include noise |
+| 0.6 | Moderate filtering | Balance between recall and precision |
+| **0.7** | **Focused filtering** | **Recommended: Filters weak semantic matches while retaining relevant results** |
+| 0.8 | Strict filtering | High precision, may miss some relevant code |
+| 0.9 | Very strict filtering | Only near-exact semantic matches |
+
+**Trade-off:** Higher min_score reduces context consumption but increases risk of missing relevant results.
+
+**Research Methodology**: The 0.7 recommendation is based on:
+1. **Semantic search best practices**: Scores below 0.7 typically indicate weak conceptual matches
+2. **VoyageAI embedding behavior**: The voyage-3 model produces scores where 0.7+ indicates strong semantic similarity
+3. **Precision/recall balance**: Target retention of 50-70% of results for optimal quality
+
+To validate for your repositories:
+```bash
+python3 scripts/analysis/score_threshold_research.py --repo /path/to/your-project
+```
+
+#### Combining Filters for Targeted Queries
+
+Stack multiple filters to dramatically reduce result set:
+
+```json
+{
+  "query_text": "authentication",
+  "repository_alias": ["repo1-global", "repo2-global", "repo3-global"],
+  "min_score": 0.7,
+  "language": "python",
+  "path_filter": "*/src/*",
+  "limit": 5
+}
+```
+
+**Filter stack effect (illustrative example - actual numbers vary by repository):**
+
+1. Initial results: Many matches across 3 repos
+2. After min_score=0.7: Filters weak semantic matches
+3. After language filter: Narrows to Python only
+4. After path_filter: Limits to src/ directories only
+5. After limit=5 per repo: 15 total results returned (max)
+
+**Token estimate:** 15 results × 500 tokens = **~7,500 tokens**
+
+**Note**: Actual filtering effectiveness depends on your codebase characteristics. Run the research script to get repository-specific data.
+
+### Iterative Refinement Strategy
+
+Start narrow, expand only if needed:
+
+**Step 1: Focused Query**
+
+```json
+{
+  "query_text": "user authentication",
+  "repository_alias": ["backend-global", "api-global"],
+  "min_score": 0.7,
+  "language": "python",
+  "limit": 5
+}
+```
+
+Expected: 10 results, ~5,000 tokens
+
+**Step 2: If insufficient, expand repositories**
+
+```json
+{
+  "query_text": "user authentication",
+  "repository_alias": ["backend-global", "api-global", "auth-service-global"],
+  "min_score": 0.7,
+  "language": "python",
+  "limit": 5
+}
+```
+
+Expected: 15 results, ~7,500 tokens
+
+**Step 3: If still insufficient, broaden query**
+
+```json
+{
+  "query_text": "authentication",
+  "repository_alias": ["backend-global", "api-global", "auth-service-global"],
+  "min_score": 0.6,
+  "language": "python",
+  "limit": 5
+}
+```
+
+Expected: 18-20 results, ~9,000-10,000 tokens
+
+### Common Scenarios and Recommended Parameters
+
+#### Scenario 1: Cross-Repo Feature Discovery
+
+**Goal:** Find how a feature is implemented across multiple services
+
+```json
+{
+  "query_text": "rate limiting implementation",
+  "repository_alias": ["*-service-global"],
+  "search_mode": "semantic",
+  "min_score": 0.7,
+  "aggregation_mode": "per_repo",
+  "limit": 3
+}
+```
+
+**Why these parameters:**
+- `min_score=0.7`: Filter noise, focus on relevant implementations
+- `limit=3`: Small sample per repo, avoids context explosion
+- `per_repo` mode: Ensures each service represented
+
+#### Scenario 2: Finding All Usages of API
+
+**Goal:** Locate all places where specific API endpoint is called
+
+```json
+{
+  "query_text": "/api/v2/users",
+  "repository_alias": ["frontend-global", "mobile-global", "integration-tests-global"],
+  "search_mode": "fts",
+  "case_sensitive": true,
+  "limit": 10
+}
+```
+
+**Why these parameters:**
+- FTS mode: Exact text matching
+- No min_score needed: FTS is binary match
+- Higher limit: API calls are short, low token cost
+
+#### Scenario 3: Security Audit Across Codebase
+
+**Goal:** Find potential security issues in authentication code
+
+```json
+{
+  "query_text": "password storage or authentication bypass",
+  "repository_alias": ["*-global"],
+  "search_mode": "semantic",
+  "min_score": 0.75,
+  "accuracy": "high",
+  "limit": 5
+}
+```
+
+**Why these parameters:**
+- `min_score=0.75`: Higher threshold for sensitive queries
+- `accuracy=high`: Better embeddings for security concepts
+- Moderate limit: Security issues rare, high precision needed
+
+### When to Avoid Multi-Repository Search
+
+**Single-repo alternatives are better when:**
+
+1. Query is repository-specific ("bug in auth service")
+2. Repository count > 10 (context explosion risk)
+3. Need full file contents (use targeted read after discovery)
+4. Debugging specific issue (use temporal search in one repo)
+
+**Optimization:** Use multi-repo for discovery, then switch to single-repo for deep dive.
+
+### Error Recovery: No Results or Too Many Results
+
+#### No Results (or too few)
+
+**Problem:** Query returns empty or minimal results
+
+**Solutions (in order):**
+
+1. Lower min_score to 0.6 or 0.5
+2. Remove language filter
+3. Remove path_filter
+4. Switch from semantic to FTS mode
+5. Broaden query terms ("auth" instead of "JWT token validation")
+
+#### Too Many Results
+
+**Problem:** Query returns excessive results, consuming too much context
+
+**Solutions (in order):**
+
+1. Increase min_score to 0.8
+2. Add language filter
+3. Add path_filter (e.g., "*/src/*" to exclude tests)
+4. Reduce limit parameter
+5. Narrow query terms ("JWT token validation" instead of "auth")
+6. Reduce repository count
+
+### Performance Considerations
+
+**Multi-repo query timeout:** 30 seconds (server default)
+
+**Recommendations to avoid timeouts:**
+
+- Limit repositories to 10 or fewer
+- Use filters (language, path_filter) to narrow scope
+- Use min_score to reduce post-processing load
+
+**If timeout occurs:**
+
+Server returns partial results with error:
+
+```json
+{
+  "results": {
+    "repo1-global": [...],
+    "repo2-global": [...]
+  },
+  "errors": {
+    "repo3-global": "Query timeout after 30 seconds. Recommendations: Add --min-score 0.7; Add --path-filter */src/*; Timed out repositories: repo3-global"
+  }
+}
+```
+
+**Follow the recommendations in the error message.**
+
+### Token Budget Management Example
+
+**Agent context window:** 100,000 tokens
+
+**Breakdown:**
+
+- System prompts: 10,000 tokens (10%)
+- Conversation history: 20,000 tokens (20%)
+- Multi-repo query results: 40,000 tokens (40%)
+- Response generation: 30,000 tokens (30%)
+
+**Max query budget:** 40,000 tokens
+
+**Strategy:**
+
+```
+40,000 tokens ÷ 500 tokens/result = 80 results max
+80 results ÷ 10 repos = 8 results per repo
+Use limit=8 with min_score=0.7 filtering
+```
+
+### Best Practices Summary
+
+1. Always start with `min_score=0.7` for semantic queries
+2. Use `limit=5` per repository as starting point
+3. Prefer `per_repo` mode for balanced coverage
+4. Stack filters (language, path_filter) to narrow scope
+5. Calculate expected tokens before querying
+6. Keep query results under 50% of context window
+7. Iterate: start narrow, expand if insufficient
+8. Switch to single-repo for deep dives after discovery
+
 ## Next Steps
 
 - See [API Reference](api-reference.md) for complete parameter documentation
@@ -1844,5 +2163,6 @@ Response:
 - search_code tool: src/code_indexer/server/mcp/tools.py:9-147
 - Total parameters: 25 (verified)
 - Omni-search support: 5 tools (search_code, list_files, regex_search, git_log, git_search_commits)
+- Multi-repo score filtering: Story #675 (min_score parameter with per-repo filtering)
 
-Last Updated: 2025-12-06
+Last Updated: 2026-01-06

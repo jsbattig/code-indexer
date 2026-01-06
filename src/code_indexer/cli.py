@@ -4316,6 +4316,11 @@ def display_temporal_results(results, temporal_service):
     type=str,
     help="Query a global repository by alias (e.g., 'my-repo-global'). Allows querying registered global repos from any directory.",
 )
+@click.option(
+    "--repos",
+    type=str,
+    help="Query multiple repositories (comma-separated aliases, e.g., 'repo1,repo2,repo3'). Remote mode only. Mutually exclusive with --repo.",
+)
 # --show-unchanged removed: Story 2 - all temporal results are changes now
 @click.pass_context
 @require_mode("local", "remote", "proxy")
@@ -4344,6 +4349,7 @@ def query(
     author: Optional[str],
     chunk_type: Optional[str],
     repo: Optional[str],
+    repos: Optional[str],
 ):
     """Search the indexed codebase using semantic similarity.
 
@@ -4439,6 +4445,101 @@ def query(
 
     # Initialize console for output (needed by multiple code paths)
     console = Console()
+
+    # Handle --repos flag for multi-repository queries (Story #676)
+    if repos:
+        # AC1: Validate --repos and --repo are mutually exclusive
+        if repo:
+            console.print(
+                "[red]Error: --repos and --repo are mutually exclusive.[/red]",
+                style="red",
+            )
+            console.print(
+                "  Use --repo for single repository queries",
+                style="dim",
+            )
+            console.print(
+                "  Use --repos for multi-repository queries (comma-separated)",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # AC1: Validate repos parameter is not empty
+        repos_str = repos.strip()
+        if not repos_str:
+            console.print(
+                "[red]Error: --repos cannot be empty.[/red]",
+                style="red",
+            )
+            console.print(
+                "  Provide comma-separated repository aliases: --repos repo1,repo2",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # AC2: Validate we're in remote mode (multi-repo requires server)
+        if mode != "remote":
+            console.print(
+                "[red]Error: Multi-repository queries require remote mode.[/red]",
+                style="red",
+            )
+            console.print(
+                "  Multi-repository search is only available when connected to a CIDX server.",
+                style="dim",
+            )
+            console.print(
+                "  To configure remote mode: [cyan]cidx init --remote[/cyan]",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # AC1: Split comma-separated repository list
+        repos_list = [r.strip() for r in repos_str.split(",") if r.strip()]
+
+        if not repos_list:
+            console.print(
+                "[red]Error: No valid repositories provided.[/red]",
+                style="red",
+            )
+            console.print(
+                "  Provide comma-separated repository aliases: --repos repo1,repo2",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # AC3: Execute multi-repository query via /api/query/multi
+        try:
+            from .cli_multi_repo import (
+                execute_multi_repo_query,
+                display_multi_repo_results,
+            )
+
+            multi_repo_results = asyncio.run(
+                execute_multi_repo_query(
+                    query_text=query,
+                    repos=repos_list,
+                    limit=limit,
+                    project_root=project_root,
+                    languages=languages,
+                    exclude_languages=exclude_languages,
+                    path_filter=path_filter,
+                    exclude_paths=exclude_paths,
+                    min_score=min_score,
+                    accuracy=accuracy,
+                )
+            )
+
+            # AC4: Format and display multi-repo results
+            display_multi_repo_results(multi_repo_results, quiet=quiet, console=console)
+            sys.exit(0)
+
+        except Exception as e:
+            console.print(f"[red]Multi-repository query failed: {e}[/red]")
+            import traceback
+
+            if not quiet:
+                console.print(traceback.format_exc())
+            sys.exit(1)
 
     # AC2: Handle --repo flag for global alias resolution (Story #521)
     if repo:

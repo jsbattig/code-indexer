@@ -249,6 +249,7 @@ class TestQueryParameterParity:
         normalized_expected.add("time_range_all")  # Shortcut for full temporal range
         normalized_expected.add("case_insensitive")  # Inverse of case_sensitive
         normalized_expected.add("repo")  # Story #521: Global repo query via --repo flag
+        normalized_expected.add("repos")  # Story #676: Multi-repo query via --repos flag
 
         extra = cli_params - normalized_expected
 

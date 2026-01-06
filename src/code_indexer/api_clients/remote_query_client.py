@@ -13,6 +13,9 @@ from .base_client import CIDXRemoteAPIClient, APIClientError, AuthenticationErro
 # Import server model for consistency
 from ..server.models.api_models import QueryResultItem
 
+# Constants
+MAX_RESULTS_LIMIT = 100
+
 
 class QueryExecutionError(APIClientError):
     """Exception raised when query execution fails."""
@@ -510,3 +513,196 @@ class RemoteQueryClient(CIDXRemoteAPIClient):
             if "not found" in str(e).lower():
                 raise RepositoryAccessError(f"Repository '{repository_id}' not found")
             raise
+
+    def _validate_multi_repo_params(
+        self,
+        repositories: List[str],
+        query: str,
+        limit: int,
+        search_type: str,
+        min_score: Optional[float],
+    ) -> None:
+        """Validate parameters for multi-repository query.
+
+        Args:
+            repositories: List of repository aliases
+            query: Search query text
+            limit: Maximum results per repository
+            search_type: Type of search
+            min_score: Minimum similarity score
+
+        Raises:
+            ValueError: If any parameter is invalid
+        """
+        # Validate repositories
+        if not repositories or not isinstance(repositories, list):
+            raise ValueError("Repositories list cannot be empty")
+
+        # Validate query
+        if not query or not isinstance(query, str):
+            raise ValueError("Query cannot be empty")
+
+        query = query.strip()
+        if not query:
+            raise ValueError("Query cannot be empty")
+
+        # Validate limit
+        if not isinstance(limit, int) or limit <= 0:
+            raise ValueError("Limit must be positive")
+
+        if limit > MAX_RESULTS_LIMIT:
+            raise ValueError(f"Limit cannot exceed {MAX_RESULTS_LIMIT}")
+
+        # Validate search_type
+        valid_search_types = ["semantic", "fts", "regex", "temporal"]
+        if search_type not in valid_search_types:
+            raise ValueError(
+                f"Invalid search_type '{search_type}'. Must be one of: {', '.join(valid_search_types)}"
+            )
+
+        # Validate min_score
+        if min_score is not None:
+            if not isinstance(min_score, (int, float)) or not 0.0 <= min_score <= 1.0:
+                raise ValueError("min_score must be between 0.0 and 1.0")
+
+    def _build_multi_repo_payload(
+        self,
+        repositories: List[str],
+        query: str,
+        limit: int,
+        search_type: str,
+        min_score: Optional[float],
+        language: Optional[List[str]],
+        path_filter: Optional[List[str]],
+    ) -> Dict[str, Any]:
+        """Build request payload for multi-repository query.
+
+        Args:
+            repositories: List of repository aliases
+            query: Search query text
+            limit: Maximum results per repository
+            search_type: Type of search
+            min_score: Minimum similarity score
+            language: Language filters
+            path_filter: Path filters
+
+        Returns:
+            Dictionary with request payload
+        """
+        payload: Dict[str, Any] = {
+            "repositories": repositories,
+            "query": query,
+            "search_type": search_type,
+            "limit": limit,
+        }
+
+        # Add optional parameters
+        if min_score is not None:
+            payload["min_score"] = min_score
+
+        # Language filters - server expects single string per MultiSearchRequest
+        if language:
+            payload["language"] = (
+                language[0] if len(language) == 1 else ",".join(language)
+            )
+
+        # Path filters - server expects single string per MultiSearchRequest
+        if path_filter:
+            payload["path_filter"] = (
+                path_filter[0] if len(path_filter) == 1 else ",".join(path_filter)
+            )
+
+        return payload
+
+    async def execute_multi_repo_query(
+        self,
+        repositories: List[str],
+        query: str,
+        limit: int = 10,
+        search_type: str = "semantic",
+        min_score: Optional[float] = None,
+        language: Optional[List[str]] = None,
+        exclude_language: Optional[List[str]] = None,
+        path_filter: Optional[List[str]] = None,
+        exclude_path: Optional[List[str]] = None,
+        accuracy: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Execute multi-repository search via /api/query/multi endpoint.
+
+        Args:
+            repositories: List of repository aliases to search
+            query: Search query text
+            limit: Maximum number of results per repository (default: 10)
+            search_type: Type of search (semantic, fts, regex, temporal)
+            min_score: Minimum similarity score threshold (optional)
+            language: Filter by programming languages (optional)
+            exclude_language: Exclude programming languages (optional, not supported by server yet)
+            path_filter: Filter by file path patterns (optional)
+            exclude_path: Exclude file path patterns (optional, not supported by server yet)
+            accuracy: Search accuracy profile (optional, not supported by server yet)
+
+        Returns:
+            Dictionary containing:
+                - results: Dict mapping repository ID to list of results
+                - metadata: Search execution metadata (total_results, total_repos_searched, execution_time_ms)
+                - errors: Optional dict mapping repository ID to error messages
+
+        Raises:
+            ValueError: If parameters are invalid
+            QueryExecutionError: If query execution fails
+            NetworkError: If network operation fails
+        """
+        # Validate parameters
+        self._validate_multi_repo_params(
+            repositories, query, limit, search_type, min_score
+        )
+
+        # Build request payload
+        payload = self._build_multi_repo_payload(
+            repositories, query, limit, search_type, min_score, language, path_filter
+        )
+
+        # Note: exclude_language, exclude_path, and accuracy are accepted for API consistency
+        # but not currently supported by server MultiSearchRequest model
+
+        multi_query_endpoint = "/api/query/multi"
+
+        try:
+            response = await self._authenticated_request(
+                "POST", multi_query_endpoint, json=payload
+            )
+
+            if response.status_code == 200:
+                result: Dict[str, Any] = response.json()
+                return result
+
+            elif response.status_code == 422:
+                error_detail = response.json().get("detail", "Invalid request")
+                raise ValueError(f"Request validation failed: {error_detail}")
+
+            elif response.status_code == 401:
+                error_detail = response.json().get("detail", "Authentication required")
+                raise QueryExecutionError(f"Authentication failed: {error_detail}")
+
+            elif response.status_code == 500:
+                error_detail = response.json().get("detail", "Internal server error")
+                raise QueryExecutionError(
+                    f"Multi-repository query failed: {error_detail}"
+                )
+
+            else:
+                error_detail = response.json().get(
+                    "detail", f"HTTP {response.status_code}"
+                )
+                raise QueryExecutionError(
+                    f"Multi-repository query failed: {error_detail}"
+                )
+
+        except (ValueError, QueryExecutionError):
+            raise
+        except Exception as e:
+            if isinstance(e, APIClientError):
+                raise QueryExecutionError(f"Multi-repository query failed: {e}")
+            raise QueryExecutionError(
+                f"Unexpected error in multi-repository query: {e}"
+            )
