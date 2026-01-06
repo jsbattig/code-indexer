@@ -22,9 +22,11 @@ from typing import List, Tuple
 class LoggingCorrelationUpdater:
     """Updates Python files to add correlation_id to logging calls."""
 
-    IMPORT_STATEMENT = "from code_indexer.server.middleware.correlation import get_correlation_id"
+    IMPORT_STATEMENT = (
+        "from code_indexer.server.middleware.correlation import get_correlation_id"
+    )
     LOGGING_METHODS = {"error", "warning", "exception", "info", "debug", "critical"}
-    LOGGER_CALL_PATTERN = r'logger\.(error|warning|exception|info|debug|critical)\s*\('
+    LOGGER_CALL_PATTERN = r"logger\.(error|warning|exception|info|debug|critical)\s*\("
 
     def __init__(self, dry_run: bool = False, backup: bool = True):
         """
@@ -55,7 +57,7 @@ class LoggingCorrelationUpdater:
             List of tuples: (line_number, method_name, full_line_text)
         """
         calls = []
-        lines = source_code.split('\n')
+        lines = source_code.split("\n")
 
         for line_num, line in enumerate(lines, start=1):
             match = re.search(self.LOGGER_CALL_PATTERN, line)
@@ -102,19 +104,19 @@ class LoggingCorrelationUpdater:
         if self.has_import_statement(source_code):
             return source_code
 
-        lines = source_code.split('\n')
+        lines = source_code.split("\n")
         insert_index = 0
 
         # Find last import statement
         for i, line in enumerate(lines):
-            if line.strip().startswith(('import ', 'from ')):
+            if line.strip().startswith(("import ", "from ")):
                 insert_index = i + 1
-            elif line.strip() and not line.strip().startswith('#'):
+            elif line.strip() and not line.strip().startswith("#"):
                 break
 
         lines.insert(insert_index, self.IMPORT_STATEMENT)
         self.stats["imports_added"] += 1
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def find_matching_paren(self, text: str, start_pos: int) -> int:
         """
@@ -129,7 +131,7 @@ class LoggingCorrelationUpdater:
         Returns:
             Position of matching closing parenthesis, or -1 if not found
         """
-        if start_pos >= len(text) or text[start_pos] != '(':
+        if start_pos >= len(text) or text[start_pos] != "(":
             return -1
 
         depth = 0
@@ -144,7 +146,7 @@ class LoggingCorrelationUpdater:
             if escaped:
                 escaped = False
                 continue
-            if char == '\\':
+            if char == "\\":
                 escaped = True
                 continue
 
@@ -160,9 +162,9 @@ class LoggingCorrelationUpdater:
 
             # Only count parentheses outside strings
             if not in_string:
-                if char == '(':
+                if char == "(":
                     depth += 1
-                elif char == ')':
+                elif char == ")":
                     depth -= 1
                     if depth == 0:
                         return i
@@ -188,7 +190,7 @@ class LoggingCorrelationUpdater:
             return line
 
         # Find logger.method( call
-        pattern = rf'logger\.{method}\s*\('
+        pattern = rf"logger\.{method}\s*\("
         match = re.search(pattern, line)
         if not match:
             return line
@@ -202,14 +204,18 @@ class LoggingCorrelationUpdater:
             return line
 
         # Pattern 1: No extra parameter - add new extra dict
-        if 'extra=' not in line[open_paren_pos:close_paren_pos]:
+        if "extra=" not in line[open_paren_pos:close_paren_pos]:
             # Insert before closing paren
-            updated = line[:close_paren_pos] + ', extra={"correlation_id": get_correlation_id()}' + line[close_paren_pos:]
+            updated = (
+                line[:close_paren_pos]
+                + ', extra={"correlation_id": get_correlation_id()}'
+                + line[close_paren_pos:]
+            )
             self.stats["logging_calls_updated"] += 1
             return updated
 
         # Pattern 2: Existing extra dict - merge correlation_id
-        extra_pattern = rf'extra\s*=\s*\{{([^}}]*)\}}'
+        extra_pattern = r"extra\s*=\s*\{([^}]*)\}"
         match = re.search(extra_pattern, line[open_paren_pos:close_paren_pos])
         if match:
             existing_items = match.group(1).strip()
@@ -217,7 +223,9 @@ class LoggingCorrelationUpdater:
 
             if existing_items:
                 # Has items - add correlation_id to dict
-                new_extra = full_match.replace('}', ', "correlation_id": get_correlation_id()}')
+                new_extra = full_match.replace(
+                    "}", ', "correlation_id": get_correlation_id()}'
+                )
             else:
                 # Empty dict - just add correlation_id
                 new_extra = 'extra={"correlation_id": get_correlation_id()}'
@@ -234,7 +242,7 @@ class LoggingCorrelationUpdater:
     def _create_backup(self, file_path: Path) -> None:
         """Create backup of file before modification."""
         if self.backup and not self.dry_run:
-            backup_path = file_path.with_suffix(file_path.suffix + '.bak')
+            backup_path = file_path.with_suffix(file_path.suffix + ".bak")
             shutil.copy2(file_path, backup_path)
 
     def update_file(self, file_path: Path) -> bool:
@@ -248,7 +256,7 @@ class LoggingCorrelationUpdater:
             True if file was modified, False otherwise
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 original_source = f.read()
 
             logging_calls = self.find_logging_calls(original_source)
@@ -257,7 +265,7 @@ class LoggingCorrelationUpdater:
 
             self._create_backup(file_path)
 
-            lines = original_source.split('\n')
+            lines = original_source.split("\n")
             modified = False
 
             for line_num, method, original_line in logging_calls:
@@ -270,11 +278,11 @@ class LoggingCorrelationUpdater:
             if not modified:
                 return False
 
-            updated_source = '\n'.join(lines)
+            updated_source = "\n".join(lines)
             updated_source = self.add_import_statement(updated_source)
 
             if not self.dry_run:
-                with open(file_path, 'w', encoding='utf-8') as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(updated_source)
 
             self.stats["files_modified"] += 1
@@ -338,25 +346,19 @@ def main():
         description="Update Python logging calls with correlation_id support"
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show changes without modifying files"
+        "--dry-run", action="store_true", help="Show changes without modifying files"
     )
     parser.add_argument(
-        "--no-backup",
-        action="store_true",
-        help="Don't create .bak backups"
+        "--no-backup", action="store_true", help="Don't create .bak backups"
     )
     parser.add_argument(
         "--priority",
         choices=["p0", "p1", "p2", "all"],
         default="all",
-        help="Which priority files to process (default: all)"
+        help="Which priority files to process (default: all)",
     )
     parser.add_argument(
-        "--files",
-        nargs='+',
-        help="Specific files to process (overrides --priority)"
+        "--files", nargs="+", help="Specific files to process (overrides --priority)"
     )
 
     args = parser.parse_args()
@@ -369,9 +371,18 @@ def main():
         "p0": ["auth/oidc/*.py", "auth/oauth/*.py", "sync/*.py"],
         "p1": ["repositories/*.py", "query/*.py"],
         "p2": [
-            "routers/*.py", "web/*.py", "mcp/*.py", "services/*.py",
-            "validation/*.py", "auto_update/*.py", "middleware/*.py",
-            "git/*.py", "cache/*.py", "*.py", "auth/*.py", "omni/*.py"
+            "routers/*.py",
+            "web/*.py",
+            "mcp/*.py",
+            "services/*.py",
+            "validation/*.py",
+            "auto_update/*.py",
+            "middleware/*.py",
+            "git/*.py",
+            "cache/*.py",
+            "*.py",
+            "auth/*.py",
+            "omni/*.py",
         ],
     }
 
@@ -392,10 +403,7 @@ def main():
     print(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE UPDATE'}")
     print(f"Backup: {'DISABLED' if args.no_backup else 'ENABLED'}\n")
 
-    updater = LoggingCorrelationUpdater(
-        dry_run=args.dry_run,
-        backup=not args.no_backup
-    )
+    updater = LoggingCorrelationUpdater(dry_run=args.dry_run, backup=not args.no_backup)
     updater.process_files(file_paths)
     updater.print_summary()
 

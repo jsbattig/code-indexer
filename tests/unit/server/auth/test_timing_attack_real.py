@@ -67,7 +67,6 @@ class TestRealTimingAttackPrevention:
                 "code_indexer.server.auth.dependencies.user_manager"
             ) as mock_dep_user_mgr:
                 with patch("code_indexer.server.app.user_manager") as mock_user_mgr:
-
                     # Mock JWT authentication
                     mock_jwt.validate_token.return_value = {
                         "username": "timingtest",

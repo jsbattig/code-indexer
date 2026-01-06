@@ -100,7 +100,6 @@ class TestAuthenticationStatusCommands:
                 "code_indexer.remote.config.load_remote_configuration"
             ) as mock_load_config,
         ):
-
             # Mock dependencies
             mock_find_root.return_value = project_dir
             mock_load_config.return_value = {
@@ -155,7 +154,6 @@ class TestAuthenticationStatusCommands:
                 "code_indexer.remote.config.load_remote_configuration"
             ) as mock_load_config,
         ):
-
             # Mock dependencies
             mock_find_root.return_value = project_dir
             mock_load_config.return_value = {
@@ -513,7 +511,6 @@ class TestAuthenticationStatusCommands:
                 "code_indexer.remote.config.load_remote_configuration"
             ) as mock_load_config,
         ):
-
             # Mock dependencies
             mock_find_root.return_value = project_dir
             mock_load_config.return_value = {

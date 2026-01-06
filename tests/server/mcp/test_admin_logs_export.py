@@ -19,7 +19,8 @@ def log_db_path(tmp_path):
     # Create database with schema (matching SQLiteLogHandler)
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
@@ -30,7 +31,8 @@ def log_db_path(tmp_path):
             user_id TEXT,
             request_path TEXT
         )
-    """)
+    """
+    )
 
     # Create indexes
     cursor.execute("CREATE INDEX idx_timestamp ON logs(timestamp)")
@@ -102,7 +104,7 @@ def insert_test_logs(db_path: Path, count: int = 10):
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (timestamp, level, source, message, correlation_id, user_id, request_path)
+            (timestamp, level, source, message, correlation_id, user_id, request_path),
         )
 
     conn.commit()
@@ -117,6 +119,7 @@ class TestAdminLogsExportPermissions:
         """Test admin user can export logs."""
         # Set log_db_path in app.state
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data
@@ -139,9 +142,12 @@ class TestAdminLogsExportPermissions:
         assert data["count"] == 5
 
     @pytest.mark.asyncio
-    async def test_power_user_cannot_export_logs(self, log_db_path, power_user, monkeypatch):
+    async def test_power_user_cannot_export_logs(
+        self, log_db_path, power_user, monkeypatch
+    ):
         """Test power_user cannot export logs (requires admin role)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Attempt to export logs
@@ -153,9 +159,12 @@ class TestAdminLogsExportPermissions:
         assert "permission" in data["error"].lower() or "admin" in data["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_normal_user_cannot_export_logs(self, log_db_path, normal_user, monkeypatch):
+    async def test_normal_user_cannot_export_logs(
+        self, log_db_path, normal_user, monkeypatch
+    ):
         """Test normal_user cannot export logs (requires admin role)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Attempt to export logs
@@ -174,6 +183,7 @@ class TestAdminLogsExportJSONFormat:
     async def test_json_export_structure(self, log_db_path, admin_user, monkeypatch):
         """Test JSON export produces valid JSON with metadata."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 3)
@@ -198,15 +208,14 @@ class TestAdminLogsExportJSONFormat:
     async def test_json_export_metadata(self, log_db_path, admin_user, monkeypatch):
         """Test JSON export includes metadata with filters and timestamp."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 5)
 
-        response = await admin_logs_export({
-            "format": "json",
-            "search": "test",
-            "level": "ERROR"
-        }, admin_user)
+        response = await admin_logs_export(
+            {"format": "json", "search": "test", "level": "ERROR"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
         export_data = json.loads(data["data"])
 
@@ -218,9 +227,12 @@ class TestAdminLogsExportJSONFormat:
         assert export_data["metadata"]["filters"]["level"] == "ERROR"
 
     @pytest.mark.asyncio
-    async def test_json_export_log_structure(self, log_db_path, admin_user, monkeypatch):
+    async def test_json_export_log_structure(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test each log entry has all required fields."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 1)
@@ -247,6 +259,7 @@ class TestAdminLogsExportCSVFormat:
     async def test_csv_export_structure(self, log_db_path, admin_user, monkeypatch):
         """Test CSV export produces valid CSV with headers."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 3)
@@ -261,7 +274,7 @@ class TestAdminLogsExportCSVFormat:
         assert "data" in data
 
         # Parse CSV data (strip BOM for parsing)
-        csv_data = data["data"].lstrip('\ufeff')
+        csv_data = data["data"].lstrip("\ufeff")
         reader = csv.DictReader(io.StringIO(csv_data))
         rows = list(reader)
 
@@ -275,6 +288,7 @@ class TestAdminLogsExportCSVFormat:
     async def test_csv_export_bom(self, log_db_path, admin_user, monkeypatch):
         """Test CSV export includes UTF-8 BOM for Excel compatibility."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 1)
@@ -284,21 +298,27 @@ class TestAdminLogsExportCSVFormat:
 
         # Verify BOM at start of CSV
         csv_data = data["data"]
-        assert csv_data.startswith('\ufeff')
+        assert csv_data.startswith("\ufeff")
 
     @pytest.mark.asyncio
-    async def test_csv_export_special_characters(self, log_db_path, admin_user, monkeypatch):
+    async def test_csv_export_special_characters(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test CSV export properly escapes special characters."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert log with special characters
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES (?, 'ERROR', 'test', 'Message with "quotes" and, commas', 'corr-1', 'user@example.com', '/api')
-        """, (datetime.now(timezone.utc).isoformat(),))
+        """,
+            (datetime.now(timezone.utc).isoformat(),),
+        )
         conn.commit()
         conn.close()
 
@@ -306,7 +326,7 @@ class TestAdminLogsExportCSVFormat:
         data = json.loads(response["content"][0]["text"])
 
         # Parse CSV to verify proper escaping (strip BOM for parsing)
-        csv_data = data["data"].lstrip('\ufeff')
+        csv_data = data["data"].lstrip("\ufeff")
         reader = csv.DictReader(io.StringIO(csv_data))
         rows = list(reader)
 
@@ -318,33 +338,38 @@ class TestAdminLogsExportFiltering:
     """Test export filtering functionality (AC5 - MCP API filtering)."""
 
     @pytest.mark.asyncio
-    async def test_export_with_search_filter(self, log_db_path, admin_user, monkeypatch):
+    async def test_export_with_search_filter(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test export respects search filter."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert mixed logs
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'INFO', 'test', 'User authentication successful', 'corr-1', 'user1', '/login'),
                 (?, 'ERROR', 'test', 'Database connection failed', 'corr-2', 'user2', '/api'),
                 (?, 'INFO', 'test', 'Password reset requested', 'corr-3', 'user3', '/reset')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
         # Export with search filter
-        response = await admin_logs_export({
-            "format": "json",
-            "search": "authentication"
-        }, admin_user)
+        response = await admin_logs_export(
+            {"format": "json", "search": "authentication"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -357,30 +382,33 @@ class TestAdminLogsExportFiltering:
     async def test_export_with_level_filter(self, log_db_path, admin_user, monkeypatch):
         """Test export respects level filter."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert mixed level logs
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'ERROR', 'test', 'Error 1', 'corr-1', 'user1', '/api'),
                 (?, 'INFO', 'test', 'Info 1', 'corr-2', 'user2', '/api'),
                 (?, 'ERROR', 'test', 'Error 2', 'corr-3', 'user1', '/api')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
         # Export with level filter
-        response = await admin_logs_export({
-            "format": "json",
-            "level": "ERROR"
-        }, admin_user)
+        response = await admin_logs_export(
+            {"format": "json", "level": "ERROR"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -389,34 +417,38 @@ class TestAdminLogsExportFiltering:
         assert all(log["level"] == "ERROR" for log in export_data["logs"])
 
     @pytest.mark.asyncio
-    async def test_export_with_combined_filters(self, log_db_path, admin_user, monkeypatch):
+    async def test_export_with_combined_filters(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test export with multiple filters (AC6 - filtered export accuracy)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'ERROR', 'test', 'Database error occurred', 'corr-1', 'user1', '/api'),
                 (?, 'INFO', 'test', 'Database connection successful', 'corr-2', 'user2', '/api'),
                 (?, 'ERROR', 'test', 'Authentication failed', 'corr-3', 'user3', '/login')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
         # Export with combined filters
-        response = await admin_logs_export({
-            "format": "json",
-            "search": "database",
-            "level": "ERROR"
-        }, admin_user)
+        response = await admin_logs_export(
+            {"format": "json", "search": "database", "level": "ERROR"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -434,6 +466,7 @@ class TestAdminLogsExportEmptyResults:
     async def test_export_empty_database(self, log_db_path, admin_user, monkeypatch):
         """Test export of empty database returns valid empty export."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         response = await admin_logs_export({"format": "json"}, admin_user)
@@ -448,14 +481,14 @@ class TestAdminLogsExportEmptyResults:
     async def test_export_no_matches(self, log_db_path, admin_user, monkeypatch):
         """Test export with filters that match nothing."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 5)
 
-        response = await admin_logs_export({
-            "format": "json",
-            "search": "nonexistent_xyz_123"
-        }, admin_user)
+        response = await admin_logs_export(
+            {"format": "json", "search": "nonexistent_xyz_123"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -469,6 +502,7 @@ class TestAdminLogsExportMCPCompliance:
     async def test_mcp_response_structure(self, log_db_path, admin_user, monkeypatch):
         """Test response follows MCP content array format."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 3)

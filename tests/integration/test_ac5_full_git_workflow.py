@@ -57,11 +57,7 @@ def git_state_manager():
 
     Uses mock config object for configuration (config is not a git operation).
     """
-    config = Mock(
-        enable_pr_creation=True,
-        pr_base_branch="main",
-        default_branch="main"
-    )
+    config = Mock(enable_pr_creation=True, pr_base_branch="main", default_branch="main")
     return GitStateManager(config=config, audit_logger=None)
 
 
@@ -116,7 +112,9 @@ def test_ac5_branch_creation_with_real_git(mock_git_repo, git_state_manager):
     assert original_branch == "main"
 
     # Create fix branch using GitStateManager (REAL git checkout -b)
-    branch_name = git_state_manager._create_and_checkout_fix_branch(mock_git_repo.repo_path)
+    branch_name = git_state_manager._create_and_checkout_fix_branch(
+        mock_git_repo.repo_path
+    )
 
     # Verify branch name format
     assert branch_name.startswith("scip-fix-")
@@ -153,9 +151,7 @@ def test_ac5_commit_creation_with_real_git(mock_git_repo, git_state_manager):
     files_modified = [Path("fix.py")]
     fix_description = "Resolved missing dependency: requests"
     commit_hash = git_state_manager._stage_and_commit_changes(
-        mock_git_repo.repo_path,
-        files_modified,
-        fix_description
+        mock_git_repo.repo_path, files_modified, fix_description
     )
 
     # Verify commit hash returned
@@ -168,7 +164,7 @@ def test_ac5_commit_creation_with_real_git(mock_git_repo, git_state_manager):
         cwd=mock_git_repo.repo_path,
         capture_output=True,
         text=True,
-        check=True
+        check=True,
     )
 
     # Verify commit message contains fix description
@@ -190,13 +186,13 @@ def test_ac5_push_to_remote_with_real_git(mock_git_repo, git_state_manager):
     4. Verify commit is on remote
     """
     # Create branch and commit
-    branch_name = git_state_manager._create_and_checkout_fix_branch(mock_git_repo.repo_path)
+    branch_name = git_state_manager._create_and_checkout_fix_branch(
+        mock_git_repo.repo_path
+    )
     fix_file = mock_git_repo.repo_path / "fix.py"
     fix_file.write_text("# Fixed code\n")
     commit_hash = git_state_manager._stage_and_commit_changes(
-        mock_git_repo.repo_path,
-        [Path("fix.py")],
-        "Fixed dependency issue"
+        mock_git_repo.repo_path, [Path("fix.py")], "Fixed dependency issue"
     )
 
     # Push branch to remote (REAL git push)
@@ -208,7 +204,7 @@ def test_ac5_push_to_remote_with_real_git(mock_git_repo, git_state_manager):
         cwd=mock_git_repo.repo_path,
         capture_output=True,
         text=True,
-        check=True
+        check=True,
     )
 
     # Verify branch found on remote
@@ -264,7 +260,7 @@ def test_ac5_full_pr_workflow_with_real_git(mock_git_repo, git_state_manager):
                 files_modified=[Path("pyproject.toml")],
                 pr_description="fix(scip): Add missing requests dependency",
                 platform="github",
-                job_id="test-job-ac5"
+                job_id="test-job-ac5",
             )
 
     # ASSERT: PR workflow succeeded
@@ -287,7 +283,7 @@ def test_ac5_full_pr_workflow_with_real_git(mock_git_repo, git_state_manager):
         cwd=mock_git_repo.repo_path,
         capture_output=True,
         text=True,
-        check=True
+        check=True,
     )
     assert result.branch_name in remote_result.stdout
 
@@ -355,7 +351,7 @@ def test_ac5_no_errors_during_git_operations(mock_git_repo, git_state_manager):
                     files_modified=[Path("requirements.txt")],
                     pr_description="fix(scip): Add missing requests dependency",
                     platform="github",
-                    job_id="test-job-no-errors"
+                    job_id="test-job-no-errors",
                 )
 
                 # ASSERT: Success without errors

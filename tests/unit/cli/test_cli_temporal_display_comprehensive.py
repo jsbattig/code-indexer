@@ -227,7 +227,6 @@ class TestCLITemporalDisplayComprehensive(TestCase):
                 "src.code_indexer.cli._display_file_chunk_match"
             ) as mock_file_display,
         ):
-
             display_temporal_results(results, mock_service)
 
             # Verify commit message was displayed first (index=1)
@@ -297,7 +296,6 @@ class TestCLITemporalDisplayComprehensive(TestCase):
                 "src.code_indexer.cli._display_file_chunk_match"
             ) as mock_file_display,
         ):
-
             display_temporal_results(results, mock_service)
 
             # Verify commit messages were displayed as index 1, 2

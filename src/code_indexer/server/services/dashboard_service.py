@@ -62,7 +62,9 @@ class DashboardData:
 class DashboardService:
     """Service for aggregating dashboard data from various internal sources."""
 
-    def get_dashboard_data(self, username: str, user_role: str = "user") -> DashboardData:
+    def get_dashboard_data(
+        self, username: str, user_role: str = "user"
+    ) -> DashboardData:
         """
         Get all dashboard data for display.
 
@@ -121,7 +123,10 @@ class DashboardService:
         try:
             return health_service.get_system_health()
         except Exception as e:
-            logger.error(f"Failed to get health data: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get health data: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             # Return degraded status on error
             from ..models.api_models import (
                 ServiceHealthInfo,
@@ -188,7 +193,10 @@ class DashboardService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to get job counts: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get job counts: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return JobCounts()
 
     def _get_repo_counts(self, username: str, user_role: str = "user") -> RepoCounts:
@@ -213,7 +221,10 @@ class DashboardService:
                 golden_repos = golden_manager.list_golden_repos()
                 golden_count = len(golden_repos) if golden_repos else 0
         except Exception as e:
-            logger.error(f"Failed to get golden repos count: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get golden repos count: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Get activated repos count and aggregate vector store file counts
         try:
@@ -221,7 +232,9 @@ class DashboardService:
             if activated_manager:
                 # Bug #671: Admin users see all activated repos across all users
                 if user_role == "admin":
-                    activated_repos = activated_manager.list_all_activated_repositories()
+                    activated_repos = (
+                        activated_manager.list_all_activated_repositories()
+                    )
                 else:
                     activated_repos = activated_manager.list_activated_repositories(
                         username
@@ -245,20 +258,27 @@ class DashboardService:
                         # Get indexed file count from vector store for this repo
                         collection_name = repo.get("collection_name")
                         if not collection_name:
-                            logger.warning(f"Repo missing collection_name: {repo}", extra={"correlation_id": get_correlation_id()})
+                            logger.warning(
+                                f"Repo missing collection_name: {repo}",
+                                extra={"correlation_id": get_correlation_id()},
+                            )
                             continue
 
                         count = store.get_indexed_file_count_fast(collection_name)
                         total_files += count
                     except Exception as e:
                         logger.warning(
-                            f"Failed to get vector store count for {repo.get('collection_name', 'unknown')}: {e}"
-                        , extra={"correlation_id": get_correlation_id()})
+                            f"Failed to get vector store count for {repo.get('collection_name', 'unknown')}: {e}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         # Continue with other repos even if one fails
                         continue
 
         except Exception as e:
-            logger.error(f"Failed to get activated repos count: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get activated repos count: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         return RepoCounts(
             golden=golden_count,
@@ -312,7 +332,10 @@ class DashboardService:
             return recent
 
         except Exception as e:
-            logger.error(f"Failed to get recent jobs: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get recent jobs: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     def _get_background_job_manager(self) -> Optional[Any]:
@@ -377,7 +400,9 @@ class DashboardService:
 
         return None
 
-    def get_temporal_index_status(self, username: str, repo_alias: str) -> Dict[str, Any]:
+    def get_temporal_index_status(
+        self, username: str, repo_alias: str
+    ) -> Dict[str, Any]:
         """
         Get temporal indexing status for repository.
 
@@ -412,7 +437,7 @@ class DashboardService:
                 "format": "none",
                 "file_count": 0,
                 "needs_reindex": False,
-                "message": "No temporal index (git history not indexed)"
+                "message": "No temporal index (git history not indexed)",
             }
 
         # Detect format using TemporalMetadataStore
@@ -432,14 +457,14 @@ class DashboardService:
                 "format": "v2",
                 "file_count": file_count,
                 "needs_reindex": False,
-                "message": f"Temporal indexing active (v2 format) - {file_count} files indexed"
+                "message": f"Temporal indexing active (v2 format) - {file_count} files indexed",
             }
         else:  # v1 format
             return {
                 "format": "v1",
                 "file_count": file_count,
                 "needs_reindex": True,
-                "message": "Legacy temporal index format (v1) detected - Re-index required: cidx index --index-commits --reconcile"
+                "message": "Legacy temporal index format (v1) detected - Re-index required: cidx index --index-commits --reconcile",
             }
 
 

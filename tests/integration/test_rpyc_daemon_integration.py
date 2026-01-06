@@ -558,6 +558,7 @@ try:
     from unittest.mock import MagicMock
 except ImportError:
     from typing import Any
+
     MagicMock: type[Any] = MockMagicMock  # type: ignore[misc]
 
 

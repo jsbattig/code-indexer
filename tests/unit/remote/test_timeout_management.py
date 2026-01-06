@@ -377,7 +377,6 @@ class TestTimeoutConfiguration:
                 "code_indexer.remote.sync_execution.load_repository_link"
             ) as mock_link,
         ):
-
             # Setup mocks
             mock_config.return_value = {"server_url": "http://test.com"}
             mock_creds.return_value = {"username": "test", "password": "test"}
@@ -524,7 +523,6 @@ class TestIntegrationTimeoutScenarios:
                 "code_indexer.remote.sync_execution.load_repository_link"
             ) as mock_link,
         ):
-
             mock_config.return_value = {"server_url": "http://test.com"}
             mock_creds.return_value = {"username": "test", "password": "test"}
             mock_link.return_value = Mock(alias="test-repo")

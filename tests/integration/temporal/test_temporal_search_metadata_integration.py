@@ -36,9 +36,9 @@ class TestTemporalSearchMetadataIntegration:
                     "payload": {
                         "path": "auth.py",
                         "commit_hash": "abc123",
-                        "chunk_index": 0
+                        "chunk_index": 0,
                     },
-                    "chunk_text": "authentication logic for user login"
+                    "chunk_text": "authentication logic for user login",
                 },
                 {
                     "id": "project:diff:def456:database.py:0",
@@ -46,10 +46,10 @@ class TestTemporalSearchMetadataIntegration:
                     "payload": {
                         "path": "database.py",
                         "commit_hash": "def456",
-                        "chunk_index": 0
+                        "chunk_index": 0,
                     },
-                    "chunk_text": "database query execution"
-                }
+                    "chunk_text": "database query execution",
+                },
             ]
             store.upsert_points("code-indexer-temporal", points)
 
@@ -72,7 +72,7 @@ class TestTemporalSearchMetadataIntegration:
                 query="authentication",
                 embedding_provider=mock_provider,
                 collection_name="code-indexer-temporal",
-                limit=10
+                limit=10,
             )
 
             # Then: Results should contain correct point_ids (resolved from hash prefixes)
@@ -80,7 +80,10 @@ class TestTemporalSearchMetadataIntegration:
 
             # Verify at least one result has the expected point_id
             point_ids = {r["id"] for r in results}
-            assert "project:diff:abc123:auth.py:0" in point_ids or "project:diff:def456:database.py:0" in point_ids
+            assert (
+                "project:diff:abc123:auth.py:0" in point_ids
+                or "project:diff:def456:database.py:0" in point_ids
+            )
 
             # Verify payloads are loaded correctly
             for result in results:
@@ -99,7 +102,9 @@ class TestTemporalSearchMetadataIntegration:
             long_path = "deeply/nested/" + "directory/" * 20 + "VeryLongFileName.py"
             long_point_id = f"project:diff:longcommithash:{long_path}:0"
 
-            assert len(long_point_id) > 255, "point_id should exceed 255 chars for this test"
+            assert (
+                len(long_point_id) > 255
+            ), "point_id should exceed 255 chars for this test"
 
             point = {
                 "id": long_point_id,
@@ -107,9 +112,9 @@ class TestTemporalSearchMetadataIntegration:
                 "payload": {
                     "path": long_path,
                     "commit_hash": "longcommithash",
-                    "chunk_index": 0
+                    "chunk_index": 0,
                 },
-                "chunk_text": "test content for long path file"
+                "chunk_text": "test content for long path file",
             }
             store.upsert_points("code-indexer-temporal", [point])
 
@@ -122,7 +127,7 @@ class TestTemporalSearchMetadataIntegration:
             vector_files = list(temporal_path.rglob("vector_*.json"))
             assert len(vector_files) == 1
             filename = vector_files[0].stem
-            hash_prefix = filename[len("vector_"):]
+            hash_prefix = filename[len("vector_") :]
 
             # Verify mapping exists
             retrieved_point_id = metadata_store.get_point_id(hash_prefix)
@@ -138,7 +143,7 @@ class TestTemporalSearchMetadataIntegration:
                 query="test content",
                 embedding_provider=mock_provider,
                 collection_name="code-indexer-temporal",
-                limit=10
+                limit=10,
             )
 
             # Then: Should return result with correct point_id (resolved via metadata)
@@ -160,9 +165,9 @@ class TestTemporalSearchMetadataIntegration:
                     "path": "file.py",
                     "commit_hash": "commit789",
                     "chunk_index": 0,
-                    "commit_message": "Add new feature"
+                    "commit_message": "Add new feature",
                 },
-                "chunk_text": "feature implementation"
+                "chunk_text": "feature implementation",
             }
             store.upsert_points("code-indexer-temporal", [point])
 
@@ -177,7 +182,7 @@ class TestTemporalSearchMetadataIntegration:
                 query="feature",
                 embedding_provider=mock_provider,
                 collection_name="code-indexer-temporal",
-                limit=10
+                limit=10,
             )
 
             # Then: Results should include commit information
@@ -208,7 +213,7 @@ class TestTemporalSearchMetadataIntegration:
                     query="anything",
                     embedding_provider=mock_provider,
                     collection_name="code-indexer-temporal",
-                    limit=10
+                    limit=10,
                 )
 
     def test_search_with_multiple_chunks_same_file_resolves_correctly(self):
@@ -226,9 +231,9 @@ class TestTemporalSearchMetadataIntegration:
                     "payload": {
                         "path": "module.py",
                         "commit_hash": "xyz",
-                        "chunk_index": i
+                        "chunk_index": i,
                     },
-                    "chunk_text": f"chunk content {i}"
+                    "chunk_text": f"chunk content {i}",
                 }
                 for i in range(3)
             ]
@@ -249,7 +254,7 @@ class TestTemporalSearchMetadataIntegration:
                 query="chunk",
                 embedding_provider=mock_provider,
                 collection_name="code-indexer-temporal",
-                limit=10
+                limit=10,
             )
 
             # Then: All chunks should be returned with correct point_ids

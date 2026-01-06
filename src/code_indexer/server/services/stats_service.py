@@ -111,7 +111,10 @@ class RepositoryStatsService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to initialize real dependencies: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to initialize real dependencies: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError(f"Cannot initialize repository stats service: {e}")
 
     def get_repository_stats(
@@ -192,7 +195,10 @@ class RepositoryStatsService:
                 )
 
         except Exception as e:
-            logger.error(f"Failed to get repository path for {repo_id}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get repository path for {repo_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             if isinstance(e, FileNotFoundError):
                 raise
             raise RuntimeError(f"Unable to access repository {repo_id}: {e}")
@@ -229,11 +235,17 @@ class RepositoryStatsService:
                         file_stats.append(file_stat)
 
                     except (OSError, PermissionError) as e:
-                        logger.warning(f"Cannot access file {file_path}: {e}", extra={"correlation_id": get_correlation_id()})
+                        logger.warning(
+                            f"Cannot access file {file_path}: {e}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         continue
 
         except PermissionError as e:
-            logger.error(f"Cannot access repository directory {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Cannot access repository directory {repo_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise
 
         return file_stats
@@ -275,7 +287,10 @@ class RepositoryStatsService:
                 "This service requires actual vector store query to determine file indexing status."
             )
         except Exception as e:
-            logger.warning(f"Cannot check indexing status for {file_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Cannot check indexing status for {file_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             # Fall back to extension check only as last resort
             extension = file_path.suffix.lower()
             indexable_extensions = {
@@ -462,7 +477,10 @@ class RepositoryStatsService:
             return int(vectors_count) if vectors_count is not None else 0
 
         except Exception as e:
-            logger.error(f"Failed to get embedding count for {repo_id}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get embedding count for {repo_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError(
                 f"Unable to retrieve embedding count for repository {repo_id}: {e}"
             )
@@ -513,7 +531,10 @@ class RepositoryStatsService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to get repository metadata for {repo_id}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get repository metadata for {repo_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             if isinstance(e, FileNotFoundError):
                 raise
             raise RuntimeError(f"Unable to access repository metadata: {e}")

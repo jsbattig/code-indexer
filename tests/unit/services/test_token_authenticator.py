@@ -49,7 +49,9 @@ class TestTokenAuthenticatorResolveToken:
         """
         # Arrange: Save encrypted GitHub token using CITokenManager
         platform = "github"
-        plaintext_token = "ghp_1234567890abcdefghijklmnopqrstuvwxyz"  # 40 total (36 after prefix)
+        plaintext_token = (
+            "ghp_1234567890abcdefghijklmnopqrstuvwxyz"  # 40 total (36 after prefix)
+        )
 
         token_manager = CITokenManager(server_dir_path=str(mock_home))
         token_manager.save_token(platform, plaintext_token)
@@ -64,9 +66,9 @@ class TestTokenAuthenticatorResolveToken:
             f"but got '{resolved_token}' (likely encrypted gibberish)"
         )
         # Additional assertion: Ensure we didn't get base64-encoded encrypted data
-        assert not resolved_token.startswith("eyJ"), (
-            "Resolved token appears to be encrypted (base64-encoded)"
-        )
+        assert not resolved_token.startswith(
+            "eyJ"
+        ), "Resolved token appears to be encrypted (base64-encoded)"
 
     def test_resolve_token_priority_env_over_file(self, mock_home):
         """
@@ -74,8 +76,12 @@ class TestTokenAuthenticatorResolveToken:
         """
         # Arrange: Set up both env var and encrypted file token
         platform = "github"
-        env_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"  # 40 total (36 after prefix)
-        file_token = "ghp_0987654321zyxwvutsrqponmlkjihgfedcba"  # 40 total (36 after prefix)
+        env_token = (
+            "ghp_abcdefghijklmnopqrstuvwxyz1234567890"  # 40 total (36 after prefix)
+        )
+        file_token = (
+            "ghp_0987654321zyxwvutsrqponmlkjihgfedcba"  # 40 total (36 after prefix)
+        )
 
         # Save encrypted token to file
         token_manager = CITokenManager(server_dir_path=str(mock_home))
@@ -123,9 +129,9 @@ class TestTokenAuthenticatorResolveToken:
             resolved_token = TokenAuthenticator.resolve_token("github")
 
             # Assert: Should return None
-            assert resolved_token is None, (
-                "Should return None when no token is configured"
-            )
+            assert (
+                resolved_token is None
+            ), "Should return None when no token is configured"
 
     def test_resolve_token_handles_corrupted_file_gracefully(self, mock_home):
         """
@@ -140,15 +146,17 @@ class TestTokenAuthenticatorResolveToken:
             resolved_token = TokenAuthenticator.resolve_token("github")
 
             # Assert: Should return None, not raise exception
-            assert resolved_token is None, (
-                "Should return None gracefully for corrupted file"
-            )
+            assert (
+                resolved_token is None
+            ), "Should return None gracefully for corrupted file"
 
     def test_resolve_token_environment_variable_names(self, mock_home):
         """
         Test that resolve_token() recognizes both GH_TOKEN and GITHUB_TOKEN.
         """
-        github_token = "ghp_testtokenabcdefghijklmnopqrstuvwxy"  # 40 total (36 after prefix)
+        github_token = (
+            "ghp_testtokenabcdefghijklmnopqrstuvwxy"  # 40 total (36 after prefix)
+        )
 
         # Test GH_TOKEN
         with patch.dict(os.environ, {"GH_TOKEN": github_token}, clear=True):

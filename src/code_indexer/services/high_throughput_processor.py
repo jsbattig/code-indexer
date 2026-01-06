@@ -92,9 +92,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # File processing rate tracking for files/s metric
         self._file_rate_lock = threading.Lock()
         self._file_processing_start_time = None
-        self._file_completion_history = (
-            []
-        )  # List of (timestamp, files_completed) tuples
+        self._file_completion_history = []  # List of (timestamp, files_completed) tuples
         self._rolling_window_seconds = (
             30.0  # Rolling window for smoothed files/s calculation
         )
@@ -105,9 +103,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         self._total_source_bytes_processed = (
             0  # Thread-safe counter for cumulative source bytes
         )
-        self._source_bytes_history = (
-            []
-        )  # List of (timestamp, total_bytes) tuples for smoothed KB/s
+        self._source_bytes_history = []  # List of (timestamp, total_bytes) tuples for smoothed KB/s
 
     def request_cancellation(self) -> None:
         """Request cancellation of processing."""
@@ -305,7 +301,6 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 codebase_dir=self.config.codebase_dir,
                 fts_manager=fts_manager,
             ) as file_manager:
-
                 # PARALLEL HASH CALCULATION - eliminate serial bottleneck
                 file_futures = []
 
@@ -453,9 +448,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
                 # Create file queue and results storage
                 file_queue: Queue = Queue()
-                hash_results: Dict[Path, tuple] = (
-                    {}
-                )  # {file_path: (metadata, file_size)}
+                hash_results: Dict[
+                    Path, tuple
+                ] = {}  # {file_path: (metadata, file_size)}
                 hash_errors: List[str] = []  # List to capture any errors
 
                 # Populate queue with all files

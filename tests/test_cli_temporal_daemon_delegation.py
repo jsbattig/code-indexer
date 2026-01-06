@@ -126,7 +126,6 @@ class TestCliTemporalDaemonDelegation:
                     "src.code_indexer.services.smart_indexer.SmartIndexer"
                 ) as mock_indexer,
             ):
-
                 mock_daemon.return_value = 0
 
                 # Test 1: Temporal indexing WITH daemon enabled -> should delegate
@@ -189,7 +188,6 @@ class TestCliTemporalDaemonDelegation:
                     "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
                 ) as mock_temporal,
             ):
-
                 mock_temporal_instance = MagicMock()
                 mock_temporal.return_value = mock_temporal_instance
 
@@ -399,7 +397,6 @@ class TestManualVerification:
                     "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
                 ) as mock_temporal,
             ):
-
                 mock_temporal_instance = MagicMock()
                 mock_temporal.return_value = mock_temporal_instance
 

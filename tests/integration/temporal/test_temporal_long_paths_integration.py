@@ -52,7 +52,9 @@ def temporal_indexer(git_repo):
 
     config_path = git_repo / ".code-indexer" / "config.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text('{"voyage_ai": {"api_key": "test-key", "model": "voyage-3"}}')
+    config_path.write_text(
+        '{"voyage_ai": {"api_key": "test-key", "model": "voyage-3"}}'
+    )
 
     config_manager = ConfigManager(config_path=config_path)
     vector_store = FilesystemVectorStore(base_path=index_dir, project_root=git_repo)
@@ -95,7 +97,12 @@ class TestTemporalLongPathsIntegration:
         assert len(str(full_path_relative)) > MIN_LONG_PATH_CHARS
 
         # Commit file
-        commit_file(git_repo, test_file, "def test_function():\n    pass\n", "Add file with long path")
+        commit_file(
+            git_repo,
+            test_file,
+            "def test_function():\n    pass\n",
+            "Add file with long path",
+        )
 
         # Index commits (should NOT raise OSError)
         try:
@@ -156,7 +163,9 @@ class TestTemporalLongPathsIntegration:
         for vector_file in vector_files:
             assert len(vector_file.name) == V2_VECTOR_FILENAME_LENGTH
 
-    def test_metadata_contains_correct_file_path_mapping(self, git_repo, temporal_indexer):
+    def test_metadata_contains_correct_file_path_mapping(
+        self, git_repo, temporal_indexer
+    ):
         """AC2: Metadata database correctly maps hash prefixes to point_ids with file paths."""
         indexer, index_dir, _ = temporal_indexer
 
@@ -181,7 +190,7 @@ class TestTemporalLongPathsIntegration:
         for vector_file in vector_files:
             filename = vector_file.stem
             if filename.startswith("vector_"):
-                hash_prefix = filename[len("vector_"):]
+                hash_prefix = filename[len("vector_") :]
                 metadata = metadata_store.get_metadata(hash_prefix)
 
                 # Should have metadata entry with point_id and file_path

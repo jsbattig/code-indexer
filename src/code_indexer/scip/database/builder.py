@@ -1,5 +1,7 @@
 """SCIP database ETL pipeline - transforms protobuf to SQLite database."""
 
+from __future__ import annotations
+
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List
@@ -921,7 +923,9 @@ class SCIPDatabaseBuilder:
         return documents, occurrences
 
     def _extract_occurrence_fields(
-        self, occ: scip_pb2.Occurrence, doc_index: int  # type: ignore[name-defined]
+        self,
+        occ: "scip_pb2.Occurrence",  # type: ignore[name-defined]
+        doc_index: int,
     ) -> Dict[str, Any]:
         """
         Extract fields from Occurrence protobuf message.
@@ -1022,7 +1026,10 @@ class SCIPDatabaseBuilder:
 
         return symbols
 
-    def _extract_symbol_fields(self, symbol_info: scip_pb2.SymbolInformation) -> Dict[str, Any]:  # type: ignore[name-defined]
+    def _extract_symbol_fields(
+        self,
+        symbol_info: "scip_pb2.SymbolInformation",  # type: ignore[name-defined]
+    ) -> Dict[str, Any]:
         """
         Extract fields from SymbolInformation protobuf message.
 
@@ -1033,7 +1040,11 @@ class SCIPDatabaseBuilder:
             Dictionary with symbol fields
         """
         # Map SCIP kind enum to string
-        kind_name = scip_pb2.SymbolInformation.Kind.Name(symbol_info.kind) if symbol_info.kind else None  # type: ignore[attr-defined]
+        kind_name = (
+            scip_pb2.SymbolInformation.Kind.Name(symbol_info.kind)  # type: ignore[attr-defined]
+            if symbol_info.kind
+            else None
+        )
 
         # Extract signature from signature_documentation
         signature = None

@@ -91,7 +91,7 @@ class SCIPSelfHealingService:
             logger.info(
                 f"Job {job_id}: SCIP generation successful for all projects, "
                 "no self-healing needed",
-                extra={"correlation_id": get_correlation_id()}
+                extra={"correlation_id": get_correlation_id()},
             )
             return
 
@@ -99,7 +99,7 @@ class SCIPSelfHealingService:
             f"Job {job_id}: Detected SCIP failures - "
             f"{generation_result.failed_projects} failed, "
             f"{generation_result.successful_projects} succeeded",
-            extra={"correlation_id": get_correlation_id()}
+            extra={"correlation_id": get_correlation_id()},
         )
 
         # AC1: Extract per-project details for failed projects
@@ -130,7 +130,7 @@ class SCIPSelfHealingService:
                 logger.info(
                     f"Job {job_id}: Queued {project.language} project at "
                     f"{project_path} for resolution (build system: {project.build_system})",
-                    extra={"correlation_id": get_correlation_id()}
+                    extra={"correlation_id": get_correlation_id()},
                 )
 
         # AC1: Update job with language_resolution_status and transition to RESOLVING_PREREQUISITES
@@ -589,14 +589,20 @@ Status values:
             # Get appropriate indexer for language
             indexer = generator._indexers.get(language)
             if not indexer:
-                logger.error(f"Job {job_id}: No SCIP indexer available for {language}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Job {job_id}: No SCIP indexer available for {language}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
             # Generate SCIP index for this specific project
             indexer_result = indexer.generate(project_dir, output_dir, build_system)
 
             if indexer_result.is_success():
-                logger.info(f"Job {job_id}: SCIP retry succeeded for {project_path}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Job {job_id}: SCIP retry succeeded for {project_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return True
             else:
                 logger.warning(
@@ -715,11 +721,17 @@ Status values:
         with self.job_manager._lock:
             job = self.job_manager.jobs.get(job_id)
             if not job:
-                logger.error(f"Job {job_id} not found for completion determination", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Job {job_id} not found for completion determination",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return JobStatus.FAILED
 
             if not job.language_resolution_status:
-                logger.warning(f"Job {job_id} has no language_resolution_status", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    f"Job {job_id} has no language_resolution_status",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return JobStatus.FAILED
 
             # Count outcomes
@@ -753,17 +765,26 @@ Status values:
             # Determine final status
             final_status = None
             if resolved == total_projects:
-                logger.info(f"Job {job_id}: All {total_projects} projects resolved", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Job {job_id}: All {total_projects} projects resolved",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 final_status = JobStatus.COMPLETED
 
             elif resolved > 0 and unresolvable > 0:
                 self._record_partial_success_details(job, resolved, total_projects)
-                logger.info(f"Job {job_id}: Partial success - {job.failure_reason}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Job {job_id}: Partial success - {job.failure_reason}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 final_status = JobStatus.COMPLETED
 
             else:
                 job.failure_reason = "No projects could be resolved"
-                logger.warning(f"Job {job_id}: {job.failure_reason}", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    f"Job {job_id}: {job.failure_reason}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 final_status = JobStatus.FAILED
 
             # Story #659 Priority 4: Trigger PR creation on successful resolution

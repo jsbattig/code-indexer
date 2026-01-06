@@ -236,7 +236,11 @@ class TestReconcileTemporalIndex:
             vector_data = {
                 "id": point_id,
                 "vector": [0.1],
-                "payload": {"commit_hash": commit_hash, "path": "file.py", "chunk_index": 0},
+                "payload": {
+                    "commit_hash": commit_hash,
+                    "path": "file.py",
+                    "chunk_index": 0,
+                },
             }
             vector_file.write_text(json.dumps(vector_data))
             metadata_entries.append((point_id, vector_data["payload"]))
@@ -331,7 +335,11 @@ class TestReconcileTemporalIndex:
             vector_data = {
                 "id": point_id,
                 "vector": [0.1],
-                "payload": {"commit_hash": commit_hash, "path": "file.py", "chunk_index": 0},
+                "payload": {
+                    "commit_hash": commit_hash,
+                    "path": "file.py",
+                    "chunk_index": 0,
+                },
             }
             vector_file.write_text(json.dumps(vector_data))
             metadata_entries.append((point_id, vector_data["payload"]))
@@ -518,7 +526,11 @@ class TestReconcileTemporalIndex:
             vector_data = {
                 "id": point_id,
                 "vector": [0.1, 0.2, 0.3],
-                "payload": {"commit_hash": commit_hash, "path": "file.py", "chunk_index": 0},
+                "payload": {
+                    "commit_hash": commit_hash,
+                    "path": "file.py",
+                    "chunk_index": 0,
+                },
             }
             vector_file.write_text(json.dumps(vector_data))
             metadata_entries.append((point_id, vector_data["payload"]))

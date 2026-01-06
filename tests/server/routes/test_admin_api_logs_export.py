@@ -45,7 +45,8 @@ def populated_db(temp_db):
     cursor = conn.cursor()
 
     # Create logs table first
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT,
@@ -57,11 +58,14 @@ def populated_db(temp_db):
             request_path TEXT,
             extra_data TEXT
         )
-    """)
+    """
+    )
 
     test_logs = [
         {
-            "timestamp": datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc).isoformat(),
+            "timestamp": datetime(
+                2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc
+            ).isoformat(),
             "level": "INFO",
             "message": "Server started",
             "source": "server",
@@ -71,7 +75,9 @@ def populated_db(temp_db):
             "extra_data": "{}",
         },
         {
-            "timestamp": datetime(2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc).isoformat(),
+            "timestamp": datetime(
+                2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc
+            ).isoformat(),
             "level": "WARNING",
             "message": "High memory usage",
             "source": "monitor",
@@ -81,7 +87,9 @@ def populated_db(temp_db):
             "extra_data": "{}",
         },
         {
-            "timestamp": datetime(2025, 1, 1, 10, 10, 0, tzinfo=timezone.utc).isoformat(),
+            "timestamp": datetime(
+                2025, 1, 1, 10, 10, 0, tzinfo=timezone.utc
+            ).isoformat(),
             "level": "ERROR",
             "message": "Connection failed",
             "source": "network",
@@ -91,7 +99,9 @@ def populated_db(temp_db):
             "extra_data": "{}",
         },
         {
-            "timestamp": datetime(2025, 1, 1, 10, 15, 0, tzinfo=timezone.utc).isoformat(),
+            "timestamp": datetime(
+                2025, 1, 1, 10, 15, 0, tzinfo=timezone.utc
+            ).isoformat(),
             "level": "ERROR",
             "message": "Database error",
             "source": "database",
@@ -305,7 +315,9 @@ class TestAdminApiLogsExportFilters:
 
     def test_export_respects_search_filter(self, test_app_admin):
         """Export respects search parameter."""
-        response = test_app_admin.get("/admin/api/logs/export?format=json&search=Connection")
+        response = test_app_admin.get(
+            "/admin/api/logs/export?format=json&search=Connection"
+        )
         data = response.json()
 
         # Should only return logs matching "Connection"
@@ -326,7 +338,9 @@ class TestAdminApiLogsExportFilters:
 
     def test_export_respects_correlation_id_filter(self, test_app_admin):
         """Export respects correlation_id parameter."""
-        response = test_app_admin.get("/admin/api/logs/export?format=json&correlation_id=corr-001")
+        response = test_app_admin.get(
+            "/admin/api/logs/export?format=json&correlation_id=corr-001"
+        )
         data = response.json()
 
         # Should only return log with correlation_id="corr-001"
@@ -336,7 +350,9 @@ class TestAdminApiLogsExportFilters:
 
     def test_export_combines_multiple_filters(self, test_app_admin):
         """Export combines multiple filters with AND logic."""
-        response = test_app_admin.get("/admin/api/logs/export?format=json&level=ERROR&search=Database")
+        response = test_app_admin.get(
+            "/admin/api/logs/export?format=json&level=ERROR&search=Database"
+        )
         data = response.json()
 
         # Should return ERROR logs containing "Database" (1 log)
@@ -347,7 +363,9 @@ class TestAdminApiLogsExportFilters:
 
     def test_export_includes_filter_metadata(self, test_app_admin):
         """Export includes applied filters in metadata."""
-        response = test_app_admin.get("/admin/api/logs/export?format=json&level=ERROR&search=Database")
+        response = test_app_admin.get(
+            "/admin/api/logs/export?format=json&level=ERROR&search=Database"
+        )
         data = response.json()
 
         # Metadata should include filters
@@ -403,7 +421,9 @@ class TestAdminApiLogsExportEmptyResults:
 
     def test_export_with_no_matches_returns_empty(self, test_app_admin):
         """Export with no matching logs returns empty results."""
-        response = test_app_admin.get("/admin/api/logs/export?format=json&search=nonexistent")
+        response = test_app_admin.get(
+            "/admin/api/logs/export?format=json&search=nonexistent"
+        )
         data = response.json()
 
         assert data["metadata"]["count"] == 0
@@ -411,7 +431,9 @@ class TestAdminApiLogsExportEmptyResults:
 
     def test_empty_json_export_is_valid_json(self, test_app_admin):
         """Empty JSON export is still valid JSON."""
-        response = test_app_admin.get("/admin/api/logs/export?format=json&search=nonexistent")
+        response = test_app_admin.get(
+            "/admin/api/logs/export?format=json&search=nonexistent"
+        )
 
         # Should be valid JSON with empty logs array
         data = response.json()
@@ -420,7 +442,9 @@ class TestAdminApiLogsExportEmptyResults:
 
     def test_empty_csv_export_has_header(self, test_app_admin):
         """Empty CSV export still has header row."""
-        response = test_app_admin.get("/admin/api/logs/export?format=csv&search=nonexistent")
+        response = test_app_admin.get(
+            "/admin/api/logs/export?format=csv&search=nonexistent"
+        )
         content = response.text
 
         lines = content.strip().split("\n")

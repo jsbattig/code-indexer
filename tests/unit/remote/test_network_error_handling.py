@@ -539,7 +539,6 @@ class TestCIDXRemoteAPIClientNetworkErrorHandling:
             patch.object(type(api_client), "session", mock_session),
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
         ):
-
             with pytest.raises(NetworkConnectionError) as exc_info:
                 await api_client._authenticated_request("GET", "/test-endpoint")
 
@@ -556,7 +555,6 @@ class TestCIDXRemoteAPIClientNetworkErrorHandling:
             patch.object(type(api_client), "session", mock_session),
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
         ):
-
             with pytest.raises(NetworkTimeoutError) as exc_info:
                 await api_client._authenticated_request("GET", "/test-endpoint")
 
@@ -592,7 +590,6 @@ class TestCIDXRemoteAPIClientNetworkErrorHandling:
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
             patch("asyncio.sleep"),
         ):  # Don't actually sleep in tests
-
             response = await api_client._authenticated_request("GET", "/test-endpoint")
 
             assert response.status_code == 200
@@ -620,7 +617,6 @@ class TestCIDXRemoteAPIClientNetworkErrorHandling:
             patch.object(type(api_client), "session", mock_session),
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
         ):
-
             with pytest.raises(AuthenticationError):
                 await api_client._authenticated_request("GET", "/test-endpoint")
 
@@ -658,7 +654,6 @@ class TestCIDXRemoteAPIClientNetworkErrorHandling:
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
             patch("asyncio.sleep") as mock_sleep,
         ):
-
             response = await api_client._authenticated_request("GET", "/test-endpoint")
 
             assert response.status_code == 200
@@ -696,7 +691,6 @@ class TestGracefulDegradation:
             patch.object(type(api_client), "session", mock_session),
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
         ):
-
             with pytest.raises(DNSResolutionError) as exc_info:
                 await api_client._authenticated_request("GET", "/test-endpoint")
 
@@ -715,7 +709,6 @@ class TestGracefulDegradation:
             patch.object(type(api_client), "session", mock_session),
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
         ):
-
             with pytest.raises(NetworkConnectionError):
                 await api_client._authenticated_request("GET", "/test-endpoint")
 
@@ -734,7 +727,6 @@ class TestGracefulDegradation:
             patch.object(type(api_client), "session", mock_session),
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
         ):
-
             with pytest.raises(APIClientError) as exc_info:
                 await api_client._authenticated_request("GET", "/test-endpoint")
 
@@ -768,7 +760,6 @@ class TestGracefulDegradation:
             patch.object(api_client, "_get_valid_token", return_value="test-token"),
             patch("asyncio.sleep"),
         ):  # Don't actually sleep in tests
-
             response = await api_client._authenticated_request("GET", "/test-endpoint")
 
             # Should eventually succeed after network restoration
@@ -945,7 +936,8 @@ class TestProgressIndication:
         """Test progress indication updates at least every 2 seconds during retries."""
         handler = NetworkErrorHandler()
         config = RetryConfig(
-            max_retries=1, initial_delay=5.0  # Long delay to test progress updates
+            max_retries=1,
+            initial_delay=5.0,  # Long delay to test progress updates
         )
 
         progress_calls = []

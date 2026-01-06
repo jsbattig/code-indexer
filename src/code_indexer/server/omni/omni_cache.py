@@ -30,7 +30,9 @@ class OmniCache:
         self.ttl_seconds = ttl_seconds
         self.max_entries = max_entries
         self.max_memory_mb = max_memory_mb
-        self.cache: TTLCache[str, Dict[str, Any]] = TTLCache(maxsize=max_entries, ttl=ttl_seconds)
+        self.cache: TTLCache[str, Dict[str, Any]] = TTLCache(
+            maxsize=max_entries, ttl=ttl_seconds
+        )
         self.lock = threading.RLock()
 
     def store_results(

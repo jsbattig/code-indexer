@@ -131,8 +131,9 @@ class DatabaseRetryHandler:
                 ):  # Don't delay after final attempt
                     delay = self.calculate_delay(attempt)
                     logger.warning(
-                        f"Database operation failed on attempt {attempt}, retrying in {delay:.2f}s: {e}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Database operation failed on attempt {attempt}, retrying in {delay:.2f}s: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     time.sleep(delay)
 
         # This should not be reached, but provide fallback

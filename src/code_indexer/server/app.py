@@ -1,4 +1,5 @@
 from code_indexer.server.middleware.correlation import get_correlation_id
+
 """
 FastAPI application for CIDX Server.
 
@@ -6,7 +7,16 @@ Multi-user semantic code search server with JWT authentication and role-based ac
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, Query, Body
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    status,
+    Depends,
+    Response,
+    Request,
+    Query,
+    Body,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -1612,7 +1622,10 @@ def migrate_legacy_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None
         )
         golden_repo_manager.golden_repos["cidx-meta"] = repo
         golden_repo_manager._save_metadata()
-        logger.info("Legacy cidx-meta migrated: added to metadata.json", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Legacy cidx-meta migrated: added to metadata.json",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Activate cidx-meta globally (create global registry entry + alias)
         from code_indexer.global_repos.global_activation import GlobalActivator
@@ -1624,13 +1637,19 @@ def migrate_legacy_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None
             clone_path=str(cidx_meta_path),
             enable_temporal=False,
         )
-        logger.info("Legacy cidx-meta activated globally", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Legacy cidx-meta activated globally",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     # Scenario 2: Registered with repo_url=None (old special marker)
     elif golden_repo_manager.golden_repo_exists("cidx-meta"):
         repo = golden_repo_manager.get_golden_repo("cidx-meta")
         if repo and repo.repo_url is None:
-            logger.info("Detected legacy cidx-meta (repo_url=None in metadata.json)", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Detected legacy cidx-meta (repo_url=None in metadata.json)",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Update repo_url from None to local://cidx-meta
             repo.repo_url = "local://cidx-meta"
@@ -1669,12 +1688,18 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
     already_registered = golden_repo_manager.golden_repo_exists("cidx-meta")
 
     if not already_registered:
-        logger.info("Bootstrapping cidx-meta as regular golden repo", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Bootstrapping cidx-meta as regular golden repo",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Initialize CIDX index structure if not already done
         if not (cidx_meta_path / ".code-indexer").exists():
             try:
-                logger.info("Initializing cidx-meta index structure", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "Initializing cidx-meta index structure",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 subprocess.run(
                     ["cidx", "init"],
                     cwd=str(cidx_meta_path),
@@ -1682,7 +1707,10 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
                     capture_output=True,
                     text=True,
                 )
-                logger.info("Successfully initialized cidx-meta index structure", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "Successfully initialized cidx-meta index structure",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             except subprocess.CalledProcessError as e:
                 logger.error(
                     f"Failed to initialize cidx-meta: {e.stderr if e.stderr else str(e)}",
@@ -1690,7 +1718,10 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
                 )
                 # Continue with registration even if init fails - don't break server startup
             except Exception as e:
-                logger.error(f"Unexpected error during cidx-meta initialization: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Unexpected error during cidx-meta initialization: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 # Continue with registration even if init fails - don't break server startup
 
         # Register directly in metadata without background job (startup hasn't initialized background_job_manager yet)
@@ -1704,7 +1735,10 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
         )
         golden_repo_manager.golden_repos["cidx-meta"] = repo
         golden_repo_manager._save_metadata()
-        logger.info("Bootstrapped cidx-meta at local://cidx-meta", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Bootstrapped cidx-meta at local://cidx-meta",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Activate cidx-meta globally (create global registry entry + alias)
         from code_indexer.global_repos.global_activation import GlobalActivator
@@ -1716,13 +1750,19 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
             clone_path=str(cidx_meta_path),
             enable_temporal=False,
         )
-        logger.info("Bootstrapped cidx-meta activated globally", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Bootstrapped cidx-meta activated globally",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     # ALWAYS re-index cidx-meta to pick up new files (even if already registered)
     # This ensures .md files added during golden repo registration are indexed
     if cidx_meta_path.exists():
         try:
-            logger.info("Re-indexing cidx-meta content", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Re-indexing cidx-meta content",
+                extra={"correlation_id": get_correlation_id()},
+            )
             subprocess.run(
                 ["cidx", "index"],
                 cwd=str(cidx_meta_path),
@@ -1730,7 +1770,10 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
                 capture_output=True,
                 text=True,
             )
-            logger.info("Successfully re-indexed cidx-meta content", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Successfully re-indexed cidx-meta content",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except subprocess.CalledProcessError as e:
             logger.error(
                 f"Failed to index cidx-meta: {e.stderr if e.stderr else str(e)}",
@@ -1738,7 +1781,10 @@ def bootstrap_cidx_meta(golden_repo_manager, golden_repos_dir: str) -> None:
             )
             # Don't break server startup if indexing fails - cidx-meta can be indexed later
         except Exception as e:
-            logger.error(f"Unexpected error during cidx-meta indexing: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Unexpected error during cidx-meta indexing: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             # Don't break server startup if indexing fails - cidx-meta can be indexed later
 
 
@@ -1749,7 +1795,18 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI app
     """
-    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time, _server_hnsw_cache, _server_fts_cache
+    global \
+        jwt_manager, \
+        user_manager, \
+        refresh_token_manager, \
+        golden_repo_manager, \
+        background_job_manager, \
+        activated_repo_manager, \
+        repository_listing_manager, \
+        semantic_query_manager, \
+        _server_start_time, \
+        _server_hnsw_cache, \
+        _server_fts_cache
 
     # Story #526: Initialize server-side HNSW cache at bootstrap for 1800x performance
     # Import and initialize global cache instance
@@ -1775,7 +1832,10 @@ def create_app() -> FastAPI:
         project_root=Path.home(), mode="server"
     )
     exception_logger.install_thread_exception_hook()
-    logger.info("ExceptionLogger initialized for server mode", extra={"correlation_id": get_correlation_id()})
+    logger.info(
+        "ExceptionLogger initialized for server mode",
+        extra={"correlation_id": get_correlation_id()},
+    )
 
     # Set server start time for health monitoring
     _server_start_time = datetime.now(timezone.utc).isoformat()
@@ -1799,7 +1859,10 @@ def create_app() -> FastAPI:
         golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
 
         # Startup: Initialize SQLite log handler FIRST (to capture all startup logs)
-        logger.info("Server startup: Initializing SQLite log handler", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Server startup: Initializing SQLite log handler",
+            extra={"correlation_id": get_correlation_id()},
+        )
         try:
             log_db_path = Path(server_data_dir) / "logs.db"
             sqlite_handler = SQLiteLogHandler(log_db_path)
@@ -1809,17 +1872,24 @@ def create_app() -> FastAPI:
             # Set app state for web routes to access
             app.state.log_db_path = log_db_path
 
-            logger.info(f"SQLite log handler initialized: {log_db_path}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"SQLite log handler initialized: {log_db_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         except Exception as e:
             # Log error but don't block server startup
             logger.error(
-                f"Failed to initialize SQLite log handler: {e}", exc_info=True,
+                f"Failed to initialize SQLite log handler: {e}",
+                exc_info=True,
                 extra={"correlation_id": get_correlation_id()},
             )
 
         # Startup: Migrate legacy cidx-meta and bootstrap if needed
-        logger.info("Server startup: Checking cidx-meta migration and bootstrap", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Server startup: Checking cidx-meta migration and bootstrap",
+            extra={"correlation_id": get_correlation_id()},
+        )
         try:
             from code_indexer.server.repositories.golden_repo_manager import (
                 GoldenRepoManager,
@@ -1836,17 +1906,24 @@ def create_app() -> FastAPI:
             # Phase 2: Bootstrap cidx-meta (if it doesn't exist)
             bootstrap_cidx_meta(golden_repo_manager, str(golden_repos_dir))
 
-            logger.info("cidx-meta migration and bootstrap completed", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "cidx-meta migration and bootstrap completed",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         except Exception as e:
             # Log error but don't block server startup
             logger.error(
-                f"Failed to migrate/bootstrap cidx-meta on startup: {e}", exc_info=True,
+                f"Failed to migrate/bootstrap cidx-meta on startup: {e}",
+                exc_info=True,
                 extra={"correlation_id": get_correlation_id()},
             )
 
         # Startup: Run SSH key migration (first-time auto-discovery)
-        logger.info("Server startup: Checking SSH key migration", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Server startup: Checking SSH key migration",
+            extra={"correlation_id": get_correlation_id()},
+        )
         try:
             from code_indexer.server.services.ssh_startup_migration import (
                 run_ssh_migration_on_startup,
@@ -1861,7 +1938,10 @@ def create_app() -> FastAPI:
             app.state.ssh_migration_result = migration_result
 
             if migration_result.skipped:
-                logger.info("SSH key migration: Skipped (already completed)", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "SSH key migration: Skipped (already completed)",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             else:
                 logger.info(
                     f"SSH key migration: Completed - "
@@ -1873,13 +1953,17 @@ def create_app() -> FastAPI:
         except Exception as e:
             # Log error but don't block server startup
             logger.error(
-                f"Failed to run SSH key migration on startup: {e}", exc_info=True,
+                f"Failed to run SSH key migration on startup: {e}",
+                exc_info=True,
                 extra={"correlation_id": get_correlation_id()},
             )
             app.state.ssh_migration_result = None
 
         # Startup: Initialize and start global repos background services
-        logger.info("Server startup: Starting global repos background services", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Server startup: Starting global repos background services",
+            extra={"correlation_id": get_correlation_id()},
+        )
         global_lifecycle_manager = None
         try:
             from code_indexer.server.lifecycle.global_repos_lifecycle import (
@@ -1896,7 +1980,10 @@ def create_app() -> FastAPI:
             app.state.query_tracker = global_lifecycle_manager.query_tracker
             app.state.golden_repos_dir = str(golden_repos_dir)
 
-            logger.info("Global repos background services started successfully", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Global repos background services started successfully",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         except Exception as e:
             # Log error but don't block server startup
@@ -1907,7 +1994,10 @@ def create_app() -> FastAPI:
             )
 
         # Startup: Initialize OIDC authentication if configured
-        logger.info("Server startup: Checking OIDC configuration", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Server startup: Checking OIDC configuration",
+            extra={"correlation_id": get_correlation_id()},
+        )
         # Always register OIDC routes (routes will handle disabled/unconfigured state)
         from code_indexer.server.auth.oidc import routes as oidc_routes
 
@@ -1926,7 +2016,10 @@ def create_app() -> FastAPI:
                 and config.oidc_provider_config
                 and config.oidc_provider_config.enabled
             ):
-                logger.info("OIDC is enabled, initializing...", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "OIDC is enabled, initializing...",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
                 # Use existing user_manager and jwt_manager (defined at module level below)
                 # Note: These are defined after the lifespan function, so we reference them here
@@ -1946,13 +2039,23 @@ def create_app() -> FastAPI:
                 oidc_routes.state_manager = state_manager
                 oidc_routes.server_config = config
 
-                logger.info("OIDC configured (will initialize on first login)", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "OIDC configured (will initialize on first login)",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             else:
-                logger.info("OIDC is not enabled", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "OIDC is not enabled",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         except Exception as e:
             # Log error but don't block server startup
-            logger.error(f"Failed to initialize OIDC: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to initialize OIDC: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             logger.info(
                 "OIDC routes registered but manager not initialized - SSO login will return 404 until configured",
                 extra={"correlation_id": get_correlation_id()},
@@ -1961,11 +2064,17 @@ def create_app() -> FastAPI:
         yield  # Server is now running
 
         # Shutdown: Stop global repos background services BEFORE other cleanup
-        logger.info("Server shutdown: Stopping global repos background services", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Server shutdown: Stopping global repos background services",
+            extra={"correlation_id": get_correlation_id()},
+        )
         if global_lifecycle_manager is not None:
             try:
                 global_lifecycle_manager.stop()
-                logger.info("Global repos background services stopped successfully", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "Global repos background services stopped successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             except Exception as e:
                 logger.error(
                     f"Error stopping global repos background services: {e}",
@@ -1974,7 +2083,10 @@ def create_app() -> FastAPI:
                 )
 
         # Shutdown: Clean up other resources
-        logger.info("Server shutdown: Cleaning up resources", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Server shutdown: Cleaning up resources",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     # Create FastAPI app with metadata and lifespan
     app = FastAPI(
@@ -2291,7 +2403,11 @@ def create_app() -> FastAPI:
 
         except Exception as e:
             # Log error but don't expose internal details
-            logger.error(f"Error retrieving cache statistics: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error retrieving cache statistics: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve cache statistics",
@@ -3249,7 +3365,11 @@ def create_app() -> FastAPI:
             }
 
         except Exception as e:
-            logger.error(f"SCIP workspace cleanup failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"SCIP workspace cleanup failed: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Workspace cleanup failed: {str(e)}",
@@ -3280,7 +3400,11 @@ def create_app() -> FastAPI:
             return status_info
 
         except Exception as e:
-            logger.error(f"Failed to get SCIP cleanup status: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get SCIP cleanup status: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to get cleanup status: {str(e)}",
@@ -5289,7 +5413,10 @@ def create_app() -> FastAPI:
                             )
 
                     except Exception as e:
-                        logger.error(f"FTS search failed: {e}", extra={"correlation_id": get_correlation_id()})
+                        logger.error(
+                            f"FTS search failed: {e}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         if request.search_mode == "fts":
                             raise HTTPException(
                                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -5301,28 +5428,30 @@ def create_app() -> FastAPI:
                 # Execute semantic search for hybrid or degraded mode
                 if search_mode_actual in ["semantic", "hybrid"]:
                     try:
-                        semantic_results_raw = semantic_query_manager.query_user_repositories(
-                            username=current_user.username,
-                            query_text=request.query_text,
-                            repository_alias=request.repository_alias,
-                            limit=request.limit,
-                            min_score=request.min_score,
-                            file_extensions=request.file_extensions,
-                            # Phase 1 parameters (Story #503)
-                            exclude_language=request.exclude_language,
-                            exclude_path=request.exclude_path,
-                            accuracy=request.accuracy,
-                            # Temporal parameters (Story #446)
-                            time_range=request.time_range,
-                            time_range_all=request.time_range_all,
-                            at_commit=request.at_commit,
-                            include_removed=request.include_removed,
-                            show_evolution=request.show_evolution,
-                            evolution_limit=request.evolution_limit,
-                            # Phase 3 temporal filtering parameters (Story #503)
-                            diff_type=request.diff_type,
-                            author=request.author,
-                            chunk_type=request.chunk_type,
+                        semantic_results_raw = (
+                            semantic_query_manager.query_user_repositories(
+                                username=current_user.username,
+                                query_text=request.query_text,
+                                repository_alias=request.repository_alias,
+                                limit=request.limit,
+                                min_score=request.min_score,
+                                file_extensions=request.file_extensions,
+                                # Phase 1 parameters (Story #503)
+                                exclude_language=request.exclude_language,
+                                exclude_path=request.exclude_path,
+                                accuracy=request.accuracy,
+                                # Temporal parameters (Story #446)
+                                time_range=request.time_range,
+                                time_range_all=request.time_range_all,
+                                at_commit=request.at_commit,
+                                include_removed=request.include_removed,
+                                show_evolution=request.show_evolution,
+                                evolution_limit=request.evolution_limit,
+                                # Phase 3 temporal filtering parameters (Story #503)
+                                diff_type=request.diff_type,
+                                author=request.author,
+                                chunk_type=request.chunk_type,
+                            )
                         )
                         semantic_results_list = [
                             QueryResultItem(**result)
@@ -5330,7 +5459,10 @@ def create_app() -> FastAPI:
                         ]
                     except ValueError as e:
                         # Surface validation errors as HTTP 400
-                        logger.warning(f"Validation error in query: {e}", extra={"correlation_id": get_correlation_id()})
+                        logger.warning(
+                            f"Validation error in query: {e}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail={
@@ -5339,7 +5471,10 @@ def create_app() -> FastAPI:
                             },
                         )
                     except Exception as e:
-                        logger.error(f"Semantic search failed: {e}", extra={"correlation_id": get_correlation_id()})
+                        logger.error(
+                            f"Semantic search failed: {e}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         if search_mode_actual == "semantic":
                             raise
 
@@ -5401,7 +5536,10 @@ def create_app() -> FastAPI:
 
         except ValueError as e:
             # Surface validation errors from backend as HTTP 400
-            logger.warning(f"Validation error in query: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Validation error in query: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": "Invalid query parameters", "message": str(e)},
@@ -5426,7 +5564,11 @@ def create_app() -> FastAPI:
             )
 
         except Exception as e:
-            logger.error(f"Unexpected error in unified search: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Unexpected error in unified search: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Internal search error: {str(e)}",

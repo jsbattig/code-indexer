@@ -94,8 +94,9 @@ class WorkspaceCleanupService:
 
         if not self.workspace_root.exists():
             logger.warning(
-                f"Workspace root does not exist: {self.workspace_root}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Workspace root does not exist: {self.workspace_root}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return workspaces
 
         for item in self.workspace_root.iterdir():
@@ -131,8 +132,9 @@ class WorkspaceCleanupService:
 
         except Exception as e:
             logger.error(
-                f"Error checking workspace age for {workspace_path}: {e}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Error checking workspace age for {workspace_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def is_workspace_recently_modified(
@@ -170,8 +172,9 @@ class WorkspaceCleanupService:
 
         except Exception as e:
             logger.error(
-                f"Error checking workspace modification time for {workspace_path}: {e}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Error checking workspace modification time for {workspace_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def get_active_job_ids(self) -> set:
@@ -229,8 +232,9 @@ class WorkspaceCleanupService:
                     total_size += entry.stat().st_size
         except Exception as e:
             logger.warning(
-                f"Error calculating size for {directory_path}: {e}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Error calculating size for {directory_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         return total_size
 
@@ -253,15 +257,17 @@ class WorkspaceCleanupService:
 
             logger.info(
                 f"Deleted workspace {workspace_path.name}, "
-                f"reclaimed {size:,} bytes"
-            , extra={"correlation_id": get_correlation_id()})
+                f"reclaimed {size:,} bytes",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return True, size
 
         except Exception as e:
             logger.error(
-                f"Failed to delete workspace {workspace_path}: {e}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Failed to delete workspace {workspace_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False, 0
 
     def cleanup_workspaces(self) -> CleanupResult:
@@ -288,8 +294,9 @@ class WorkspaceCleanupService:
 
         logger.info(
             f"Starting workspace cleanup (retention: {self.retention_days} days, "
-            f"active jobs: {len(active_job_ids)})"
-        , extra={"correlation_id": get_correlation_id()})
+            f"active jobs: {len(active_job_ids)})",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Scan for workspace directories
         workspaces = self.scan_workspaces()
@@ -304,8 +311,9 @@ class WorkspaceCleanupService:
             # AC6: Skip workspaces for active jobs
             if job_id and job_id in active_job_ids:
                 logger.info(
-                    f"Skipping {workspace_name}: active job {job_id}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Skipping {workspace_name}: active job {job_id}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 result.skipped.append(
                     {
                         "workspace": workspace_name,
@@ -319,8 +327,9 @@ class WorkspaceCleanupService:
             # AC6: Skip recently modified workspaces
             if self.is_workspace_recently_modified(workspace_path):
                 logger.info(
-                    f"Skipping {workspace_name}: modified in last 24 hours"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Skipping {workspace_name}: modified in last 24 hours",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 result.skipped.append(
                     {
                         "workspace": workspace_name,
@@ -333,8 +342,9 @@ class WorkspaceCleanupService:
             # Check if workspace is expired
             if not self.is_workspace_expired(workspace_path):
                 logger.debug(
-                    f"Preserving {workspace_name}: within retention period"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Preserving {workspace_name}: within retention period",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 result.workspaces_preserved += 1
                 continue
 
@@ -362,8 +372,9 @@ class WorkspaceCleanupService:
             f"preserved={result.workspaces_preserved}, "
             f"space_reclaimed={result.space_reclaimed_bytes:,} bytes, "
             f"errors={len(result.errors)}, "
-            f"duration={result.duration_seconds:.2f}s"
-        , extra={"correlation_id": get_correlation_id()})
+            f"duration={result.duration_seconds:.2f}s",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         return result
 
@@ -381,7 +392,11 @@ class WorkspaceCleanupService:
             - total_size_mb: Total size of all workspaces in MB
         """
         status: dict[str, Any] = {
-            "last_cleanup_time": None if self.last_cleanup_time is None else self.last_cleanup_time.isoformat(),
+            "last_cleanup_time": (
+                None
+                if self.last_cleanup_time is None
+                else self.last_cleanup_time.isoformat()
+            ),
             "workspace_count": 0,
             "oldest_workspace_age": None,
             "total_size_mb": 0.0,
@@ -410,8 +425,9 @@ class WorkspaceCleanupService:
 
             except Exception as e:
                 logger.warning(
-                    f"Error checking workspace age for {workspace_path}: {e}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Error checking workspace age for {workspace_path}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         status["oldest_workspace_age"] = oldest_age_days
 

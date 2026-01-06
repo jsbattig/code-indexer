@@ -10,7 +10,7 @@ import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 if TYPE_CHECKING:
     from tantivy import Index, Schema  # type: ignore[import-untyped]
@@ -303,7 +303,7 @@ class TantivyIndexManager:
             self._index.reload()
             searcher = self._index.searcher()
             # num_docs is a property, not a method
-            return searcher.num_docs
+            return cast(int, searcher.num_docs)
         except Exception as e:
             logger.error(f"Failed to get document count: {e}")
             return 0
@@ -981,7 +981,9 @@ class TantivyIndexManager:
 
             with self._lock:
                 # Delete old version if it exists using query-based deletion (idempotent)
-                assert self._index is not None, "Index must be initialized when writer is initialized"
+                assert (
+                    self._index is not None
+                ), "Index must be initialized when writer is initialized"
                 delete_query = self._index.parse_query(file_path, ["path"])
                 self._writer.delete_documents_by_query(delete_query)
 
@@ -1018,7 +1020,9 @@ class TantivyIndexManager:
         try:
             with self._lock:
                 # Delete document using query-based deletion (idempotent)
-                assert self._index is not None, "Index must be initialized when writer is initialized"
+                assert (
+                    self._index is not None
+                ), "Index must be initialized when writer is initialized"
                 delete_query = self._index.parse_query(file_path, ["path"])
                 self._writer.delete_documents_by_query(delete_query)
 

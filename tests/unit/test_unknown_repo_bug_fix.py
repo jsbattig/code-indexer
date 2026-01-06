@@ -117,7 +117,9 @@ class TestUnknownRepoBugFix:
             if record.levelname == "WARNING"
         )
 
-    def test_submit_job_accepts_valid_repo_alias_without_warning(self, tmp_path, caplog):
+    def test_submit_job_accepts_valid_repo_alias_without_warning(
+        self, tmp_path, caplog
+    ):
         """Test that submit_job with valid repo_alias does NOT log warning."""
         # Arrange
         storage_path = str(tmp_path / "jobs.json")

@@ -268,7 +268,10 @@ class ReindexingConfig:
                     return True
             except Exception as e:
                 # Log pattern parsing errors for debugging
-                logger.debug(f"Pattern '{pattern}' failed to parse: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Pattern '{pattern}' failed to parse: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 # Skip pattern on parse error
                 continue
 

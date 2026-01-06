@@ -180,6 +180,7 @@ async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any
 
     # Call handler with arguments
     from typing import cast
+
     result = await handler(arguments, user)
     return cast(Dict[str, Any], result)
 

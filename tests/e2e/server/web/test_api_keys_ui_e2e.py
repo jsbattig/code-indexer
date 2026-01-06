@@ -58,9 +58,12 @@ def token_manager(web_infrastructure):
 @pytest.fixture
 def admin_client_fixture(web_infrastructure, admin_user: Dict[str, Any]) -> TestClient:
     """Authenticated admin client using web_infrastructure."""
-    return cast(TestClient, web_infrastructure.get_authenticated_client(
-        admin_user["username"], admin_user["password"]
-    ))
+    return cast(
+        TestClient,
+        web_infrastructure.get_authenticated_client(
+            admin_user["username"], admin_user["password"]
+        ),
+    )
 
 
 @pytest.fixture
@@ -68,9 +71,12 @@ def normal_user_client_fixture(
     web_infrastructure, normal_user: Dict[str, Any]
 ) -> TestClient:
     """Authenticated normal user client using web_infrastructure."""
-    return cast(TestClient, web_infrastructure.get_authenticated_client(
-        normal_user["username"], normal_user["password"]
-    ))
+    return cast(
+        TestClient,
+        web_infrastructure.get_authenticated_client(
+            normal_user["username"], normal_user["password"]
+        ),
+    )
 
 
 class TestAPIKeysUIAccess:
@@ -88,7 +94,9 @@ class TestAPIKeysUIAccess:
 
     def test_non_admin_cannot_access_config(self, normal_user_client_fixture):
         """AC13: Non-admin user cannot access configuration page."""
-        response = normal_user_client_fixture.get("/admin/config", follow_redirects=False)
+        response = normal_user_client_fixture.get(
+            "/admin/config", follow_redirects=False
+        )
         # Should redirect to login or return 403
         assert response.status_code in [303, 403]
 
@@ -138,7 +146,11 @@ class TestAPIKeysUIDisplay:
 
         # Should show "Not configured" or similar for empty platforms
         content = response.content.decode("utf-8")
-        assert "Not configured" in content or "No token" in content or "Configure" in content
+        assert (
+            "Not configured" in content
+            or "No token" in content
+            or "Configure" in content
+        )
 
 
 class TestAPIKeysUIEdit:
@@ -164,9 +176,7 @@ class TestAPIKeysUIEdit:
         # Should succeed (200 or redirect)
         assert response.status_code in [200, 303]
 
-    def test_update_existing_gitlab_token(
-        self, admin_client_fixture, token_manager
-    ):
+    def test_update_existing_gitlab_token(self, admin_client_fixture, token_manager):
         """AC6: Update existing GitLab token."""
         # Setup: Save initial GitLab token using server's token manager
         token_manager.save_token(
@@ -217,9 +227,7 @@ class TestAPIKeysUIEdit:
         config_response = admin_client_fixture.get("/admin/config")
         assert b"gitlab.internal.company.com" in config_response.content
 
-    def test_cancel_editing_without_saving(
-        self, admin_client_fixture, token_manager
-    ):
+    def test_cancel_editing_without_saving(self, admin_client_fixture, token_manager):
         """AC8: Cancel editing without saving changes."""
         # Setup: Save initial token using server's token manager
         token_manager.save_token(

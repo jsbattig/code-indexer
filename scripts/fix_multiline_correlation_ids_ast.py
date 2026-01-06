@@ -28,22 +28,31 @@ def find_logging_calls_needing_fix(file_path: Path) -> List[Tuple[int, int]]:
         if isinstance(node, ast.Call):
             # Check if it's a logger call
             if isinstance(node.func, ast.Attribute):
-                if (node.func.attr in ['error', 'warning', 'exception', 'info', 'debug', 'critical'] and
-                    isinstance(node.func.value, ast.Name) and
-                    node.func.value.id == 'logger'):
-
+                if (
+                    node.func.attr
+                    in ["error", "warning", "exception", "info", "debug", "critical"]
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "logger"
+                ):
                     # Check if it already has correlation_id
                     has_correlation = False
                     for keyword in node.keywords:
-                        if keyword.arg == 'extra':
+                        if keyword.arg == "extra":
                             # Check if extra contains correlation_id
                             if isinstance(keyword.value, ast.Dict):
                                 for key in keyword.value.keys:
-                                    if isinstance(key, ast.Constant) and key.value == 'correlation_id':
+                                    if (
+                                        isinstance(key, ast.Constant)
+                                        and key.value == "correlation_id"
+                                    ):
                                         has_correlation = True
                                         break
 
-                    if not has_correlation and hasattr(node, 'lineno') and hasattr(node, 'end_lineno'):
+                    if (
+                        not has_correlation
+                        and hasattr(node, "lineno")
+                        and hasattr(node, "end_lineno")
+                    ):
                         calls_to_fix.append((node.lineno, node.end_lineno))
 
     return calls_to_fix
@@ -69,7 +78,7 @@ def fix_logging_call(lines: List[str], start_line: int, end_line: int) -> List[s
     closing_line = lines[closing_paren_idx]
 
     # Find the position of the closing parenthesis
-    paren_pos = closing_line.rfind(')')
+    paren_pos = closing_line.rfind(")")
     if paren_pos == -1:
         return lines  # Can't find closing paren, skip
 
@@ -82,12 +91,12 @@ def fix_logging_call(lines: List[str], start_line: int, end_line: int) -> List[s
 
         # Check if previous line ends with a comma
         stripped_prev = prev_line.rstrip()
-        if not stripped_prev.endswith(','):
+        if not stripped_prev.endswith(","):
             # Add comma to previous line
-            lines[closing_paren_idx - 1] = prev_line.rstrip() + ',\n'
+            lines[closing_paren_idx - 1] = prev_line.rstrip() + ",\n"
 
         # Insert new line with correlation_id before closing paren
-        new_line = ' ' * indent + 'extra={"correlation_id": get_correlation_id()},\n'
+        new_line = " " * indent + 'extra={"correlation_id": get_correlation_id()},\n'
         lines.insert(closing_paren_idx, new_line)
     else:
         # Single line call - this shouldn't happen since we're only fixing multi-line
@@ -97,10 +106,14 @@ def fix_logging_call(lines: List[str], start_line: int, end_line: int) -> List[s
 
         # Check if we need a comma before extra
         stripped = before_paren.rstrip()
-        if not stripped.endswith(',') and not stripped.endswith('('):
-            before_paren = before_paren.rstrip() + ', '
+        if not stripped.endswith(",") and not stripped.endswith("("):
+            before_paren = before_paren.rstrip() + ", "
 
-        lines[closing_paren_idx] = before_paren + 'extra={"correlation_id": get_correlation_id()}' + after_paren
+        lines[closing_paren_idx] = (
+            before_paren
+            + 'extra={"correlation_id": get_correlation_id()}'
+            + after_paren
+        )
 
     return lines
 
@@ -125,7 +138,7 @@ def process_file(file_path: Path) -> int:
         fixed_count += 1
 
     # Write back
-    file_path.write_text(''.join(lines))
+    file_path.write_text("".join(lines))
 
     return fixed_count
 
@@ -133,12 +146,12 @@ def process_file(file_path: Path) -> int:
 def main():
     """Main entry point."""
     files_to_fix = [
-        ('src/code_indexer/server/mcp/handlers.py', 3),
-        ('src/code_indexer/server/services/scip_resolution_queue.py', 6),
-        ('src/code_indexer/server/sync/reindexing_engine.py', 9),
-        ('src/code_indexer/server/web/routes.py', 13),
-        ('src/code_indexer/server/app.py', 18),
-        ('src/code_indexer/server/services/scip_self_healing.py', 28),
+        ("src/code_indexer/server/mcp/handlers.py", 3),
+        ("src/code_indexer/server/services/scip_resolution_queue.py", 6),
+        ("src/code_indexer/server/sync/reindexing_engine.py", 9),
+        ("src/code_indexer/server/web/routes.py", 13),
+        ("src/code_indexer/server/app.py", 18),
+        ("src/code_indexer/server/services/scip_self_healing.py", 28),
     ]
 
     print("Fixing remaining multi-line logging calls with AST-based approach...")
@@ -153,10 +166,14 @@ def main():
 
         fixed = process_file(file_path)
         if fixed > 0:
-            print(f"  ✓ {file_path.name}: Fixed {fixed} calls (expected {expected_count})")
+            print(
+                f"  ✓ {file_path.name}: Fixed {fixed} calls (expected {expected_count})"
+            )
             total_fixed += fixed
         else:
-            print(f"  ⚠ {file_path.name}: No calls found to fix (expected {expected_count})")
+            print(
+                f"  ⚠ {file_path.name}: No calls found to fix (expected {expected_count})"
+            )
 
     print("=" * 60)
     print(f"Total calls fixed: {total_fixed}")
@@ -171,7 +188,7 @@ def main():
             continue
 
         try:
-            compile(file_path.read_text(), file_path, 'exec')
+            compile(file_path.read_text(), file_path, "exec")
             print(f"  ✓ {file_path.name}: Syntax OK")
         except SyntaxError as e:
             print(f"  ❌ {file_path.name}: Syntax error: {e.msg} (line {e.lineno})")
@@ -185,5 +202,5 @@ def main():
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

@@ -70,7 +70,8 @@ class SQLiteLogHandler(logging.Handler):
         cursor = conn.cursor()
 
         # Create logs table with schema from AC5
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
@@ -83,21 +84,18 @@ class SQLiteLogHandler(logging.Handler):
                 extra_data TEXT,
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             )
-        """)
+        """
+        )
 
         # Create indexes from AC5
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp)"
         )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level)"
-        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level)")
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_logs_correlation_id ON logs(correlation_id)"
         )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_logs_source ON logs(source)"
-        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_logs_source ON logs(source)")
 
         conn.commit()
         conn.close()
@@ -113,7 +111,7 @@ class SQLiteLogHandler(logging.Handler):
             self._local.connection = sqlite3.connect(
                 str(self.db_path),
                 check_same_thread=False,
-                timeout=30.0  # 30 second timeout for lock conflicts
+                timeout=30.0,  # 30 second timeout for lock conflicts
             )
         return cast(sqlite3.Connection, self._local.connection)
 
@@ -150,10 +148,27 @@ class SQLiteLogHandler(logging.Handler):
                 "user_id",
                 "request_path",
                 # Standard LogRecord attributes
-                "name", "msg", "args", "created", "filename", "funcName",
-                "levelname", "levelno", "lineno", "module", "msecs",
-                "message", "pathname", "process", "processName", "relativeCreated",
-                "thread", "threadName", "exc_info", "exc_text", "stack_info"
+                "name",
+                "msg",
+                "args",
+                "created",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "message",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "exc_info",
+                "exc_text",
+                "stack_info",
             }
 
             extra_data: Dict[str, Any] = {}

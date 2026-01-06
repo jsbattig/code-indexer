@@ -601,7 +601,10 @@ class ErrorReporter:
         ]:
             try:
                 self.diagnostic_collector.collect_diagnostics(error, error.context)
-                self.logger.debug(f"Diagnostics collected for error {error.error_code}", extra={"correlation_id": get_correlation_id()})
+                self.logger.debug(
+                    f"Diagnostics collected for error {error.error_code}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             except Exception as e:
                 self.logger.warning(
                     f"Failed to collect diagnostics for {error.error_code}: {e}",

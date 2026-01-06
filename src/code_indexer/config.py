@@ -668,7 +668,7 @@ Add directory names to exclude from indexing:
 ```json
 "exclude_dirs": [
   "node_modules", "dist", "build",     // Build outputs
-  "logs", "cache", "tmp",              // Temporary files  
+  "logs", "cache", "tmp",              // Temporary files
   "coverage", ".pytest_cache",         // Test artifacts
   "vendor", "third_party",             // Dependencies
   "my_custom_folder"                   // Your custom exclusions
@@ -970,7 +970,9 @@ code-indexer index --clear
 
         # If no daemon config exists, create one with enabled=False
         if config.daemon is None:
-            config.daemon = DaemonConfig.model_validate({**self.DAEMON_DEFAULTS, "enabled": False})
+            config.daemon = DaemonConfig.model_validate(
+                {**self.DAEMON_DEFAULTS, "enabled": False}
+            )
         else:
             # Just update the enabled flag, preserve other settings
             daemon_dict = config.daemon.model_dump()

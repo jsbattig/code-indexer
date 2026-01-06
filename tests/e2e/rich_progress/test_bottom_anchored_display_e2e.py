@@ -121,7 +121,6 @@ class TestBottomAnchoredDisplayE2E:
             # Don't mock start_bottom_display, we want to test the real flow
             manager.start_bottom_display()  # Initialize once
             with patch.object(manager.live_component, "update") as mock_live_update:
-
                 for step_type, *args in workflow_steps:
                     if step_type == "setup":
                         message = args[0]

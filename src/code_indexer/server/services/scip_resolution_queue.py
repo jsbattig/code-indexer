@@ -115,7 +115,9 @@ class SCIPResolutionQueue:
             )
 
             # Create workspace for this project
-            workspace_path = Path(f"{SCIP_WORKSPACE_BASE}-{project.job_id}/{project.project_path}")
+            workspace_path = Path(
+                f"{SCIP_WORKSPACE_BASE}-{project.job_id}/{project.project_path}"
+            )
             workspace_path.mkdir(parents=True, exist_ok=True)
 
             # Get current attempt count for --resume flag
@@ -205,13 +207,19 @@ class SCIPResolutionQueue:
         Only one worker runs at a time.
         """
         if self.is_running:
-            logger.debug("Worker already running, ignoring start request", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "Worker already running, ignoring start request",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         self.is_running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
 
-        logger.info("SCIP resolution queue worker started", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "SCIP resolution queue worker started",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     async def stop_worker(self) -> None:
         """
@@ -221,7 +229,10 @@ class SCIPResolutionQueue:
         Currently processing project will be re-queued.
         """
         if not self.is_running:
-            logger.debug("Worker not running, ignoring stop request", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "Worker not running, ignoring stop request",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         self.is_running = False
@@ -234,7 +245,10 @@ class SCIPResolutionQueue:
                 pass
             self.worker_task = None
 
-        logger.info("SCIP resolution queue worker stopped", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "SCIP resolution queue worker stopped",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     async def _worker_loop(self) -> None:
         """
@@ -242,7 +256,9 @@ class SCIPResolutionQueue:
 
         Runs until is_running becomes False or task is cancelled.
         """
-        logger.debug("Worker loop started", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            "Worker loop started", extra={"correlation_id": get_correlation_id()}
+        )
 
         try:
             while self.is_running:
@@ -261,11 +277,19 @@ class SCIPResolutionQueue:
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    logger.error(f"Error in worker loop: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        f"Error in worker loop: {e}",
+                        exc_info=True,
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     # Continue processing other projects
 
         except asyncio.CancelledError:
-            logger.debug("Worker loop cancelled", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "Worker loop cancelled", extra={"correlation_id": get_correlation_id()}
+            )
             raise
         finally:
-            logger.debug("Worker loop exited", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "Worker loop exited", extra={"correlation_id": get_correlation_id()}
+            )

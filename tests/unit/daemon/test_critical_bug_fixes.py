@@ -172,7 +172,6 @@ class TestBug5SemanticIndexesFailToLoad:
                 "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
             ) as mock_vector_store_cls,
         ):
-
             mock_vector_store = MagicMock()
             mock_vector_store.list_collections.return_value = ["test_collection"]
             mock_vector_store_cls.return_value = mock_vector_store
@@ -226,7 +225,6 @@ class TestBug5SemanticIndexesFailToLoad:
                 "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
             ) as mock_vector_store_cls,
         ):
-
             mock_vector_store = MagicMock()
             mock_vector_store.list_collections.return_value = ["test_collection"]
             mock_vector_store_cls.return_value = mock_vector_store

@@ -51,8 +51,9 @@ class ValidationMetricsCollector:
         self._load_history()
 
         logger.info(
-            f"ValidationMetricsCollector initialized with storage at {self.storage_path}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"ValidationMetricsCollector initialized with storage at {self.storage_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def add_validation_result(self, result: ValidationResult) -> None:
         """
@@ -91,11 +92,15 @@ class ValidationMetricsCollector:
             self._save_history()
 
             logger.debug(
-                f"Added validation result with health score {result.overall_health_score:.2f}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Added validation result with health score {result.overall_health_score:.2f}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         except Exception as e:
-            logger.error(f"Failed to add validation result to metrics: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to add validation result to metrics: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def get_aggregated_metrics(self, days_back: int = 30) -> ValidationMetrics:
         """
@@ -194,7 +199,10 @@ class ValidationMetricsCollector:
             )
 
         except Exception as e:
-            logger.error(f"Failed to calculate aggregated metrics: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to calculate aggregated metrics: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             # Return minimal metrics on error
             return ValidationMetrics(
                 current_health_score=0.0,
@@ -246,7 +254,10 @@ class ValidationMetricsCollector:
             return trend_analysis
 
         except Exception as e:
-            logger.error(f"Failed to analyze trends: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to analyze trends: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {
                 "health_declining": False,
                 "performance_degrading": False,
@@ -293,11 +304,17 @@ class ValidationMetricsCollector:
                 original_results_count - len(self._validation_results)
             ) + (original_history_count - len(self._history_entries))
 
-            logger.info(f"Cleaned up {entries_removed} old validation metrics entries", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Cleaned up {entries_removed} old validation metrics entries",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return entries_removed
 
         except Exception as e:
-            logger.error(f"Failed to cleanup old metrics: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to cleanup old metrics: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return 0
 
     def _calculate_health_trend(
@@ -327,7 +344,10 @@ class ValidationMetricsCollector:
             return last_score - first_score
 
         except Exception as e:
-            logger.error(f"Failed to calculate health trend: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to calculate health trend: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return 0.0
 
     def _load_history(self) -> None:
@@ -353,15 +373,22 @@ class ValidationMetricsCollector:
                     )
                     self._history_entries.append(entry)
                 except (KeyError, ValueError) as e:
-                    logger.warning(f"Skipping invalid history entry: {e}", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        f"Skipping invalid history entry: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     continue
 
             logger.info(
-                f"Loaded {len(self._history_entries)} validation history entries"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Loaded {len(self._history_entries)} validation history entries",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         except Exception as e:
-            logger.error(f"Failed to load validation history: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to load validation history: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _save_history(self) -> None:
         """Save validation history to persistent storage."""
@@ -394,7 +421,10 @@ class ValidationMetricsCollector:
             temp_file.replace(self.history_file)
 
         except Exception as e:
-            logger.error(f"Failed to save validation history: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to save validation history: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def get_summary_stats(self) -> Dict[str, Any]:
         """
@@ -446,5 +476,8 @@ class ValidationMetricsCollector:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get summary stats: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get summary stats: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {"error": str(e)}

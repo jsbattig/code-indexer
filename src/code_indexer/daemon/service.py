@@ -931,7 +931,9 @@ class CIDXDaemonService(Service):
 
         # Delegate to DaemonWatchManager for non-blocking operation
         # Config will be loaded by the manager
-        result = cast(dict[str, Any], self.watch_manager.start_watch(project_path, None, **kwargs))
+        result = cast(
+            dict[str, Any], self.watch_manager.start_watch(project_path, None, **kwargs)
+        )
 
         # Update legacy fields for compatibility
         if result["status"] == "success":

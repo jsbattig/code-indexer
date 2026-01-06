@@ -178,7 +178,8 @@ class TestEndpointFixesVerification:
 
         # Verify it called the CORRECT endpoint
         mock_linking_client._authenticated_request.assert_called_once_with(
-            "GET", "/api/repos"  # FIXED - now calls correct server endpoint
+            "GET",
+            "/api/repos",  # FIXED - now calls correct server endpoint
         )
 
         # Verify response
@@ -216,7 +217,8 @@ class TestEndpointFixesVerification:
 
         # Verify it called the CORRECT endpoint
         mock_query_client._authenticated_request.assert_called_once_with(
-            "GET", "/api/repos"  # FIXED - now calls correct server endpoint
+            "GET",
+            "/api/repos",  # FIXED - now calls correct server endpoint
         )
 
         # Verify response

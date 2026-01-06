@@ -275,7 +275,6 @@ class TestCLIIssuesFix:
                 "src.code_indexer.api_clients.repos_client.ReposAPIClient"
             ) as mock_client_class,
         ):
-
             # Setup mocks
             mock_find_root.return_value = Path("/fake/project")
             mock_config.return_value = {"server_url": "http://localhost:8000"}
@@ -334,7 +333,6 @@ class TestCLIIssuesFix:
             ) as mock_admin_class,
             patch("src.code_indexer.utils.async_helper.run_async") as mock_run_async,
         ):
-
             # Setup mocks
             mock_find_root.return_value = Path("/fake/project")
             mock_config.return_value = {"server_url": "http://localhost:8000"}

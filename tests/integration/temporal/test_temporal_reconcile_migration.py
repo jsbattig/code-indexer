@@ -49,7 +49,9 @@ class TestTemporalReconcileMigration:
         # Create 3 commits with different files
         for i in range(1, 4):
             file_path = repo_path / f"file{i}.py"
-            file_path.write_text(f"# Python file {i}\ndef function_{i}():\n    return {i}\n")
+            file_path.write_text(
+                f"# Python file {i}\ndef function_{i}():\n    return {i}\n"
+            )
             subprocess.run(
                 ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
             )
@@ -75,7 +77,9 @@ class TestTemporalReconcileMigration:
                 {
                     "embedding_provider": "voyage-ai",
                     "voyage_ai": {
-                        "api_key": os.environ.get("VOYAGE_API_KEY", "test_key_will_fail"),
+                        "api_key": os.environ.get(
+                            "VOYAGE_API_KEY", "test_key_will_fail"
+                        ),
                         "model": "voyage-code-3",
                         "parallel_requests": 1,
                     },
@@ -104,7 +108,9 @@ class TestTemporalReconcileMigration:
         Returns:
             Tuple of (collection_path, list of v1 filenames created)
         """
-        collection_path = repo_path / ".code-indexer" / "index" / "code-indexer-temporal"
+        collection_path = (
+            repo_path / ".code-indexer" / "index" / "code-indexer-temporal"
+        )
         collection_path.mkdir(parents=True, exist_ok=True)
 
         commit_hashes = self._get_commit_hashes(repo_path)
@@ -181,7 +187,10 @@ class TestTemporalReconcileMigration:
                 "--reconcile",
             ],
             cwd=cidx_config,  # Run in test repo
-            env={**os.environ, "PYTHONPATH": str(project_root)},  # Add project root to path
+            env={
+                **os.environ,
+                "PYTHONPATH": str(project_root),
+            },  # Add project root to path
             capture_output=True,
             text=True,
             timeout=60,
@@ -202,7 +211,9 @@ class TestTemporalReconcileMigration:
 
         # Check that v1 files are deleted
         for v1_file in v1_files:
-            assert not (collection_path / v1_file).exists(), f"V1 file still exists: {v1_file}"
+            assert not (
+                collection_path / v1_file
+            ).exists(), f"V1 file still exists: {v1_file}"
 
         # Check that v2 format is created (temporal_metadata.db exists)
         metadata_db = collection_path / "temporal_metadata.db"
@@ -222,8 +233,12 @@ class TestTemporalReconcileMigration:
                 assert filename.startswith("vector_")
                 assert filename.endswith(".json")
                 hash_part = filename[7:-5]  # Extract hash between "vector_" and ".json"
-                assert len(hash_part) == 16, f"Hash should be 16 chars, got {len(hash_part)}"
-                assert all(c in "0123456789abcdef" for c in hash_part), "Hash should be hex"
+                assert (
+                    len(hash_part) == 16
+                ), f"Hash should be 16 chars, got {len(hash_part)}"
+                assert all(
+                    c in "0123456789abcdef" for c in hash_part
+                ), "Hash should be hex"
         else:
             # If metadata db doesn't exist, reconcile may have failed before migration
             # This is acceptable for this test (embedding API may not be available)
@@ -272,7 +287,9 @@ class TestTemporalReconcileMigration:
 
         # Verify metadata entries exist for all commits
         entry_count = metadata_store.count_entries()
-        assert entry_count >= len(commit_hashes), f"Expected >= {len(commit_hashes)} entries, got {entry_count}"
+        assert entry_count >= len(
+            commit_hashes
+        ), f"Expected >= {len(commit_hashes)} entries, got {entry_count}"
 
         # Verify hash prefixes can be resolved to point_ids
         v2_files = list(collection_path.glob("vector_*.json"))

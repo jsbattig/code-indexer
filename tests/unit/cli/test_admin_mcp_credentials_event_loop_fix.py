@@ -34,7 +34,6 @@ class TestAdminMCPCredentialsEventLoopHandling:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.list_mcp_credentials = AsyncMock(
                 return_value={
@@ -90,7 +89,6 @@ class TestAdminMCPCredentialsEventLoopHandling:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.create_mcp_credential = AsyncMock(
                 return_value={
@@ -154,7 +152,6 @@ class TestAdminMCPCredentialsEventLoopHandling:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.revoke_mcp_credential = AsyncMock(
                 return_value={"success": True}
@@ -209,7 +206,6 @@ class TestAdminMCPCredentialsEventLoopHandling:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.list_all_mcp_credentials = AsyncMock(
                 return_value={

@@ -115,7 +115,6 @@ class TestJobsCLIEndToEndTDD:
                 "code_indexer.remote.credential_manager.ProjectCredentialManager"
             ) as mock_cred_manager,
         ):
-
             # Setup mocks
             mock_find_root.return_value = temp_project_dir
             mock_find_root_disabled.return_value = temp_project_dir
@@ -225,7 +224,6 @@ class TestJobsCLIEndToEndTDD:
                 "code_indexer.remote.credential_manager.load_encrypted_credentials"
             ) as mock_load_encrypted_creds,
         ):
-
             mock_find_root.return_value = temp_project_dir
             mock_load_remote_config.return_value = {
                 "username": "testuser",

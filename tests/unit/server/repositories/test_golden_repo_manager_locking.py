@@ -71,7 +71,6 @@ def test_concurrent_add_operations_serialized(manager):
         patch.object(manager, "_clone_repository", return_value="/path/to/clone"),
         patch.object(manager, "_execute_post_clone_workflow"),
     ):
-
         # Run three concurrent add operations
         threads = []
         for i in range(3):
@@ -171,7 +170,6 @@ def test_concurrent_remove_operations_serialized(manager):
     with patch.object(
         manager, "_cleanup_repository_files", side_effect=tracked_cleanup
     ):
-
         # Run three concurrent remove operations
         threads = []
         for i in range(1, 4):
@@ -249,7 +247,6 @@ def test_concurrent_add_remove_serialized(manager):
         patch.object(manager, "_execute_post_clone_workflow"),
         patch.object(manager, "_cleanup_repository_files", return_value=True),
     ):
-
         # Create threads for add and remove operations
         def add_operation():
             track_operation("start", "add")

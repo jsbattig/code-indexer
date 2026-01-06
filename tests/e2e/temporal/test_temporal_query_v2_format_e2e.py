@@ -99,7 +99,9 @@ def git_repo_with_commits(tmp_path):
 class TestTemporalQueryV2FormatE2E:
     """E2E tests for temporal query with v2 format."""
 
-    def test_query_time_range_all_returns_results_with_v2_format(self, git_repo_with_commits):
+    def test_query_time_range_all_returns_results_with_v2_format(
+        self, git_repo_with_commits
+    ):
         """AC3: Query with --time-range-all works with v2 format, returns correct results."""
         repo_dir = git_repo_with_commits
 
@@ -109,19 +111,29 @@ class TestTemporalQueryV2FormatE2E:
         # Verify v2 format is used
         temporal_path = repo_dir / ".code-indexer" / "index" / "code-indexer-temporal"
         metadata_db_path = temporal_path / "temporal_metadata.db"
-        assert metadata_db_path.exists(), "temporal_metadata.db should exist (v2 format)"
+        assert (
+            metadata_db_path.exists()
+        ), "temporal_metadata.db should exist (v2 format)"
 
         # Verify vector files use v2 format (28-char filenames)
         vector_files = list(temporal_path.rglob("vector_*.json"))
         assert len(vector_files) > 0, "Should have indexed vector files"
         for vector_file in vector_files:
-            assert len(vector_file.name) == 28, (
-                f"V2 format should produce 28-char filenames, got {len(vector_file.name)}"
-            )
+            assert (
+                len(vector_file.name) == 28
+            ), f"V2 format should produce 28-char filenames, got {len(vector_file.name)}"
 
         # When: Querying with --time-range-all
         query_result = subprocess.run(
-            ["cidx", "query", "authentication", "--time-range-all", "--quiet", "--limit", "10"],
+            [
+                "cidx",
+                "query",
+                "authentication",
+                "--time-range-all",
+                "--quiet",
+                "--limit",
+                "10",
+            ],
             cwd=repo_dir,
             check=False,
             capture_output=True,
@@ -137,12 +149,12 @@ class TestTemporalQueryV2FormatE2E:
         # If results found, verify they contain file paths and commit info
         if query_result.returncode == 0:
             output = query_result.stdout
-            assert "auth.py" in output or "LongFileName" in output, (
-                f"Query results should contain file paths. Output: {output}"
-            )
-            assert "commit" in output.lower() or "hash" in output.lower(), (
-                f"Query results should contain commit info. Output: {output}"
-            )
+            assert (
+                "auth.py" in output or "LongFileName" in output
+            ), f"Query results should contain file paths. Output: {output}"
+            assert (
+                "commit" in output.lower() or "hash" in output.lower()
+            ), f"Query results should contain commit info. Output: {output}"
 
     def test_query_resolves_hash_prefixes_to_point_ids(self, git_repo_with_commits):
         """AC3: Query correctly resolves hash prefixes to point_ids using metadata store."""
@@ -166,7 +178,7 @@ class TestTemporalQueryV2FormatE2E:
         for vector_file in vector_files:
             filename = vector_file.stem
             if filename.startswith("vector_"):
-                hash_prefix = filename[len("vector_"):]
+                hash_prefix = filename[len("vector_") :]
                 point_id = metadata_store.get_point_id(hash_prefix)
                 if point_id:
                     verified_mappings += 1
@@ -180,7 +192,15 @@ class TestTemporalQueryV2FormatE2E:
 
         # When: Querying (implicitly uses hash → point_id resolution)
         query_result = subprocess.run(
-            ["cidx", "query", "database", "--time-range-all", "--quiet", "--limit", "5"],
+            [
+                "cidx",
+                "query",
+                "database",
+                "--time-range-all",
+                "--quiet",
+                "--limit",
+                "5",
+            ],
             cwd=repo_dir,
             check=False,
             capture_output=True,
@@ -191,7 +211,9 @@ class TestTemporalQueryV2FormatE2E:
         assert query_result.returncode in [0, 1]
         assert verified_mappings > 0, f"Verified {verified_mappings} mappings"
 
-    def test_query_with_long_file_paths_returns_correct_results(self, git_repo_with_commits):
+    def test_query_with_long_file_paths_returns_correct_results(
+        self, git_repo_with_commits
+    ):
         """AC1+AC3: Query returns results for files with long paths (v2 format necessity)."""
         repo_dir = git_repo_with_commits
 
@@ -200,7 +222,15 @@ class TestTemporalQueryV2FormatE2E:
 
         # When: Querying for content in long-path file
         query_result = subprocess.run(
-            ["cidx", "query", "process_data", "--time-range-all", "--quiet", "--limit", "10"],
+            [
+                "cidx",
+                "query",
+                "process_data",
+                "--time-range-all",
+                "--quiet",
+                "--limit",
+                "10",
+            ],
             cwd=repo_dir,
             check=False,
             capture_output=True,
@@ -213,6 +243,6 @@ class TestTemporalQueryV2FormatE2E:
         # If results found, verify long-path file is included
         if query_result.returncode == 0:
             output = query_result.stdout
-            assert "LongFileName" in output or "nested/directory" in output, (
-                f"Query results should include long-path file. Output: {output}"
-            )
+            assert (
+                "LongFileName" in output or "nested/directory" in output
+            ), f"Query results should include long-path file. Output: {output}"

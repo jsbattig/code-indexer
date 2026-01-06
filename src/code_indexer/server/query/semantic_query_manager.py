@@ -180,19 +180,24 @@ class SemanticQueryManager:
         config_file = repo_path / ".code-indexer" / "config.json"
         if not config_file.exists():
             self.logger.debug(
-                f"Config file not found at {config_file}, defaulting to single repository mode"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Config file not found at {config_file}, defaulting to single repository mode",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
         try:
             config = json.loads(config_file.read_text())
             is_composite = bool(config.get("proxy_mode", False))
             self.logger.debug(
-                f"Repository at {repo_path} detected as {'composite' if is_composite else 'single'}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Repository at {repo_path} detected as {'composite' if is_composite else 'single'}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return is_composite
         except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON in config file {config_file}: {str(e)}", extra={"correlation_id": get_correlation_id()})
+            self.logger.error(
+                f"Invalid JSON in config file {config_file}: {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise
 
     async def search(
@@ -224,8 +229,9 @@ class SemanticQueryManager:
         try:
             if self._is_composite_repository(repo_path):
                 self.logger.info(
-                    f"Routing query to composite handler for repository: {repo_path}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Routing query to composite handler for repository: {repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return await self.search_composite(
                     repo_path,
                     query,
@@ -236,8 +242,9 @@ class SemanticQueryManager:
                 )
 
             self.logger.info(
-                f"Routing query to single repository handler for: {repo_path}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Routing query to single repository handler for: {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return await self.search_single(
                 repo_path,
                 query,
@@ -248,8 +255,9 @@ class SemanticQueryManager:
             )
         except Exception as e:
             self.logger.error(
-                f"Search routing failed for repository {repo_path}: {str(e)}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Search routing failed for repository {repo_path}: {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise
 
     async def search_single(
@@ -317,8 +325,9 @@ class SemanticQueryManager:
             Exception: If CLI execution or parsing fails
         """
         self.logger.info(
-            f"Composite repository search for {repo_path} using CLI integration"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Composite repository search for {repo_path} using CLI integration",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Execute query using CLI integration
         return self._execute_cli_query(
@@ -431,7 +440,10 @@ class SemanticQueryManager:
                     )
         except Exception as e:
             # Log but don't fail if global repos can't be loaded
-            self.logger.warning(f"Failed to load global repos: {e}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Failed to load global repos: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Merge user repos and global repos
         all_repos = user_repos + global_repos_list
@@ -514,7 +526,10 @@ class SemanticQueryManager:
         # Ensure results are QueryResult objects for normal list responses
         if results and len(results) > 0 and not isinstance(results[0], QueryResult):
             # This shouldn't happen in normal operation, but handle gracefully
-            self.logger.warning("Unexpected result format in query response", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                "Unexpected result format in query response",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Check if temporal parameters were used but no results (graceful fallback)
         has_temporal_params = any(
@@ -585,7 +600,10 @@ class SemanticQueryManager:
             repo_alias=repository_alias,  # AC5: Fix unknown repo bug
         )
 
-        self.logger.info(f"Semantic query job {job_id} submitted for user {username}", extra={"correlation_id": get_correlation_id()})
+        self.logger.info(
+            f"Semantic query job {job_id} submitted for user {username}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return job_id
 
     def get_query_job_status(
@@ -715,8 +733,9 @@ class SemanticQueryManager:
                     target_path = alias_manager.read_alias(repo_alias)
                     if not target_path:
                         self.logger.warning(
-                            f"Global repo alias '{repo_alias}' could not be resolved, skipping"
-                        , extra={"correlation_id": get_correlation_id()})
+                            f"Global repo alias '{repo_alias}' could not be resolved, skipping",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         continue  # Skip if alias can't be resolved
 
                     repo_path = target_path
@@ -773,8 +792,9 @@ class SemanticQueryManager:
                     )
                 # For other errors, log warning and continue with other repos
                 self.logger.warning(
-                    f"Failed to search repository {repo_info['user_alias']}: {str(e)}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to search repository {repo_info['user_alias']}: {str(e)}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 continue
 
         # Sort by similarity score (descending) and limit results
@@ -870,8 +890,9 @@ class SemanticQueryManager:
             if self._is_composite_repository(repo_path_obj):
                 # Use CLI integration for composite repos (supports all filters)
                 self.logger.debug(
-                    f"Composite repository detected: {repo_path}. Using CLI integration for search."
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Composite repository detected: {repo_path}. Using CLI integration for search.",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return self._execute_cli_query(
                     repo_path=repo_path_obj,
                     query=query_text,
@@ -955,8 +976,9 @@ class SemanticQueryManager:
                     f"Advanced filter parameters (language={language}, exclude_language={exclude_language}, "
                     f"path_filter={path_filter}, exclude_path={exclude_path}, accuracy={accuracy}) "
                     f"are not supported for non-composite repository '{repository_alias}'. "
-                    "These filters will be ignored. Consider using file_extensions filter instead."
-                , extra={"correlation_id": get_correlation_id()})
+                    "These filters will be ignored. Consider using file_extensions filter instead.",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
             # SEMANTIC SEARCH
             # Import SemanticSearchService and related models
@@ -1010,8 +1032,9 @@ class SemanticQueryManager:
 
         except Exception as e:
             self.logger.error(
-                f"Failed to search repository '{repository_alias}' at '{repo_path}': {str(e)}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Failed to search repository '{repository_alias}' at '{repo_path}': {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             # Re-raise exception to be handled by calling method
             raise
 
@@ -1399,8 +1422,9 @@ class SemanticQueryManager:
                 # GRACEFUL FALLBACK (Acceptance Criterion 9)
                 self.logger.warning(
                     f"Temporal index not available for repository '{repository_alias}'. "
-                    "Falling back to regular search."
-                , extra={"correlation_id": get_correlation_id()})
+                    "Falling back to regular search.",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 # Fall back to regular search - return empty list with warning
                 # The warning will be added to query response by caller
                 return []
@@ -1501,13 +1525,17 @@ class SemanticQueryManager:
 
         except ValueError as e:
             # Clear error messages for invalid parameters (Acceptance Criterion 10)
-            self.logger.error(f"Temporal query validation error: {str(e)}", extra={"correlation_id": get_correlation_id()})
+            self.logger.error(
+                f"Temporal query validation error: {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise ValueError(str(e))
         except Exception as e:
             # Log error and fall back to regular search
             self.logger.error(
-                f"Temporal query failed for repository '{repository_alias}': {str(e)}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Temporal query failed for repository '{repository_alias}': {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             # Re-raise to let caller handle
             raise SemanticQueryError(f"Temporal query failed: {str(e)}")
 
@@ -1615,8 +1643,9 @@ class SemanticQueryManager:
 
             self.logger.debug(
                 f"FTS search completed for '{repository_alias}': "
-                f"{len(query_results)} results"
-            , extra={"correlation_id": get_correlation_id()})
+                f"{len(query_results)} results",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return query_results
 
         except ImportError as e:
@@ -1626,8 +1655,9 @@ class SemanticQueryManager:
             )
         except Exception as e:
             self.logger.error(
-                f"FTS search failed for repository '{repository_alias}': {str(e)}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"FTS search failed for repository '{repository_alias}': {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise SemanticQueryError(f"FTS search failed: {str(e)}")
 
     def _merge_hybrid_results(

@@ -52,14 +52,23 @@ def main():
         service.deployment_executor = deployment_executor
 
         # Execute one polling iteration
-        logger.info("Starting auto-update polling iteration", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Starting auto-update polling iteration",
+            extra={"correlation_id": get_correlation_id()},
+        )
         service.poll_once()
-        logger.info("Auto-update polling iteration completed", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Auto-update polling iteration completed",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         sys.exit(0)
 
     except Exception as e:
-        logger.exception(f"Auto-update polling failed: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.exception(
+            f"Auto-update polling failed: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         sys.exit(1)
 
 

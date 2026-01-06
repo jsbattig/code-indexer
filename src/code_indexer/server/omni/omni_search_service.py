@@ -126,10 +126,16 @@ class OmniSearchService:
                     errors[repo_alias] = (
                         f"Search timeout after {self.config.per_repo_timeout_seconds}s"
                     )
-                    logger.warning(f"Search timeout for repo {repo_alias}", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        f"Search timeout for repo {repo_alias}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                 except Exception as e:
                     errors[repo_alias] = str(e)
-                    logger.error(f"Search error for repo {repo_alias}: {e}", extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        f"Search error for repo {repo_alias}: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
         # Aggregate results
         aggregator = ResultAggregator(mode=aggregation_mode, limit=limit)
@@ -158,9 +164,13 @@ class OmniSearchService:
         Returns:
             Search result dict from query service
         """
-        return cast(Dict[Any, Any], self.query_service.query(repo_alias, query, **kwargs))
+        return cast(
+            Dict[Any, Any], self.query_service.query(repo_alias, query, **kwargs)
+        )
 
-    def get_page(self, cursor: str, page: int, page_size: int = 10) -> Optional[List[Dict]]:
+    def get_page(
+        self, cursor: str, page: int, page_size: int = 10
+    ) -> Optional[List[Dict]]:
         """
         Retrieve a page of cached results.
 
@@ -173,7 +183,10 @@ class OmniSearchService:
             List of results for the page, or None if invalid/expired
         """
         offset = page * page_size
-        return cast(Optional[List[Dict]], self.cache.get_results(cursor, offset=offset, limit=page_size))
+        return cast(
+            Optional[List[Dict]],
+            self.cache.get_results(cursor, offset=offset, limit=page_size),
+        )
 
     def get_metadata(self, cursor: str) -> Optional[Dict]:
         """

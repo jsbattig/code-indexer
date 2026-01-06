@@ -4,6 +4,7 @@
 # source: scip.proto
 # Protobuf Python Version: 6.31.1
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
@@ -27,9 +28,9 @@ _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "scip_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
     _globals["DESCRIPTOR"]._loaded_options = None
-    _globals["DESCRIPTOR"]._serialized_options = (
-        b"Z-github.com/sourcegraph/scip/bindings/go/scip/"
-    )
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"Z-github.com/sourcegraph/scip/bindings/go/scip/"
     _globals["_SYNTAXKIND"]._loaded_options = None
     _globals["_SYNTAXKIND"]._serialized_options = b"\020\001"
     _globals["_SYNTAXKIND"].values_by_name["IdentifierKeyword"]._loaded_options = None

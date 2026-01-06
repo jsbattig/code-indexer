@@ -45,7 +45,9 @@ class TestCorrelationIDContextHelpers:
         result = get_correlation_id()
 
         # Assert
-        assert result == test_correlation_id, f"Expected {test_correlation_id}, got {result}"
+        assert (
+            result == test_correlation_id
+        ), f"Expected {test_correlation_id}, got {result}"
 
     def test_set_correlation_id_overwrites_previous_value(self):
         """Test that set_correlation_id overwrites any previously set value."""
@@ -119,13 +121,17 @@ class TestCorrelationContextMiddleware:
 
         # Assert
         # Response should have X-Correlation-ID header with valid UUID
-        assert "X-Correlation-ID" in response.headers, "Missing X-Correlation-ID in response"
+        assert (
+            "X-Correlation-ID" in response.headers
+        ), "Missing X-Correlation-ID in response"
         correlation_id = response.headers["X-Correlation-ID"]
 
         # Validate it's a valid UUID v4
         try:
             parsed_uuid = uuid.UUID(correlation_id, version=4)
-            assert str(parsed_uuid) == correlation_id, "Correlation ID is not a valid UUID v4"
+            assert (
+                str(parsed_uuid) == correlation_id
+            ), "Correlation ID is not a valid UUID v4"
         except ValueError:
             pytest.fail(f"Correlation ID '{correlation_id}' is not a valid UUID")
 
@@ -153,10 +159,13 @@ class TestCorrelationContextMiddleware:
 
         # Assert
         # Response should have the SAME correlation ID from request
-        assert "X-Correlation-ID" in response.headers, "Missing X-Correlation-ID in response"
+        assert (
+            "X-Correlation-ID" in response.headers
+        ), "Missing X-Correlation-ID in response"
         correlation_id = response.headers["X-Correlation-ID"]
-        assert correlation_id == expected_correlation_id, \
-            f"Expected {expected_correlation_id}, got {correlation_id}"
+        assert (
+            correlation_id == expected_correlation_id
+        ), f"Expected {expected_correlation_id}, got {correlation_id}"
 
     @pytest.mark.asyncio
     async def test_middleware_stores_correlation_id_in_context(self):
@@ -187,8 +196,9 @@ class TestCorrelationContextMiddleware:
 
         # Assert
         # Correlation ID should have been accessible during request processing
-        assert correlation_id_during_request == expected_correlation_id, \
-            f"Expected {expected_correlation_id} during request, got {correlation_id_during_request}"
+        assert (
+            correlation_id_during_request == expected_correlation_id
+        ), f"Expected {expected_correlation_id} during request, got {correlation_id_during_request}"
 
     @pytest.mark.asyncio
     async def test_middleware_adds_correlation_id_to_response_headers(self):
@@ -209,8 +219,9 @@ class TestCorrelationContextMiddleware:
         response = await middleware.dispatch(request, mock_call_next)
 
         # Assert
-        assert "X-Correlation-ID" in response.headers, \
-            "Middleware should add X-Correlation-ID to response headers"
+        assert (
+            "X-Correlation-ID" in response.headers
+        ), "Middleware should add X-Correlation-ID to response headers"
 
     @pytest.mark.asyncio
     async def test_middleware_preserves_existing_response_headers(self):
@@ -225,7 +236,7 @@ class TestCorrelationContextMiddleware:
         mock_response = Response(
             content="test",
             status_code=200,
-            headers={"Content-Type": "application/json", "X-Custom": "custom-value"}
+            headers={"Content-Type": "application/json", "X-Custom": "custom-value"},
         )
 
         async def mock_call_next(req):
@@ -271,8 +282,9 @@ class TestCorrelationContextMiddleware:
 
         # Assert
         # All correlation IDs during request should be identical
-        assert all(cid == expected_correlation_id for cid in correlation_ids_during_request), \
-            f"Correlation ID not consistent: {correlation_ids_during_request}"
+        assert all(
+            cid == expected_correlation_id for cid in correlation_ids_during_request
+        ), f"Correlation ID not consistent: {correlation_ids_during_request}"
 
         # Response should also have the same correlation ID
         assert response.headers["X-Correlation-ID"] == expected_correlation_id
@@ -360,5 +372,6 @@ class TestCorrelationIDInheritance:
         await middleware.dispatch(request, mock_call_next)
 
         # Assert
-        assert correlation_id_from_nested_call == expected_correlation_id, \
-            "Correlation ID should be accessible in nested function calls"
+        assert (
+            correlation_id_from_nested_call == expected_correlation_id
+        ), "Correlation ID should be accessible in nested function calls"

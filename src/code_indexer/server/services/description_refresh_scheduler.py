@@ -61,7 +61,10 @@ class DescriptionRefreshScheduler:
     def start(self) -> None:
         """Start the refresh scheduler background thread."""
         if self._timer_thread is not None and self._timer_thread.is_alive():
-            logger.warning("Description refresh scheduler already running", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                "Description refresh scheduler already running",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         self._stop_event.clear()
@@ -69,14 +72,20 @@ class DescriptionRefreshScheduler:
             target=self._timer_loop, name="DescriptionRefreshScheduler", daemon=True
         )
         self._timer_thread.start()
-        logger.info("Description refresh scheduler started", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Description refresh scheduler started",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def stop(self) -> None:
         """Stop the refresh scheduler."""
         self._stop_event.set()
         if self._timer_thread is not None:
             self._timer_thread.join(timeout=5.0)
-        logger.info("Description refresh scheduler stopped", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Description refresh scheduler stopped",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def _timer_loop(self) -> None:
         """Background thread loop that checks for needed refreshes."""
@@ -84,7 +93,11 @@ class DescriptionRefreshScheduler:
             try:
                 self._check_and_refresh()
             except Exception as e:
-                logger.error(f"Error in description refresh check: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Error in description refresh check: {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
             # Wait for next check, but allow early exit via stop_event
             self._stop_event.wait(timeout=self._check_interval_seconds)
@@ -98,18 +111,25 @@ class DescriptionRefreshScheduler:
         repos_needing_refresh = self._get_repos_needing_refresh(interval_hours)
 
         if not repos_needing_refresh:
-            logger.debug("No repos need description refresh", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "No repos need description refresh",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         logger.info(
-            f"Scheduling description refresh for {len(repos_needing_refresh)} repos"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Scheduling description refresh for {len(repos_needing_refresh)} repos",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         for alias, meta_file in repos_needing_refresh:
             try:
                 repo_path = self._get_repo_path(alias)
                 if repo_path is None:
-                    logger.warning(f"Could not resolve repo path for {alias}, skipping", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        f"Could not resolve repo path for {alias}, skipping",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     continue
                 self._cli_manager.submit_work(
                     repo_path,
@@ -117,8 +137,10 @@ class DescriptionRefreshScheduler:
                 )
             except Exception as e:
                 logger.error(
-                    f"Failed to submit refresh work for {alias}: {e}", exc_info=True
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to submit refresh work for {alias}: {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def _get_repos_needing_refresh(self, interval_hours: int) -> List[tuple]:
         """
@@ -139,7 +161,10 @@ class DescriptionRefreshScheduler:
         for meta_file in self._meta_dir.glob("*.md"):
             # Skip fallback files - they're handled by catch-up (Story #549)
             if meta_file.name.endswith("_README.md"):
-                logger.debug(f"Skipping fallback file: {meta_file.name}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Skipping fallback file: {meta_file.name}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 continue
 
             alias = meta_file.stem  # e.g., "my-repo" from "my-repo.md"
@@ -154,7 +179,10 @@ class DescriptionRefreshScheduler:
 
             if last_refresh < cutoff_time:
                 repos_needing_refresh.append((alias, meta_file))
-                logger.debug(f"Repo {alias} needs refresh (last: {last_refresh})", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Repo {alias} needs refresh (last: {last_refresh})",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         return repos_needing_refresh
 
@@ -170,6 +198,12 @@ class DescriptionRefreshScheduler:
         if success:
             with self._refresh_lock:
                 self._last_refresh[alias] = datetime.now()
-            logger.info(f"Description refresh completed for {alias}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Description refresh completed for {alias}",
+                extra={"correlation_id": get_correlation_id()},
+            )
         else:
-            logger.warning(f"Description refresh failed for {alias}: {result}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Description refresh failed for {alias}: {result}",
+                extra={"correlation_id": get_correlation_id()},
+            )

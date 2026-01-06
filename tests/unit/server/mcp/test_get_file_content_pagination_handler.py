@@ -363,7 +363,6 @@ class TestGetFileContentGlobalRepositories:
                 "code_indexer.server.mcp.handlers._get_golden_repos_dir"
             ) as mock_get_golden_dir,
         ):
-
             mock_get_golden_dir.return_value = "/fake/golden/repos"
 
             # Mock registry

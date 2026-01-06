@@ -169,7 +169,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         # Process the commit
         self.indexer._process_commits_parallel(
-            [commit], Mock(), vector_manager  # embedding_provider
+            [commit],
+            Mock(),
+            vector_manager,  # embedding_provider
         )
 
         # ASSERTIONS

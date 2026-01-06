@@ -864,7 +864,9 @@ class TestCIDXServer:
         # Apply language filter if specified
         if language:
             mock_results = [
-                r for r in mock_results if cast(str, r["file_path"]).endswith(f".{language}")
+                r
+                for r in mock_results
+                if cast(str, r["file_path"]).endswith(f".{language}")
             ]
 
         # Apply path filter if specified

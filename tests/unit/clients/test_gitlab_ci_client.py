@@ -26,7 +26,9 @@ class TestGitLabCIClientRetryLogic:
         # Create mock responses: first 503, then 200 success
         error_response = MagicMock()
         error_response.status_code = 503
-        error_response.json.return_value = {"message": "Service Temporarily Unavailable"}
+        error_response.json.return_value = {
+            "message": "Service Temporarily Unavailable"
+        }
 
         success_response = MagicMock()
         success_response.status_code = 200
@@ -99,11 +101,12 @@ class TestGitLabCIClientRetryLogic:
         ]
 
         # Mock httpx.AsyncClient
-        with patch(
-            "code_indexer.server.clients.gitlab_ci_client.httpx.AsyncClient"
-        ) as mock_client_class, patch(
-            "asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with (
+            patch(
+                "code_indexer.server.clients.gitlab_ci_client.httpx.AsyncClient"
+            ) as mock_client_class,
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
             mock_client = AsyncMock()
             mock_client.__aenter__.return_value = mock_client
             mock_client.__aexit__.return_value = None
@@ -150,7 +153,9 @@ class TestGitLabCIClientRetryLogic:
                 await client.list_pipelines(project_id="test/repo")
 
             # Verify exception is raised
-            assert "503" in str(exc_info.value) or "error" in str(exc_info.value).lower()
+            assert (
+                "503" in str(exc_info.value) or "error" in str(exc_info.value).lower()
+            )
 
             # Verify we made 4 attempts (1 initial + 3 retries)
             assert mock_client.get.call_count == 4

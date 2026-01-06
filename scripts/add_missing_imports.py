@@ -4,20 +4,20 @@
 import subprocess
 from pathlib import Path
 
-IMPORT_STATEMENT = "from code_indexer.server.middleware.correlation import get_correlation_id"
+IMPORT_STATEMENT = (
+    "from code_indexer.server.middleware.correlation import get_correlation_id"
+)
 
 
 def get_modified_python_files():
     """Get list of modified Python files from git."""
     result = subprocess.run(
-        ["git", "diff", "--name-only"],
-        capture_output=True,
-        text=True,
-        check=True
+        ["git", "diff", "--name-only"], capture_output=True, text=True, check=True
     )
     return [
-        Path(f) for f in result.stdout.strip().split('\n')
-        if f.endswith('.py') and Path(f).exists()
+        Path(f)
+        for f in result.stdout.strip().split("\n")
+        if f.endswith(".py") and Path(f).exists()
     ]
 
 
@@ -31,18 +31,18 @@ def needs_import(file_path):
 
 def add_import(file_path):
     """Add import statement to file."""
-    lines = file_path.read_text().split('\n')
+    lines = file_path.read_text().split("\n")
     insert_index = 0
 
     # Find last import
     for i, line in enumerate(lines):
-        if line.strip().startswith(('import ', 'from ')):
+        if line.strip().startswith(("import ", "from ")):
             insert_index = i + 1
-        elif line.strip() and not line.strip().startswith('#'):
+        elif line.strip() and not line.strip().startswith("#"):
             break
 
     lines.insert(insert_index, IMPORT_STATEMENT)
-    file_path.write_text('\n'.join(lines))
+    file_path.write_text("\n".join(lines))
     print(f"✓ Added import to: {file_path}")
 
 

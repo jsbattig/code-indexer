@@ -238,10 +238,11 @@ class TestRepositoryMatcher:
         # Mock access control
         self.access_control_manager.get_user_access_level.return_value = "read"
 
-        golden_results, activated_results = (
-            await self.matcher.find_all_matching_repositories(
-                canonical_url=canonical_url, user=user
-            )
+        (
+            golden_results,
+            activated_results,
+        ) = await self.matcher.find_all_matching_repositories(
+            canonical_url=canonical_url, user=user
         )
 
         assert len(golden_results) == 1
@@ -387,10 +388,11 @@ class TestRepositoryMatcher:
 
         start_time = time.time()
 
-        golden_results, activated_results = (
-            await self.matcher.find_all_matching_repositories(
-                canonical_url=canonical_url, user=user
-            )
+        (
+            golden_results,
+            activated_results,
+        ) = await self.matcher.find_all_matching_repositories(
+            canonical_url=canonical_url, user=user
         )
 
         end_time = time.time()

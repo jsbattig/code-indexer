@@ -335,7 +335,9 @@ class RegexSearchService:
 
             # Get path to glob_files.py script (in scripts/ directory)
             # Path from src/code_indexer/global_repos/regex_search.py -> project_root/scripts/glob_files.py
-            script_path = Path(__file__).parent.parent.parent.parent / "scripts" / "glob_files.py"
+            script_path = (
+                Path(__file__).parent.parent.parent.parent / "scripts" / "glob_files.py"
+            )
             if not script_path.exists():
                 raise RuntimeError(f"glob_files.py script not found at {script_path}")
 
@@ -370,7 +372,9 @@ class RegexSearchService:
                     try:
                         files = json.loads(output)
                         if not isinstance(files, list):
-                            logger.warning(f"glob_files.py returned non-list: {type(files)}")
+                            logger.warning(
+                                f"glob_files.py returned non-list: {type(files)}"
+                            )
                             return []
                         return files
                     except json.JSONDecodeError as e:
@@ -527,7 +531,9 @@ class RegexSearchService:
         )
 
         timeout = timeout_seconds or DEFAULT_SEARCH_TIMEOUT_SECONDS
-        has_path_patterns = include_patterns and any('/' in pat for pat in include_patterns)
+        has_path_patterns = include_patterns and any(
+            "/" in pat for pat in include_patterns
+        )
 
         if has_path_patterns:
             # Use find to get files matching all patterns (both path and simple)
@@ -539,7 +545,9 @@ class RegexSearchService:
             if not file_list:
                 return [], 0
 
-            cmd = self._build_grep_command(pattern, case_sensitive, context_lines, False, file_list)
+            cmd = self._build_grep_command(
+                pattern, case_sensitive, context_lines, False, file_list
+            )
         else:
             # Original behavior: recursive grep with --include/--exclude
             cmd = self._build_grep_command(pattern, case_sensitive, context_lines, True)

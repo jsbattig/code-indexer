@@ -43,8 +43,9 @@ class SensitiveDataSanitizer:
                 )
             except re.error as e:
                 logger.warning(
-                    f"Invalid sanitization regex pattern '{rule.pattern}': {e}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Invalid sanitization regex pattern '{rule.pattern}': {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def sanitize_string(self, text: str) -> str:
         """
@@ -183,5 +184,8 @@ class SensitiveDataSanitizer:
             return request_info
 
         except Exception as e:
-            logger.warning(f"Error sanitizing request info: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Error sanitizing request info: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {"method": "UNKNOWN", "path": "UNKNOWN"}

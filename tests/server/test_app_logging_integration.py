@@ -56,12 +56,18 @@ class TestSQLiteLogHandlerIntegration:
             # Use TestClient as context manager to trigger lifespan
             with TestClient(app):
                 # Verify SQLiteLogHandler is attached to root logger
-                from code_indexer.server.services.sqlite_log_handler import SQLiteLogHandler
+                from code_indexer.server.services.sqlite_log_handler import (
+                    SQLiteLogHandler,
+                )
 
                 root_logger = logging.getLogger()
-                sqlite_handlers = [h for h in root_logger.handlers if isinstance(h, SQLiteLogHandler)]
+                sqlite_handlers = [
+                    h for h in root_logger.handlers if isinstance(h, SQLiteLogHandler)
+                ]
 
-                assert len(sqlite_handlers) > 0, "SQLiteLogHandler not attached to root logger"
+                assert (
+                    len(sqlite_handlers) > 0
+                ), "SQLiteLogHandler not attached to root logger"
 
                 # Verify handler uses correct database path
                 handler = sqlite_handlers[0]
@@ -112,7 +118,7 @@ class TestSQLiteLogHandlerIntegration:
 
                 cursor.execute(
                     "SELECT message, level, source FROM logs WHERE message LIKE ?",
-                    (f"%{test_message}%",)
+                    (f"%{test_message}%",),
                 )
                 row = cursor.fetchone()
 
@@ -161,7 +167,7 @@ class TestSQLiteLogHandlerIntegration:
                 # Check for startup-related log messages
                 cursor.execute(
                     "SELECT COUNT(*) FROM logs WHERE message LIKE ?",
-                    ("%Server startup%",)
+                    ("%Server startup%",),
                 )
                 startup_log_count = cursor.fetchone()[0]
 

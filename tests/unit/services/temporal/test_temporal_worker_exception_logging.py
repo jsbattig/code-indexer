@@ -50,7 +50,6 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
             "code_indexer.services.temporal.temporal_indexer.FileIdentifier"
         ) as mock_file_id,
     ):
-
         # Setup mocks
         mock_config = Mock()
         mock_config.get_vector_store_config.return_value = {"backend": "filesystem"}
@@ -184,7 +183,6 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
                 "code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"
             ) as mock_create,
         ):
-
             # Mock embedding provider
             mock_embedding = Mock()
             mock_create.return_value = mock_embedding

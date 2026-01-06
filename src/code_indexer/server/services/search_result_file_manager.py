@@ -146,6 +146,12 @@ class SearchResultFileManager:
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
-                logger.debug(f"Cleaned up temp file: {file_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Cleaned up temp file: {file_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
         except Exception as e:
-            logger.warning(f"Failed to cleanup temp file {file_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to cleanup temp file {file_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )

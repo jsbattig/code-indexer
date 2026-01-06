@@ -25,7 +25,9 @@ if TYPE_CHECKING:
     )
     from code_indexer.server.utils.config_manager import ServerResourceConfig
     from code_indexer.server.services.background_job_manager import BackgroundJobManager
-    from code_indexer.server.repositories.activated_repo_manager import ActivatedRepoManager
+    from code_indexer.server.repositories.activated_repo_manager import (
+        ActivatedRepoManager,
+    )
 
 from pydantic import BaseModel
 
@@ -1580,8 +1582,9 @@ class GoldenRepoManager:
                         # Skip malformed version directories gracefully
                         logger.warning(
                             f"Skipping malformed version directory: {v_dir} "
-                            f"(expected format: v_TIMESTAMP, error: {e})"
-                        , extra={"correlation_id": get_correlation_id()})
+                            f"(expected format: v_TIMESTAMP, error: {e})",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         continue
 
                 if valid_versions:
@@ -1643,9 +1646,9 @@ class GoldenRepoManager:
             raise GoldenRepoError(f"Golden repository '{alias}' not found")
 
         branch_service = GoldenRepoBranchService(self)
-        branches: List["GoldenRepoBranchInfo"] = (
-            await branch_service.get_golden_repo_branches(alias)
-        )
+        branches: List[
+            "GoldenRepoBranchInfo"
+        ] = await branch_service.get_golden_repo_branches(alias)
         return branches
 
     def add_index_to_golden_repo(
@@ -1847,10 +1850,12 @@ class GoldenRepoManager:
             sqlite3_module = None
             try:
                 import sqlite3
+
                 sqlite3_module = sqlite3
             except ImportError:
                 try:
                     from pysqlite3 import dbapi2 as pysqlite3_compat
+
                     sqlite3_module = pysqlite3_compat
                 except ImportError:
                     pass

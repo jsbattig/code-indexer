@@ -121,7 +121,9 @@ class LogAggregatorService:
             offset = (page - 1) * page_size
 
             # Query logs with sorting and pagination
-            logs = self._query_logs(cursor, where_sql, params, sort_order, page_size, offset)
+            logs = self._query_logs(
+                cursor, where_sql, params, sort_order, page_size, offset
+            )
 
             conn.close()
 
@@ -137,7 +139,11 @@ class LogAggregatorService:
 
         except sqlite3.Error as e:
             # Log error for debugging but return graceful empty response
-            logger.error(f"Database error querying logs: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Database error querying logs: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return self._empty_response(page, page_size)
 
     def query_all(
@@ -186,7 +192,11 @@ class LogAggregatorService:
 
         except sqlite3.Error as e:
             # Log error for debugging but return empty list
-            logger.error(f"Database error querying all logs: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Database error querying all logs: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     def count(self) -> int:
@@ -209,7 +219,11 @@ class LogAggregatorService:
 
         except sqlite3.Error as e:
             # Log error for debugging but return 0
-            logger.error(f"Database error counting logs: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Database error counting logs: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return 0
 
     def close(self) -> None:
@@ -266,9 +280,7 @@ class LogAggregatorService:
         if search:
             # Use LIKE with wildcards for substring matching (case-insensitive in SQLite)
             # Search in both message and correlation_id fields
-            where_clauses.append(
-                "(message LIKE ? OR correlation_id LIKE ?)"
-            )
+            where_clauses.append("(message LIKE ? OR correlation_id LIKE ?)")
             search_pattern = f"%{search}%"
             params.append(search_pattern)
             params.append(search_pattern)

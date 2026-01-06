@@ -111,7 +111,18 @@ class TestLogExportFormatterJSON:
     def test_to_json_pretty_prints_with_indentation(self):
         """to_json() formats with 2-space indentation for readability."""
         formatter = LogExportFormatter()
-        logs = [{"id": 1, "timestamp": "2025-01-02T10:00:00Z", "level": "INFO", "source": "test", "message": "Test", "correlation_id": None, "user_id": None, "request_path": None}]
+        logs = [
+            {
+                "id": 1,
+                "timestamp": "2025-01-02T10:00:00Z",
+                "level": "INFO",
+                "source": "test",
+                "message": "Test",
+                "correlation_id": None,
+                "user_id": None,
+                "request_path": None,
+            }
+        ]
         filters = {}
 
         result = formatter.to_json(logs, filters)
@@ -137,9 +148,36 @@ class TestLogExportFormatterJSON:
         """to_json() exports multiple log entries correctly."""
         formatter = LogExportFormatter()
         logs = [
-            {"id": 1, "timestamp": "2025-01-02T10:00:00Z", "level": "INFO", "source": "server", "message": "Log 1", "correlation_id": "c1", "user_id": None, "request_path": None},
-            {"id": 2, "timestamp": "2025-01-02T10:05:00Z", "level": "ERROR", "source": "db", "message": "Log 2", "correlation_id": "c2", "user_id": "admin", "request_path": "/api"},
-            {"id": 3, "timestamp": "2025-01-02T10:10:00Z", "level": "WARNING", "source": "cache", "message": "Log 3", "correlation_id": "c3", "user_id": None, "request_path": None},
+            {
+                "id": 1,
+                "timestamp": "2025-01-02T10:00:00Z",
+                "level": "INFO",
+                "source": "server",
+                "message": "Log 1",
+                "correlation_id": "c1",
+                "user_id": None,
+                "request_path": None,
+            },
+            {
+                "id": 2,
+                "timestamp": "2025-01-02T10:05:00Z",
+                "level": "ERROR",
+                "source": "db",
+                "message": "Log 2",
+                "correlation_id": "c2",
+                "user_id": "admin",
+                "request_path": "/api",
+            },
+            {
+                "id": 3,
+                "timestamp": "2025-01-02T10:10:00Z",
+                "level": "WARNING",
+                "source": "cache",
+                "message": "Log 3",
+                "correlation_id": "c3",
+                "user_id": None,
+                "request_path": None,
+            },
         ]
         filters = {}
 
@@ -192,7 +230,16 @@ class TestLogExportFormatterCSV:
         """to_csv() includes UTF-8 BOM for Excel compatibility."""
         formatter = LogExportFormatter()
         logs = [
-            {"id": 1, "timestamp": "2025-01-02T10:00:00Z", "level": "INFO", "source": "test", "message": "Test", "correlation_id": None, "user_id": None, "request_path": None}
+            {
+                "id": 1,
+                "timestamp": "2025-01-02T10:00:00Z",
+                "level": "INFO",
+                "source": "test",
+                "message": "Test",
+                "correlation_id": None,
+                "user_id": None,
+                "request_path": None,
+            }
         ]
 
         result = formatter.to_csv(logs)
@@ -261,7 +308,10 @@ class TestLogExportFormatterCSV:
         result = formatter.to_csv(logs)
 
         # Multi-line message should be quoted
-        assert '"Error on line 1\nError on line 2"' in result or "Error on line 1\\nError on line 2" in result
+        assert (
+            '"Error on line 1\nError on line 2"' in result
+            or "Error on line 1\\nError on line 2" in result
+        )
 
     def test_to_csv_handles_empty_logs(self):
         """to_csv() handles empty logs list gracefully."""
@@ -284,9 +334,36 @@ class TestLogExportFormatterCSV:
         """to_csv() exports multiple log entries correctly."""
         formatter = LogExportFormatter()
         logs = [
-            {"id": 1, "timestamp": "2025-01-02T10:00:00Z", "level": "INFO", "source": "server", "message": "Log 1", "correlation_id": "c1", "user_id": None, "request_path": None},
-            {"id": 2, "timestamp": "2025-01-02T10:05:00Z", "level": "ERROR", "source": "db", "message": "Log 2", "correlation_id": "c2", "user_id": "admin", "request_path": "/api"},
-            {"id": 3, "timestamp": "2025-01-02T10:10:00Z", "level": "WARNING", "source": "cache", "message": "Log 3", "correlation_id": "c3", "user_id": None, "request_path": None},
+            {
+                "id": 1,
+                "timestamp": "2025-01-02T10:00:00Z",
+                "level": "INFO",
+                "source": "server",
+                "message": "Log 1",
+                "correlation_id": "c1",
+                "user_id": None,
+                "request_path": None,
+            },
+            {
+                "id": 2,
+                "timestamp": "2025-01-02T10:05:00Z",
+                "level": "ERROR",
+                "source": "db",
+                "message": "Log 2",
+                "correlation_id": "c2",
+                "user_id": "admin",
+                "request_path": "/api",
+            },
+            {
+                "id": 3,
+                "timestamp": "2025-01-02T10:10:00Z",
+                "level": "WARNING",
+                "source": "cache",
+                "message": "Log 3",
+                "correlation_id": "c3",
+                "user_id": None,
+                "request_path": None,
+            },
         ]
 
         result = formatter.to_csv(logs)

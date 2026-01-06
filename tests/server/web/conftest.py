@@ -285,6 +285,7 @@ class WebTestInfrastructure:
 
         # Reset config service singleton to ensure next test gets fresh instance
         from code_indexer.server.services.config_service import reset_config_service
+
         reset_config_service()
 
         # Restore original environment

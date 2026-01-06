@@ -53,7 +53,11 @@ class ReindexingDecisionEngine:
             config: Configuration for thresholds and behavior (uses defaults if None)
         """
         self.config = config or ReindexingConfig()
-        logger.info("ReindexingDecisionEngine initialized with config: %s", self.config, extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "ReindexingDecisionEngine initialized with config: %s",
+            self.config,
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     @classmethod
     def from_config(cls, cidx_config) -> "ReindexingDecisionEngine":
@@ -126,7 +130,10 @@ class ReindexingDecisionEngine:
             decision.should_reindex = True
             decision.add_trigger_reason("user_requested")
             decision.confidence_score = 1.0
-            logger.debug("User requested full re-index", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "User requested full re-index",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _analyze_corruption(
         self, decision: ReindexingDecision, metrics: IndexMetrics
@@ -210,7 +217,10 @@ class ReindexingDecisionEngine:
             decision.should_reindex = True
             decision.add_trigger_reason("structural_changes")
             decision.confidence_score = max(decision.confidence_score, 0.85)
-            logger.info("Structural changes detected (explicit flag)", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Structural changes detected (explicit flag)",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Check directory changes
         dir_changes = len(change_set.directories_added) + len(
@@ -221,7 +231,8 @@ class ReindexingDecisionEngine:
             decision.add_trigger_reason("structural_changes")
             decision.confidence_score = max(decision.confidence_score, 0.8)
             logger.info(
-                "Structural changes detected: %d directory changes", dir_changes,
+                "Structural changes detected: %d directory changes",
+                dir_changes,
                 extra={"correlation_id": get_correlation_id()},
             )
 
@@ -231,7 +242,8 @@ class ReindexingDecisionEngine:
             decision.add_trigger_reason("structural_changes")
             decision.confidence_score = max(decision.confidence_score, 0.75)
             logger.info(
-                "Structural changes detected: %d file moves", len(change_set.file_moves),
+                "Structural changes detected: %d file moves",
+                len(change_set.file_moves),
                 extra={"correlation_id": get_correlation_id()},
             )
 

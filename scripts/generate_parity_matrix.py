@@ -23,34 +23,28 @@ MCP_TO_REST_MAPPING = {
     "create_file": ("POST", "/api/v1/repos/{alias}/files"),
     "edit_file": ("PATCH", "/api/v1/repos/{alias}/files/{file_path:path}"),
     "delete_file": ("DELETE", "/api/v1/repos/{alias}/files/{file_path:path}"),
-
     # Git status/inspection
     "git_status": ("GET", "/api/v1/repos/{alias}/git/status"),
     "git_diff": ("GET", "/api/v1/repos/{alias}/git/diff"),
     "git_log": ("GET", "/api/v1/repos/{alias}/git/log"),
-
     # Git staging/commit
     "git_stage": ("POST", "/api/v1/repos/{alias}/git/stage"),
     "git_unstage": ("POST", "/api/v1/repos/{alias}/git/unstage"),
     "git_commit": ("POST", "/api/v1/repos/{alias}/git/commit"),
-
     # Git remote operations
     "git_push": ("POST", "/api/v1/repos/{alias}/git/push"),
     "git_pull": ("POST", "/api/v1/repos/{alias}/git/pull"),
     "git_fetch": ("POST", "/api/v1/repos/{alias}/git/fetch"),
-
     # Git recovery operations
     "git_reset": ("POST", "/api/v1/repos/{alias}/git/reset"),
     "git_clean": ("POST", "/api/v1/repos/{alias}/git/clean"),
     "git_merge_abort": ("POST", "/api/v1/repos/{alias}/git/merge-abort"),
     "git_checkout_file": ("POST", "/api/v1/repos/{alias}/git/checkout-file"),
-
     # Git branch operations
     "git_branch_list": ("GET", "/api/v1/repos/{alias}/git/branches"),
     "git_branch_create": ("POST", "/api/v1/repos/{alias}/git/branches"),
     "git_branch_switch": ("POST", "/api/v1/repos/{alias}/git/branches/{name}/switch"),
     "git_branch_delete": ("DELETE", "/api/v1/repos/{alias}/git/branches/{name}"),
-
     # SCIP operations
     "scip_definition": ("POST", "/api/v1/scip/definition"),
     "scip_references": ("POST", "/api/v1/scip/references"),
@@ -59,11 +53,9 @@ MCP_TO_REST_MAPPING = {
     "scip_callchain": ("POST", "/api/v1/scip/callchain"),
     "scip_impact": ("POST", "/api/v1/scip/impact"),
     "scip_context": ("POST", "/api/v1/scip/context"),
-
     # Indexing operations
     "trigger_reindex": ("POST", "/api/v1/repos/{alias}/index"),
     "get_index_status": ("GET", "/api/v1/repos/{alias}/index/status"),
-
     # SSH Key operations
     "cidx_ssh_key_create": ("POST", "/api/v1/ssh-keys"),
     "cidx_ssh_key_list": ("GET", "/api/v1/ssh-keys"),
@@ -75,17 +67,27 @@ MCP_TO_REST_MAPPING = {
 
 def normalize_path(path: str) -> str:
     """Normalize path by removing path parameter types."""
-    return re.sub(r'\{([^:}]+):[^}]+\}', r'{\1}', path)
+    return re.sub(r"\{([^:}]+):[^}]+\}", r"{\1}", path)
 
 
 def categorize_tool(tool_name: str) -> str:
     """Categorize MCP tool by function."""
     if tool_name.startswith("git_"):
-        if tool_name in ["git_branch_list", "git_branch_create", "git_branch_switch", "git_branch_delete"]:
+        if tool_name in [
+            "git_branch_list",
+            "git_branch_create",
+            "git_branch_switch",
+            "git_branch_delete",
+        ]:
             return "Git Branches"
         elif tool_name in ["git_push", "git_pull", "git_fetch"]:
             return "Git Remote"
-        elif tool_name in ["git_reset", "git_clean", "git_merge_abort", "git_checkout_file"]:
+        elif tool_name in [
+            "git_reset",
+            "git_clean",
+            "git_merge_abort",
+            "git_checkout_file",
+        ]:
             return "Git Recovery"
         elif tool_name in ["git_stage", "git_unstage", "git_commit"]:
             return "Git Staging"
@@ -111,12 +113,12 @@ def categorize_tool(tool_name: str) -> str:
 
 def collect_rest_endpoints(app):
     """Collect all REST endpoints from FastAPI app."""
-    if not app or not hasattr(app, 'routes'):
+    if not app or not hasattr(app, "routes"):
         raise ValueError("Invalid FastAPI app: missing routes")
 
     rest_endpoints = set()
     for route in app.routes:
-        if hasattr(route, 'methods') and hasattr(route, 'path'):
+        if hasattr(route, "methods") and hasattr(route, "path"):
             for method in route.methods:
                 if method != "OPTIONS":
                     normalized_path = normalize_path(route.path)
@@ -148,14 +150,16 @@ def build_matrix_data(rest_endpoints):
         has_input_schema = "Yes" if tool_def.get("inputSchema") else "No"
         has_output_schema = "Yes" if tool_def.get("outputSchema") else "No"
 
-        matrix_data.append({
-            "tool": tool_name,
-            "category": category,
-            "has_rest": has_rest,
-            "rest_endpoint": rest_endpoint,
-            "input_schema": has_input_schema,
-            "output_schema": has_output_schema,
-        })
+        matrix_data.append(
+            {
+                "tool": tool_name,
+                "category": category,
+                "has_rest": has_rest,
+                "rest_endpoint": rest_endpoint,
+                "input_schema": has_input_schema,
+                "output_schema": has_output_schema,
+            }
+        )
     return matrix_data
 
 
@@ -165,9 +169,15 @@ def generate_markdown_output(matrix_data):
     output.append("# MCP/REST Parity Matrix\n")
     output.append(f"**Generated:** {Path(__file__).name}\n")
     output.append(f"**Total MCP Tools:** {len(TOOL_REGISTRY)}\n")
-    output.append(f"**Tools with REST Endpoints:** {sum(1 for d in matrix_data if d['has_rest'] == 'Yes')}\n")
-    output.append(f"**MCP-only Tools:** {sum(1 for d in matrix_data if d['has_rest'] == 'No')}\n")
-    output.append(f"**Missing REST Endpoints:** {sum(1 for d in matrix_data if d['has_rest'] == 'Missing')}\n\n")
+    output.append(
+        f"**Tools with REST Endpoints:** {sum(1 for d in matrix_data if d['has_rest'] == 'Yes')}\n"
+    )
+    output.append(
+        f"**MCP-only Tools:** {sum(1 for d in matrix_data if d['has_rest'] == 'No')}\n"
+    )
+    output.append(
+        f"**Missing REST Endpoints:** {sum(1 for d in matrix_data if d['has_rest'] == 'Missing')}\n\n"
+    )
 
     # Group by category
     categories = {}
@@ -224,7 +234,9 @@ def main():
         matrix = generate_matrix()
 
         # Write to docs
-        output_file = Path(__file__).parent.parent / "docs" / "mcp-rest-parity-matrix.md"
+        output_file = (
+            Path(__file__).parent.parent / "docs" / "mcp-rest-parity-matrix.md"
+        )
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         output_file.write_text(matrix)

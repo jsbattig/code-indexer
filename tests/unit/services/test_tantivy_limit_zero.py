@@ -75,7 +75,9 @@ class TestTantivyLimitZero:
     def test_limit_zero_sets_snippet_lines_zero(self, populated_index):
         """Test that limit=0 automatically disables snippets."""
         results = populated_index.search(
-            query_text="Service", limit=0, snippet_lines=5  # User sets 5
+            query_text="Service",
+            limit=0,
+            snippet_lines=5,  # User sets 5
         )
 
         # Verify all results have no snippet or empty snippet

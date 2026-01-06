@@ -125,12 +125,13 @@ def glob_files(
 
     # Convert to relative paths as strings - EXACT logic from regex_search.py lines 375-379
     return [
-        str(file_path.relative_to(search_path))
-        for file_path in sorted(matched_files)
+        str(file_path.relative_to(search_path)) for file_path in sorted(matched_files)
     ]
 
 
-def parse_and_validate_config(config_file: str) -> Tuple[Path, List[str], Optional[List[str]]]:
+def parse_and_validate_config(
+    config_file: str,
+) -> Tuple[Path, List[str], Optional[List[str]]]:
     """Parse and validate config file.
 
     Args:
@@ -144,7 +145,7 @@ def parse_and_validate_config(config_file: str) -> Tuple[Path, List[str], Option
         json.JSONDecodeError: If config file contains invalid JSON
         ValueError: If config is missing required fields or has invalid types
     """
-    with open(config_file, 'r') as f:
+    with open(config_file, "r") as f:
         config = json.load(f)
 
     # Validate required fields
@@ -185,7 +186,9 @@ def main() -> int:
         config_file = sys.argv[1]
 
         # Parse and validate config
-        search_path, include_patterns, exclude_patterns = parse_and_validate_config(config_file)
+        search_path, include_patterns, exclude_patterns = parse_and_validate_config(
+            config_file
+        )
 
         # Perform glob matching
         files = glob_files(search_path, include_patterns, exclude_patterns)

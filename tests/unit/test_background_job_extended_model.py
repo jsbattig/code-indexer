@@ -204,7 +204,10 @@ class TestExtendedBackgroundJobModel:
                 "status": "unresolvable",
                 "attempts": 3,
                 "last_error": "maven: BUILD FAILED",
-                "resolution_actions": ["sudo apt-get install maven", "mvn clean install"],
+                "resolution_actions": [
+                    "sudo apt-get install maven",
+                    "mvn clean install",
+                ],
                 "workspace_path": "/tmp/cidx-scip-abc123/services/api/",
             },
         }
@@ -227,7 +230,9 @@ class TestExtendedBackgroundJobModel:
         assert job.language_resolution_status == lang_resolution
         assert "backend/" in job.language_resolution_status
         assert job.language_resolution_status["backend/"]["status"] == "resolved"
-        assert job.language_resolution_status["services/api/"]["status"] == "unresolvable"
+        assert (
+            job.language_resolution_status["services/api/"]["status"] == "unresolvable"
+        )
 
     def test_language_resolution_status_structure_validation(self):
         """Test that language_resolution_status follows expected structure."""
@@ -368,7 +373,9 @@ class TestExtendedBackgroundJobModel:
         assert job_dict["repo_alias"] == "backend-golden"
         assert job_dict["resolution_attempts"] == 1
         assert job_dict["claude_actions"] == ["poetry install"]
-        assert job_dict["language_resolution_status"]["backend/"]["status"] == "resolved"
+        assert (
+            job_dict["language_resolution_status"]["backend/"]["status"] == "resolved"
+        )
 
     def test_job_json_serialization_roundtrip(self):
         """Test that BackgroundJob can be serialized to JSON and back."""
@@ -433,4 +440,7 @@ class TestExtendedBackgroundJobModel:
         assert restored_dict["claude_actions"] == ["poetry install"]
         assert restored_dict["failure_reason"] == "test failure"
         assert restored_dict["extended_error"]["original_error"] == "test error"
-        assert restored_dict["language_resolution_status"]["backend/"]["status"] == "resolved"
+        assert (
+            restored_dict["language_resolution_status"]["backend/"]["status"]
+            == "resolved"
+        )

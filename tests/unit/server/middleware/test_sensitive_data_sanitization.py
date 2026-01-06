@@ -361,7 +361,9 @@ class TestSensitiveDataSanitization:
         validation_error = None
         try:
             SensitiveModel(
-                username="admin", password="weak", api_key="sk-short"  # Too short
+                username="admin",
+                password="weak",
+                api_key="sk-short",  # Too short
             )
         except PydanticValidationError as e:
             validation_error = e

@@ -155,14 +155,21 @@ class MCPCredentialManager:
         # Find credential by client_id
         result = self.get_credential_by_client_id(client_id)
         logger.debug(
-            f"[verify_credential] client_id={client_id[:20]}... result={result is not None}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"[verify_credential] client_id={client_id[:20]}... result={result is not None}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         if not result:
-            logger.debug("[verify_credential] Credential not found for client_id", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "[verify_credential] Credential not found for client_id",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return None
 
         user_id, credential = result
-        logger.debug(f"[verify_credential] Found credential for user_id={user_id}", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"[verify_credential] Found credential for user_id={user_id}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Verify secret against hash
         stored_hash = credential.get("client_secret_hash")
@@ -193,4 +200,6 @@ class MCPCredentialManager:
         if not self.user_manager:
             return False
 
-        return cast(bool, self.user_manager.delete_mcp_credential(user_id, credential_id))
+        return cast(
+            bool, self.user_manager.delete_mcp_credential(user_id, credential_id)
+        )

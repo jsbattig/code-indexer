@@ -149,7 +149,6 @@ class TestPRCreationAuditLogging:
             ) as mock_token,
             patch.object(manager, "audit_logger", mock_audit_logger),
         ):
-
             mock_token.return_value = "token"
             mock_git.side_effect = [
                 Mock(stdout="main\n"),  # Current branch
@@ -207,7 +206,6 @@ class TestPRCreationAuditLogging:
             ) as mock_token,
             patch.object(manager, "audit_logger", mock_audit_logger),
         ):
-
             mock_token.return_value = "token"
             mock_git.side_effect = [
                 Mock(stdout="main\n"),  # Current branch

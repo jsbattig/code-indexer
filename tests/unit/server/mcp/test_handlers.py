@@ -86,8 +86,8 @@ class TestHandlerRegistry:
         ]
 
         # Verify we have a reasonable number of handlers (at least the core set)
-        assert len(HANDLER_REGISTRY) >= len(
-            core_handlers
+        assert (
+            len(HANDLER_REGISTRY) >= len(core_handlers)
         ), f"Expected at least {len(core_handlers)} handlers, found {len(HANDLER_REGISTRY)}"
 
         # Verify all core handlers are registered
@@ -1190,7 +1190,6 @@ class TestSyncRepository:
             patch("code_indexer.server.app.background_job_manager") as mock_job_mgr,
             patch("code_indexer.server.app._execute_repository_sync") as mock_exec_sync,
         ):
-
             mock_repo_mgr.list_activated_repositories = Mock(return_value=mock_repos)
             mock_job_mgr.submit_job = Mock(return_value="job-sync-123")
             mock_exec_sync.return_value = {"status": "completed"}

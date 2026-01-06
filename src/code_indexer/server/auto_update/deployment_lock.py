@@ -40,32 +40,50 @@ class DeploymentLock:
                     pid = int(pid_str)
                 except ValueError:
                     # Invalid PID - treat as stale
-                    logger.warning(f"Invalid PID in lock file: {pid_str}", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        f"Invalid PID in lock file: {pid_str}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     self.lock_file.unlink()
                 else:
                     # Check if process is alive
                     try:
                         os.kill(pid, 0)
                         # Process is alive - lock is held
-                        logger.info(f"Lock held by active process {pid}", extra={"correlation_id": get_correlation_id()})
+                        logger.info(
+                            f"Lock held by active process {pid}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         return False
                     except OSError:
                         # Process is dead - stale lock
-                        logger.info(f"Removing stale lock (PID {pid})", extra={"correlation_id": get_correlation_id()})
+                        logger.info(
+                            f"Removing stale lock (PID {pid})",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         self.lock_file.unlink()
 
             except IOError as e:
-                logger.error(f"Error reading lock file: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Error reading lock file: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 raise
 
         # Create lock file with current PID
         try:
             with open(self.lock_file, "w") as f:
                 f.write(str(os.getpid()))
-            logger.info(f"Lock acquired (PID {os.getpid()})", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Lock acquired (PID {os.getpid()})",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
         except IOError as e:
-            logger.error(f"Error creating lock file: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error creating lock file: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise
 
     def release(self) -> None:
@@ -74,14 +92,20 @@ class DeploymentLock:
         Does not raise exceptions if lock file doesn't exist or can't be deleted.
         """
         if not self.lock_file.exists():
-            logger.debug("Lock file doesn't exist, nothing to release", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "Lock file doesn't exist, nothing to release",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         try:
             self.lock_file.unlink()
             logger.info("Lock released", extra={"correlation_id": get_correlation_id()})
         except (IOError, OSError, PermissionError) as e:
-            logger.warning(f"Error removing lock file: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Error removing lock file: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def is_stale(self) -> bool:
         """Check if lock file represents a stale lock (process is dead).

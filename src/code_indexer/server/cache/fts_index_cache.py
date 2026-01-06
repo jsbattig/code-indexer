@@ -259,8 +259,9 @@ class FTSIndexCache:
 
         logger.info(
             f"FTS Index Cache initialized with TTL={self.config.ttl_minutes} minutes, "
-            f"reload_on_access={self.config.reload_on_access}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"reload_on_access={self.config.reload_on_access}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_or_load(
         self,
@@ -296,7 +297,10 @@ class FTSIndexCache:
                 # Check if expired (AC2)
                 if entry.is_expired():
                     # Evict expired entry
-                    logger.debug(f"FTS cache entry expired for {index_dir}, reloading", extra={"correlation_id": get_correlation_id()})
+                    logger.debug(
+                        f"FTS cache entry expired for {index_dir}, reloading",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     del self._cache[index_dir]
                     self._eviction_count += 1
                     # Fall through to load
@@ -311,16 +315,23 @@ class FTSIndexCache:
                             entry.tantivy_index.reload()
                             self._reload_count += 1
                         except Exception as e:
-                            logger.warning(f"FTS index reload failed: {e}", extra={"correlation_id": get_correlation_id()})
+                            logger.warning(
+                                f"FTS index reload failed: {e}",
+                                extra={"correlation_id": get_correlation_id()},
+                            )
 
                     logger.debug(
-                        f"FTS Cache HIT for {index_dir} (access_count={entry.access_count})"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"FTS Cache HIT for {index_dir} (access_count={entry.access_count})",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     return entry.tantivy_index, entry.schema
 
             # Cache miss - load index (AC1)
             self._miss_count += 1
-            logger.debug(f"FTS Cache MISS for {index_dir}, loading index", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"FTS Cache MISS for {index_dir}, loading index",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Load index (hold lock to prevent duplicate loads)
             tantivy_index, schema = loader()
@@ -343,7 +354,10 @@ class FTSIndexCache:
             # NOTE: Called within _cache_lock, so _enforce_size_limit must not re-acquire lock
             self._enforce_size_limit()
 
-            logger.info(f"Cached FTS index for {index_dir}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Cached FTS index for {index_dir}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return tantivy_index, schema
 
@@ -360,7 +374,10 @@ class FTSIndexCache:
             if index_dir in self._cache:
                 del self._cache[index_dir]
                 self._eviction_count += 1
-                logger.info(f"Invalidated FTS cache for {index_dir}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Invalidated FTS cache for {index_dir}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def clear(self) -> None:
         """Clear all cache entries."""
@@ -368,7 +385,10 @@ class FTSIndexCache:
             evicted = len(self._cache)
             self._cache.clear()
             self._eviction_count += evicted
-            logger.info(f"Cleared FTS cache ({evicted} entries)", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Cleared FTS cache ({evicted} entries)",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _enforce_size_limit(self) -> None:
         """
@@ -397,16 +417,18 @@ class FTSIndexCache:
             del self._cache[lru_index_dir]
             self._eviction_count += 1
             logger.debug(
-                f"Evicted LRU FTS cache entry to enforce size limit: {lru_index_dir}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Evicted LRU FTS cache entry to enforce size limit: {lru_index_dir}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Recalculate size
             current_size_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
 
         if current_size_mb <= self.config.max_cache_size_mb and self._cache:
             logger.debug(
-                f"FTS cache size: {current_size_mb}MB / {self.config.max_cache_size_mb}MB"
-            , extra={"correlation_id": get_correlation_id()})
+                f"FTS cache size: {current_size_mb}MB / {self.config.max_cache_size_mb}MB",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _cleanup_expired_entries(self) -> None:
         """
@@ -424,10 +446,16 @@ class FTSIndexCache:
             for index_dir in expired_dirs:
                 del self._cache[index_dir]
                 self._eviction_count += 1
-                logger.debug(f"Evicted expired FTS cache entry: {index_dir}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Evicted expired FTS cache entry: {index_dir}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
             if expired_dirs:
-                logger.info(f"Evicted {len(expired_dirs)} expired FTS cache entries", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Evicted {len(expired_dirs)} expired FTS cache entries",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def start_background_cleanup(self) -> None:
         """
@@ -436,7 +464,10 @@ class FTSIndexCache:
         Thread periodically checks for expired entries and evicts them.
         """
         if self._cleanup_thread and self._cleanup_thread.is_alive():
-            logger.warning("FTS background cleanup thread already running", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                "FTS background cleanup thread already running",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         self._cleanup_stop_event.clear()
@@ -447,7 +478,10 @@ class FTSIndexCache:
                 try:
                     self._cleanup_expired_entries()
                 except Exception as e:
-                    logger.error(f"Error in FTS background cleanup: {e}", extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        f"Error in FTS background cleanup: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
                 # Wait for cleanup interval or stop event
                 self._cleanup_stop_event.wait(
@@ -458,14 +492,20 @@ class FTSIndexCache:
             target=cleanup_loop, name="FTSIndexCacheCleanup", daemon=True
         )
         self._cleanup_thread.start()
-        logger.info("Started FTS background cache cleanup thread", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Started FTS background cache cleanup thread",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def stop_background_cleanup(self) -> None:
         """Stop background cleanup thread."""
         if self._cleanup_thread and self._cleanup_thread.is_alive():
             self._cleanup_stop_event.set()
             self._cleanup_thread.join(timeout=5)
-            logger.info("Stopped FTS background cache cleanup thread", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Stopped FTS background cache cleanup thread",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def get_stats(self) -> FTSIndexCacheStats:
         """

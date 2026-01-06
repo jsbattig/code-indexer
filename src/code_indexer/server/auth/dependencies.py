@@ -442,8 +442,10 @@ def get_current_user_web_or_api(
         except Exception as e:
             # Web session validation failed - fall through to JWT/Bearer auth
             logger.debug(
-                "Web session validation failed, falling back to JWT/Bearer: %s", e
-            , extra={"correlation_id": get_correlation_id()})
+                "Web session validation failed, falling back to JWT/Bearer: %s",
+                e,
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     # Priority 2: Fall back to JWT/Bearer authentication
     try:

@@ -33,7 +33,7 @@ class TestWorkspaceCleanupConfigAC1:
         config = ServerConfig(server_dir=server_dir)
 
         # AC1 requirement: default retention period is 7 days
-        assert hasattr(config, 'scip_workspace_retention_days')
+        assert hasattr(config, "scip_workspace_retention_days")
         assert config.scip_workspace_retention_days == 7
 
     def test_retention_period_via_config_file(self, tmp_path):
@@ -97,7 +97,9 @@ class TestWorkspaceCleanupConfigAC1:
         manager = ServerConfigManager(server_dir)
 
         # AC1 requirement: minimum retention period is 1 day
-        with pytest.raises(ValueError, match="scip_workspace_retention_days must be between 1 and 365"):
+        with pytest.raises(
+            ValueError, match="scip_workspace_retention_days must be between 1 and 365"
+        ):
             manager.validate_config(config)
 
     def test_retention_period_maximum_validation(self, tmp_path):
@@ -115,7 +117,9 @@ class TestWorkspaceCleanupConfigAC1:
         manager = ServerConfigManager(server_dir)
 
         # AC1 requirement: maximum retention period is 365 days
-        with pytest.raises(ValueError, match="scip_workspace_retention_days must be between 1 and 365"):
+        with pytest.raises(
+            ValueError, match="scip_workspace_retention_days must be between 1 and 365"
+        ):
             manager.validate_config(config)
 
     def test_retention_period_valid_range(self, tmp_path):

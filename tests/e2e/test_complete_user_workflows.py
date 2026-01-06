@@ -47,7 +47,8 @@ class TestCompleteUserWorkflows:
 
             # Create main test server
             main_server = server_manager.create_test_server(
-                server_id="main_server", auto_start=False  # We'll start it manually
+                server_id="main_server",
+                auto_start=False,  # We'll start it manually
             )
 
             # Create container environment manager

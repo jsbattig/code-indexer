@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 # Token validation patterns
 GITHUB_TOKEN_PATTERN = re.compile(
-    r'^(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,255})$'
+    r"^(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,255})$"
 )
-GITLAB_TOKEN_PATTERN = re.compile(r'^glpat-[A-Za-z0-9_-]{20,}$')
+GITLAB_TOKEN_PATTERN = re.compile(r"^glpat-[A-Za-z0-9_-]{20,}$")
 
 # Encryption constants
 PBKDF2_ITERATIONS = 100000
@@ -37,12 +37,14 @@ AES_BLOCK_SIZE = 16  # 128 bits
 
 class TokenValidationError(Exception):
     """Raised when token format validation fails."""
+
     pass
 
 
 @dataclass
 class TokenData:
     """Data structure for stored token information."""
+
     platform: str
     token: str
     base_url: Optional[str] = None
@@ -51,6 +53,7 @@ class TokenData:
 @dataclass
 class TokenStatus:
     """Status information for a platform's token configuration."""
+
     platform: str
     configured: bool
     base_url: Optional[str] = None
@@ -94,16 +97,16 @@ class CITokenManager:
         """
         # Use machine-specific data as salt
         # In production, this could be from a more secure source
-        machine_id = os.uname().nodename.encode('utf-8')
+        machine_id = os.uname().nodename.encode("utf-8")
         salt = hashlib.sha256(machine_id).digest()
 
         # Derive key using PBKDF2
         key = hashlib.pbkdf2_hmac(
-            'sha256',
-            b'cidx-token-encryption-key',
+            "sha256",
+            b"cidx-token-encryption-key",
             salt,
             PBKDF2_ITERATIONS,
-            dklen=AES_KEY_SIZE
+            dklen=AES_KEY_SIZE,
         )
         return key
 
@@ -122,20 +125,20 @@ class CITokenManager:
 
         # Pad the token to AES block size
         padder = padding.PKCS7(128).padder()
-        padded_data = padder.update(token.encode('utf-8')) + padder.finalize()
+        padded_data = padder.update(token.encode("utf-8")) + padder.finalize()
 
         # Encrypt using AES-256-CBC
         cipher = Cipher(
             algorithms.AES(self._encryption_key),
             modes.CBC(iv),
-            backend=default_backend()
+            backend=default_backend(),
         )
         encryptor = cipher.encryptor()
         encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
 
         # Combine IV and encrypted data, encode as base64
         combined = iv + encrypted_data
-        return base64.b64encode(combined).decode('utf-8')
+        return base64.b64encode(combined).decode("utf-8")
 
     def _decrypt_token(self, encrypted_token: str) -> str:
         """
@@ -148,7 +151,7 @@ class CITokenManager:
             Plaintext token
         """
         # Decode from base64
-        combined = base64.b64decode(encrypted_token.encode('utf-8'))
+        combined = base64.b64decode(encrypted_token.encode("utf-8"))
 
         # Extract IV and encrypted data
         iv = combined[:AES_BLOCK_SIZE]
@@ -158,7 +161,7 @@ class CITokenManager:
         cipher = Cipher(
             algorithms.AES(self._encryption_key),
             modes.CBC(iv),
-            backend=default_backend()
+            backend=default_backend(),
         )
         decryptor = cipher.decryptor()
         padded_data = decryptor.update(encrypted_data) + decryptor.finalize()
@@ -167,7 +170,7 @@ class CITokenManager:
         unpadder = padding.PKCS7(128).unpadder()
         data = unpadder.update(padded_data) + unpadder.finalize()
 
-        result: str = data.decode('utf-8')
+        result: str = data.decode("utf-8")
         return result
 
     def _validate_token_format(self, platform: str, token: str) -> None:
@@ -190,8 +193,7 @@ class CITokenManager:
         elif platform == "gitlab":
             if not GITLAB_TOKEN_PATTERN.match(token):
                 raise TokenValidationError(
-                    "Invalid GitLab token format. Expected format: "
-                    "glpat-<20+ chars>"
+                    "Invalid GitLab token format. Expected format: " "glpat-<20+ chars>"
                 )
         else:
             raise TokenValidationError(f"Unknown platform: {platform}")
@@ -206,7 +208,7 @@ class CITokenManager:
         if not self.token_file.exists():
             return {}
 
-        with open(self.token_file, 'r') as f:
+        with open(self.token_file, "r") as f:
             return cast(Dict[str, Any], json.load(f))
 
     def _save_tokens(self, tokens: Dict) -> None:
@@ -220,17 +222,14 @@ class CITokenManager:
         self.server_dir.mkdir(parents=True, exist_ok=True)
 
         # Write tokens to file
-        with open(self.token_file, 'w') as f:
+        with open(self.token_file, "w") as f:
             json.dump(tokens, f, indent=2)
 
         # Set secure permissions (0600)
         os.chmod(self.token_file, 0o600)
 
     def save_token(
-        self,
-        platform: str,
-        token: str,
-        base_url: Optional[str] = None
+        self, platform: str, token: str, base_url: Optional[str] = None
     ) -> None:
         """
         Save and encrypt a CI/CD platform token.
@@ -253,15 +252,15 @@ class CITokenManager:
         tokens = self._load_tokens()
 
         # Update token data
-        tokens[platform] = {
-            "token": encrypted_token,
-            "base_url": base_url
-        }
+        tokens[platform] = {"token": encrypted_token, "base_url": base_url}
 
         # Save to file with secure permissions
         self._save_tokens(tokens)
 
-        logger.info(f"Saved encrypted token for platform: {platform}", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Saved encrypted token for platform: {platform}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_token(self, platform: str) -> Optional[TokenData]:
         """
@@ -286,7 +285,7 @@ class CITokenManager:
         return TokenData(
             platform=platform,
             token=decrypted_token,
-            base_url=token_data.get("base_url")
+            base_url=token_data.get("base_url"),
         )
 
     def delete_token(self, platform: str) -> None:
@@ -301,7 +300,10 @@ class CITokenManager:
         if platform in tokens:
             del tokens[platform]
             self._save_tokens(tokens)
-            logger.info(f"Deleted token for platform: {platform}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Deleted token for platform: {platform}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def list_tokens(self) -> Dict[str, TokenStatus]:
         """
@@ -321,12 +323,9 @@ class CITokenManager:
                 result[platform] = TokenStatus(
                     platform=platform,
                     configured=True,
-                    base_url=tokens[platform].get("base_url")
+                    base_url=tokens[platform].get("base_url"),
                 )
             else:
-                result[platform] = TokenStatus(
-                    platform=platform,
-                    configured=False
-                )
+                result[platform] = TokenStatus(platform=platform, configured=False)
 
         return result

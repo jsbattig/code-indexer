@@ -52,7 +52,9 @@ class TestAdminSCIPAuditAPI:
         # Cleanup - remove override after test
         test_client.app.dependency_overrides.clear()
 
-    def test_get_pr_history_returns_audit_logs(self, test_client, mock_admin_user, tmp_path):
+    def test_get_pr_history_returns_audit_logs(
+        self, test_client, mock_admin_user, tmp_path
+    ):
         """Test GET /api/admin/scip-pr-history returns PR creation audit logs."""
         # ARRANGE - Create mock audit logs
         audit_log_file = tmp_path / "pr_audit.log"
@@ -146,7 +148,9 @@ class TestAdminSCIPAuditAPI:
             assert data["logs"][0]["repo_alias"] == "repo-a"
 
             # Verify filter was passed to audit logger
-            mock_get_logs.assert_called_once_with(repo_alias="repo-a", limit=100, offset=0)
+            mock_get_logs.assert_called_once_with(
+                repo_alias="repo-a", limit=100, offset=0
+            )
 
     def test_get_pr_history_requires_admin_auth(self, test_client):
         """Test GET /api/admin/scip-pr-history requires admin authentication."""
@@ -208,7 +212,9 @@ class TestAdminSCIPAuditAPI:
             assert first_log["repo_path"] == "/path/to/repo"
             assert len(first_log["files_cleared"]) == 2
 
-    def test_get_cleanup_history_filters_by_repo_path(self, test_client, mock_admin_user):
+    def test_get_cleanup_history_filters_by_repo_path(
+        self, test_client, mock_admin_user
+    ):
         """Test GET /api/admin/scip-git-cleanup-history filters by repo_path."""
         # ARRANGE
         test_entries = [
@@ -253,7 +259,10 @@ class TestAdminSCIPAuditAPI:
     def test_pr_history_pagination_works(self, test_client, mock_admin_user):
         """Test GET /api/admin/scip-pr-history supports pagination."""
         # ARRANGE
-        test_entries = [{"event_type": "pr_creation_success", "job_id": f"job-{i}"} for i in range(150)]
+        test_entries = [
+            {"event_type": "pr_creation_success", "job_id": f"job-{i}"}
+            for i in range(150)
+        ]
 
         with patch(
             "code_indexer.server.auth.audit_logger.PasswordChangeAuditLogger.get_pr_logs"
@@ -275,7 +284,9 @@ class TestAdminSCIPAuditAPI:
     def test_cleanup_history_pagination_works(self, test_client, mock_admin_user):
         """Test GET /api/admin/scip-git-cleanup-history supports pagination."""
         # ARRANGE
-        test_entries = [{"event_type": "git_cleanup", "repo_path": f"/path/{i}"} for i in range(150)]
+        test_entries = [
+            {"event_type": "git_cleanup", "repo_path": f"/path/{i}"} for i in range(150)
+        ]
 
         with patch(
             "code_indexer.server.auth.audit_logger.PasswordChangeAuditLogger.get_cleanup_logs"

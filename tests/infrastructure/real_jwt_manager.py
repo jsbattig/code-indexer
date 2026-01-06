@@ -186,7 +186,8 @@ class RealJWTManager:
         """
         # Verify token signature and decode
         payload = cast(
-            dict[str, Any], jwt.decode(token, self.public_key_pem, algorithms=[self.algorithm])
+            dict[str, Any],
+            jwt.decode(token, self.public_key_pem, algorithms=[self.algorithm]),
         )
 
         # Verify token was issued by this manager

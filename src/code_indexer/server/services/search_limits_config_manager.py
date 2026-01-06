@@ -74,7 +74,10 @@ class SearchLimitsConfigManager:
             )
             conn.commit()
 
-        logger.info(f"Search limits config database initialized at {self.db_path}", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Search limits config database initialized at {self.db_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_config(self) -> SearchLimitsConfig:
         """
@@ -100,7 +103,10 @@ class SearchLimitsConfigManager:
                     )
                 else:
                     # Return default if somehow not found
-                    logger.warning("Config not found in database, using defaults", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        "Config not found in database, using defaults",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     return SearchLimitsConfig()
 
     def update_config(self, config: SearchLimitsConfig):
@@ -125,8 +131,9 @@ class SearchLimitsConfigManager:
                 conn.commit()
 
         logger.info(
-            f"Updated search limits config: {config.max_result_size_mb}MB, {config.timeout_seconds}s"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Updated search limits config: {config.max_result_size_mb}MB, {config.timeout_seconds}s",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     @classmethod
     def get_instance(cls, db_path: Optional[str] = None) -> "SearchLimitsConfigManager":

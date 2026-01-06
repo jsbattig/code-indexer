@@ -17,7 +17,7 @@ from .error_formatters import generate_correlation_id
 
 # ContextVar for storing correlation ID (async-safe, request-scoped)
 _correlation_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    'correlation_id', default=None
+    "correlation_id", default=None
 )
 
 

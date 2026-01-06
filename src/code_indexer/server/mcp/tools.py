@@ -5935,39 +5935,36 @@ TOOL_REGISTRY["admin_logs_query"] = {
         "properties": {
             "page": {
                 "type": "integer",
-                "description": "Page number (1-indexed, default 1)"
+                "description": "Page number (1-indexed, default 1)",
             },
             "page_size": {
                 "type": "integer",
-                "description": "Number of logs per page (default 50, max 1000)"
+                "description": "Number of logs per page (default 50, max 1000)",
             },
             "sort_order": {
                 "type": "string",
                 "description": "Sort order: 'asc' (oldest first) or 'desc' (newest first, default)",
-                "enum": ["asc", "desc"]
+                "enum": ["asc", "desc"],
             },
             "search": {
                 "type": "string",
-                "description": "Text search across message and correlation_id (case-insensitive)"
+                "description": "Text search across message and correlation_id (case-insensitive)",
             },
             "level": {
                 "type": "string",
-                "description": "Filter by log level(s), comma-separated (e.g., 'ERROR' or 'ERROR,WARNING')"
+                "description": "Filter by log level(s), comma-separated (e.g., 'ERROR' or 'ERROR,WARNING')",
             },
             "correlation_id": {
                 "type": "string",
-                "description": "Filter by exact correlation ID"
-            }
+                "description": "Filter by exact correlation ID",
+            },
         },
         "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation success status"
-            },
+            "success": {"type": "boolean", "description": "Operation success status"},
             "logs": {
                 "type": "array",
                 "description": "Array of log entries",
@@ -5981,9 +5978,9 @@ TOOL_REGISTRY["admin_logs_query"] = {
                         "message": {"type": "string"},
                         "correlation_id": {"type": ["string", "null"]},
                         "user_id": {"type": ["string", "null"]},
-                        "request_path": {"type": ["string", "null"]}
-                    }
-                }
+                        "request_path": {"type": ["string", "null"]},
+                    },
+                },
             },
             "pagination": {
                 "type": "object",
@@ -5992,9 +5989,9 @@ TOOL_REGISTRY["admin_logs_query"] = {
                     "page": {"type": "integer"},
                     "page_size": {"type": "integer"},
                     "total": {"type": "integer"},
-                    "total_pages": {"type": "integer"}
-                }
-            }
+                    "total_pages": {"type": "integer"},
+                },
+            },
         },
         "required": ["success", "logs", "pagination"],
     },
@@ -6016,41 +6013,38 @@ TOOL_REGISTRY["admin_logs_export"] = {
             "format": {
                 "type": "string",
                 "description": "Export format: 'json' (default) or 'csv'",
-                "enum": ["json", "csv"]
+                "enum": ["json", "csv"],
             },
             "search": {
                 "type": "string",
-                "description": "Text search across message and correlation_id (case-insensitive)"
+                "description": "Text search across message and correlation_id (case-insensitive)",
             },
             "level": {
                 "type": "string",
-                "description": "Filter by log level(s), comma-separated (e.g., 'ERROR' or 'ERROR,WARNING')"
+                "description": "Filter by log level(s), comma-separated (e.g., 'ERROR' or 'ERROR,WARNING')",
             },
             "correlation_id": {
                 "type": "string",
-                "description": "Filter by exact correlation ID"
-            }
+                "description": "Filter by exact correlation ID",
+            },
         },
         "additionalProperties": False,
     },
     "outputSchema": {
         "type": "object",
         "properties": {
-            "success": {
-                "type": "boolean",
-                "description": "Operation success status"
-            },
+            "success": {"type": "boolean", "description": "Operation success status"},
             "format": {
                 "type": "string",
-                "description": "Export format used (json or csv)"
+                "description": "Export format used (json or csv)",
             },
             "count": {
                 "type": "integer",
-                "description": "Total number of logs exported"
+                "description": "Total number of logs exported",
             },
             "data": {
                 "type": "string",
-                "description": "Exported log data as JSON string (with metadata) or CSV string (with BOM)"
+                "description": "Exported log data as JSON string (with metadata) or CSV string (with BOM)",
             },
             "filters": {
                 "type": "object",
@@ -6058,9 +6052,9 @@ TOOL_REGISTRY["admin_logs_export"] = {
                 "properties": {
                     "search": {"type": ["string", "null"]},
                     "level": {"type": ["string", "null"]},
-                    "correlation_id": {"type": ["string", "null"]}
-                }
-            }
+                    "correlation_id": {"type": ["string", "null"]},
+                },
+            },
         },
         "required": ["success", "format", "count", "data", "filters"],
     },

@@ -362,10 +362,17 @@ class GlobalErrorHandler(BaseHTTPMiddleware):
 
             # Log at appropriate level
             if error_type in ["ValidationError", "HTTPException"]:
-                logger.warning(log_message, extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    log_message, extra={"correlation_id": get_correlation_id()}
+                )
             else:
-                logger.error(log_message, extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    log_message, extra={"correlation_id": get_correlation_id()}
+                )
 
         except Exception as log_error:
             # Fallback logging if there's an error in the logging process
-            logger.error(f"Error logging failed [ID: {correlation_id}]: {log_error}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error logging failed [ID: {correlation_id}]: {log_error}",
+                extra={"correlation_id": get_correlation_id()},
+            )

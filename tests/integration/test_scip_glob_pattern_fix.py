@@ -180,9 +180,7 @@ class TestCompositeQueriesBFSTraverse:
             MockEngine.return_value = mock_instance
 
             # Call analyze_impact which uses _bfs_traverse_dependents internally
-            analyze_impact(
-                symbol="test_symbol", scip_dir=scip_db_only_dir, depth=1
-            )
+            analyze_impact(symbol="test_symbol", scip_dir=scip_db_only_dir, depth=1)
 
             # Should have attempted to query .scip.db files
             # With 3 .scip.db files in directory, should create 3+ engine instances
@@ -270,7 +268,9 @@ class TestRealSCIPFixture:
         # Should be able to analyze impact using .scip.db file
         # Pick a symbol we know exists in test fixture
         result = analyze_impact(
-            symbol="test", scip_dir=scip_dir, depth=1  # Generic symbol likely to exist
+            symbol="test",
+            scip_dir=scip_dir,
+            depth=1,  # Generic symbol likely to exist
         )
 
         # Should complete without error and return valid result

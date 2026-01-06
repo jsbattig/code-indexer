@@ -394,7 +394,10 @@ class ActivatedRepoManager:
 
                 except Exception as e:
                     # Clean up on failure
-                    self.logger.error(f"Failed to clone repository '{alias}': {str(e)}", extra={"correlation_id": get_correlation_id()})
+                    self.logger.error(
+                        f"Failed to clone repository '{alias}': {str(e)}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     if composite_path.exists():
                         shutil.rmtree(composite_path, ignore_errors=True)
                     raise ActivatedRepoError(
@@ -413,7 +416,10 @@ class ActivatedRepoManager:
                 update_progress(90, "Repository discovery completed")
             except Exception as e:
                 # Clean up on failure
-                self.logger.error(f"Failed to refresh repositories: {str(e)}", extra={"correlation_id": get_correlation_id()})
+                self.logger.error(
+                    f"Failed to refresh repositories: {str(e)}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 if composite_path.exists():
                     shutil.rmtree(composite_path, ignore_errors=True)
                 raise ActivatedRepoError(
@@ -444,7 +450,10 @@ class ActivatedRepoManager:
                     json.dump(metadata, f, indent=2)
             except Exception as e:
                 # Clean up on failure
-                self.logger.error(f"Failed to create metadata file: {str(e)}", extra={"correlation_id": get_correlation_id()})
+                self.logger.error(
+                    f"Failed to create metadata file: {str(e)}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 if composite_path.exists():
                     shutil.rmtree(composite_path, ignore_errors=True)
                 raise ActivatedRepoError(f"Failed to create metadata: {str(e)}")
@@ -559,7 +568,7 @@ class ActivatedRepoManager:
         except Exception as e:
             self.logger.error(
                 f"Error listing all activated repositories: {str(e)}",
-                extra={"correlation_id": get_correlation_id()}
+                extra={"correlation_id": get_correlation_id()},
             )
             # Return what we have so far rather than failing completely
             return all_activated_repos
@@ -1362,7 +1371,10 @@ class ActivatedRepoManager:
             if progress_callback:
                 progress_callback(percent)
             if message:
-                self.logger.info(f"Activation progress ({percent}%): {message}", extra={"correlation_id": get_correlation_id()})
+                self.logger.info(
+                    f"Activation progress ({percent}%): {message}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         try:
             update_progress(
@@ -1778,7 +1790,10 @@ class ActivatedRepoManager:
                             try:
                                 shutil.rmtree(subrepo_path)
                                 components_removed += 1
-                                self.logger.info(f"Removed component: {repo_name}", extra={"correlation_id": get_correlation_id()})
+                                self.logger.info(
+                                    f"Removed component: {repo_name}",
+                                    extra={"correlation_id": get_correlation_id()},
+                                )
                             except (OSError, IOError) as e:
                                 cleanup_warnings.append(
                                     f"Failed to remove component '{repo_name}': {str(e)}"
@@ -1817,7 +1832,10 @@ class ActivatedRepoManager:
             if os.path.exists(metadata_file):
                 try:
                     os.remove(metadata_file)
-                    self.logger.info(f"Removed metadata file: {metadata_file}", extra={"correlation_id": get_correlation_id()})
+                    self.logger.info(
+                        f"Removed metadata file: {metadata_file}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                 except (OSError, IOError) as e:
                     cleanup_warnings.append(f"Failed to remove metadata file: {str(e)}")
                     self.logger.warning(
@@ -1881,12 +1899,18 @@ class ActivatedRepoManager:
             repo_path: Path to composite repository
         """
         try:
-            self.logger.debug(f"Attempting to stop services for {repo_path}", extra={"correlation_id": get_correlation_id()})
+            self.logger.debug(
+                f"Attempting to stop services for {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Check if .code-indexer directory exists (has configuration)
             config_dir = repo_path / ".code-indexer"
             if not config_dir.exists():
-                self.logger.debug("No .code-indexer directory, skipping service stop", extra={"correlation_id": get_correlation_id()})
+                self.logger.debug(
+                    "No .code-indexer directory, skipping service stop",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return
 
             # Attempt to stop services using cidx stop command
@@ -1916,10 +1940,16 @@ class ActivatedRepoManager:
             )
         except FileNotFoundError:
             # cidx command not found - non-fatal
-            self.logger.debug("cidx command not found, skipping service stop", extra={"correlation_id": get_correlation_id()})
+            self.logger.debug(
+                "cidx command not found, skipping service stop",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except Exception as e:
             # Non-fatal - services might not be running
-            self.logger.debug(f"Service stop attempted but failed: {str(e)}", extra={"correlation_id": get_correlation_id()})
+            self.logger.debug(
+                f"Service stop attempted but failed: {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _detect_resource_leaks(self, repo_dir: str, user_alias: str) -> List[str]:
         """
@@ -2010,7 +2040,10 @@ class ActivatedRepoManager:
         """
         try:
             # Step 1: Perform CoW clone to copy EVERYTHING including .code-indexer/
-            self.logger.info(f"CoW cloning repository: {source_path} -> {dest_path}", extra={"correlation_id": get_correlation_id()})
+            self.logger.info(
+                f"CoW cloning repository: {source_path} -> {dest_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Use cp --reflink=auto to attempt CoW, fallback to regular copy
             result = subprocess.run(
@@ -2023,7 +2056,10 @@ class ActivatedRepoManager:
             if result.returncode != 0:
                 raise ActivatedRepoError(f"CoW clone failed: {result.stderr}")
 
-            self.logger.info(f"CoW clone successful: {source_path} -> {dest_path}", extra={"correlation_id": get_correlation_id()})
+            self.logger.info(
+                f"CoW clone successful: {source_path} -> {dest_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Step 2: Detect and convert bare repositories (Story #636)
             # Golden repos are stored as bare, but activated repos need working trees
@@ -2185,7 +2221,10 @@ class ActivatedRepoManager:
         if result.returncode != 0:
             raise ActivatedRepoError(f"CoW clone failed: {result.stderr}")
 
-        self.logger.info(f"CoW clone successful: {source_path} -> {dest_path}", extra={"correlation_id": get_correlation_id()})
+        self.logger.info(
+            f"CoW clone successful: {source_path} -> {dest_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Configure git structure if destination is a git repository
         git_dir = os.path.join(dest_path, ".git")
@@ -2244,9 +2283,15 @@ class ActivatedRepoManager:
                 )
 
         except subprocess.TimeoutExpired:
-            self.logger.warning("Git remote setup operation timed out", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                "Git remote setup operation timed out",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except Exception as e:
-            self.logger.warning(f"Error setting up git remote: {str(e)}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Error setting up git remote: {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _add_or_update_remote(self, repo_path: str, remote_name: str, url: str) -> None:
         """
@@ -2370,8 +2415,14 @@ class ActivatedRepoManager:
             self.logger.info(
                 f"Dual remote git structure configured successfully for: {dest_path}"
             )
-            self.logger.info(f"  origin -> {github_url}", extra={"correlation_id": get_correlation_id()})
-            self.logger.info(f"  golden -> {source_path}", extra={"correlation_id": get_correlation_id()})
+            self.logger.info(
+                f"  origin -> {github_url}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            self.logger.info(
+                f"  golden -> {source_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         except subprocess.TimeoutExpired:
             raise ActivatedRepoError("Git configuration operation timed out")
@@ -2510,7 +2561,10 @@ class ActivatedRepoManager:
             if golden_result.returncode != 0:
                 # origin is GitHub URL but no golden remote - add it
                 self._add_or_update_remote(repo_dir, "golden", golden_repo_path)
-                self.logger.info(f"Added missing golden remote: {golden_repo_path}", extra={"correlation_id": get_correlation_id()})
+                self.logger.info(
+                    f"Added missing golden remote: {golden_repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return True
 
             # Already using dual remotes - no migration needed
@@ -2590,7 +2644,10 @@ class ActivatedRepoManager:
 
             # Local file paths - fetching not needed for CoW repos
             if origin_url.startswith("/") or origin_url.startswith("file://"):
-                self.logger.debug(f"Origin is local path: {origin_url}, skipping fetch", extra={"correlation_id": get_correlation_id()})
+                self.logger.debug(
+                    f"Origin is local path: {origin_url}, skipping fetch",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False, f"Local repository: {origin_url}"
 
             # Relative paths - also local
@@ -2601,13 +2658,19 @@ class ActivatedRepoManager:
                 return False, f"Local repository: {origin_url}"
 
             # Remote URLs - attempt fetch
-            self.logger.debug(f"Origin is remote URL: {origin_url}, will attempt fetch", extra={"correlation_id": get_correlation_id()})
+            self.logger.debug(
+                f"Origin is remote URL: {origin_url}, will attempt fetch",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True, f"Remote repository: {origin_url}"
 
         except subprocess.TimeoutExpired:
             return False, "Timeout checking remote URL"
         except Exception as e:
-            self.logger.warning(f"Error checking remote URL: {e}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Error checking remote URL: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False, f"Error checking remote: {str(e)}"
 
     def _switch_to_remote_tracking_branch(
@@ -2880,7 +2943,10 @@ class ActivatedRepoManager:
                 return ["main"]
 
         except Exception as e:
-            self.logger.warning(f"Failed to get branches for {repo_path}: {str(e)}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Failed to get branches for {repo_path}: {str(e)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return ["main"]
 
     def _update_composite_config(self, composite_path: Path) -> None:

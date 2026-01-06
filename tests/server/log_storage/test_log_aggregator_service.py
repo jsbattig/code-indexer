@@ -42,12 +42,16 @@ def populated_db_path(temp_db_path: Path) -> Generator[Path, None, None]:
 
     # Insert test log records with varying levels and timestamps
     logger.debug("Debug message 1")
-    logger.info("Info message 1", extra={"correlation_id": "corr-1", "user_id": "user1"})
+    logger.info(
+        "Info message 1", extra={"correlation_id": "corr-1", "user_id": "user1"}
+    )
     logger.warning("Warning message 1")
     logger.error("Error message 1", extra={"correlation_id": "corr-2"})
     logger.critical("Critical message 1")
 
-    logger.debug("Debug message 2", extra={"user_id": "user2", "request_path": "/api/test"})
+    logger.debug(
+        "Debug message 2", extra={"user_id": "user2", "request_path": "/api/test"}
+    )
     logger.info("Info message 2")
     logger.warning("Warning message 2", extra={"correlation_id": "corr-3"})
     logger.error("Error message 2")
@@ -59,7 +63,9 @@ def populated_db_path(temp_db_path: Path) -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def aggregator_service(temp_db_path: Path) -> Generator[LogAggregatorService, None, None]:
+def aggregator_service(
+    temp_db_path: Path,
+) -> Generator[LogAggregatorService, None, None]:
     """Create a LogAggregatorService instance for testing."""
     service = LogAggregatorService(temp_db_path)
     yield service
@@ -103,7 +109,9 @@ class TestLogAggregatorServiceBasics:
 class TestLogAggregatorServiceQuery:
     """Test query method with pagination."""
 
-    def test_query_returns_correct_structure(self, populated_aggregator_service: LogAggregatorService):
+    def test_query_returns_correct_structure(
+        self, populated_aggregator_service: LogAggregatorService
+    ):
         """Test that query returns correct response structure."""
         result = populated_aggregator_service.query(page=1, page_size=10)
 
@@ -139,7 +147,9 @@ class TestLogAggregatorServiceQuery:
         assert "user_id" in log_entry  # Can be None
         assert "request_path" in log_entry  # Can be None
 
-    def test_query_pagination_works(self, populated_aggregator_service: LogAggregatorService):
+    def test_query_pagination_works(
+        self, populated_aggregator_service: LogAggregatorService
+    ):
         """Test that pagination correctly splits results."""
         # Get first page with page_size=3
         page1 = populated_aggregator_service.query(page=1, page_size=3)
@@ -164,7 +174,9 @@ class TestLogAggregatorServiceQuery:
         timestamps = [log["timestamp"] for log in result["logs"]]
         assert timestamps == sorted(timestamps, reverse=True)
 
-    def test_query_handles_empty_database(self, aggregator_service: LogAggregatorService):
+    def test_query_handles_empty_database(
+        self, aggregator_service: LogAggregatorService
+    ):
         """Test that query handles empty database gracefully (AC6)."""
         result = aggregator_service.query(page=1, page_size=10)
 
@@ -172,7 +184,9 @@ class TestLogAggregatorServiceQuery:
         assert result["pagination"]["total"] == 0
         assert result["pagination"]["total_pages"] == 0
 
-    def test_query_respects_page_size(self, populated_aggregator_service: LogAggregatorService):
+    def test_query_respects_page_size(
+        self, populated_aggregator_service: LogAggregatorService
+    ):
         """Test that query respects page_size parameter."""
         result = populated_aggregator_service.query(page=1, page_size=5)
 
@@ -214,7 +228,9 @@ class TestLogAggregatorServiceCount:
 class TestLogAggregatorServiceFiltering:
     """Test filtering capabilities."""
 
-    def test_query_filters_by_level(self, populated_aggregator_service: LogAggregatorService):
+    def test_query_filters_by_level(
+        self, populated_aggregator_service: LogAggregatorService
+    ):
         """Test that query can filter by log level."""
         result = populated_aggregator_service.query(page=1, page_size=10, level="ERROR")
 
@@ -225,9 +241,13 @@ class TestLogAggregatorServiceFiltering:
         # Should have 2 ERROR logs from fixture
         assert len(result["logs"]) == 2
 
-    def test_query_filters_by_source(self, populated_aggregator_service: LogAggregatorService):
+    def test_query_filters_by_source(
+        self, populated_aggregator_service: LogAggregatorService
+    ):
         """Test that query can filter by source (logger name)."""
-        result = populated_aggregator_service.query(page=1, page_size=10, source="test.populated")
+        result = populated_aggregator_service.query(
+            page=1, page_size=10, source="test.populated"
+        )
 
         # Should only return logs from test.populated logger
         for log in result["logs"]:
@@ -253,7 +273,9 @@ class TestLogAggregatorServiceSorting:
         self, populated_aggregator_service: LogAggregatorService
     ):
         """Test that query supports ascending sort order."""
-        result = populated_aggregator_service.query(page=1, page_size=10, sort_order="asc")
+        result = populated_aggregator_service.query(
+            page=1, page_size=10, sort_order="asc"
+        )
 
         # Verify timestamps are in ascending order
         timestamps = [log["timestamp"] for log in result["logs"]]
@@ -263,7 +285,9 @@ class TestLogAggregatorServiceSorting:
         self, populated_aggregator_service: LogAggregatorService
     ):
         """Test that query supports descending sort order (default)."""
-        result = populated_aggregator_service.query(page=1, page_size=10, sort_order="desc")
+        result = populated_aggregator_service.query(
+            page=1, page_size=10, sort_order="desc"
+        )
 
         # Verify timestamps are in descending order
         timestamps = [log["timestamp"] for log in result["logs"]]
@@ -296,7 +320,9 @@ class TestLogAggregatorServicePaginationMetadata:
 class TestLogAggregatorServiceEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_service_handles_page_zero(self, populated_aggregator_service: LogAggregatorService):
+    def test_service_handles_page_zero(
+        self, populated_aggregator_service: LogAggregatorService
+    ):
         """Test that service handles page=0 gracefully (treats as page=1)."""
         result = populated_aggregator_service.query(page=0, page_size=10)
 
@@ -378,7 +404,9 @@ class TestLogAggregatorServiceSearch:
     ):
         """Test that search matches against message content."""
         # Search for "Debug" - should match Debug message 1 and Debug message 2
-        result = populated_aggregator_service.query(page=1, page_size=10, search="Debug")
+        result = populated_aggregator_service.query(
+            page=1, page_size=10, search="Debug"
+        )
 
         # Should find logs with "Debug" in message
         assert len(result["logs"]) == 2
@@ -390,7 +418,9 @@ class TestLogAggregatorServiceSearch:
     ):
         """Test that search matches against correlation_id."""
         # Search for "corr-1" - should match the log with correlation_id="corr-1"
-        result = populated_aggregator_service.query(page=1, page_size=10, search="corr-1")
+        result = populated_aggregator_service.query(
+            page=1, page_size=10, search="corr-1"
+        )
 
         # Should find the log with correlation_id containing "corr-1"
         assert len(result["logs"]) == 1
@@ -401,9 +431,13 @@ class TestLogAggregatorServiceSearch:
     ):
         """Test that search is case-insensitive (AC1)."""
         # Search with uppercase
-        result_upper = populated_aggregator_service.query(page=1, page_size=10, search="DEBUG")
+        result_upper = populated_aggregator_service.query(
+            page=1, page_size=10, search="DEBUG"
+        )
         # Search with lowercase
-        result_lower = populated_aggregator_service.query(page=1, page_size=10, search="debug")
+        result_lower = populated_aggregator_service.query(
+            page=1, page_size=10, search="debug"
+        )
 
         # Should return same results regardless of case
         assert len(result_upper["logs"]) == len(result_lower["logs"])
@@ -414,7 +448,9 @@ class TestLogAggregatorServiceSearch:
     ):
         """Test that search matches partial strings (substring search)."""
         # Search for "message" - should match all logs (all have "message" in text)
-        result = populated_aggregator_service.query(page=1, page_size=20, search="message")
+        result = populated_aggregator_service.query(
+            page=1, page_size=20, search="message"
+        )
 
         # Should find multiple logs containing "message"
         assert len(result["logs"]) >= 10  # All 10 logs have "message" in their text
@@ -480,18 +516,24 @@ class TestLogAggregatorServiceMultipleLevelFiltering:
     ):
         """Test that filtering with single level in list works."""
         # Filter by single level in list format
-        result = populated_aggregator_service.query(page=1, page_size=10, levels=["ERROR"])
+        result = populated_aggregator_service.query(
+            page=1, page_size=10, levels=["ERROR"]
+        )
 
         # Should return only ERROR logs
         assert len(result["logs"]) == 2
         for log in result["logs"]:
             assert log["level"] == "ERROR"
 
-    def test_filter_by_all_levels(self, populated_aggregator_service: LogAggregatorService):
+    def test_filter_by_all_levels(
+        self, populated_aggregator_service: LogAggregatorService
+    ):
         """Test that can filter by all available levels."""
         # Filter by all levels
         result = populated_aggregator_service.query(
-            page=1, page_size=20, levels=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+            page=1,
+            page_size=20,
+            levels=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         )
 
         # Should return all logs

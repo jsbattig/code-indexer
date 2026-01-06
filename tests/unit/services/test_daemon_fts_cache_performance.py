@@ -218,7 +218,6 @@ def test_daemon_routing_fts_queries():
         patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find,
         patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect,
     ):
-
         mock_find.return_value = Path("/tmp/test/.code-indexer/config.json")
         mock_connect.return_value = mock_conn
 

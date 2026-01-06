@@ -339,7 +339,9 @@ class TestGitHubActionsE2EWriteOperations:
         }
         list_result = await handle_gh_actions_list_runs(list_args, mock_user)
 
-        failed_runs = [r for r in list_result["runs"] if r.get("conclusion") == "failure"]
+        failed_runs = [
+            r for r in list_result["runs"] if r.get("conclusion") == "failure"
+        ]
 
         if not failed_runs:
             pytest.skip("No failed workflow runs available for retry")
@@ -384,8 +386,7 @@ class TestGitHubActionsE2EWriteOperations:
         list_result = await handle_gh_actions_list_runs(list_args, mock_user)
 
         active_runs = [
-            r for r in list_result["runs"]
-            if r["status"] in ("queued", "in_progress")
+            r for r in list_result["runs"] if r["status"] in ("queued", "in_progress")
         ]
 
         if not active_runs:

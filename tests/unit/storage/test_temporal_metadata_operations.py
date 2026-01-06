@@ -30,7 +30,7 @@ class TestTemporalMetadataOperations:
             payload = {
                 "commit_hash": "abc123",
                 "path": "path/to/file.py",
-                "chunk_index": 0
+                "chunk_index": 0,
             }
 
             # Save metadata
@@ -40,9 +40,9 @@ class TestTemporalMetadataOperations:
             retrieved_point_id = metadata_store.get_point_id(hash_prefix)
 
             # Then: Should return original point_id
-            assert retrieved_point_id == point_id, (
-                f"Expected point_id '{point_id}', got '{retrieved_point_id}'"
-            )
+            assert (
+                retrieved_point_id == point_id
+            ), f"Expected point_id '{point_id}', got '{retrieved_point_id}'"
 
     def test_get_point_id_returns_none_for_missing_hash(self):
         """get_point_id() returns None for non-existent hash prefix."""
@@ -66,11 +66,7 @@ class TestTemporalMetadataOperations:
             metadata_store = TemporalMetadataStore(collection_path)
 
             point_id = "project:diff:def456:src/main.py:5"
-            payload = {
-                "commit_hash": "def456",
-                "path": "src/main.py",
-                "chunk_index": 5
-            }
+            payload = {"commit_hash": "def456", "path": "src/main.py", "chunk_index": 5}
 
             hash_prefix = metadata_store.save_metadata(point_id, payload)
 
@@ -160,7 +156,9 @@ class TestTemporalMetadataOperations:
             removed_count = metadata_store.cleanup_stale_metadata(valid_hashes)
 
             # Then: hash_2 should be removed
-            assert removed_count == 1, f"Expected 1 stale entry removed, got {removed_count}"
+            assert (
+                removed_count == 1
+            ), f"Expected 1 stale entry removed, got {removed_count}"
             assert metadata_store.count_entries() == 2
             assert metadata_store.get_point_id(hash_1) is not None
             assert metadata_store.get_point_id(hash_2) is None  # Removed
@@ -219,7 +217,7 @@ class TestTemporalMetadataOperations:
             original_payload = {
                 "commit_hash": "original_hash",
                 "path": "original_path.py",
-                "chunk_index": 0
+                "chunk_index": 0,
             }
 
             hash_prefix = metadata_store.save_metadata(point_id, original_payload)
@@ -229,7 +227,7 @@ class TestTemporalMetadataOperations:
             updated_payload = {
                 "commit_hash": "updated_hash",
                 "path": "updated_path.py",
-                "chunk_index": 1
+                "chunk_index": 1,
             }
             hash_prefix_2 = metadata_store.save_metadata(point_id, updated_payload)
 

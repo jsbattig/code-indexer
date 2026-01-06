@@ -70,18 +70,20 @@ class MockGitRepository:
         """
         # Create main repository
         self.repo_path.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "init"], cwd=self.repo_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Create remote (bare repo)
@@ -90,7 +92,7 @@ class MockGitRepository:
             ["git", "init", "--bare"],
             cwd=self.remote_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Link repo to remote
@@ -98,17 +100,19 @@ class MockGitRepository:
             ["git", "remote", "add", "origin", str(self.remote_path)],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Create initial commit
         (self.repo_path / "README.md").write_text("# Test Repository\n")
-        subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Rename current branch to main (handles both master and main defaults)
@@ -116,7 +120,7 @@ class MockGitRepository:
             ["git", "branch", "-M", "main"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Push to remote (establish main branch)
@@ -124,7 +128,7 @@ class MockGitRepository:
             ["git", "push", "-u", "origin", "main"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
     def add_uncommitted_changes(self, tracked: bool = True) -> None:
@@ -136,14 +140,16 @@ class MockGitRepository:
 
         Creates a new file with real content and optionally stages it.
         """
-        (self.repo_path / "changes.txt").write_text(f"Uncommitted changes {uuid.uuid4()}\n")
+        (self.repo_path / "changes.txt").write_text(
+            f"Uncommitted changes {uuid.uuid4()}\n"
+        )
 
         if tracked:
             subprocess.run(
                 ["git", "add", "changes.txt"],
                 cwd=self.repo_path,
                 check=True,
-                capture_output=True
+                capture_output=True,
             )
 
     def create_branch(self, branch_name: str) -> None:
@@ -160,7 +166,7 @@ class MockGitRepository:
             ["git", "checkout", "-b", branch_name],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
     def get_current_branch(self) -> str:
@@ -178,7 +184,7 @@ class MockGitRepository:
             cwd=self.repo_path,
             check=True,
             capture_output=True,
-            text=True
+            text=True,
         )
         return result.stdout.strip()
 
@@ -197,7 +203,7 @@ class MockGitRepository:
             cwd=self.repo_path,
             check=True,
             capture_output=True,
-            text=True
+            text=True,
         )
         return result.stdout
 
@@ -216,7 +222,7 @@ class MockGitRepository:
             cwd=self.repo_path,
             check=True,
             capture_output=True,
-            text=True
+            text=True,
         )
         # Parse branch output (remove * and whitespace)
         branches = []
@@ -246,7 +252,7 @@ class MockGitRepository:
             cwd=self.repo_path,
             check=True,
             capture_output=True,
-            text=True
+            text=True,
         )
         return result.stdout.strip()
 

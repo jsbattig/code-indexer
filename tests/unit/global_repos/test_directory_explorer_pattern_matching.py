@@ -153,8 +153,7 @@ class TestDirectoryExplorerPatternMatching:
         """Test combination of include and exclude patterns."""
         # Include all .py files but exclude test files
         tree = service.generate_tree(
-            include_patterns=["*.py"],
-            exclude_patterns=["test_*.py"]
+            include_patterns=["*.py"], exclude_patterns=["test_*.py"]
         )
         tree_str = str(tree)
 
@@ -181,10 +180,7 @@ class TestDirectoryExplorerPatternMatching:
     def test_empty_patterns_match_all(self, service, temp_repo):
         """Test that empty patterns lists don't cause issues."""
         # No patterns = include everything (except defaults)
-        tree = service.generate_tree(
-            include_patterns=[],
-            exclude_patterns=[]
-        )
+        tree = service.generate_tree(include_patterns=[], exclude_patterns=[])
 
         # Should complete without errors
         assert tree is not None

@@ -49,7 +49,9 @@ def populated_log_handler(log_handler, temp_db):
 
     test_logs = [
         {
-            "timestamp": datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc).isoformat(),
+            "timestamp": datetime(
+                2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc
+            ).isoformat(),
             "level": "INFO",
             "message": "Server started",
             "source": "server",
@@ -57,7 +59,9 @@ def populated_log_handler(log_handler, temp_db):
             "extra_data": json.dumps({"version": "1.0"}),
         },
         {
-            "timestamp": datetime(2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc).isoformat(),
+            "timestamp": datetime(
+                2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc
+            ).isoformat(),
             "level": "WARNING",
             "message": "High memory usage",
             "source": "monitor",
@@ -65,7 +69,9 @@ def populated_log_handler(log_handler, temp_db):
             "extra_data": json.dumps({"memory_mb": 512}),
         },
         {
-            "timestamp": datetime(2025, 1, 1, 10, 10, 0, tzinfo=timezone.utc).isoformat(),
+            "timestamp": datetime(
+                2025, 1, 1, 10, 10, 0, tzinfo=timezone.utc
+            ).isoformat(),
             "level": "ERROR",
             "message": "Connection failed",
             "source": "network",

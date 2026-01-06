@@ -106,7 +106,6 @@ class TestDaemonTemporalIndexing(TestCase):
                 "src.code_indexer.services.file_chunking_manager.FileChunkingManager"
             ) as mock_fcm,
         ):
-
             mock_indexer = MagicMock()
             mock_temporal.return_value = mock_indexer
 
@@ -161,7 +160,6 @@ class TestDaemonTemporalIndexing(TestCase):
                 "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
             ),
         ):
-
             mock_indexer = MagicMock()
             mock_temporal.return_value = mock_indexer
             mock_indexer.index_commits.return_value = {
@@ -202,7 +200,6 @@ class TestDaemonTemporalIndexing(TestCase):
                 "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
             ),
         ):
-
             mock_indexer = MagicMock()
             mock_temporal.return_value = mock_indexer
 
@@ -227,7 +224,6 @@ class TestDaemonTemporalIndexing(TestCase):
 
         # Patch _perform_indexing to verify it receives correct kwargs
         with patch.object(service, "_perform_indexing") as mock_perform:
-
             # Call exposed_index with index_commits=True
             service.exposed_index(
                 str(self.project_path),

@@ -22,7 +22,6 @@ class TestJWTRestartPersistenceE2E:
         with tempfile.TemporaryDirectory() as temp_dir:
             # Mock home directory to use temp directory
             with patch("pathlib.Path.home", return_value=Path(temp_dir)):
-
                 # === FIRST SERVER INSTANCE ===
                 app1 = create_app()
                 client1 = TestClient(app1)
@@ -85,7 +84,6 @@ class TestJWTRestartPersistenceE2E:
         """Test that JWT secret file maintains proper permissions across restarts."""
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("pathlib.Path.home", return_value=Path(temp_dir)):
-
                 # Create first server instance
                 create_app()
 
@@ -111,7 +109,6 @@ class TestJWTRestartPersistenceE2E:
         """Test that multiple JWT tokens persist across server restart."""
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("pathlib.Path.home", return_value=Path(temp_dir)):
-
                 # === FIRST SERVER INSTANCE ===
                 app1 = create_app()
                 client1 = TestClient(app1)
@@ -151,7 +148,6 @@ class TestJWTRestartPersistenceE2E:
         """Test that different server instances in different directories have different secrets."""
         with tempfile.TemporaryDirectory() as temp_dir1:
             with tempfile.TemporaryDirectory() as temp_dir2:
-
                 # Create first server in temp_dir1
                 with patch("pathlib.Path.home", return_value=Path(temp_dir1)):
                     create_app()
@@ -176,7 +172,6 @@ class TestJWTRestartPersistenceE2E:
         """Test that environment variable JWT secret is saved and persists."""
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("pathlib.Path.home", return_value=Path(temp_dir)):
-
                 custom_secret = "custom-jwt-secret-from-env-12345"
 
                 # Set environment variable and create first server

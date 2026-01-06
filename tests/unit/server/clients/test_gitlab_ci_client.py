@@ -79,7 +79,10 @@ class TestGitLabCIClient:
         assert pipelines[0]["status"] == "success"
         assert pipelines[0]["ref"] == "main"
         assert pipelines[0]["created_at"] == "2024-12-31T10:00:00.000Z"
-        assert pipelines[0]["web_url"] == "https://gitlab.com/namespace/project/-/pipelines/12345"
+        assert (
+            pipelines[0]["web_url"]
+            == "https://gitlab.com/namespace/project/-/pipelines/12345"
+        )
 
     # ===== AC2: List pipelines filtered by branch =====
     @pytest.mark.asyncio
@@ -113,7 +116,9 @@ class TestGitLabCIClient:
         mock_client_instance.__aexit__.return_value = None
 
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
-            pipelines = await client.list_pipelines(project_id="namespace/project", ref="main")
+            pipelines = await client.list_pipelines(
+                project_id="namespace/project", ref="main"
+            )
 
         # Verify API was called with ref parameter
         call_args = mock_client_instance.get.call_args
@@ -155,7 +160,9 @@ class TestGitLabCIClient:
         mock_client_instance.__aexit__.return_value = None
 
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
-            pipelines = await client.list_pipelines(project_id="namespace/project", status="failed")
+            pipelines = await client.list_pipelines(
+                project_id="namespace/project", status="failed"
+            )
 
         # Verify API was called with status parameter
         call_args = mock_client_instance.get.call_args
@@ -210,7 +217,9 @@ class TestGitLabCIClient:
         mock_client_instance.__aexit__.return_value = None
 
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
-            pipeline = await client.get_pipeline(project_id="namespace/project", pipeline_id=12345)
+            pipeline = await client.get_pipeline(
+                project_id="namespace/project", pipeline_id=12345
+            )
 
         # Verify all AC4 required fields present
         assert pipeline["id"] == 12345
@@ -262,7 +271,7 @@ Test case 3: PASS
             matches = await client.search_logs(
                 project_id="namespace/project",
                 pipeline_id=12345,
-                pattern="ERROR.*failed"
+                pattern="ERROR.*failed",
             )
 
         # Verify matches include required context
@@ -313,7 +322,7 @@ Test case 3: PASS
                 project_id="namespace/project",
                 pipeline_id=12345,
                 pattern="ERROR.*Failed",
-                case_sensitive=True
+                case_sensitive=True,
             )
 
         # Verify exact case match found
@@ -329,7 +338,7 @@ Test case 3: PASS
                 project_id="namespace/project",
                 pipeline_id=12345,
                 pattern="error.*failed",
-                case_sensitive=True
+                case_sensitive=True,
             )
 
         # Verify lowercase pattern did not match
@@ -373,7 +382,7 @@ Test case 3: PASS
                 project_id="namespace/project",
                 pipeline_id=12345,
                 pattern="error.*failed",
-                case_sensitive=False
+                case_sensitive=False,
             )
 
         # Verify case-insensitive match found
@@ -403,7 +412,9 @@ All tests passed!
         mock_client_instance.__aexit__.return_value = None
 
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
-            logs = await client.get_job_logs(project_id="namespace/project", job_id=67890)
+            logs = await client.get_job_logs(
+                project_id="namespace/project", job_id=67890
+            )
 
         # Verify complete log output returned
         assert "Running tests..." in logs
@@ -433,7 +444,9 @@ All tests passed!
         mock_client_instance.__aexit__.return_value = None
 
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
-            result = await client.retry_pipeline(project_id="namespace/project", pipeline_id=12345)
+            result = await client.retry_pipeline(
+                project_id="namespace/project", pipeline_id=12345
+            )
 
         # Verify retry succeeded
         assert result["success"] is True
@@ -462,7 +475,9 @@ All tests passed!
         mock_client_instance.__aexit__.return_value = None
 
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
-            result = await client.cancel_pipeline(project_id="namespace/project", pipeline_id=12345)
+            result = await client.cancel_pipeline(
+                project_id="namespace/project", pipeline_id=12345
+            )
 
         # Verify cancellation succeeded
         assert result["success"] is True
@@ -525,7 +540,9 @@ All tests passed!
         # Verify error message includes guidance
         error_message = str(exc_info.value)
         assert "token" in error_message.lower()
-        assert "valid" in error_message.lower() or "configuration" in error_message.lower()
+        assert (
+            "valid" in error_message.lower() or "configuration" in error_message.lower()
+        )
 
     # ===== AC11: Handle self-hosted GitLab =====
     @pytest.mark.asyncio
@@ -584,4 +601,6 @@ All tests passed!
 
         # Verify error message includes project ID
         error_message = str(exc_info.value)
-        assert "project" in error_message.lower() or "not found" in error_message.lower()
+        assert (
+            "project" in error_message.lower() or "not found" in error_message.lower()
+        )

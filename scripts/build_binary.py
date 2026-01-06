@@ -212,12 +212,12 @@ def create_bundle(
     # Determine server/ subdirectory path for binary
     if platform_id.startswith("windows"):
         server_binary_name = "server/cidx-semantic-search.exe"
-        entry_point = "server/cidx-semantic-search"  # .exe added automatically by Windows
+        entry_point = (
+            "server/cidx-semantic-search"  # .exe added automatically by Windows
+        )
         command = "${__dirname}/server/cidx-semantic-search.exe"
     else:
-        server_binary_name = (
-            f"server/cidx-semantic-search-{platform_id}"  # No .mcpb extension inside bundle
-        )
+        server_binary_name = f"server/cidx-semantic-search-{platform_id}"  # No .mcpb extension inside bundle
         entry_point = server_binary_name
         command = f"${{__dirname}}/{entry_point}"
 

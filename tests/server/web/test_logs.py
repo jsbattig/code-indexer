@@ -33,9 +33,7 @@ class TestLogsPageDisplay:
             303,
         ], f"Expected redirect, got {response.status_code}"
         location = response.headers.get("location", "")
-        assert (
-            "/login" in location
-        ), f"Expected redirect to /login, got {location}"
+        assert "/login" in location, f"Expected redirect to /login, got {location}"
 
     def test_logs_page_renders(self, authenticated_client: TestClient):
         """
@@ -100,10 +98,14 @@ class TestLogsPageDisplay:
 
         assert response.status_code == 200
         # Check for navigation highlighting (aria-current="page" on Logs link)
-        assert 'aria-current="page"' in response.text, "Navigation should be highlighted"
+        assert (
+            'aria-current="page"' in response.text
+        ), "Navigation should be highlighted"
         # Verify it's on the Logs link
         # Look for pattern: <a href="/admin/logs" aria-current="page">Logs</a>
-        logs_link_pattern = r'<a[^>]*href="/admin/logs"[^>]*aria-current="page"[^>]*>Logs</a>'
+        logs_link_pattern = (
+            r'<a[^>]*href="/admin/logs"[^>]*aria-current="page"[^>]*>Logs</a>'
+        )
         assert re.search(
             logs_link_pattern, response.text
         ), "Logs link should have aria-current='page'"
@@ -132,7 +134,7 @@ class TestLogsRefresh:
         assert "refresh" in text_lower, "Page should have a Refresh button"
         # Should be an actual button element
         assert (
-            '<button' in response.text and "refresh" in text_lower
+            "<button" in response.text and "refresh" in text_lower
         ), "Should have <button> element for refresh"
 
     def test_refresh_button_htmx_configured(self, authenticated_client: TestClient):
@@ -304,9 +306,7 @@ class TestLogsExport:
         assert (
             "attachment" in content_disposition
         ), "Expected attachment in Content-Disposition"
-        assert (
-            "logs_" in content_disposition
-        ), "Expected filename with 'logs_' prefix"
+        assert "logs_" in content_disposition, "Expected filename with 'logs_' prefix"
         assert ".json" in content_disposition, "Expected .json extension"
 
         # Verify valid JSON structure
@@ -340,9 +340,7 @@ class TestLogsExport:
         assert ".csv" in content_disposition, "Expected .csv extension"
 
         # Verify UTF-8 BOM for Excel compatibility
-        assert response.text.startswith(
-            "\ufeff"
-        ), "Expected UTF-8 BOM at start of CSV"
+        assert response.text.startswith("\ufeff"), "Expected UTF-8 BOM at start of CSV"
 
         # Verify CSV structure
         import csv

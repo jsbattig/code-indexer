@@ -35,7 +35,10 @@ class ChangeDetector:
         )
 
         if result.returncode != 0:
-            logger.error(f"Git fetch failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Git fetch failed: {result.stderr}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise subprocess.CalledProcessError(
                 result.returncode,
                 result.args,
@@ -43,7 +46,10 @@ class ChangeDetector:
                 result.stderr,
             )
 
-        logger.debug("Git fetch completed successfully", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            "Git fetch completed successfully",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_local_ref(self) -> str:
         """Get current local HEAD ref.
@@ -62,7 +68,10 @@ class ChangeDetector:
         )
 
         if result.returncode != 0:
-            logger.error(f"Git rev-parse HEAD failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Git rev-parse HEAD failed: {result.stderr}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise subprocess.CalledProcessError(
                 result.returncode,
                 result.args,
@@ -71,7 +80,9 @@ class ChangeDetector:
             )
 
         local_ref = result.stdout.strip()
-        logger.debug(f"Local ref: {local_ref}", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"Local ref: {local_ref}", extra={"correlation_id": get_correlation_id()}
+        )
         return local_ref
 
     def get_remote_ref(self) -> str:
@@ -91,7 +102,10 @@ class ChangeDetector:
         )
 
         if result.returncode != 0:
-            logger.error(f"Git rev-parse origin/{self.branch} failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Git rev-parse origin/{self.branch} failed: {result.stderr}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise subprocess.CalledProcessError(
                 result.returncode,
                 result.args,
@@ -100,7 +114,9 @@ class ChangeDetector:
             )
 
         remote_ref = result.stdout.strip()
-        logger.debug(f"Remote ref: {remote_ref}", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"Remote ref: {remote_ref}", extra={"correlation_id": get_correlation_id()}
+        )
         return remote_ref
 
     def has_changes(self) -> bool:
@@ -123,8 +139,13 @@ class ChangeDetector:
         has_changes = local_ref != remote_ref
 
         if has_changes:
-            logger.info(f"Changes detected: {local_ref} -> {remote_ref}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Changes detected: {local_ref} -> {remote_ref}",
+                extra={"correlation_id": get_correlation_id()},
+            )
         else:
-            logger.debug("No changes detected", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "No changes detected", extra={"correlation_id": get_correlation_id()}
+            )
 
         return has_changes

@@ -17,7 +17,9 @@ from typing import List, Optional
 class MultiLineLoggingFixer:
     """Fixes multi-line logging calls to include correlation_id."""
 
-    IMPORT_STATEMENT = "from code_indexer.server.middleware.correlation import get_correlation_id"
+    IMPORT_STATEMENT = (
+        "from code_indexer.server.middleware.correlation import get_correlation_id"
+    )
     MAX_MULTILINE_SPAN = 10  # Maximum lines to look ahead for call end
     SUMMARY_WIDTH = 60  # Width of summary section separator
 
@@ -40,21 +42,23 @@ class MultiLineLoggingFixer:
         if self.has_import(source):
             return source
 
-        lines = source.split('\n')
+        lines = source.split("\n")
         insert_index = 0
 
         # Find last import statement
         for i, line in enumerate(lines):
-            if line.strip().startswith(('import ', 'from ')):
+            if line.strip().startswith(("import ", "from ")):
                 insert_index = i + 1
-            elif line.strip() and not line.strip().startswith(('#', '"""', "'''")):
+            elif line.strip() and not line.strip().startswith(("#", '"""', "'''")):
                 break
 
         lines.insert(insert_index, self.IMPORT_STATEMENT)
         self.stats["imports_added"] += 1
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
-    def find_function_call_end(self, lines: List[str], start_line: int) -> Optional[int]:
+    def find_function_call_end(
+        self, lines: List[str], start_line: int
+    ) -> Optional[int]:
         """
         Find the line where a function call ends.
 
@@ -94,24 +98,26 @@ class MultiLineLoggingFixer:
                     in_string = False
                     string_char = None
                 elif not in_string:
-                    if char == '(':
+                    if char == "(":
                         paren_depth += 1
-                    elif char == ')':
+                    elif char == ")":
                         paren_depth -= 1
                         if paren_depth == 0:
                             return i
 
         return None
 
-    def extract_call_text(self, lines: List[str], start_line: int, end_line: int) -> str:
+    def extract_call_text(
+        self, lines: List[str], start_line: int, end_line: int
+    ) -> str:
         """Extract the full text of a function call spanning multiple lines."""
         if start_line == end_line:
             return lines[start_line]
-        return '\n'.join(lines[start_line:end_line + 1])
+        return "\n".join(lines[start_line : end_line + 1])
 
     def has_correlation_id(self, call_text: str) -> bool:
         """Check if call already has correlation_id."""
-        return 'correlation_id' in call_text and 'get_correlation_id' in call_text
+        return "correlation_id" in call_text and "get_correlation_id" in call_text
 
     def fix_logging_call(self, call_text: str) -> str:
         """
@@ -127,22 +133,22 @@ class MultiLineLoggingFixer:
             return call_text
 
         # Pattern 1: No extra parameter - add new extra dict
-        if 'extra=' not in call_text:
-            last_paren = call_text.rfind(')')
+        if "extra=" not in call_text:
+            last_paren = call_text.rfind(")")
             if last_paren == -1:
                 return call_text
 
             fixed = (
-                call_text[:last_paren] +
-                ', extra={"correlation_id": get_correlation_id()}' +
-                call_text[last_paren:]
+                call_text[:last_paren]
+                + ', extra={"correlation_id": get_correlation_id()}'
+                + call_text[last_paren:]
             )
             return fixed
 
         # Pattern 2: Has extra parameter - merge correlation_id
         # NOTE: This regex does not handle nested dicts like extra={"foo": {"bar": 1}}
         # For our use case (logging calls), extra dicts are typically flat
-        extra_pattern = r'extra\s*=\s*\{([^}]*)\}'
+        extra_pattern = r"extra\s*=\s*\{([^}]*)\}"
         match = re.search(extra_pattern, call_text, re.DOTALL)
 
         if match:
@@ -151,7 +157,9 @@ class MultiLineLoggingFixer:
 
             if existing_items:
                 # Has items - add correlation_id
-                new_extra = full_match.replace('}', ', "correlation_id": get_correlation_id()}')
+                new_extra = full_match.replace(
+                    "}", ', "correlation_id": get_correlation_id()}'
+                )
             else:
                 # Empty dict
                 new_extra = 'extra={"correlation_id": get_correlation_id()}'
@@ -178,8 +186,10 @@ class MultiLineLoggingFixer:
             line = lines[i]
 
             # Check if line has a logger call
-            match = re.search(r'logger\.(error|warning|exception|info|debug|critical)\s*\(', line)
-            if match and 'correlation_id' not in line:
+            match = re.search(
+                r"logger\.(error|warning|exception|info|debug|critical)\s*\(", line
+            )
+            if match and "correlation_id" not in line:
                 # Find where the call ends
                 end_line = self.find_function_call_end(lines, i)
                 if end_line is None:
@@ -199,8 +209,8 @@ class MultiLineLoggingFixer:
 
                 if fixed_text != call_text:
                     # Replace lines
-                    fixed_lines = fixed_text.split('\n')
-                    lines[i:end_line + 1] = fixed_lines
+                    fixed_lines = fixed_text.split("\n")
+                    lines[i : end_line + 1] = fixed_lines
                     modified = True
                     self.stats["calls_fixed"] += 1
                     i += len(fixed_lines)
@@ -222,26 +232,26 @@ class MultiLineLoggingFixer:
             True if file was modified
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 source = f.read()
 
-            lines = source.split('\n')
+            lines = source.split("\n")
             modified = self._process_lines(lines)
 
             if not modified:
                 return False
 
             # Reconstruct source and add import
-            new_source = '\n'.join(lines)
+            new_source = "\n".join(lines)
             new_source = self.add_import(new_source)
 
             if not self.dry_run:
                 # Create backup
-                backup_path = file_path.with_suffix(file_path.suffix + '.bak')
+                backup_path = file_path.with_suffix(file_path.suffix + ".bak")
                 shutil.copy2(file_path, backup_path)
 
                 # Write modified source
-                with open(file_path, 'w', encoding='utf-8') as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(new_source)
 
             self.stats["files_modified"] += 1
@@ -280,8 +290,10 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Fix multi-line logging calls")
-    parser.add_argument("--dry-run", action="store_true", help="Show changes without modifying")
-    parser.add_argument("files", nargs='+', help="Files to process")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show changes without modifying"
+    )
+    parser.add_argument("files", nargs="+", help="Files to process")
 
     args = parser.parse_args()
 

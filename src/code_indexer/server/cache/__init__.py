@@ -55,19 +55,22 @@ def get_global_cache() -> HNSWIndexCache:
             try:
                 config = HNSWIndexCacheConfig.from_file(str(config_file))
                 logger.info(
-                    f"Loaded HNSW cache config from {config_file}: TTL={config.ttl_minutes}min"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Loaded HNSW cache config from {config_file}: TTL={config.ttl_minutes}min",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             except Exception as e:
                 logger.warning(
-                    f"Failed to load cache config from {config_file}: {e}. Using defaults."
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to load cache config from {config_file}: {e}. Using defaults.",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 config = HNSWIndexCacheConfig.from_env()
         else:
             # Try environment variables, fall back to defaults
             config = HNSWIndexCacheConfig.from_env()
             logger.info(
-                f"Initialized HNSW cache with env/default config: TTL={config.ttl_minutes}min"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Initialized HNSW cache with env/default config: TTL={config.ttl_minutes}min",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         _global_cache_instance = HNSWIndexCache(config=config)
 
@@ -120,20 +123,23 @@ def get_global_fts_cache() -> FTSIndexCache:
                 config = FTSIndexCacheConfig.from_file(str(config_file))
                 logger.info(
                     f"Loaded FTS cache config from {config_file}: "
-                    f"TTL={config.ttl_minutes}min, reload_on_access={config.reload_on_access}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"TTL={config.ttl_minutes}min, reload_on_access={config.reload_on_access}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             except Exception as e:
                 logger.warning(
-                    f"Failed to load FTS cache config from {config_file}: {e}. Using defaults."
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to load FTS cache config from {config_file}: {e}. Using defaults.",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 config = FTSIndexCacheConfig.from_env()
         else:
             # Try environment variables, fall back to defaults
             config = FTSIndexCacheConfig.from_env()
             logger.info(
                 f"Initialized FTS cache with env/default config: "
-                f"TTL={config.ttl_minutes}min, reload_on_access={config.reload_on_access}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"TTL={config.ttl_minutes}min, reload_on_access={config.reload_on_access}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         _global_fts_cache_instance = FTSIndexCache(config=config)
 

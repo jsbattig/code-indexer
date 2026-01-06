@@ -72,7 +72,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.clean_slot_tracker.CleanSlotTracker"
             ) as mock_slot_tracker_class,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -223,7 +222,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.clean_slot_tracker.CleanSlotTracker"
             ) as mock_slot_tracker_class,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -360,7 +358,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.temporal.temporal_indexer.as_completed"
             ) as mock_as_completed,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -483,7 +480,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
             ) as mock_provider_info,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -609,7 +605,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.clean_slot_tracker.CleanSlotTracker"
             ) as mock_slot_tracker_class,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -810,7 +805,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.clean_slot_tracker.CleanSlotTracker"
             ) as mock_slot_tracker_class,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -1020,7 +1014,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
             ) as mock_provider_info,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -1175,7 +1168,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.clean_slot_tracker.CleanSlotTracker"
             ) as mock_slot_tracker_class,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -1400,7 +1392,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.clean_slot_tracker.CleanSlotTracker"
             ) as mock_slot_tracker_class,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
@@ -1617,7 +1608,6 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
             ) as mock_provider_info,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",

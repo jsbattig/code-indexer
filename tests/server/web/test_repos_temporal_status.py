@@ -40,21 +40,21 @@ class TestTemporalStatusIntegration:
 
         # If repos exist, verify temporal_status is present with required structure
         for repo in all_repos:
-            assert "temporal_status" in repo, (
-                f"Repository {repo.get('user_alias', 'unknown')} should have temporal_status field"
-            )
+            assert (
+                "temporal_status" in repo
+            ), f"Repository {repo.get('user_alias', 'unknown')} should have temporal_status field"
 
             temporal_status = repo["temporal_status"]
-            assert isinstance(temporal_status, dict), (
-                f"temporal_status should be a dict for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert isinstance(
+                temporal_status, dict
+            ), f"temporal_status should be a dict for repo {repo.get('user_alias', 'unknown')}"
 
             # Verify required temporal status fields
             required_fields = ["format", "file_count", "needs_reindex", "message"]
             for field in required_fields:
-                assert field in temporal_status, (
-                    f"temporal_status should have '{field}' field for repo {repo.get('user_alias', 'unknown')}"
-                )
+                assert (
+                    field in temporal_status
+                ), f"temporal_status should have '{field}' field for repo {repo.get('user_alias', 'unknown')}"
 
             # Verify format value is valid
             assert temporal_status["format"] in ["v1", "v2", "none", "error"], (
@@ -63,15 +63,15 @@ class TestTemporalStatusIntegration:
             )
 
             # Verify types
-            assert isinstance(temporal_status["file_count"], int), (
-                f"file_count should be int for repo {repo.get('user_alias', 'unknown')}"
-            )
-            assert isinstance(temporal_status["needs_reindex"], bool), (
-                f"needs_reindex should be bool for repo {repo.get('user_alias', 'unknown')}"
-            )
-            assert isinstance(temporal_status["message"], str), (
-                f"message should be str for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert isinstance(
+                temporal_status["file_count"], int
+            ), f"file_count should be int for repo {repo.get('user_alias', 'unknown')}"
+            assert isinstance(
+                temporal_status["needs_reindex"], bool
+            ), f"needs_reindex should be bool for repo {repo.get('user_alias', 'unknown')}"
+            assert isinstance(
+                temporal_status["message"], str
+            ), f"message should be str for repo {repo.get('user_alias', 'unknown')}"
 
     def test_temporal_status_v2_format_structure(
         self,
@@ -91,25 +91,24 @@ class TestTemporalStatusIntegration:
 
         # Find repos with v2 format (if any exist)
         v2_repos = [
-            r for r in all_repos
-            if r.get("temporal_status", {}).get("format") == "v2"
+            r for r in all_repos if r.get("temporal_status", {}).get("format") == "v2"
         ]
 
         # Validate v2 format structure (only if v2 repos exist)
         for repo in v2_repos:
             temporal_status = repo["temporal_status"]
 
-            assert temporal_status["format"] == "v2", (
-                f"Format should be v2 for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert (
+                temporal_status["format"] == "v2"
+            ), f"Format should be v2 for repo {repo.get('user_alias', 'unknown')}"
 
-            assert temporal_status["needs_reindex"] is False, (
-                f"v2 format should not need reindex for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert (
+                temporal_status["needs_reindex"] is False
+            ), f"v2 format should not need reindex for repo {repo.get('user_alias', 'unknown')}"
 
-            assert temporal_status["file_count"] >= 0, (
-                f"file_count should be >= 0 for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert (
+                temporal_status["file_count"] >= 0
+            ), f"file_count should be >= 0 for repo {repo.get('user_alias', 'unknown')}"
 
             message_lower = temporal_status["message"].lower()
             assert "active" in message_lower or "v2" in message_lower, (
@@ -135,21 +134,20 @@ class TestTemporalStatusIntegration:
 
         # Find repos with v1 format (if any exist)
         v1_repos = [
-            r for r in all_repos
-            if r.get("temporal_status", {}).get("format") == "v1"
+            r for r in all_repos if r.get("temporal_status", {}).get("format") == "v1"
         ]
 
         # Validate v1 format structure (only if v1 repos exist)
         for repo in v1_repos:
             temporal_status = repo["temporal_status"]
 
-            assert temporal_status["format"] == "v1", (
-                f"Format should be v1 for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert (
+                temporal_status["format"] == "v1"
+            ), f"Format should be v1 for repo {repo.get('user_alias', 'unknown')}"
 
-            assert temporal_status["needs_reindex"] is True, (
-                f"v1 format should need reindex for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert (
+                temporal_status["needs_reindex"] is True
+            ), f"v1 format should need reindex for repo {repo.get('user_alias', 'unknown')}"
 
             message_lower = temporal_status["message"].lower()
             assert "re-index" in message_lower or "reindex" in message_lower, (
@@ -180,17 +178,16 @@ class TestTemporalStatusIntegration:
 
         # Find repos with none format (if any exist)
         none_repos = [
-            r for r in all_repos
-            if r.get("temporal_status", {}).get("format") == "none"
+            r for r in all_repos if r.get("temporal_status", {}).get("format") == "none"
         ]
 
         # Validate none format structure (only if none repos exist)
         for repo in none_repos:
             temporal_status = repo["temporal_status"]
 
-            assert temporal_status["format"] == "none", (
-                f"Format should be none for repo {repo.get('user_alias', 'unknown')}"
-            )
+            assert (
+                temporal_status["format"] == "none"
+            ), f"Format should be none for repo {repo.get('user_alias', 'unknown')}"
 
             assert temporal_status["file_count"] == 0, (
                 f"none format should have file_count=0 for repo {repo.get('user_alias', 'unknown')}, "
@@ -240,10 +237,10 @@ class TestTemporalStatusIntegration:
 
             # If error occurred, verify it's handled gracefully
             if has_error:
-                assert isinstance(temporal_status["error"], str), (
-                    f"Error field should be a string for repo {repo.get('user_alias', 'unknown')}"
-                )
+                assert isinstance(
+                    temporal_status["error"], str
+                ), f"Error field should be a string for repo {repo.get('user_alias', 'unknown')}"
                 # Should still have basic fields to prevent template errors
-                assert "message" in temporal_status, (
-                    "temporal_status with error should have fallback message"
-                )
+                assert (
+                    "message" in temporal_status
+                ), "temporal_status with error should have fallback message"

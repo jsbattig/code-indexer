@@ -84,7 +84,10 @@ class AutoRecoveryEngine:
         self.recovery_attempts: Dict[str, int] = {}
         self.last_recovery_time: Optional[datetime] = None
 
-        logger.info(f"AutoRecoveryEngine initialized (enabled: {self.enabled})", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"AutoRecoveryEngine initialized (enabled: {self.enabled})",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def decide_recovery_action(
         self, validation_result: ValidationResult
@@ -139,7 +142,6 @@ class AutoRecoveryEngine:
                 or "INDEX_CORRUPTION" in error_types
                 or "METADATA_CORRUPTION" in error_types
             ):
-
                 return self._create_full_recovery_action(
                     validation_result, critical_errors
                 )
@@ -149,7 +151,6 @@ class AutoRecoveryEngine:
                 validation_result.performance_score < self.performance_threshold
                 and "PERFORMANCE_DEGRADATION" in error_types
             ):
-
                 return self._create_optimization_recovery_action(validation_result)
 
             # Multiple moderate issues may warrant full recovery
@@ -157,7 +158,6 @@ class AutoRecoveryEngine:
                 health_score < self.poor_health_threshold
                 and len(validation_result.validation_errors) >= 3
             ):
-
                 return self._create_full_recovery_action(validation_result, [])
 
             # Minor completeness or consistency issues can use incremental recovery
@@ -166,7 +166,6 @@ class AutoRecoveryEngine:
                 or "OUTDATED_INDEX_ENTRIES" in error_types
                 or "METADATA_INCONSISTENT" in error_types
             ):
-
                 return self._create_incremental_recovery_action(validation_result)
 
             # Default to incremental recovery for other issues
@@ -184,7 +183,10 @@ class AutoRecoveryEngine:
                 )
 
         except Exception as e:
-            logger.error(f"Failed to decide recovery action: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to decide recovery action: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return RecoveryAction(
                 recovery_type=RecoveryType.NONE.value,
                 is_required=False,
@@ -214,7 +216,10 @@ class AutoRecoveryEngine:
         start_time = datetime.now(timezone.utc)
 
         try:
-            logger.info(f"Starting recovery action: {recovery_action.recovery_type}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Starting recovery action: {recovery_action.recovery_type}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             if recovery_action.recovery_type == RecoveryType.NONE.value:
                 return RecoveryResult(
@@ -264,8 +269,9 @@ class AutoRecoveryEngine:
 
             logger.info(
                 f"Recovery completed successfully: {recovery_action.recovery_type} "
-                f"in {result.duration_seconds:.1f} seconds"
-            , extra={"correlation_id": get_correlation_id()})
+                f"in {result.duration_seconds:.1f} seconds",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return result
 
@@ -274,7 +280,11 @@ class AutoRecoveryEngine:
             raise
         except Exception as e:
             end_time = datetime.now(timezone.utc)
-            logger.error(f"Recovery execution failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Recovery execution failed: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Return failed result for other exceptions
             return RecoveryResult(
@@ -541,14 +551,23 @@ class AutoRecoveryEngine:
             source_dir = Path(self.config.codebase_dir) / ".code-indexer"
             if source_dir.exists():
                 shutil.copytree(source_dir, backup_path)
-                logger.info(f"Created backup at {backup_path}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Created backup at {backup_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return str(backup_path)
             else:
-                logger.warning("No .code-indexer directory found to backup", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    "No .code-indexer directory found to backup",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return str(backup_path)
 
         except Exception as e:
-            logger.error(f"Failed to create backup: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to create backup: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RecoveryFailedError(f"Backup creation failed: {str(e)}", "backup")
 
     def _get_smart_indexer(self):
@@ -582,7 +601,10 @@ class AutoRecoveryEngine:
             return smart_indexer
 
         except Exception as e:
-            logger.error(f"Failed to create SmartIndexer: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to create SmartIndexer: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RecoveryFailedError(
                 f"SmartIndexer creation failed: {str(e)}", "initialization"
             )
@@ -594,7 +616,10 @@ class AutoRecoveryEngine:
 
             return EmbeddingProviderFactory.create(self.config)
         except Exception as e:
-            logger.error(f"Failed to create embedding provider: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to create embedding provider: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RecoveryFailedError(
                 f"Embedding provider creation failed: {str(e)}", "initialization"
             )
@@ -611,7 +636,10 @@ class AutoRecoveryEngine:
             )
 
         except Exception as e:
-            logger.error(f"Failed to create vector store client: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to create vector store client: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RecoveryFailedError(
                 f"Vector store client creation failed: {str(e)}", "initialization"
             )
@@ -641,5 +669,8 @@ class AutoRecoveryEngine:
             return min(estimated_minutes, 120)
 
         except Exception as e:
-            logger.warning(f"Failed to estimate recovery duration: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to estimate recovery duration: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return 30  # Default estimate

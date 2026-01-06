@@ -264,7 +264,10 @@ class TestCallChainQuery:
         """Should return empty list for symbols with no call path."""
         # Test with symbols unlikely to have a direct call path
         chains = query_engine.trace_call_chain(
-            "LogLevel", "Database", max_depth=5, limit=10  # Enum  # Unrelated class
+            "LogLevel",
+            "Database",
+            max_depth=5,
+            limit=10,  # Enum  # Unrelated class
         )
 
         # Should return empty list (not error) for unconnected symbols

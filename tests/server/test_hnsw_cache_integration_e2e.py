@@ -73,9 +73,7 @@ class TestHNSWCacheIntegration:
 
             # Create cache and backend explicitly
             cache = get_global_cache()
-            FilesystemBackend(
-                project_root=project_root, hnsw_index_cache=cache
-            )
+            FilesystemBackend(project_root=project_root, hnsw_index_cache=cache)
 
             assert cache is not None
 

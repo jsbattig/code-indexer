@@ -149,7 +149,8 @@ class TestAPIClientTypeErrors(unittest.TestCase):
 
         result = asyncio.run(
             client.sync_repository(
-                user_alias="test-repo", force_sync=True  # Correct parameter name
+                user_alias="test-repo",
+                force_sync=True,  # Correct parameter name
             )
         )
 
