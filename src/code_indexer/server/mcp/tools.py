@@ -235,10 +235,28 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
 3. User wants comparison across repos? -> Use repository_alias as array + aggregation_mode='per_repo'
 4. User wants best matches anywhere? -> Use repository_alias as array + aggregation_mode='global'
 
-MULTI-REPO SEARCH (cross-cutting analysis):
-- Pass array: repository_alias=['backend-global', 'frontend-global'] OR use wildcard '*-global'
-- aggregation_mode='global': Returns top N results by score across ALL repos (default)
-- aggregation_mode='per_repo': Returns N results distributed evenly across repos (for comparison)
+MULTI-REPOSITORY SEARCH:
+Syntax options:
+- Specific repos: repository_alias=['backend-global', 'frontend-global']
+- Wildcard ALL: repository_alias='*-global' (searches all global repos)
+- Pattern match: repository_alias='pch-*-global' (all repos matching pattern)
+- Multiple patterns: repository_alias=['backend-*', 'frontend-*']
+
+Aggregation strategies:
+- aggregation_mode='global' (default): Returns top N results by score across ALL repos - use when finding BEST matches
+- aggregation_mode='per_repo': Returns N results distributed evenly - use when COMPARING implementations
+
+Response formats:
+- response_format='flat' (default): Results with source_repo field for attribution
+- response_format='grouped': Results organized by repository
+
+PERFORMANCE NOTE: Searching 5+ repos increases token usage proportionally. Start with limit=3-5 for multi-repo searches.
+
+Use cases:
+- Microservices: Search across service repos for shared patterns
+- Monorepo + libs: Search main repo with dependency repos together
+- Architecture analysis: Compare implementations across codebases
+- Impact analysis: Find all repos using a specific pattern/library
 
 CIDX-META DISCOVERY (when repo is unknown):
 1. search_code('your topic', repository_alias='cidx-meta-global') -> Finds .md files describing repos
@@ -270,13 +288,13 @@ WHEN NOT TO USE: (1) Need ALL matches with pattern -> use regex_search, (2) Expl
                         {"type": "string"},
                         {"type": "array", "items": {"type": "string"}},
                     ],
-                    "description": "Repository alias(es) to search. String for single repo, array for omni-search across multiple repos. Supports wildcard patterns like '*-global' when using array.",
+                    "description": "Repository alias(es) to search. FORMATS: (1) String for single repo: 'backend-global', (2) Array for multi-repo: ['backend-global', 'frontend-global'], (3) Wildcard pattern: '*-global' (all global repos) or 'pch-*-global' (pattern match). Multi-repo searches support aggregation_mode and response_format parameters for result organization.",
                 },
                 "aggregation_mode": {
                     "type": "string",
                     "enum": ["global", "per_repo"],
                     "default": "global",
-                    "description": "How to aggregate results across multiple repositories. 'global' (default): Returns top N results by score across ALL repos - best for finding absolute best matches (e.g., limit=10 across 3 repos returns 10 best total, might be 8 from repo1, 2 from repo2, 0 from repo3). 'per_repo': Distributes N results evenly across repos - best for balanced representation (e.g., limit=10 across 3 repos returns ~3 from each repo).",
+                    "description": "Result aggregation for multi-repo searches. 'global' (default): Top N results by score across ALL repos - best for finding absolute best matches anywhere. 'per_repo': Distributes N results evenly across repos - best for comparing implementations or ensuring representation from each repo. Example: limit=10 with 3 repos in 'global' mode might return 7 from repo1, 3 from repo2, 0 from repo3. In 'per_repo' mode returns ~3 from each.",
                 },
                 "exclude_patterns": {
                     "type": "array",
