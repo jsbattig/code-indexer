@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 HNSW Index Cache for Server-Side Performance Optimization.
 
@@ -15,6 +14,7 @@ Provides in-memory caching of hnswlib.Index objects with:
 Performance improvement: ~277ms → <1ms for repeated queries (1800x faster).
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import json
 import logging
 import os
@@ -262,8 +262,9 @@ class HNSWIndexCache:
         self._cleanup_stop_event = threading.Event()
 
         logger.info(
-            f"HNSW Index Cache initialized with TTL={self.config.ttl_minutes} minutes"
-        , extra={"correlation_id": get_correlation_id()})
+            f"HNSW Index Cache initialized with TTL={self.config.ttl_minutes} minutes",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_or_load(
         self,
@@ -298,7 +299,10 @@ class HNSWIndexCache:
                 # Check if expired (AC2)
                 if entry.is_expired():
                     # Evict expired entry
-                    logger.debug(f"Cache entry expired for {repo_path}, reloading", extra={"correlation_id": get_correlation_id()})
+                    logger.debug(
+                        f"Cache entry expired for {repo_path}, reloading",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     del self._cache[repo_path]
                     self._eviction_count += 1
                     # Fall through to load
@@ -307,13 +311,17 @@ class HNSWIndexCache:
                     entry.record_access()
                     self._hit_count += 1
                     logger.debug(
-                        f"Cache HIT for {repo_path} (access_count={entry.access_count})"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Cache HIT for {repo_path} (access_count={entry.access_count})",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     return entry.hnsw_index, entry.id_mapping
 
             # Cache miss - load index (AC1)
             self._miss_count += 1
-            logger.debug(f"Cache MISS for {repo_path}, loading index", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Cache MISS for {repo_path}, loading index",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Load index outside lock to avoid blocking other queries
             # But we need to hold lock to prevent duplicate loads
@@ -338,7 +346,10 @@ class HNSWIndexCache:
             # NOTE: Called within _cache_lock, so _enforce_size_limit must not re-acquire lock
             self._enforce_size_limit()
 
-            logger.info(f"Cached HNSW index for {repo_path}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Cached HNSW index for {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return hnsw_index, id_mapping
 
@@ -355,7 +366,10 @@ class HNSWIndexCache:
             if repo_path in self._cache:
                 del self._cache[repo_path]
                 self._eviction_count += 1
-                logger.info(f"Invalidated cache for {repo_path}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Invalidated cache for {repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def clear(self) -> None:
         """Clear all cache entries."""
@@ -363,7 +377,10 @@ class HNSWIndexCache:
             evicted = len(self._cache)
             self._cache.clear()
             self._eviction_count += evicted
-            logger.info(f"Cleared cache ({evicted} entries)", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Cleared cache ({evicted} entries)",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _enforce_size_limit(self) -> None:
         """
@@ -392,16 +409,18 @@ class HNSWIndexCache:
             del self._cache[lru_repo_path]
             self._eviction_count += 1
             logger.debug(
-                f"Evicted LRU cache entry to enforce size limit: {lru_repo_path}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Evicted LRU cache entry to enforce size limit: {lru_repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Recalculate size
             current_size_mb = len(self._cache) * self.ESTIMATED_INDEX_SIZE_MB
 
         if current_size_mb <= self.config.max_cache_size_mb and self._cache:
             logger.debug(
-                f"Cache size: {current_size_mb}MB / {self.config.max_cache_size_mb}MB"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Cache size: {current_size_mb}MB / {self.config.max_cache_size_mb}MB",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _cleanup_expired_entries(self) -> None:
         """
@@ -419,10 +438,16 @@ class HNSWIndexCache:
             for repo_path in expired_repos:
                 del self._cache[repo_path]
                 self._eviction_count += 1
-                logger.debug(f"Evicted expired cache entry: {repo_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Evicted expired cache entry: {repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
             if expired_repos:
-                logger.info(f"Evicted {len(expired_repos)} expired cache entries", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Evicted {len(expired_repos)} expired cache entries",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def start_background_cleanup(self) -> None:
         """
@@ -431,7 +456,10 @@ class HNSWIndexCache:
         Thread periodically checks for expired entries and evicts them.
         """
         if self._cleanup_thread and self._cleanup_thread.is_alive():
-            logger.warning("Background cleanup thread already running", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                "Background cleanup thread already running",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         self._cleanup_stop_event.clear()
@@ -442,7 +470,10 @@ class HNSWIndexCache:
                 try:
                     self._cleanup_expired_entries()
                 except Exception as e:
-                    logger.error(f"Error in background cleanup: {e}", extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        f"Error in background cleanup: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
                 # Wait for cleanup interval or stop event
                 self._cleanup_stop_event.wait(
@@ -453,14 +484,20 @@ class HNSWIndexCache:
             target=cleanup_loop, name="HNSWIndexCacheCleanup", daemon=True
         )
         self._cleanup_thread.start()
-        logger.info("Started background cache cleanup thread", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Started background cache cleanup thread",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def stop_background_cleanup(self) -> None:
         """Stop background cleanup thread."""
         if self._cleanup_thread and self._cleanup_thread.is_alive():
             self._cleanup_stop_event.set()
             self._cleanup_thread.join(timeout=5)
-            logger.info("Stopped background cache cleanup thread", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Stopped background cache cleanup thread",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def get_stats(self) -> HNSWIndexCacheStats:
         """

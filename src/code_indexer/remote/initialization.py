@@ -1,6 +1,7 @@
 """Remote initialization orchestrator for CIDX."""
 
 from pathlib import Path
+from typing import Optional
 from rich.console import Console
 
 from .url_validator import validate_and_normalize_server_url
@@ -16,7 +17,7 @@ async def initialize_remote_mode(
     server_url: str,
     username: str,
     password: str,
-    console: Console = None,
+    console: Optional[Console] = None,
 ) -> None:
     """Initialize remote mode with comprehensive validation.
 
@@ -125,7 +126,7 @@ async def initialize_remote_mode_with_validation(
     server_url: str,
     username: str,
     password: str,
-    console: Console = None,
+    console: Optional[Console] = None,
 ) -> None:
     """Initialize remote mode with comprehensive server compatibility validation.
 

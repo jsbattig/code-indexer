@@ -65,7 +65,6 @@ class TestSCIPQueryExecutionInPartialEndpoint:
             patch("code_indexer.server.web.routes.templates") as mock_templates,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Setup mock engine
             mock_engine = MagicMock()
             mock_engine.find_definition.return_value = [mock_query_result]
@@ -142,7 +141,6 @@ class TestSCIPQueryExecutionInPartialEndpoint:
             patch("code_indexer.server.web.routes.templates") as mock_templates,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             await query_results_partial_post(
                 request=request,
                 query_text="CacheEntry",
@@ -206,7 +204,6 @@ class TestSCIPQueryExecutionInPartialEndpoint:
             patch("code_indexer.server.web.routes.templates") as mock_templates,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Setup mock engine to raise exception
             mock_engine = MagicMock()
             mock_engine.find_definition.side_effect = FileNotFoundError(

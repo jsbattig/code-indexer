@@ -300,7 +300,9 @@ class TestPathFilterEdgeCases:
     ):
         """Test filtering for root-level files."""
         results = indexed_tantivy_manager.search(
-            query_text="test", path_filter="*.js", limit=50  # Root level .js files
+            query_text="test",
+            path_filter="*.js",
+            limit=50,  # Root level .js files
         )
 
         # Should match main.js but not files in subdirectories

@@ -341,7 +341,6 @@ class TestAutoRepositoryActivator:
             patch("builtins.input", return_value="y"),
             patch("builtins.print") as mock_print,
         ):
-
             auto_activator._confirm_activation(golden_repository_match, "test-alias")
 
             # Verify repository information is displayed

@@ -97,6 +97,7 @@ class EnhancedQueryResultItem(BaseModel):
             line_number=query_result.line_number,
             code_snippet=query_result.code_snippet,
             repository_alias=query_result.repository_alias,
+            language=getattr(query_result, "language", None),
             file_last_modified=query_result.file_last_modified,
             indexed_timestamp=query_result.indexed_timestamp,
             local_file_mtime=local_file_mtime,

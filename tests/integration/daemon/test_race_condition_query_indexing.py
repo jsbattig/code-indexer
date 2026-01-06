@@ -18,7 +18,7 @@ Expected Behavior After Fix:
 
 import threading
 import time
-from typing import List, Any
+from typing import List, Any, Tuple
 
 import pytest
 
@@ -53,7 +53,7 @@ class TestRaceConditionQueryIndexing:
 
         # Storage for query results and errors
         query_results: List[Any] = []
-        query_errors: List[Exception] = []
+        query_errors: List[Tuple[int, Exception]] = []
         query_lock = threading.Lock()
 
         def run_query(query_id: int):

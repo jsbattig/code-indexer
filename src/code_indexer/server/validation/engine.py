@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Index Validation Engine for CIDX Server - Story 9 Implementation.
 
@@ -6,6 +5,8 @@ Comprehensive index validation including completeness, quality, consistency,
 and performance checking. Following CLAUDE.md Foundation #1: NO MOCKS -
 real validation with actual data and systems.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from ...indexing.file_finder import FileFinder
 from ...storage.filesystem_vector_store import FilesystemVectorStore
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_COLLECTION_NAME = "voyage-3"
 
 
 class IndexValidationEngine:
@@ -53,6 +56,12 @@ class IndexValidationEngine:
         self.vector_store_client = vector_store_client
         self.repository_path = Path(config.codebase_dir)
 
+        # Resolve collection name (use first available collection or default)
+        collections = vector_store_client.list_collections()
+        self.collection_name = (
+            collections[0] if collections else DEFAULT_COLLECTION_NAME
+        )
+
         # Initialize health checker
         self.health_checker = health_checker or IndexHealthChecker(
             config=config, vector_store_client=vector_store_client
@@ -68,7 +77,10 @@ class IndexValidationEngine:
         )
         self.quality_threshold = getattr(config, "validation_quality_threshold", 0.75)
 
-        logger.info(f"IndexValidationEngine initialized for {self.repository_path}", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"IndexValidationEngine initialized for {self.repository_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def validate_completeness(
         self, progress_callback: Optional[Callable] = None
@@ -191,7 +203,11 @@ class IndexValidationEngine:
             )
 
         except Exception as e:
-            logger.error(f"Completeness validation failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Completeness validation failed: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise ValidationFailedError(f"Completeness validation error: {str(e)}")
 
     def validate_quality(
@@ -343,7 +359,11 @@ class IndexValidationEngine:
         except IndexCorruptionError:
             raise  # Re-raise corruption errors
         except Exception as e:
-            logger.error(f"Quality validation failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Quality validation failed: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise ValidationFailedError(f"Quality validation error: {str(e)}")
 
     def validate_consistency(
@@ -443,7 +463,11 @@ class IndexValidationEngine:
             )
 
         except Exception as e:
-            logger.error(f"Consistency validation failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Consistency validation failed: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise ValidationFailedError(f"Consistency validation error: {str(e)}")
 
     def validate_comprehensive(
@@ -598,7 +622,11 @@ class IndexValidationEngine:
             )
 
         except Exception as e:
-            logger.error(f"Comprehensive validation failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Comprehensive validation failed: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise ValidationFailedError(f"Comprehensive validation error: {str(e)}")
 
     def _get_repository_indexable_files(self) -> List[str]:
@@ -615,7 +643,10 @@ class IndexValidationEngine:
             return all_files
 
         except Exception as e:
-            logger.error(f"Failed to get repository indexable files: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get repository indexable files: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     def _get_indexed_files(self) -> List[str]:
@@ -623,19 +654,27 @@ class IndexValidationEngine:
         try:
             # This would typically query Filesystem for all indexed file paths
             # For now, we'll mock this since we need the Filesystem client implementation
-            return self.vector_store_client.get_all_indexed_files()
+            return self.vector_store_client.get_all_indexed_files(self.collection_name)
 
         except Exception as e:
-            logger.error(f"Failed to get indexed files from database: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get indexed files from database: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     def _get_file_index_timestamps(self) -> Dict[str, datetime]:
         """Get file index timestamps from Filesystem database."""
         try:
-            return self.vector_store_client.get_file_index_timestamps()
+            return self.vector_store_client.get_file_index_timestamps(
+                self.collection_name
+            )
 
         except Exception as e:
-            logger.error(f"Failed to get file index timestamps: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get file index timestamps: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {}
 
     def _generate_recommendations(

@@ -96,7 +96,6 @@ def test_concurrent_refreshes_different_repos_no_interference(
             "code_indexer.global_repos.refresh_scheduler.GitPullUpdater"
         ) as mock_updater_class,
     ):
-
         # Setup mocks
         mock_get_repo.side_effect = lambda alias: {
             "alias_name": alias,
@@ -151,7 +150,7 @@ def test_concurrent_refreshes_different_repos_no_interference(
         ), f"Refreshes should run concurrently (took {elapsed_time}s)"
 
         # Verify overlap: repo2 should start before repo1 ends
-        repo1_start = refresh_events["repo1"][0][1]
+        refresh_events["repo1"][0][1]
         repo1_end = refresh_events["repo1"][1][1]
         repo2_start = refresh_events["repo2"][0][1]
 
@@ -180,7 +179,6 @@ def test_concurrent_refreshes_same_repo_serialized(scheduler, mock_git_pull_upda
             "code_indexer.global_repos.refresh_scheduler.GitPullUpdater"
         ) as mock_updater_class,
     ):
-
         # Setup mocks
         mock_get_repo.return_value = {
             "alias_name": "test-repo-global",
@@ -265,7 +263,6 @@ def test_refresh_lock_released_on_exception(scheduler, mock_git_pull_updater):
             "code_indexer.global_repos.refresh_scheduler.GitPullUpdater"
         ) as mock_updater_class,
     ):
-
         # Setup mocks
         mock_get_repo.return_value = {
             "alias_name": "test-repo-global",
@@ -297,7 +294,6 @@ def test_refresh_lock_released_on_exception(scheduler, mock_git_pull_updater):
             patch.object(scheduler.cleanup_manager, "schedule_cleanup"),
             patch.object(scheduler.registry, "update_refresh_timestamp"),
         ):
-
             scheduler.refresh_repo("test-repo-global")
             assert call_count[0] == 2, "Second refresh should have succeeded"
 
@@ -319,7 +315,6 @@ def test_refresh_lock_released_on_timeout(scheduler, mock_git_pull_updater):
             "code_indexer.global_repos.refresh_scheduler.GitPullUpdater"
         ) as mock_updater_class,
     ):
-
         # Setup mocks
         mock_get_repo.return_value = {
             "alias_name": "test-repo-global",
@@ -386,7 +381,6 @@ def test_refresh_lock_prevents_duplicate_refresh(scheduler, mock_git_pull_update
             "code_indexer.global_repos.refresh_scheduler.GitPullUpdater"
         ) as mock_updater_class,
     ):
-
         # Setup mocks
         mock_get_repo.return_value = {
             "alias_name": "test-repo-global",

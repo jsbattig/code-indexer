@@ -8,7 +8,7 @@ Provides pipeline monitoring, log search, and pipeline control operations.
 import re
 import logging
 import httpx
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -22,15 +22,17 @@ logger = logging.getLogger(__name__)
 
 class GitLabAuthenticationError(Exception):
     """Raised when GitLab API authentication fails (401)."""
+
     pass
 
 
 class GitLabProjectNotFoundError(Exception):
     """Raised when project is not found or not accessible (404)."""
+
     pass
 
 
-def _is_retryable_error(exception: Exception) -> bool:
+def _is_retryable_error(exception: BaseException) -> bool:
     """
     Check if exception is retryable (network errors or server errors).
 
@@ -189,13 +191,15 @@ class GitLabCIClient:
             # Transform API response to expected format
             pipelines = []
             for pipeline in data:
-                pipelines.append({
-                    "id": pipeline["id"],
-                    "status": pipeline["status"],
-                    "ref": pipeline["ref"],
-                    "created_at": pipeline["created_at"],
-                    "web_url": pipeline["web_url"],
-                })
+                pipelines.append(
+                    {
+                        "id": pipeline["id"],
+                        "status": pipeline["status"],
+                        "ref": pipeline["ref"],
+                        "created_at": pipeline["created_at"],
+                        "web_url": pipeline["web_url"],
+                    }
+                )
 
             return pipelines
 
@@ -261,15 +265,17 @@ class GitLabCIClient:
             if jobs_response.status_code == 200:
                 jobs_data = jobs_response.json()
                 for job in jobs_data:
-                    jobs.append({
-                        "id": job.get("id"),
-                        "name": job.get("name"),
-                        "stage": job.get("stage"),
-                        "status": job.get("status"),
-                        "created_at": job.get("created_at"),
-                        "started_at": job.get("started_at"),
-                        "finished_at": job.get("finished_at"),
-                    })
+                    jobs.append(
+                        {
+                            "id": job.get("id"),
+                            "name": job.get("name"),
+                            "stage": job.get("stage"),
+                            "status": job.get("status"),
+                            "created_at": job.get("created_at"),
+                            "started_at": job.get("started_at"),
+                            "finished_at": job.get("finished_at"),
+                        }
+                    )
 
             # Transform API response to expected format
             return {
@@ -334,7 +340,9 @@ class GitLabCIClient:
             jobs_response = await client.get(jobs_url, headers=headers)
 
             if jobs_response.status_code != 200:
-                raise Exception(f"GitLab API error getting jobs: {jobs_response.status_code}")
+                raise Exception(
+                    f"GitLab API error getting jobs: {jobs_response.status_code}"
+                )
 
             jobs_data = jobs_response.json()
 
@@ -361,13 +369,15 @@ class GitLabCIClient:
                 # Search for pattern in logs
                 for line_number, line in enumerate(log_text.split("\n"), 1):
                     if pattern_re.search(line):
-                        matches.append({
-                            "job_id": job_id,
-                            "job_name": job_name,
-                            "stage": stage,
-                            "line": line,
-                            "line_number": line_number,
-                        })
+                        matches.append(
+                            {
+                                "job_id": job_id,
+                                "job_name": job_name,
+                                "stage": stage,
+                                "line": line,
+                                "line_number": line_number,
+                            }
+                        )
 
             return matches
 
@@ -398,7 +408,9 @@ class GitLabCIClient:
         # URL-encode project ID
         encoded_project_id = project_id.replace("/", "%2F")
 
-        url = f"{self.base_url}/api/v4/projects/{encoded_project_id}/jobs/{job_id}/trace"
+        url = (
+            f"{self.base_url}/api/v4/projects/{encoded_project_id}/jobs/{job_id}/trace"
+        )
 
         headers = {
             "PRIVATE-TOKEN": self.token,
@@ -409,9 +421,11 @@ class GitLabCIClient:
             response = await client.get(url, headers=headers)
 
             if response.status_code != 200:
-                raise Exception(f"GitLab API error getting job logs: {response.status_code}")
+                raise Exception(
+                    f"GitLab API error getting job logs: {response.status_code}"
+                )
 
-            return response.text
+            return cast(str, response.text)
 
     @retry(
         stop=stop_after_attempt(4),
@@ -453,7 +467,9 @@ class GitLabCIClient:
             response = await client.post(url, headers=headers)
 
             if response.status_code != 201:
-                raise Exception(f"GitLab API error retrying pipeline: {response.status_code}")
+                raise Exception(
+                    f"GitLab API error retrying pipeline: {response.status_code}"
+                )
 
             return {
                 "success": True,
@@ -500,7 +516,9 @@ class GitLabCIClient:
             response = await client.post(url, headers=headers)
 
             if response.status_code != 200:
-                raise Exception(f"GitLab API error cancelling pipeline: {response.status_code}")
+                raise Exception(
+                    f"GitLab API error cancelling pipeline: {response.status_code}"
+                )
 
             return {
                 "success": True,

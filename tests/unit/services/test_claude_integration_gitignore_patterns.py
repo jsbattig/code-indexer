@@ -46,14 +46,18 @@ class TestGitignorePatternMatching:
         file_path.touch()
 
         assert service._matches_gitignore_pattern(file_path, "README.md", "README.md")
-        assert not service._matches_gitignore_pattern(file_path, "README.md", "LICENSE.md")
+        assert not service._matches_gitignore_pattern(
+            file_path, "README.md", "LICENSE.md"
+        )
 
     def test_directory_pattern_with_slash(self, service, temp_dir):
         """Test directory pattern ending with / works."""
         dir_path = temp_dir / "node_modules"
         dir_path.mkdir()
 
-        assert service._matches_gitignore_pattern(dir_path, "node_modules", "node_modules/")
+        assert service._matches_gitignore_pattern(
+            dir_path, "node_modules", "node_modules/"
+        )
         assert not service._matches_gitignore_pattern(dir_path, "node_modules", "dist/")
 
     def test_directory_pattern_without_slash(self, service, temp_dir):
@@ -87,8 +91,12 @@ class TestGitignorePatternMatching:
 
         rel_path = "src/node_modules/package"
 
-        assert service._matches_gitignore_pattern(nested_dir, rel_path, "**/node_modules/**")
-        assert service._matches_gitignore_pattern(nested_dir, rel_path, "src/**/package")
+        assert service._matches_gitignore_pattern(
+            nested_dir, rel_path, "**/node_modules/**"
+        )
+        assert service._matches_gitignore_pattern(
+            nested_dir, rel_path, "src/**/package"
+        )
 
     def test_path_based_pattern_with_slash(self, service, temp_dir):
         """Test path-based patterns containing / work correctly."""
@@ -99,9 +107,13 @@ class TestGitignorePatternMatching:
 
         rel_path = "tests/unit/test_foo.py"
 
-        assert service._matches_gitignore_pattern(file_path, rel_path, "tests/unit/*.py")
+        assert service._matches_gitignore_pattern(
+            file_path, rel_path, "tests/unit/*.py"
+        )
         assert service._matches_gitignore_pattern(file_path, rel_path, "tests/**/*.py")
-        assert not service._matches_gitignore_pattern(file_path, rel_path, "src/**/*.py")
+        assert not service._matches_gitignore_pattern(
+            file_path, rel_path, "src/**/*.py"
+        )
 
     def test_negation_pattern_not_matched(self, service, temp_dir):
         """Test that patterns starting with ! are handled (gitignore negation)."""
@@ -110,7 +122,9 @@ class TestGitignorePatternMatching:
 
         # Negation patterns shouldn't match (they're handled separately in gitignore logic)
         # This test just ensures we don't crash on them
-        result = service._matches_gitignore_pattern(file_path, "important.log", "!important.log")
+        result = service._matches_gitignore_pattern(
+            file_path, "important.log", "!important.log"
+        )
         # pathspec will handle negation patterns, result may vary
         assert isinstance(result, bool)
 
@@ -120,7 +134,9 @@ class TestGitignorePatternMatching:
         file_path.touch()
 
         assert service._matches_gitignore_pattern(file_path, "test1.py", "test?.py")
-        assert not service._matches_gitignore_pattern(file_path, "test1.py", "test??.py")
+        assert not service._matches_gitignore_pattern(
+            file_path, "test1.py", "test??.py"
+        )
 
     def test_character_class_pattern(self, service, temp_dir):
         """Test [seq] character class patterns work."""
@@ -128,7 +144,9 @@ class TestGitignorePatternMatching:
         file_path.touch()
 
         assert service._matches_gitignore_pattern(file_path, "test1.py", "test[123].py")
-        assert not service._matches_gitignore_pattern(file_path, "test1.py", "test[456].py")
+        assert not service._matches_gitignore_pattern(
+            file_path, "test1.py", "test[456].py"
+        )
 
     def test_deep_nesting_doublestar(self, service, temp_dir):
         """Test ** works with very deep nesting (stress test)."""
@@ -155,9 +173,15 @@ class TestGitignorePatternMatching:
 
         rel_path = "src/components/ui/Button.tsx"
 
-        assert service._matches_gitignore_pattern(file_path, rel_path, "src/**/ui/*.tsx")
-        assert service._matches_gitignore_pattern(file_path, rel_path, "**/components/**/*.tsx")
-        assert not service._matches_gitignore_pattern(file_path, rel_path, "lib/**/ui/*.tsx")
+        assert service._matches_gitignore_pattern(
+            file_path, rel_path, "src/**/ui/*.tsx"
+        )
+        assert service._matches_gitignore_pattern(
+            file_path, rel_path, "**/components/**/*.tsx"
+        )
+        assert not service._matches_gitignore_pattern(
+            file_path, rel_path, "lib/**/ui/*.tsx"
+        )
 
     def test_root_level_pattern(self, service, temp_dir):
         """Test patterns matching files at root level."""
@@ -212,7 +236,9 @@ class TestGitignorePatternMatching:
         assert service._matches_gitignore_pattern(file_path, "test.py", "**/*.py")
         assert service._matches_gitignore_pattern(file_path, "test.py", "**/test.py")
 
-    def test_doublestar_matches_zero_subdirectories_immediate_child(self, service, temp_dir):
+    def test_doublestar_matches_zero_subdirectories_immediate_child(
+        self, service, temp_dir
+    ):
         """
         CRITICAL BUG FIX: Test ** matches immediate children (zero intermediate directories).
 
@@ -229,5 +255,9 @@ class TestGitignorePatternMatching:
         rel_path = "code/src/Main.java"
 
         # This MUST match - ** means "zero or more directories"
-        assert service._matches_gitignore_pattern(file_path, rel_path, "code/src/**/*.java")
-        assert service._matches_gitignore_pattern(file_path, rel_path, "**/src/**/*.java")
+        assert service._matches_gitignore_pattern(
+            file_path, rel_path, "code/src/**/*.java"
+        )
+        assert service._matches_gitignore_pattern(
+            file_path, rel_path, "**/src/**/*.java"
+        )

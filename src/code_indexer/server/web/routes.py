@@ -1,15 +1,16 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Web Admin UI Routes.
 
 Provides admin web interface routes for CIDX server administration.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
 import os
 import secrets
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, cast
 from urllib.parse import quote
 
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
@@ -99,12 +100,18 @@ def validate_login_csrf_token(request: Request, submitted_token: Optional[str]) 
     )
 
     if not submitted_token:
-        logger.debug("CSRF validation failed: no submitted_token", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            "CSRF validation failed: no submitted_token",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return False
 
     csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
     if not csrf_cookie:
-        logger.debug("CSRF validation failed: no csrf_cookie in request", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            "CSRF validation failed: no csrf_cookie in request",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return False
 
     try:
@@ -124,7 +131,11 @@ def validate_login_csrf_token(request: Request, submitted_token: Optional[str]) 
         )
         return result
     except (SignatureExpired, BadSignature) as e:
-        logger.debug("CSRF validation failed: %s", type(e).__name__, extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            "CSRF validation failed: %s",
+            type(e).__name__,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return False
 
 
@@ -149,7 +160,7 @@ def get_csrf_token_from_cookie(request: Request) -> Optional[str]:
             salt="csrf-login",
             max_age=CSRF_MAX_AGE_SECONDS,
         )
-        return token
+        return cast(Optional[str], token)
     except (SignatureExpired, BadSignature):
         return None
 
@@ -205,7 +216,9 @@ async def dashboard(request: Request):
 
     # Get aggregated dashboard data (Bug #671: Pass user role to show all repos for admins)
     dashboard_service = _get_dashboard_service()
-    dashboard_data = dashboard_service.get_dashboard_data(session.username, session.role)
+    dashboard_data = dashboard_service.get_dashboard_data(
+        session.username, session.role
+    )
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -690,7 +703,11 @@ def _get_golden_repos_list():
             registry = GlobalRegistry(str(golden_repos_dir))
             global_repos = {r["repo_name"]: r for r in registry.list_global_repos()}
         except Exception as e:
-            logger.warning("Could not load global registry: %s", e, extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                "Could not load global registry: %s",
+                e,
+                extra={"correlation_id": get_correlation_id()},
+            )
             global_repos = {}
 
         # Get alias info for version and target path
@@ -735,7 +752,9 @@ def _get_golden_repos_list():
                         )
                     except Exception as e:
                         logger.warning(
-                            "Could not read alias file %s: %s", alias_file, e,
+                            "Could not read alias file %s: %s",
+                            alias_file,
+                            e,
                             extra={"correlation_id": get_correlation_id()},
                         )
                         repo["version"] = None
@@ -824,7 +843,12 @@ def _get_golden_repos_list():
 
         return repos
     except Exception as e:
-        logger.error("Failed to get golden repos list: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to get golden repos list: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return []
 
 
@@ -1090,7 +1114,10 @@ async def golden_repo_details(
         raise
     except Exception as e:
         logger.error(
-            "Failed to get golden repo details for '%s': %s", alias, e, exc_info=True,
+            "Failed to get golden repo details for '%s': %s",
+            alias,
+            e,
+            exc_info=True,
             extra={"correlation_id": get_correlation_id()},
         )
         raise HTTPException(status_code=404, detail=f"Repository '{alias}' not found")
@@ -1179,8 +1206,7 @@ def _get_all_activated_repos() -> list:
                     # Fetch temporal status for this repository
                     try:
                         temporal_status = dashboard_service.get_temporal_index_status(
-                            username=username,
-                            repo_alias=repo.get("user_alias", "")
+                            username=username, repo_alias=repo.get("user_alias", "")
                         )
                         repo["temporal_status"] = temporal_status
                     except Exception as e:
@@ -1199,7 +1225,7 @@ def _get_all_activated_repos() -> list:
                             "format": "error",
                             "file_count": 0,
                             "needs_reindex": False,
-                            "message": f"Unable to determine temporal index status: {str(e)}"
+                            "message": f"Unable to determine temporal index status: {str(e)}",
                         }
 
                     all_repos.append(repo)
@@ -1209,7 +1235,12 @@ def _get_all_activated_repos() -> list:
         return all_repos
 
     except Exception as e:
-        logger.error("Failed to get activated repos: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to get activated repos: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return []
 
 
@@ -1504,7 +1535,12 @@ def _get_background_job_manager():
 
         return background_job_manager
     except Exception as e:
-        logger.error("Failed to get background job manager: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to get background job manager: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return None
 
 
@@ -1763,7 +1799,7 @@ MAX_QUERY_HISTORY = 10
 
 def _get_session_query_history(session_username: str) -> list:
     """Get query history for a session."""
-    return _query_history.get(session_username, [])
+    return cast(list, _query_history.get(session_username, []))
 
 
 def _add_to_query_history(
@@ -1826,7 +1862,11 @@ def _get_all_activated_repos_for_query() -> list:
                 }
             )
     except Exception as e:
-        logger.warning("Could not load global repos for query: %s", e, extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            "Could not load global repos for query: %s",
+            e,
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     # Add user-activated repos
     user_repos = _get_all_activated_repos()
@@ -2232,7 +2272,9 @@ async def query_submit(
                             error_message = f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`"
                         except Exception as e:
                             logger.error(
-                                "SCIP query execution failed: %s", e, exc_info=True,
+                                "SCIP query execution failed: %s",
+                                e,
+                                exc_info=True,
                                 extra={"correlation_id": get_correlation_id()},
                             )
                             error_message = f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`"
@@ -2308,7 +2350,12 @@ async def query_submit(
                                 }
                             )
                     except Exception as e:
-                        logger.error("Global repo query failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+                        logger.error(
+                            "Global repo query failed: %s",
+                            e,
+                            exc_info=True,
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         error_message = f"Query failed: {str(e)}"
             else:
                 repo_username = target_repo.get("username", session.username)
@@ -2351,7 +2398,12 @@ async def query_submit(
                     )
 
     except Exception as e:
-        logger.error("Query execution failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Query execution failed: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         error_message = f"Query failed: {str(e)}"
 
     return _create_query_page_response(
@@ -2413,7 +2465,12 @@ def _get_semantic_query_manager():
 
         return semantic_query_manager
     except Exception as e:
-        logger.error("Failed to get semantic query manager: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to get semantic query manager: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return None
 
 
@@ -2434,7 +2491,7 @@ def _execute_scip_query(
     from code_indexer.scip.query.primitives import SCIPQueryEngine, QueryResult
     import glob
 
-    results = []
+    results: List[Dict[str, Any]] = []
     repo_path = target_repo.get("path")
 
     # For global repos, resolve path from GlobalRegistry
@@ -2570,13 +2627,23 @@ def _execute_scip_query(
                 }
             )
     except FileNotFoundError as e:
-        logger.error("SCIP query failed - file not found: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "SCIP query failed - file not found: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return (
             results,
             f"SCIP index not found or corrupted for repository '{user_alias}'. Generate an index with: `cidx scip generate`",
         )
     except Exception as e:
-        logger.error("SCIP query execution failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "SCIP query execution failed: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return (
             results,
             f"SCIP query failed for repository '{user_alias}': {str(e)}. Try regenerating the index with: `cidx scip generate`",
@@ -2754,7 +2821,12 @@ async def query_results_partial_post(
                                 }
                             )
                     except Exception as e:
-                        logger.error("Global repo query failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+                        logger.error(
+                            "Global repo query failed: %s",
+                            e,
+                            exc_info=True,
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         error_message = f"Query failed: {str(e)}"
             else:
                 # Execute query for user-activated repositories
@@ -2797,7 +2869,12 @@ async def query_results_partial_post(
                     )
 
     except Exception as e:
-        logger.error("Query execution failed: %s", e, exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Query execution failed: %s",
+            e,
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         error_message = f"Query failed: {str(e)}"
 
     csrf_token_new = generate_csrf_token()
@@ -2864,7 +2941,10 @@ async def _reload_oidc_configuration():
 
     # Only reload if OIDC is enabled
     if not config.oidc_provider_config.enabled:
-        logger.info("OIDC is disabled, skipping reload", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "OIDC is disabled, skipping reload",
+            extra={"correlation_id": get_correlation_id()},
+        )
         # Clear the existing OIDC manager
         oidc_routes.oidc_manager = None
         oidc_routes.state_manager = None
@@ -3152,6 +3232,7 @@ def _create_config_page_response(
 
     # Load API keys status - use same server_dir as config service
     from ..services.config_service import get_config_service
+
     config_service = get_config_service()
     server_dir = str(config_service.config_manager.server_dir)
 
@@ -3159,8 +3240,8 @@ def _create_config_page_response(
     api_keys_status = token_manager.list_tokens()
 
     # Get token data for masking in template
-    github_token_data = token_manager.get_token('github')
-    gitlab_token_data = token_manager.get_token('gitlab')
+    github_token_data = token_manager.get_token("github")
+    gitlab_token_data = token_manager.get_token("gitlab")
 
     response = templates.TemplateResponse(
         "config.html",
@@ -3258,10 +3339,17 @@ async def update_config_section(
             try:
                 # Try to reload with new config (don't save yet)
                 await _reload_oidc_configuration()
-                logger.info("OIDC configuration validated and reloaded successfully", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "OIDC configuration validated and reloaded successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             except Exception as e:
                 # Reload failed - reload original config from file to restore working state
-                logger.error(f"Failed to reload OIDC configuration: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Failed to reload OIDC configuration: {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 config_service.load_config()  # Reload from file to undo in-memory changes
                 return _create_config_page_response(
                     request,
@@ -3271,7 +3359,10 @@ async def update_config_section(
 
         # Only save to file after validation and OIDC test (if applicable)
         config_service.config_manager.save_config(config)
-        logger.info(f"Saved {section} configuration with {len(data)} settings", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Saved {section} configuration with {len(data)} settings",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         return _create_config_page_response(
             request,
@@ -3285,7 +3376,12 @@ async def update_config_section(
             error_message=f"Failed to save configuration: {str(e)}",
         )
     except Exception as e:
-        logger.error("Failed to save config section %s: %s", section, e, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to save config section %s: %s",
+            section,
+            e,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return _create_config_page_response(
             request,
             session,
@@ -3325,7 +3421,11 @@ async def reset_config(
             success_message="Configuration reset to defaults successfully",
         )
     except Exception as e:
-        logger.error("Failed to reset config: %s", e, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to reset config: %s",
+            e,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return _create_config_page_response(
             request,
             session,
@@ -3356,13 +3456,14 @@ async def config_section_partial(
 
     # Load API keys status - use same server_dir as config service
     from ..services.config_service import get_config_service
+
     config_service = get_config_service()
     server_dir = str(config_service.config_manager.server_dir)
 
     token_manager = CITokenManager(server_dir_path=server_dir)
     api_keys_status = token_manager.list_tokens()
-    github_token_data = token_manager.get_token('github')
-    gitlab_token_data = token_manager.get_token('gitlab')
+    github_token_data = token_manager.get_token("github")
+    gitlab_token_data = token_manager.get_token("gitlab")
 
     response = templates.TemplateResponse(
         "partials/config_section.html",
@@ -3409,7 +3510,7 @@ async def save_api_key(
         )
 
     # Validate platform
-    if platform not in ['github', 'gitlab']:
+    if platform not in ["github", "gitlab"]:
         return _create_config_page_response(
             request, session, error_message=f"Invalid platform: {platform}"
         )
@@ -3417,13 +3518,14 @@ async def save_api_key(
     # Save token using CITokenManager - use same server_dir as config service
     try:
         from ..services.config_service import get_config_service
+
         config_service = get_config_service()
         server_dir = str(config_service.config_manager.server_dir)
 
         token_manager = CITokenManager(server_dir_path=server_dir)
         token_manager.save_token(platform, token, base_url=api_url)
 
-        platform_name = "GitHub" if platform == 'github' else "GitLab"
+        platform_name = "GitHub" if platform == "github" else "GitLab"
         return _create_config_page_response(
             request,
             session,
@@ -3434,10 +3536,15 @@ async def save_api_key(
             request,
             session,
             error_message=f"Invalid token format: {str(e)}",
-            validation_errors={'api_keys': str(e)},
+            validation_errors={"api_keys": str(e)},
         )
     except Exception as e:
-        logger.error("Failed to save %s API key: %s", platform, e, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to save %s API key: %s",
+            platform,
+            e,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return _create_config_page_response(
             request,
             session,
@@ -3455,47 +3562,54 @@ async def delete_api_key(
     session = _require_admin_session(request)
     if not session:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
 
     # Validate CSRF token from header (HTMX sends it as X-CSRF-Token)
-    csrf_from_header = request.headers.get('X-CSRF-Token')
+    csrf_from_header = request.headers.get("X-CSRF-Token")
     if not validate_login_csrf_token(request, csrf_from_header):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid CSRF token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token"
         )
 
     # Validate platform
-    if platform not in ['github', 'gitlab']:
+    if platform not in ["github", "gitlab"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid platform: {platform}"
+            detail=f"Invalid platform: {platform}",
         )
 
     # Delete token using CITokenManager - use same server_dir as config service
     try:
         from ..services.config_service import get_config_service
+
         config_service = get_config_service()
         server_dir = str(config_service.config_manager.server_dir)
 
         token_manager = CITokenManager(server_dir_path=server_dir)
         token_manager.delete_token(platform)
 
-        platform_name = "GitHub" if platform == 'github' else "GitLab"
-        logger.info(f"{platform_name} API key deleted successfully", extra={"correlation_id": get_correlation_id()})
+        platform_name = "GitHub" if platform == "github" else "GitLab"
+        logger.info(
+            f"{platform_name} API key deleted successfully",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Return success HTML fragment (HTMX expects HTML response)
         return HTMLResponse(
             content=f'<div class="alert success">{platform_name} API key deleted</div>',
-            status_code=200
+            status_code=200,
         )
     except Exception as e:
-        logger.error("Failed to delete %s API key: %s", platform, e, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to delete %s API key: %s",
+            platform,
+            e,
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete API key: {str(e)}"
+            detail=f"Failed to delete API key: {str(e)}",
         )
 
 
@@ -3653,7 +3767,11 @@ async def update_file_content_limits(
             success_message="File content limits updated successfully",
         )
     except Exception as e:
-        logger.error("Failed to update file content limits: %s", e, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            "Failed to update file content limits: %s",
+            e,
+            extra={"correlation_id": get_correlation_id()},
+        )
         return _create_file_content_limits_response(
             request,
             session,
@@ -3723,6 +3841,7 @@ def _create_api_keys_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create API keys page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     keys = dependencies.user_manager.get_api_keys(username)
 
@@ -3745,6 +3864,7 @@ def _create_api_keys_page_response(
 @web_router.get("/partials/api-keys-list", response_class=HTMLResponse)
 async def api_keys_list_partial(request: Request):
     """Partial for API keys list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_admin_session(request)
     if not session:
         return HTMLResponse(
@@ -3779,6 +3899,7 @@ def _create_admin_mcp_credentials_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create admin MCP credentials page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     credentials = dependencies.user_manager.get_mcp_credentials(username)
 
@@ -3800,6 +3921,7 @@ def _create_admin_mcp_credentials_page_response(
 @web_router.get("/partials/mcp-credentials-list", response_class=HTMLResponse)
 async def admin_mcp_credentials_list_partial(request: Request):
     """Partial for admin MCP credentials list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_admin_session(request)
     if not session:
         return HTMLResponse(
@@ -3854,6 +3976,7 @@ def _create_user_api_keys_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create user API keys page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     keys = dependencies.user_manager.get_api_keys(username)
 
@@ -3876,6 +3999,7 @@ def _create_user_api_keys_page_response(
 @user_router.get("/partials/api-keys-list", response_class=HTMLResponse)
 async def user_api_keys_list_partial(request: Request):
     """Partial for user API keys list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_authenticated_session(request)
     if not session:
         return HTMLResponse(
@@ -3910,6 +4034,7 @@ def _create_user_mcp_credentials_page_response(
     error_message: Optional[str] = None,
 ) -> HTMLResponse:
     """Create user MCP credentials page response."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     username = session.username
     credentials = dependencies.user_manager.get_mcp_credentials(username)
 
@@ -3932,6 +4057,7 @@ def _create_user_mcp_credentials_page_response(
 @user_router.get("/partials/mcp-credentials-list", response_class=HTMLResponse)
 async def user_mcp_credentials_list_partial(request: Request):
     """Partial for user MCP credentials list (HTMX refresh)."""
+    assert dependencies.user_manager is not None  # Initialized at app startup
     session = _require_authenticated_session(request)
     if not session:
         return HTMLResponse(
@@ -3993,7 +4119,10 @@ async def ssh_keys_page(request: Request):
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
     except Exception as e:
-        logger.error(f"Failed to list SSH keys: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Failed to list SSH keys: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     response = templates.TemplateResponse(
         request,
@@ -4037,7 +4166,10 @@ def _create_ssh_keys_page_response(
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
     except Exception as e:
-        logger.error(f"Failed to list SSH keys: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Failed to list SSH keys: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     response = templates.TemplateResponse(
         request,
@@ -4110,7 +4242,10 @@ async def create_ssh_key(
             request, session, error_message=f"Key already exists: {e}"
         )
     except Exception as e:
-        logger.error(f"Failed to create SSH key: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Failed to create SSH key: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return _create_ssh_keys_page_response(
             request, session, error_message=f"Failed to create key: {e}"
         )
@@ -4145,7 +4280,10 @@ async def delete_ssh_key(
             success_message=f"SSH key '{key_name}' deleted successfully.",
         )
     except Exception as e:
-        logger.error(f"Failed to delete SSH key: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Failed to delete SSH key: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return _create_ssh_keys_page_response(
             request, session, error_message=f"Failed to delete key: {e}"
         )
@@ -4185,7 +4323,10 @@ async def assign_host_to_key(
             request, session, error_message=f"Host conflict: {e}"
         )
     except Exception as e:
-        logger.error(f"Failed to assign host to SSH key: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Failed to assign host to SSH key: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return _create_ssh_keys_page_response(
             request, session, error_message=f"Failed to assign host: {e}"
         )
@@ -4226,6 +4367,7 @@ async def logs_page(
 
     # Create LogAggregatorService instance
     from ..services.log_aggregator_service import LogAggregatorService
+
     service = LogAggregatorService(log_db_path)
 
     # Parse level parameter
@@ -4301,6 +4443,7 @@ async def logs_list_partial(
 
     # Create LogAggregatorService instance
     from ..services.log_aggregator_service import LogAggregatorService
+
     service = LogAggregatorService(log_db_path)
 
     # Parse level parameter
@@ -4365,13 +4508,16 @@ async def export_logs_web(
 
     # Validate format parameter
     if format not in ["json", "csv"]:
-        raise HTTPException(status_code=400, detail="Invalid format. Must be 'json' or 'csv'")
+        raise HTTPException(
+            status_code=400, detail="Invalid format. Must be 'json' or 'csv'"
+        )
 
     # Get log database path from app state
     log_db_path = request.app.state.log_db_path
 
     # Create LogAggregatorService instance
     from ..services.log_aggregator_service import LogAggregatorService
+
     service = LogAggregatorService(log_db_path)
 
     # Parse level parameter
@@ -4414,9 +4560,7 @@ async def export_logs_web(
     return Response(
         content=content,
         media_type=media_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -4608,7 +4752,10 @@ async def unified_login_sso(
     try:
         await oidc_routes.oidc_manager.ensure_provider_initialized()
     except Exception as e:
-        logger.error(f"Failed to initialize OIDC provider: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Failed to initialize OIDC provider: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="SSO provider is currently unavailable",
@@ -4637,6 +4784,9 @@ async def unified_login_sso(
             safe_redirect = decoded_redirect
 
     # Store state with code_verifier and redirect_to using OIDC state manager
+    assert (
+        oidc_routes.state_manager is not None
+    ), "state_manager must be initialized when oidc_manager is enabled"
     state_data = {
         "code_verifier": code_verifier,
     }

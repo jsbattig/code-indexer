@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Server installation utilities for CIDX Server.
 
@@ -6,6 +5,7 @@ Handles server installation, port allocation, configuration setup,
 and startup script generation.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import getpass
 import logging
 import socket
@@ -366,18 +366,30 @@ WantedBy=multi-user.target
         """
         # Check if already installed (idempotent)
         if self._is_claude_cli_installed():
-            logger.info("Claude CLI already installed", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Claude CLI already installed",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
 
         # Check if npm available
         if not self._is_npm_available():
-            logger.warning("npm not found - Claude CLI installation skipped", extra={"correlation_id": get_correlation_id()})
-            logger.info("Install manually: npm install -g @anthropic-ai/claude-code", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                "npm not found - Claude CLI installation skipped",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            logger.info(
+                "Install manually: npm install -g @anthropic-ai/claude-code",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
         # Install via npm
         try:
-            logger.info("Installing Claude CLI via npm...", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Installing Claude CLI via npm...",
+                extra={"correlation_id": get_correlation_id()},
+            )
             result = subprocess.run(
                 ["npm", "install", "-g", "@anthropic-ai/claude-code"],
                 capture_output=True,
@@ -386,22 +398,37 @@ WantedBy=multi-user.target
             )
 
             if result.returncode != 0:
-                logger.error(f"Claude CLI installation failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Claude CLI installation failed: {result.stderr}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
             # Verify installation succeeded
             if self._is_claude_cli_installed():
-                logger.info("Claude CLI installed successfully", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "Claude CLI installed successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return True
             else:
-                logger.error("Claude CLI installation failed: verification failed", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    "Claude CLI installation failed: verification failed",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error("Claude CLI installation failed: timeout", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                "Claude CLI installation failed: timeout",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
         except Exception as e:
-            logger.error(f"Claude CLI installation failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Claude CLI installation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def _is_scip_indexer_installed(self, indexer_name: str) -> bool:
@@ -446,22 +473,36 @@ WantedBy=multi-user.target
 
         # Check if npm available
         if not self._is_npm_available():
-            logger.warning("npm not found - SCIP indexers installation skipped", extra={"correlation_id": get_correlation_id()})
-            logger.info("Install manually:", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                "npm not found - SCIP indexers installation skipped",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            logger.info(
+                "Install manually:", extra={"correlation_id": get_correlation_id()}
+            )
             for package in indexers.values():
-                logger.info(f"  npm install -g {package}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"  npm install -g {package}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             return False
 
         all_installed = True
         for indexer_cmd, npm_package in indexers.items():
             # Check if already installed (idempotent)
             if self._is_scip_indexer_installed(indexer_cmd):
-                logger.info(f"{indexer_cmd} already installed", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"{indexer_cmd} already installed",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 continue
 
             # Install via npm
             try:
-                logger.info(f"Installing {indexer_cmd} via npm...", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Installing {indexer_cmd} via npm...",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 result = subprocess.run(
                     ["npm", "install", "-g", npm_package],
                     capture_output=True,
@@ -470,24 +511,37 @@ WantedBy=multi-user.target
                 )
 
                 if result.returncode != 0:
-                    logger.error(f"{indexer_cmd} installation failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        f"{indexer_cmd} installation failed: {result.stderr}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     all_installed = False
                     continue
 
                 # Verify installation succeeded
                 if self._is_scip_indexer_installed(indexer_cmd):
-                    logger.info(f"{indexer_cmd} installed successfully", extra={"correlation_id": get_correlation_id()})
+                    logger.info(
+                        f"{indexer_cmd} installed successfully",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                 else:
                     logger.error(
-                        f"{indexer_cmd} installation failed: verification failed"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"{indexer_cmd} installation failed: verification failed",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     all_installed = False
 
             except subprocess.TimeoutExpired:
-                logger.error(f"{indexer_cmd} installation failed: timeout", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"{indexer_cmd} installation failed: timeout",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 all_installed = False
             except Exception as e:
-                logger.error(f"{indexer_cmd} installation failed: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"{indexer_cmd} installation failed: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 all_installed = False
 
         # Install scip-dotnet (non-fatal if fails)
@@ -545,18 +599,30 @@ WantedBy=multi-user.target
         """
         # Check if already installed (idempotent)
         if self._is_scip_dotnet_installed():
-            logger.info("scip-dotnet already installed", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "scip-dotnet already installed",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
 
         # Check if .NET SDK available
         if not self._is_dotnet_sdk_available():
-            logger.warning(".NET SDK not found - scip-dotnet installation skipped", extra={"correlation_id": get_correlation_id()})
-            logger.info("Install .NET SDK manually to enable C# SCIP indexing", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                ".NET SDK not found - scip-dotnet installation skipped",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            logger.info(
+                "Install .NET SDK manually to enable C# SCIP indexing",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
         # Install via dotnet tool
         try:
-            logger.info("Installing scip-dotnet via dotnet tool...", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Installing scip-dotnet via dotnet tool...",
+                extra={"correlation_id": get_correlation_id()},
+            )
             result = subprocess.run(
                 ["dotnet", "tool", "install", "--global", "scip-dotnet"],
                 capture_output=True,
@@ -565,22 +631,37 @@ WantedBy=multi-user.target
             )
 
             if result.returncode != 0:
-                logger.error(f"scip-dotnet installation failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"scip-dotnet installation failed: {result.stderr}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
             # Verify installation succeeded
             if self._is_scip_dotnet_installed():
-                logger.info("scip-dotnet installed successfully", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "scip-dotnet installed successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return True
             else:
-                logger.error("scip-dotnet installation failed: verification failed", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    "scip-dotnet installation failed: verification failed",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error("scip-dotnet installation failed: timeout", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                "scip-dotnet installation failed: timeout",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
         except Exception as e:
-            logger.error(f"scip-dotnet installation failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"scip-dotnet installation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def _is_go_sdk_available(self) -> bool:
@@ -630,18 +711,30 @@ WantedBy=multi-user.target
         """
         # Check if already installed (idempotent)
         if self._is_scip_go_installed():
-            logger.info("scip-go already installed", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "scip-go already installed",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
 
         # Check if Go SDK available
         if not self._is_go_sdk_available():
-            logger.warning("Go SDK not found - scip-go installation skipped", extra={"correlation_id": get_correlation_id()})
-            logger.info("Install Go from https://go.dev/dl/", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                "Go SDK not found - scip-go installation skipped",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            logger.info(
+                "Install Go from https://go.dev/dl/",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
         # Install via go install
         try:
-            logger.info("Installing scip-go via go install...", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Installing scip-go via go install...",
+                extra={"correlation_id": get_correlation_id()},
+            )
             result = subprocess.run(
                 ["go", "install", "github.com/sourcegraph/scip-go/cmd/scip-go@latest"],
                 capture_output=True,
@@ -650,20 +743,35 @@ WantedBy=multi-user.target
             )
 
             if result.returncode != 0:
-                logger.error(f"scip-go installation failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"scip-go installation failed: {result.stderr}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
             # Verify installation succeeded
             if self._is_scip_go_installed():
-                logger.info("scip-go installed successfully", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "scip-go installed successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return True
             else:
-                logger.error("scip-go installation failed: verification failed", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    "scip-go installation failed: verification failed",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error("scip-go installation failed: timeout", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                "scip-go installation failed: timeout",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
         except Exception as e:
-            logger.error(f"scip-go installation failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"scip-go installation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False

@@ -8,8 +8,9 @@ Provides consistent error response formatting across all endpoints.
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Tuple, Union, cast
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError as PydanticValidationError
 
 from ..models.error_models import (
@@ -87,7 +88,7 @@ def humanize_validation_message(pydantic_error: Dict[str, Any]) -> str:
 
 
 def create_validation_error_response(
-    validation_error: PydanticValidationError,
+    validation_error: Union[PydanticValidationError, RequestValidationError],
     sanitizer,
     correlation_id: str,
     timestamp: datetime,
@@ -112,7 +113,7 @@ def create_validation_error_response(
 
     for pydantic_error in error_details:
         # Handle location path - RequestValidationError includes 'body' in path
-        loc_path = pydantic_error.get("loc", [])
+        loc_path: Tuple[Union[str, int], ...] = pydantic_error.get("loc", ())
         if loc_path and loc_path[0] == "body":
             # Remove 'body' from path for cleaner field names
             field_path = ".".join(str(loc) for loc in loc_path[1:])
@@ -125,7 +126,7 @@ def create_validation_error_response(
 
         field_error = ValidationFieldError(
             field=field_path,
-            message=humanize_validation_message(pydantic_error),
+            message=humanize_validation_message(cast(Dict[str, Any], pydantic_error)),
             rejected_value=sanitized_value,
             error_type=pydantic_error["type"],
         )

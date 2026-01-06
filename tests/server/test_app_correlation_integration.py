@@ -79,8 +79,7 @@ def test_app(test_logger):
         """Simple endpoint that logs with correlation ID."""
         correlation_id = get_correlation_id()
         test_logger.info(
-            "Simple endpoint called",
-            extra={"correlation_id": correlation_id}
+            "Simple endpoint called", extra={"correlation_id": correlation_id}
         )
         return {"status": "ok", "correlation_id": correlation_id}
 
@@ -89,8 +88,7 @@ def test_app(test_logger):
         """Endpoint that logs an error with correlation ID."""
         correlation_id = get_correlation_id()
         test_logger.error(
-            "Test error occurred",
-            extra={"correlation_id": correlation_id}
+            "Test error occurred", extra={"correlation_id": correlation_id}
         )
         return {"status": "error", "correlation_id": correlation_id}
 
@@ -100,17 +98,10 @@ def test_app(test_logger):
         correlation_id = get_correlation_id()
 
         # Log multiple times with same correlation ID
-        test_logger.debug(
-            "Debug log entry",
-            extra={"correlation_id": correlation_id}
-        )
-        test_logger.info(
-            "Info log entry",
-            extra={"correlation_id": correlation_id}
-        )
+        test_logger.debug("Debug log entry", extra={"correlation_id": correlation_id})
+        test_logger.info("Info log entry", extra={"correlation_id": correlation_id})
         test_logger.warning(
-            "Warning log entry",
-            extra={"correlation_id": correlation_id}
+            "Warning log entry", extra={"correlation_id": correlation_id}
         )
 
         return {"status": "ok", "correlation_id": correlation_id}
@@ -122,24 +113,21 @@ def test_app(test_logger):
         async def level_3():
             correlation_id = get_correlation_id()
             test_logger.info(
-                "Level 3 function",
-                extra={"correlation_id": correlation_id}
+                "Level 3 function", extra={"correlation_id": correlation_id}
             )
             return correlation_id
 
         async def level_2():
             correlation_id = get_correlation_id()
             test_logger.info(
-                "Level 2 function",
-                extra={"correlation_id": correlation_id}
+                "Level 2 function", extra={"correlation_id": correlation_id}
             )
             return await level_3()
 
         async def level_1():
             correlation_id = get_correlation_id()
             test_logger.info(
-                "Level 1 function",
-                extra={"correlation_id": correlation_id}
+                "Level 1 function", extra={"correlation_id": correlation_id}
             )
             return await level_2()
 
@@ -157,7 +145,7 @@ def test_app(test_logger):
             task_correlation_id = get_correlation_id()
             test_logger.info(
                 f"Async task {task_id} completed",
-                extra={"correlation_id": task_correlation_id, "task_id": task_id}
+                extra={"correlation_id": task_correlation_id, "task_id": task_id},
             )
             return task_correlation_id
 
@@ -189,17 +177,14 @@ def client(test_app):
 class TestCorrelationIDSearchability:
     """Test that log entries with correlation IDs can be searched via LogAggregatorService (AC6)."""
 
-    def test_search_logs_by_correlation_id_single_entry(
-        self, client, log_aggregator
-    ):
+    def test_search_logs_by_correlation_id_single_entry(self, client, log_aggregator):
         """Test searching for a single log entry by correlation ID."""
         # Arrange: Create a request with specific correlation ID
         test_correlation_id = str(uuid.uuid4())
 
         # Act: Make request with correlation ID
         response = client.get(
-            "/test/simple",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/simple", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Assert: Request succeeded
@@ -211,24 +196,23 @@ class TestCorrelationIDSearchability:
 
         # Assert: Log entry found with correct correlation ID
         assert "logs" in result, "Expected 'logs' key in query result"
-        assert len(result["logs"]) == 1, f"Expected 1 log entry, got {len(result['logs'])}"
+        assert (
+            len(result["logs"]) == 1
+        ), f"Expected 1 log entry, got {len(result['logs'])}"
 
         log_entry = result["logs"][0]
         assert log_entry["correlation_id"] == test_correlation_id
         assert "Simple endpoint called" in log_entry["message"]
         assert log_entry["level"] == "INFO"
 
-    def test_search_logs_by_correlation_id_error_entry(
-        self, client, log_aggregator
-    ):
+    def test_search_logs_by_correlation_id_error_entry(self, client, log_aggregator):
         """Test searching for error log entry by correlation ID."""
         # Arrange: Create a request with specific correlation ID
         test_correlation_id = str(uuid.uuid4())
 
         # Act: Make request to error endpoint
         response = client.get(
-            "/test/error",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/error", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Assert: Request succeeded
@@ -254,8 +238,7 @@ class TestCorrelationIDSearchability:
 
         # Act: Make request to endpoint that creates multiple logs
         response = client.get(
-            "/test/multiple-logs",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/multiple-logs", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Assert: Request succeeded
@@ -265,7 +248,9 @@ class TestCorrelationIDSearchability:
         result = log_aggregator.query(correlation_id=test_correlation_id)
 
         # Assert: All log entries found with same correlation ID
-        assert len(result["logs"]) == 3, f"Expected 3 log entries, got {len(result['logs'])}"
+        assert (
+            len(result["logs"]) == 3
+        ), f"Expected 3 log entries, got {len(result['logs'])}"
 
         # Verify all entries have the same correlation ID
         for log_entry in result["logs"]:
@@ -331,8 +316,7 @@ class TestCorrelationIDConsistency:
 
         # Act: Make request that creates multiple log entries
         response = client.get(
-            "/test/multiple-logs",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/multiple-logs", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Assert: Request succeeded
@@ -355,8 +339,7 @@ class TestCorrelationIDConsistency:
 
         # Act: Make request to nested calls endpoint
         response = client.get(
-            "/test/nested-calls",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/nested-calls", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Assert: Request succeeded
@@ -387,8 +370,7 @@ class TestCorrelationIDConsistency:
 
         # Act: Make request that spawns parallel async tasks
         response = client.get(
-            "/test/parallel-async",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/parallel-async", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Assert: Request succeeded
@@ -398,8 +380,7 @@ class TestCorrelationIDConsistency:
 
         # All parallel tasks should have the SAME correlation ID
         assert all(
-            cid == test_correlation_id
-            for cid in response_data["task_correlation_ids"]
+            cid == test_correlation_id for cid in response_data["task_correlation_ids"]
         ), "Parallel async tasks should preserve correlation ID"
 
         # Act: Retrieve logs for this correlation ID
@@ -458,8 +439,7 @@ class TestCorrelationIDConsistency:
 
         # Act: Make request
         response = client.get(
-            "/test/simple",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/simple", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Assert: Response has correlation ID header
@@ -482,9 +462,7 @@ class TestCorrelationIDConsistency:
 class TestCorrelationIDEdgeCases:
     """Test edge cases and error scenarios for correlation ID handling."""
 
-    def test_auto_generated_correlation_id_is_valid_uuid(
-        self, client, log_aggregator
-    ):
+    def test_auto_generated_correlation_id_is_valid_uuid(self, client, log_aggregator):
         """Test that auto-generated correlation IDs are valid UUIDs."""
         # Act: Make request without correlation ID header (auto-generate)
         response = client.get("/test/simple")
@@ -498,7 +476,9 @@ class TestCorrelationIDEdgeCases:
             parsed_uuid = uuid.UUID(correlation_id, version=4)
             assert str(parsed_uuid) == correlation_id
         except ValueError:
-            pytest.fail(f"Auto-generated correlation ID '{correlation_id}' is not a valid UUID")
+            pytest.fail(
+                f"Auto-generated correlation ID '{correlation_id}' is not a valid UUID"
+            )
 
         # Act: Verify it's searchable
         result = log_aggregator.query(correlation_id=correlation_id)
@@ -507,17 +487,14 @@ class TestCorrelationIDEdgeCases:
         assert len(result["logs"]) == 1
         assert result["logs"][0]["correlation_id"] == correlation_id
 
-    def test_custom_correlation_id_format_preserved(
-        self, client, log_aggregator
-    ):
+    def test_custom_correlation_id_format_preserved(self, client, log_aggregator):
         """Test that custom correlation ID format is preserved (not just UUID)."""
         # Arrange: Use custom format correlation ID (not UUID)
         custom_correlation_id = "custom-trace-2025-01-02-abc123"
 
         # Act: Make request with custom correlation ID
         response = client.get(
-            "/test/simple",
-            headers={"X-Correlation-ID": custom_correlation_id}
+            "/test/simple", headers={"X-Correlation-ID": custom_correlation_id}
         )
 
         # Assert: Custom correlation ID preserved in response
@@ -531,24 +508,19 @@ class TestCorrelationIDEdgeCases:
         assert len(result["logs"]) == 1
         assert result["logs"][0]["correlation_id"] == custom_correlation_id
 
-    def test_correlation_id_pagination_with_filter(
-        self, client, log_aggregator
-    ):
+    def test_correlation_id_pagination_with_filter(self, client, log_aggregator):
         """Test that correlation ID filter works with pagination."""
         # Arrange: Create multiple log entries with same correlation ID
         test_correlation_id = str(uuid.uuid4())
 
         # Act: Make request that creates multiple logs
         client.get(
-            "/test/multiple-logs",
-            headers={"X-Correlation-ID": test_correlation_id}
+            "/test/multiple-logs", headers={"X-Correlation-ID": test_correlation_id}
         )
 
         # Act: Query with small page size
         result = log_aggregator.query(
-            correlation_id=test_correlation_id,
-            page=1,
-            page_size=2
+            correlation_id=test_correlation_id, page=1, page_size=2
         )
 
         # Assert: Pagination works with correlation ID filter

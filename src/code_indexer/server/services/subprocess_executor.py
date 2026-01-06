@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Subprocess Executor Service for async command execution with timeout protection.
 
 Provides non-blocking subprocess execution with file-based output to prevent
 memory exhaustion and FastAPI event loop blocking.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import asyncio
 import logging
@@ -106,7 +107,10 @@ class SubprocessExecutor:
 
         except asyncio.TimeoutError:
             # Asyncio timeout exceeded (should not happen if subprocess timeout works)
-            logger.warning(f"Asyncio timeout exceeded for command: {' '.join(command)}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Asyncio timeout exceeded for command: {' '.join(command)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return SearchExecutionResult(
                 status=ExecutionStatus.TIMEOUT,
                 output_file=output_file_path,
@@ -116,7 +120,11 @@ class SubprocessExecutor:
             )
 
         except Exception as e:
-            logger.error(f"Unexpected error executing command: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Unexpected error executing command: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return SearchExecutionResult(
                 status=ExecutionStatus.ERROR,
                 output_file=output_file_path,
@@ -181,15 +189,19 @@ class SubprocessExecutor:
                 except subprocess.TimeoutExpired:
                     # Timeout exceeded - terminate process
                     logger.warning(
-                        f"Command timed out after {timeout_seconds}s: {' '.join(command)}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Command timed out after {timeout_seconds}s: {' '.join(command)}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
                     # Terminate process
                     process.kill()
                     try:
                         process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
-                        logger.error("Failed to kill timed out process", extra={"correlation_id": get_correlation_id()})
+                        logger.error(
+                            "Failed to kill timed out process",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
 
                     # Partial output already written to file
                     return SearchExecutionResult(
@@ -208,7 +220,11 @@ class SubprocessExecutor:
             )
 
         except Exception as e:
-            logger.error(f"Error running subprocess: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error running subprocess: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return SearchExecutionResult(
                 status=ExecutionStatus.ERROR,
                 output_file=output_file_path,
@@ -231,4 +247,7 @@ class SubprocessExecutor:
             # Fallback for older Python versions
             self._executor.shutdown(wait=wait)
 
-        logger.info("SubprocessExecutor shutdown complete", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "SubprocessExecutor shutdown complete",
+            extra={"correlation_id": get_correlation_id()},
+        )

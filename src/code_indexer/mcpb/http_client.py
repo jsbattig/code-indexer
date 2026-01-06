@@ -52,7 +52,7 @@ class BridgeHttpClient:
         self.timeout = timeout
         self.refresh_token = refresh_token
         self.config_path = config_path
-        self._client = None
+        self._client: Optional[httpx.AsyncClient] = None
         self._refresh_lock: Optional[asyncio.Lock] = None
 
     def get_mcp_endpoint_url(self) -> str:

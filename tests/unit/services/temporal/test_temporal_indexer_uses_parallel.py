@@ -45,7 +45,6 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
                 "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
             ) as mock_vector_manager_class,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",

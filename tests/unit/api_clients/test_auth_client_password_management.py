@@ -398,7 +398,6 @@ class TestPasswordSecurityHandling:
             with patch.object(
                 self.client, "_store_credentials_securely", new_callable=AsyncMock
             ):
-
                 await self.client.change_password("old_pass", "new_pass")
 
                 # Verify correct payload structure

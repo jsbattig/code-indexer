@@ -115,8 +115,10 @@ class TestBuildGrepCommand:
     def grep_service(self, test_repo):
         """Create service with grep engine."""
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_side_effect
             return RegexSearchService(test_repo)
 
@@ -131,10 +133,12 @@ class TestBuildGrepCommand:
             case_sensitive=True,
             context_lines=0,
             recursive=False,
-            file_list=["single_file.py"]
+            file_list=["single_file.py"],
         )
 
-        assert "-H" in cmd, "Grep command must include -H flag for consistent filename output"
+        assert (
+            "-H" in cmd
+        ), "Grep command must include -H flag for consistent filename output"
         assert cmd.index("-H") < cmd.index("test"), "-H flag must appear before pattern"
 
     def test_h_flag_present_with_single_file(self, grep_service):
@@ -144,7 +148,7 @@ class TestBuildGrepCommand:
             case_sensitive=True,
             context_lines=0,
             recursive=False,
-            file_list=["one_file.txt"]
+            file_list=["one_file.txt"],
         )
 
         assert "-H" in cmd, "Must include -H flag for single file"
@@ -156,7 +160,7 @@ class TestBuildGrepCommand:
             case_sensitive=True,
             context_lines=0,
             recursive=False,
-            file_list=["file1.txt", "file2.txt", "file3.txt"]
+            file_list=["file1.txt", "file2.txt", "file3.txt"],
         )
 
         assert "-H" in cmd, "Must include -H flag for multiple files"
@@ -168,7 +172,7 @@ class TestBuildGrepCommand:
             case_sensitive=True,
             context_lines=0,
             recursive=True,
-            file_list=None
+            file_list=None,
         )
 
         assert "-H" in cmd, "Must include -H flag in recursive mode"
@@ -184,7 +188,9 @@ class TestErrorHandling:
             mock_which.return_value = "/usr/bin/rg"
             return RegexSearchService(test_repo)
 
-    @pytest.mark.skip(reason="Requires complex mocking of SubprocessExecutor - integration test covers this")
+    @pytest.mark.skip(
+        reason="Requires complex mocking of SubprocessExecutor - integration test covers this"
+    )
     @pytest.mark.asyncio
     async def test_handles_no_matches_gracefully(self, ripgrep_service):
         """Test handles no matches without error."""
@@ -194,7 +200,9 @@ class TestErrorHandling:
         assert result.total_matches == 0
         assert result.truncated is False
 
-    @pytest.mark.skip(reason="Requires complex mocking of SubprocessExecutor - integration test covers this")
+    @pytest.mark.skip(
+        reason="Requires complex mocking of SubprocessExecutor - integration test covers this"
+    )
     @pytest.mark.asyncio
     async def test_handles_malformed_json_line(self, ripgrep_service, test_repo):
         """Test handles malformed JSON gracefully."""
@@ -254,77 +262,95 @@ class TestGrepPathBasedIncludePatterns:
     def grep_service(self, test_repo_with_structure):
         """Create service with grep engine."""
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_side_effect
             yield RegexSearchService(test_repo_with_structure)
 
     @pytest.mark.asyncio
-    async def test_grep_handles_path_based_include_patterns(self, grep_service, test_repo_with_structure):
+    async def test_grep_handles_path_based_include_patterns(
+        self, grep_service, test_repo_with_structure
+    ):
         """Test grep backend correctly handles path-based include patterns like **/widgets/*.java."""
         # This test SHOULD pass after fix: grep backend should find files in widgets/ directory
         result = await grep_service.search(
-            pattern="class",
-            include_patterns=["**/widgets/*.java"]
+            pattern="class", include_patterns=["**/widgets/*.java"]
         )
 
         # Should find Button.java and Label.java in src/widgets/
-        assert result.total_matches >= 2, "Should find at least 2 matches in widgets directory"
+        assert (
+            result.total_matches >= 2
+        ), "Should find at least 2 matches in widgets directory"
         matched_files = {match.file_path for match in result.matches}
-        assert any("widgets" in f and "Button.java" in f for f in matched_files), \
-            "Should match Button.java in widgets directory"
-        assert any("widgets" in f and "Label.java" in f for f in matched_files), \
-            "Should match Label.java in widgets directory"
+        assert any(
+            "widgets" in f and "Button.java" in f for f in matched_files
+        ), "Should match Button.java in widgets directory"
+        assert any(
+            "widgets" in f and "Label.java" in f for f in matched_files
+        ), "Should match Label.java in widgets directory"
 
         # Should NOT find Helper.java or Main.java
-        assert not any("Helper.java" in f for f in matched_files), \
-            "Should not match Helper.java outside widgets directory"
-        assert not any("Main.java" in f for f in matched_files), \
-            "Should not match Main.java at root"
+        assert not any(
+            "Helper.java" in f for f in matched_files
+        ), "Should not match Helper.java outside widgets directory"
+        assert not any(
+            "Main.java" in f for f in matched_files
+        ), "Should not match Main.java at root"
 
     @pytest.mark.asyncio
-    async def test_grep_handles_multiple_path_patterns(self, grep_service, test_repo_with_structure):
+    async def test_grep_handles_multiple_path_patterns(
+        self, grep_service, test_repo_with_structure
+    ):
         """Test grep backend handles multiple path-based patterns."""
         result = await grep_service.search(
-            pattern="class",
-            include_patterns=["**/widgets/*.java", "**/utils/*.java"]
+            pattern="class", include_patterns=["**/widgets/*.java", "**/utils/*.java"]
         )
 
         # Should find files in both widgets/ and utils/ directories
         matched_files = {match.file_path for match in result.matches}
-        assert any("widgets" in f for f in matched_files), "Should match widgets directory"
+        assert any(
+            "widgets" in f for f in matched_files
+        ), "Should match widgets directory"
         assert any("utils" in f for f in matched_files), "Should match utils directory"
-        assert not any(f.endswith("Main.java") for f in matched_files), \
-            "Should not match root-level files"
+        assert not any(
+            f.endswith("Main.java") for f in matched_files
+        ), "Should not match root-level files"
 
     @pytest.mark.asyncio
-    async def test_grep_handles_simple_filename_patterns(self, grep_service, test_repo_with_structure):
+    async def test_grep_handles_simple_filename_patterns(
+        self, grep_service, test_repo_with_structure
+    ):
         """Test grep backend still handles simple filename patterns correctly."""
         # Simple filename pattern without path separators should work as before
-        result = await grep_service.search(
-            pattern="class",
-            include_patterns=["*.java"]
-        )
+        result = await grep_service.search(pattern="class", include_patterns=["*.java"])
 
         # Should find all .java files
         assert result.total_matches >= 4, "Should find all 4 .java files"
 
     @pytest.mark.asyncio
-    async def test_grep_mixed_path_and_filename_patterns(self, grep_service, test_repo_with_structure):
+    async def test_grep_mixed_path_and_filename_patterns(
+        self, grep_service, test_repo_with_structure
+    ):
         """Test grep backend handles mixed path-based and simple filename patterns."""
         # Mix of path-based pattern and simple filename pattern
         result = await grep_service.search(
-            pattern="class",
-            include_patterns=["**/widgets/*.java", "Main.java"]
+            pattern="class", include_patterns=["**/widgets/*.java", "Main.java"]
         )
 
         # Should find widgets files AND Main.java at root
         matched_files = {match.file_path for match in result.matches}
-        assert any("widgets" in f for f in matched_files), "Should match widgets directory"
-        assert any(f.endswith("Main.java") for f in matched_files), "Should match Main.java"
+        assert any(
+            "widgets" in f for f in matched_files
+        ), "Should match widgets directory"
+        assert any(
+            f.endswith("Main.java") for f in matched_files
+        ), "Should match Main.java"
         # Should NOT find Helper.java (not in patterns)
-        assert not any("Helper.java" in f for f in matched_files), \
-            "Should not match Helper.java (not in patterns)"
+        assert not any(
+            "Helper.java" in f for f in matched_files
+        ), "Should not match Helper.java (not in patterns)"
 
 
 class TestFindFilesDoubleStarPattern:
@@ -343,8 +369,15 @@ class TestFindFilesDoubleStarPattern:
         # Create structure: v_*/code/src/dms/client/system/desktop/widgets/SalesGoalsWidget.java
         for version in ["v_1766032745", "v_1766034456", "v_1766035123", "v_1766036789"]:
             widget_path = (
-                repo_path / version / "code" / "src" / "dms" / "client" /
-                "system" / "desktop" / "widgets"
+                repo_path
+                / version
+                / "code"
+                / "src"
+                / "dms"
+                / "client"
+                / "system"
+                / "desktop"
+                / "widgets"
             )
             widget_path.mkdir(parents=True)
             (widget_path / "SalesGoalsWidget.java").write_text(
@@ -362,8 +395,10 @@ class TestFindFilesDoubleStarPattern:
     def grep_service_deep(self, deep_repo_structure):
         """Create grep service for deep structure testing."""
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_side_effect
             yield RegexSearchService(deep_repo_structure)
 
@@ -380,8 +415,7 @@ class TestFindFilesDoubleStarPattern:
         Actual: 0 matches (BUG)
         """
         result = await grep_service_deep.search(
-            pattern="class",
-            include_patterns=["**/SalesGoalsWidget.java"]
+            pattern="class", include_patterns=["**/SalesGoalsWidget.java"]
         )
 
         # Should find all 4 SalesGoalsWidget.java files across different versions
@@ -395,14 +429,13 @@ class TestFindFilesDoubleStarPattern:
         # Verify each version's widget file was found
         for version in ["v_1766032745", "v_1766034456", "v_1766035123", "v_1766036789"]:
             assert any(
-                version in f and "SalesGoalsWidget.java" in f
-                for f in matched_files
+                version in f and "SalesGoalsWidget.java" in f for f in matched_files
             ), f"Should find SalesGoalsWidget.java in {version}"
 
         # Should NOT find Main.java
-        assert not any("Main.java" in f for f in matched_files), (
-            "Should not match Main.java (different filename)"
-        )
+        assert not any(
+            "Main.java" in f for f in matched_files
+        ), "Should not match Main.java (different filename)"
 
     @pytest.mark.asyncio
     async def test_simple_filename_pattern_works_correctly(
@@ -414,14 +447,13 @@ class TestFindFilesDoubleStarPattern:
         This provides evidence that the bug is specific to **/ prefix.
         """
         result = await grep_service_deep.search(
-            pattern="class",
-            include_patterns=["SalesGoalsWidget.java"]
+            pattern="class", include_patterns=["SalesGoalsWidget.java"]
         )
 
         # Simple pattern should find at least 1 match (current behavior)
-        assert result.total_matches >= 1, (
-            "Simple pattern SalesGoalsWidget.java should find at least 1 match"
-        )
+        assert (
+            result.total_matches >= 1
+        ), "Simple pattern SalesGoalsWidget.java should find at least 1 match"
 
     @pytest.mark.asyncio
     async def test_double_star_directory_pattern_works_correctly(
@@ -433,14 +465,13 @@ class TestFindFilesDoubleStarPattern:
         This confirms the bug is specific to **/filename.ext (no directory).
         """
         result = await grep_service_deep.search(
-            pattern="class",
-            include_patterns=["**/widgets/*.java"]
+            pattern="class", include_patterns=["**/widgets/*.java"]
         )
 
         # Should find all 4 widget files
-        assert result.total_matches >= 4, (
-            "Pattern **/widgets/*.java should find at least 4 matches"
-        )
+        assert (
+            result.total_matches >= 4
+        ), "Pattern **/widgets/*.java should find at least 4 matches"
 
     @pytest.fixture
     def ripgrep_service_deep(self, deep_repo_structure):
@@ -468,8 +499,7 @@ class TestFindFilesDoubleStarPattern:
         passes because it matches 4 files, and grep outputs filenames for multiple files.
         """
         result = await grep_service_deep.search(
-            pattern="class",
-            include_patterns=["**/Main.java"]
+            pattern="class", include_patterns=["**/Main.java"]
         )
 
         # BUG: This returns 0 matches because Main.java exists in only 1 version directory
@@ -480,14 +510,14 @@ class TestFindFilesDoubleStarPattern:
         )
 
         matched_files = {match.file_path for match in result.matches}
-        assert any("Main.java" in f for f in matched_files), (
-            "Should find Main.java in v_1766032745"
-        )
+        assert any(
+            "Main.java" in f for f in matched_files
+        ), "Should find Main.java in v_1766032745"
 
     @pytest.mark.asyncio
     @pytest.mark.skipif(
         not shutil.which("rg"),
-        reason="ripgrep (rg) not available in PATH - test requires standalone rg binary"
+        reason="ripgrep (rg) not available in PATH - test requires standalone rg binary",
     )
     async def test_double_star_filename_pattern_ripgrep(
         self, ripgrep_service_deep, deep_repo_structure
@@ -502,8 +532,7 @@ class TestFindFilesDoubleStarPattern:
         coverage for the pattern matching logic.
         """
         result = await ripgrep_service_deep.search(
-            pattern="class",
-            include_patterns=["**/SalesGoalsWidget.java"]
+            pattern="class", include_patterns=["**/SalesGoalsWidget.java"]
         )
 
         # Should find all 4 SalesGoalsWidget.java files
@@ -517,8 +546,7 @@ class TestFindFilesDoubleStarPattern:
         # Verify each version's widget file was found
         for version in ["v_1766032745", "v_1766034456", "v_1766035123", "v_1766036789"]:
             assert any(
-                version in f and "SalesGoalsWidget.java" in f
-                for f in matched_files
+                version in f and "SalesGoalsWidget.java" in f for f in matched_files
             ), f"Ripgrep should find SalesGoalsWidget.java in {version}"
 
 
@@ -538,15 +566,21 @@ class TestGlobPatternParity:
         # Create nested structure: code/src/dms/client/widgets/SalesGoalsWidget.java
         widget_path = repo_path / "code" / "src" / "dms" / "client" / "widgets"
         widget_path.mkdir(parents=True)
-        (widget_path / "SalesGoalsWidget.java").write_text("class SalesGoalsWidget { void render() {} }")
+        (widget_path / "SalesGoalsWidget.java").write_text(
+            "class SalesGoalsWidget { void render() {} }"
+        )
 
         # Create explicit path file: code/src/Main.java
-        (repo_path / "code" / "src" / "Main.java").write_text("class Main { void main() {} }")
+        (repo_path / "code" / "src" / "Main.java").write_text(
+            "class Main { void main() {} }"
+        )
 
         # Create another nested file: code/tests/TestHelper.java
         test_path = repo_path / "code" / "tests"
         test_path.mkdir(parents=True)
-        (test_path / "TestHelper.java").write_text("class TestHelper { void help() {} }")
+        (test_path / "TestHelper.java").write_text(
+            "class TestHelper { void help() {} }"
+        )
 
         return repo_path
 
@@ -554,8 +588,10 @@ class TestGlobPatternParity:
     def grep_service_glob(self, glob_test_repo):
         """Create grep service for glob pattern testing."""
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_side_effect
             yield RegexSearchService(glob_test_repo)
 
@@ -569,8 +605,7 @@ class TestGlobPatternParity:
         CURRENT BUG: find -path doesn't expand ** in middle of path correctly.
         """
         result = await grep_service_glob.search(
-            pattern="class",
-            include_patterns=["code/**/SalesGoalsWidget.java"]
+            pattern="class", include_patterns=["code/**/SalesGoalsWidget.java"]
         )
 
         # Should find SalesGoalsWidget.java under code/ at any depth
@@ -581,22 +616,18 @@ class TestGlobPatternParity:
 
         matched_files = {match.file_path for match in result.matches}
         assert any(
-            "SalesGoalsWidget.java" in f and "code" in f
-            for f in matched_files
+            "SalesGoalsWidget.java" in f and "code" in f for f in matched_files
         ), "Should find code/src/dms/client/widgets/SalesGoalsWidget.java"
 
     @pytest.mark.asyncio
-    async def test_glob_pattern_explicit_path(
-        self, grep_service_glob, glob_test_repo
-    ):
+    async def test_glob_pattern_explicit_path(self, grep_service_glob, glob_test_repo):
         """Test explicit path pattern: code/src/Main.java
 
         REQUIREMENT: Explicit path patterns must work like ripgrep -g.
         CURRENT BUG: find -path requires ./ prefix and doesn't match explicit paths.
         """
         result = await grep_service_glob.search(
-            pattern="class",
-            include_patterns=["code/src/Main.java"]
+            pattern="class", include_patterns=["code/src/Main.java"]
         )
 
         # Should find exact file at code/src/Main.java
@@ -607,8 +638,7 @@ class TestGlobPatternParity:
 
         matched_files = {match.file_path for match in result.matches}
         assert any(
-            "Main.java" in f and "code/src" in f
-            for f in matched_files
+            "Main.java" in f and "code/src" in f for f in matched_files
         ), "Should find code/src/Main.java"
 
     @pytest.mark.asyncio
@@ -623,23 +653,26 @@ class TestGlobPatternParity:
             pattern="class",
             include_patterns=[
                 "code/**/SalesGoalsWidget.java",  # ** in middle
-                "code/src/Main.java",              # Explicit path
-                "**/TestHelper.java"               # ** at start
-            ]
+                "code/src/Main.java",  # Explicit path
+                "**/TestHelper.java",  # ** at start
+            ],
         )
 
         # Should find all 3 files
-        assert result.total_matches == 3, (
-            f"Mixed patterns should find 3 matches, got {result.total_matches}"
-        )
+        assert (
+            result.total_matches == 3
+        ), f"Mixed patterns should find 3 matches, got {result.total_matches}"
 
         matched_files = {match.file_path for match in result.matches}
-        assert any("SalesGoalsWidget.java" in f for f in matched_files), \
-            "Should find SalesGoalsWidget.java via code/**/pattern"
-        assert any("Main.java" in f for f in matched_files), \
-            "Should find Main.java via explicit path"
-        assert any("TestHelper.java" in f for f in matched_files), \
-            "Should find TestHelper.java via **/pattern"
+        assert any(
+            "SalesGoalsWidget.java" in f for f in matched_files
+        ), "Should find SalesGoalsWidget.java via code/**/pattern"
+        assert any(
+            "Main.java" in f for f in matched_files
+        ), "Should find Main.java via explicit path"
+        assert any(
+            "TestHelper.java" in f for f in matched_files
+        ), "Should find TestHelper.java via **/pattern"
 
 
 class TestGrepContextLines:
@@ -665,13 +698,17 @@ class TestGrepContextLines:
     def grep_service_context(self, context_test_repo):
         """Create grep service for context line testing."""
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_side_effect
             yield RegexSearchService(context_test_repo)
 
     @pytest.mark.asyncio
-    async def test_grep_context_lines_basic(self, grep_service_context, context_test_repo):
+    async def test_grep_context_lines_basic(
+        self, grep_service_context, context_test_repo
+    ):
         """Test basic context line capture with 2 lines before and after match.
 
         BUG REPRODUCTION: Currently returns empty context_before=[] and context_after=[].
@@ -679,7 +716,9 @@ class TestGrepContextLines:
         """
         # Create test file with 7 lines, match will be on line 4
         test_file = context_test_repo / "test.py"
-        test_file.write_text("line 1\nline 2\nline 3\nMATCH line 4\nline 5\nline 6\nline 7\n")
+        test_file.write_text(
+            "line 1\nline 2\nline 3\nMATCH line 4\nline 5\nline 6\nline 7\n"
+        )
 
         result = await grep_service_context.search(
             pattern="MATCH",
@@ -687,20 +726,30 @@ class TestGrepContextLines:
         )
 
         # Should find 1 match
-        assert result.total_matches == 1, f"Expected 1 match, got {result.total_matches}"
-        assert len(result.matches) == 1, f"Expected 1 match object, got {len(result.matches)}"
+        assert (
+            result.total_matches == 1
+        ), f"Expected 1 match, got {result.total_matches}"
+        assert (
+            len(result.matches) == 1
+        ), f"Expected 1 match object, got {len(result.matches)}"
 
         match = result.matches[0]
         assert match.line_number == 4, f"Expected line 4, got {match.line_number}"
 
         # BUG: These assertions will FAIL with current implementation
-        assert match.context_before == ["line 2", "line 3"], \
-            f"Expected context_before=['line 2', 'line 3'], got {match.context_before}"
-        assert match.context_after == ["line 5", "line 6"], \
-            f"Expected context_after=['line 5', 'line 6'], got {match.context_after}"
+        assert match.context_before == [
+            "line 2",
+            "line 3",
+        ], f"Expected context_before=['line 2', 'line 3'], got {match.context_before}"
+        assert match.context_after == [
+            "line 5",
+            "line 6",
+        ], f"Expected context_after=['line 5', 'line 6'], got {match.context_after}"
 
     @pytest.mark.asyncio
-    async def test_grep_context_lines_multiple_matches(self, grep_service_context, context_test_repo):
+    async def test_grep_context_lines_multiple_matches(
+        self, grep_service_context, context_test_repo
+    ):
         """Test context lines with multiple matches in same file.
 
         BUG REPRODUCTION: Both matches return empty context arrays.
@@ -725,27 +774,37 @@ class TestGrepContextLines:
         )
 
         # Should find 2 matches
-        assert result.total_matches == 2, f"Expected 2 matches, got {result.total_matches}"
-        assert len(result.matches) == 2, f"Expected 2 match objects, got {len(result.matches)}"
+        assert (
+            result.total_matches == 2
+        ), f"Expected 2 matches, got {result.total_matches}"
+        assert (
+            len(result.matches) == 2
+        ), f"Expected 2 match objects, got {len(result.matches)}"
 
         # First match (line 3)
         match1 = result.matches[0]
         assert match1.line_number == 3, f"Expected line 3, got {match1.line_number}"
-        assert match1.context_before == ["line 2"], \
-            f"Expected context_before=['line 2'], got {match1.context_before}"
-        assert match1.context_after == ["line 4"], \
-            f"Expected context_after=['line 4'], got {match1.context_after}"
+        assert match1.context_before == [
+            "line 2"
+        ], f"Expected context_before=['line 2'], got {match1.context_before}"
+        assert match1.context_after == [
+            "line 4"
+        ], f"Expected context_after=['line 4'], got {match1.context_after}"
 
         # Second match (line 7)
         match2 = result.matches[1]
         assert match2.line_number == 7, f"Expected line 7, got {match2.line_number}"
-        assert match2.context_before == ["line 6"], \
-            f"Expected context_before=['line 6'], got {match2.context_before}"
-        assert match2.context_after == ["line 8"], \
-            f"Expected context_after=['line 8'], got {match2.context_after}"
+        assert match2.context_before == [
+            "line 6"
+        ], f"Expected context_before=['line 6'], got {match2.context_before}"
+        assert match2.context_after == [
+            "line 8"
+        ], f"Expected context_after=['line 8'], got {match2.context_after}"
 
     @pytest.mark.asyncio
-    async def test_grep_context_lines_file_boundaries(self, grep_service_context, context_test_repo):
+    async def test_grep_context_lines_file_boundaries(
+        self, grep_service_context, context_test_repo
+    ):
         """Test context lines at file boundaries (start and end of file).
 
         BUG REPRODUCTION: Returns empty context arrays at boundaries.
@@ -766,27 +825,37 @@ class TestGrepContextLines:
         )
 
         # Should find 2 matches
-        assert result.total_matches == 2, f"Expected 2 matches, got {result.total_matches}"
-        assert len(result.matches) == 2, f"Expected 2 match objects, got {len(result.matches)}"
+        assert (
+            result.total_matches == 2
+        ), f"Expected 2 matches, got {result.total_matches}"
+        assert (
+            len(result.matches) == 2
+        ), f"Expected 2 match objects, got {len(result.matches)}"
 
         # First match (line 1) - no context before
         match1 = result.matches[0]
         assert match1.line_number == 1, f"Expected line 1, got {match1.line_number}"
-        assert match1.context_before == [], \
-            f"Expected empty context_before at file start, got {match1.context_before}"
-        assert match1.context_after == ["line 2"], \
-            f"Expected context_after=['line 2'], got {match1.context_after}"
+        assert (
+            match1.context_before == []
+        ), f"Expected empty context_before at file start, got {match1.context_before}"
+        assert match1.context_after == [
+            "line 2"
+        ], f"Expected context_after=['line 2'], got {match1.context_after}"
 
         # Second match (line 4) - no context after (last line)
         match2 = result.matches[1]
         assert match2.line_number == 4, f"Expected line 4, got {match2.line_number}"
-        assert match2.context_before == ["line 3"], \
-            f"Expected context_before=['line 3'], got {match2.context_before}"
-        assert match2.context_after == [], \
-            f"Expected empty context_after at file end, got {match2.context_after}"
+        assert match2.context_before == [
+            "line 3"
+        ], f"Expected context_before=['line 3'], got {match2.context_before}"
+        assert (
+            match2.context_after == []
+        ), f"Expected empty context_after at file end, got {match2.context_after}"
 
     @pytest.mark.asyncio
-    async def test_grep_context_lines_zero(self, grep_service_context, context_test_repo):
+    async def test_grep_context_lines_zero(
+        self, grep_service_context, context_test_repo
+    ):
         """Test that context_lines=0 returns empty context arrays.
 
         This should PASS with current implementation (no context requested).
@@ -800,19 +869,25 @@ class TestGrepContextLines:
         )
 
         # Should find 1 match
-        assert result.total_matches == 1, f"Expected 1 match, got {result.total_matches}"
-        assert len(result.matches) == 1, f"Expected 1 match object, got {len(result.matches)}"
+        assert (
+            result.total_matches == 1
+        ), f"Expected 1 match, got {result.total_matches}"
+        assert (
+            len(result.matches) == 1
+        ), f"Expected 1 match object, got {len(result.matches)}"
 
         match = result.matches[0]
-        assert match.context_before == [], \
-            f"Expected empty context_before with context_lines=0, got {match.context_before}"
-        assert match.context_after == [], \
-            f"Expected empty context_after with context_lines=0, got {match.context_after}"
+        assert (
+            match.context_before == []
+        ), f"Expected empty context_before with context_lines=0, got {match.context_before}"
+        assert (
+            match.context_after == []
+        ), f"Expected empty context_after with context_lines=0, got {match.context_after}"
 
     @pytest.mark.asyncio
     @pytest.mark.skipif(
         not shutil.which("rg"),
-        reason="ripgrep (rg) not available - test requires rg for parity check"
+        reason="ripgrep (rg) not available - test requires rg for parity check",
     )
     async def test_context_lines_parity_grep_vs_ripgrep(self, context_test_repo):
         """Test that grep and ripgrep return identical context lines.
@@ -826,8 +901,10 @@ class TestGrepContextLines:
 
         # Create grep service
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_grep(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_grep
             grep_service = RegexSearchService(context_test_repo)
 
@@ -848,10 +925,12 @@ class TestGrepContextLines:
         grep_match = grep_result.matches[0]
         ripgrep_match = ripgrep_result.matches[0]
 
-        assert grep_match.context_before == ripgrep_match.context_before, \
-            f"Context before mismatch: grep={grep_match.context_before}, ripgrep={ripgrep_match.context_before}"
-        assert grep_match.context_after == ripgrep_match.context_after, \
-            f"Context after mismatch: grep={grep_match.context_after}, ripgrep={ripgrep_match.context_after}"
+        assert (
+            grep_match.context_before == ripgrep_match.context_before
+        ), f"Context before mismatch: grep={grep_match.context_before}, ripgrep={ripgrep_match.context_before}"
+        assert (
+            grep_match.context_after == ripgrep_match.context_after
+        ), f"Context after mismatch: grep={grep_match.context_after}, ripgrep={ripgrep_match.context_after}"
 
 
 class TestSubprocessGlobProtections:
@@ -883,13 +962,17 @@ class TestSubprocessGlobProtections:
     def grep_service_large(self, large_repo_structure):
         """Create grep service for large repo testing."""
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_side_effect
             yield RegexSearchService(large_repo_structure)
 
     @pytest.mark.asyncio
-    async def test_find_files_by_patterns_timeout_enforced(self, grep_service_large, large_repo_structure):
+    async def test_find_files_by_patterns_timeout_enforced(
+        self, grep_service_large, large_repo_structure
+    ):
         """Test that glob operations respect timeout and raise TimeoutError.
 
         PROTECTION: Timeout Protection (CRITICAL)
@@ -905,7 +988,9 @@ class TestSubprocessGlobProtections:
             )
 
     @pytest.mark.asyncio
-    async def test_find_files_by_patterns_async_execution(self, grep_service_large, large_repo_structure):
+    async def test_find_files_by_patterns_async_execution(
+        self, grep_service_large, large_repo_structure
+    ):
         """Test that glob doesn't block event loop during execution.
 
         PROTECTION: Async Execution (CRITICAL)
@@ -954,8 +1039,10 @@ class TestSubprocessGlobProtections:
         REQUIREMENT: Subprocess failures must not crash caller
         """
         with patch("code_indexer.global_repos.regex_search.shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 return "/usr/bin/grep" if cmd == "grep" else None
+
             mock_which.side_effect = which_side_effect
             service = RegexSearchService(tmp_path)
 
@@ -978,7 +1065,9 @@ class TestSubprocessGlobProtections:
             assert str(e), "Exception should have meaningful message"
 
     @pytest.mark.asyncio
-    async def test_find_files_by_patterns_large_result_set(self, grep_service_large, large_repo_structure):
+    async def test_find_files_by_patterns_large_result_set(
+        self, grep_service_large, large_repo_structure
+    ):
         """Test that large result sets are handled efficiently.
 
         PROTECTION: Memory Protection (HIGH)
@@ -998,11 +1087,15 @@ class TestSubprocessGlobProtections:
 
         # Verify results are relative paths (not absolute)
         for file_path in result:
-            assert not file_path.startswith("/"), f"Path should be relative: {file_path}"
+            assert not file_path.startswith(
+                "/"
+            ), f"Path should be relative: {file_path}"
             assert file_path.endswith(".py"), f"Path should end with .py: {file_path}"
 
     @pytest.mark.asyncio
-    async def test_find_files_by_patterns_invalid_glob_pattern(self, grep_service_large, large_repo_structure):
+    async def test_find_files_by_patterns_invalid_glob_pattern(
+        self, grep_service_large, large_repo_structure
+    ):
         """Test handling of invalid glob patterns.
 
         PROTECTION: Error Isolation (MEDIUM)
@@ -1025,13 +1118,19 @@ class TestSubprocessGlobProtections:
                     timeout_seconds=5,
                 )
                 # If it succeeds, verify it's a list
-                assert isinstance(result, list), f"Should return list for invalid pattern {pattern}"
+                assert isinstance(
+                    result, list
+                ), f"Should return list for invalid pattern {pattern}"
             except (ValueError, OSError) as e:
                 # Appropriate exceptions are acceptable
-                assert str(e), f"Exception for invalid pattern {pattern} should have message"
+                assert str(
+                    e
+                ), f"Exception for invalid pattern {pattern} should have message"
 
     @pytest.mark.asyncio
-    async def test_find_files_by_patterns_no_matches(self, grep_service_large, large_repo_structure):
+    async def test_find_files_by_patterns_no_matches(
+        self, grep_service_large, large_repo_structure
+    ):
         """Test that patterns with no matches return empty list.
 
         PROTECTION: Error Isolation (MEDIUM)
@@ -1050,7 +1149,9 @@ class TestSubprocessGlobProtections:
         assert len(result) == 0, "Should return empty list when no matches"
 
     @pytest.mark.asyncio
-    async def test_find_files_by_patterns_concurrent_calls(self, grep_service_large, large_repo_structure):
+    async def test_find_files_by_patterns_concurrent_calls(
+        self, grep_service_large, large_repo_structure
+    ):
         """Test that multiple concurrent glob operations work correctly.
 
         PROTECTION: Concurrent Control (MEDIUM)

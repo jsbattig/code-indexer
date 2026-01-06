@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Matching Service for CIDX Server.
 
 Provides logic for finding and matching golden and activated repositories
 based on canonical git URLs with proper access control.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from typing import List, Tuple, Optional, Dict, Any
@@ -119,13 +120,19 @@ class RepositoryMatcher:
             MatchingError: If matching operation fails
         """
         try:
-            logger.debug(f"Finding golden repositories for URL: {canonical_url}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Finding golden repositories for URL: {canonical_url}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Find repositories by canonical URL
             golden_repos = self.golden_repo_manager.find_by_canonical_url(canonical_url)
 
             if not golden_repos:
-                logger.debug(f"No golden repositories found for URL: {canonical_url}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"No golden repositories found for URL: {canonical_url}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return []
 
             results = []
@@ -137,8 +144,9 @@ class RepositoryMatcher:
 
                 if access_level is None:
                     logger.debug(
-                        f"User {user.username} has no access to golden repository {repo_data.get('alias')}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"User {user.username} has no access to golden repository {repo_data.get('alias')}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     continue
 
                 # Convert to match result
@@ -147,7 +155,10 @@ class RepositoryMatcher:
                 )
                 results.append(match_result)
 
-            logger.debug(f"Found {len(results)} accessible golden repositories", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Found {len(results)} accessible golden repositories",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return results
 
         except Exception as e:
@@ -174,7 +185,10 @@ class RepositoryMatcher:
             MatchingError: If matching operation fails
         """
         try:
-            logger.debug(f"Finding activated repositories for URL: {canonical_url}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Finding activated repositories for URL: {canonical_url}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Find repositories by canonical URL
             activated_repos = self.activated_repo_manager.find_by_canonical_url(
@@ -183,8 +197,9 @@ class RepositoryMatcher:
 
             if not activated_repos:
                 logger.debug(
-                    f"No activated repositories found for URL: {canonical_url}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"No activated repositories found for URL: {canonical_url}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return []
 
             results = []
@@ -196,8 +211,9 @@ class RepositoryMatcher:
 
                 if access_level is None:
                     logger.debug(
-                        f"User {user.username} has no access to activated repository {repo_data.get('id')}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"User {user.username} has no access to activated repository {repo_data.get('id')}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     continue
 
                 # Convert to match result
@@ -206,7 +222,10 @@ class RepositoryMatcher:
                 )
                 results.append(match_result)
 
-            logger.debug(f"Found {len(results)} accessible activated repositories", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Found {len(results)} accessible activated repositories",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return results
 
         except Exception as e:
@@ -277,8 +296,9 @@ class RepositoryMatcher:
                     )
                 except ValueError:
                     logger.warning(
-                        f"Invalid last_indexed timestamp: {repo_data['last_indexed']}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Invalid last_indexed timestamp: {repo_data['last_indexed']}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
         created_at = None
         if repo_data.get("created_at"):
@@ -291,8 +311,9 @@ class RepositoryMatcher:
                     )
                 except ValueError:
                     logger.warning(
-                        f"Invalid created_at timestamp: {repo_data['created_at']}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Invalid created_at timestamp: {repo_data['created_at']}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
         return RepositoryMatchResult(
             repository_id=repo_data.get("id", repo_data.get("alias", "unknown")),
@@ -306,6 +327,7 @@ class RepositoryMatcher:
             default_branch=repo_data.get("default_branch", "main"),
             access_level=AccessLevel(access_level),
             last_indexed=last_indexed,
+            last_accessed=None,  # Golden repos don't have last_accessed
             created_at=created_at,
         )
 
@@ -336,8 +358,9 @@ class RepositoryMatcher:
                     )
                 except ValueError:
                     logger.warning(
-                        f"Invalid last_accessed timestamp: {repo_data['last_accessed']}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Invalid last_accessed timestamp: {repo_data['last_accessed']}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
         activated_at = None
         if repo_data.get("activated_at"):
@@ -350,8 +373,9 @@ class RepositoryMatcher:
                     )
                 except ValueError:
                     logger.warning(
-                        f"Invalid activated_at timestamp: {repo_data['activated_at']}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Invalid activated_at timestamp: {repo_data['activated_at']}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
         # Create composite alias for activated repositories
         user_alias = repo_data.get("user_alias", "unknown")
@@ -369,6 +393,7 @@ class RepositoryMatcher:
             ),
             default_branch=repo_data.get("current_branch", "main"),
             access_level=AccessLevel(access_level),
+            last_indexed=None,  # Activated repos don't track last_indexed
             last_accessed=last_accessed,
             created_at=activated_at,
         )

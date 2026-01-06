@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Discovery Service for CIDX Server.
 
 Provides high-level business logic for discovering matching repositories
 by git URL with proper authentication and access control.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from typing import List, Optional
@@ -90,8 +91,9 @@ class RepositoryDiscoveryService:
         """
         try:
             logger.debug(
-                f"Discovering repositories for URL: {repo_url}, User: {user.username}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Discovering repositories for URL: {repo_url}, User: {user.username}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Normalize the git URL
             try:
@@ -99,15 +101,19 @@ class RepositoryDiscoveryService:
             except GitUrlNormalizationError as e:
                 raise RepositoryDiscoveryError(f"Invalid git URL: {str(e)}") from e
 
-            logger.debug(f"Normalized URL: {normalized_url.canonical_form}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Normalized URL: {normalized_url.canonical_form}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Find matching repositories
             try:
-                golden_matches, activated_matches = (
-                    await self.repository_matcher.find_all_matching_repositories(
-                        canonical_url=normalized_url.canonical_form,
-                        user=user,
-                    )
+                (
+                    golden_matches,
+                    activated_matches,
+                ) = await self.repository_matcher.find_all_matching_repositories(
+                    canonical_url=normalized_url.canonical_form,
+                    user=user,
                 )
             except MatchingError as e:
                 raise RepositoryDiscoveryError(
@@ -129,8 +135,9 @@ class RepositoryDiscoveryService:
 
             logger.debug(
                 f"Discovery complete: {len(golden_repositories)} golden, "
-                f"{len(activated_repositories)} activated, {total_matches} total"
-            , extra={"correlation_id": get_correlation_id()})
+                f"{len(activated_repositories)} activated, {total_matches} total",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return RepositoryDiscoveryResponse(
                 query_url=repo_url,

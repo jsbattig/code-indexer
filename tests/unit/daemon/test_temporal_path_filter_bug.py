@@ -119,7 +119,6 @@ class TestTemporalPathFilterBug(TestCase):
                         with patch(
                             "code_indexer.services.temporal.temporal_search_service.TemporalSearchService"
                         ) as mock_temporal_search:
-
                             # Setup mocks
                             mock_config.return_value = MagicMock()
                             mock_backend = MagicMock()
@@ -153,9 +152,7 @@ class TestTemporalPathFilterBug(TestCase):
                                         mock_cache_entry.temporal_hnsw_index = (
                                             MagicMock()
                                         )
-                                        mock_cache_entry.is_temporal_stale_after_rebuild.return_value = (
-                                            False
-                                        )
+                                        mock_cache_entry.is_temporal_stale_after_rebuild.return_value = False
 
                                         # Call with multiple path filters
                                         service.exposed_query_temporal(

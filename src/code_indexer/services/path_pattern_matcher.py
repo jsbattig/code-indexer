@@ -150,7 +150,9 @@ class PathPatternMatcher:
                 # Create PathSpec object and cache it
                 # Use "gitwildmatch" for gitignore-style glob matching
                 # This properly handles ** patterns and other glob features
-                spec = pathspec.PathSpec.from_lines("gitwildmatch", [normalized_pattern])
+                spec = pathspec.PathSpec.from_lines(
+                    "gitwildmatch", [normalized_pattern]
+                )
                 self._pattern_cache[cache_key] = spec
             else:
                 spec = self._pattern_cache[cache_key]

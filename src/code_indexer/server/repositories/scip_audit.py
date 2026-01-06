@@ -152,6 +152,7 @@ class SCIPAuditRepository:
                 )
                 record_id = cursor.lastrowid
                 conn.commit()
+                assert record_id is not None, "Failed to get record ID after INSERT"
                 return record_id
 
     def query_audit_records(

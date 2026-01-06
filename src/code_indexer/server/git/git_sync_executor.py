@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Git Pull Operations Implementation for CIDX Server Repository Sync.
 
@@ -13,6 +12,7 @@ This module implements Story 4: Git Pull Operations with comprehensive support f
 - Comprehensive error handling and logging
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import json
 import logging
 import os
@@ -141,8 +141,9 @@ class GitSyncExecutor:
             )
 
         logger.info(
-            f"GitSyncExecutor initialized for repository: {self.repository_path}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"GitSyncExecutor initialized for repository: {self.repository_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def execute_pull(
         self,
@@ -177,13 +178,17 @@ class GitSyncExecutor:
             and not validation.can_pull
         ):
             logger.info(
-                "Repository is dirty and behind remote - triggering pre-pull clearing"
-            , extra={"correlation_id": get_correlation_id()})
+                "Repository is dirty and behind remote - triggering pre-pull clearing",
+                extra={"correlation_id": get_correlation_id()},
+            )
             try:
                 config = ServerConfigManager().load_config()
                 git_manager = GitStateManager(config=config)
                 git_manager.clear_repo_before_refresh(repo_path=self.repository_path)
-                logger.info("Pre-pull clearing completed - re-validating repository", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "Pre-pull clearing completed - re-validating repository",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
                 # Re-validate after clearing
                 validation = self.validate_repository_state()
@@ -192,8 +197,10 @@ class GitSyncExecutor:
                 # Clearing errors are logged but not propagated
                 # Validation will still fail if repo remains dirty
                 logger.error(
-                    f"Pre-pull clearing failed (non-blocking): {e}", exc_info=True
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Pre-pull clearing failed (non-blocking): {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         if not validation.can_pull:
             raise GitSyncError(
@@ -391,7 +398,10 @@ class GitSyncExecutor:
             )
 
         except Exception as e:
-            logger.error(f"Repository validation failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Repository validation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             validation_errors.append(f"Validation error: {str(e)}")
             return RepositoryValidationResult(
                 is_valid=False, can_pull=False, validation_errors=validation_errors
@@ -442,7 +452,10 @@ class GitSyncExecutor:
             with open(backup_path / "backup_metadata.json", "w") as f:
                 json.dump(metadata, f, indent=2)
 
-            logger.info(f"Backup created: {backup_path} ({files_backed_up} files)", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Backup created: {backup_path} ({files_backed_up} files)",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return BackupResult(
                 success=True,
@@ -452,7 +465,10 @@ class GitSyncExecutor:
             )
 
         except Exception as e:
-            logger.error(f"Backup creation failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Backup creation failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return BackupResult(
                 success=False,
                 error_message=str(e),
@@ -464,14 +480,20 @@ class GitSyncExecutor:
             "key_path": ssh_key_path,
             "passphrase": passphrase,
         }
-        logger.info(f"SSH authentication configured with key: {ssh_key_path}", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"SSH authentication configured with key: {ssh_key_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def configure_https_auth(self, token: str):
         """Configure HTTPS token authentication for git operations."""
         self.auth_config["https"] = {
             "token": token,
         }
-        logger.info("HTTPS token authentication configured", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "HTTPS token authentication configured",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def _execute_git_pull(self, merge_strategy: str) -> str:
         """Execute git pull with specified merge strategy."""
@@ -500,23 +522,30 @@ class GitSyncExecutor:
             if self.auth_config["ssh"].get("passphrase"):
                 # Note: In production, use a proper SSH agent or credential manager
                 logger.warning(
-                    "SSH passphrase support requires proper credential management"
-                , extra={"correlation_id": get_correlation_id()})
+                    "SSH passphrase support requires proper credential management",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         # HTTPS authentication
         if self.auth_config["https"].get("token"):
             # Note: In production, use proper credential manager
             logger.info(
-                "HTTPS authentication configured (credential manager integration needed)"
-            , extra={"correlation_id": get_correlation_id()})
+                "HTTPS authentication configured (credential manager integration needed)",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Execute git command
         try:
             result = run_git_command(cmd, cwd=self.repository_path, env=env)
-            logger.info(f"Git pull completed successfully: {result.stdout[:200]}...", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Git pull completed successfully: {result.stdout[:200]}...",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return str(result.stdout)
         except subprocess.CalledProcessError as e:
-            logger.error(f"Git pull failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Git pull failed: {e}", extra={"correlation_id": get_correlation_id()}
+            )
             raise
 
     def _analyze_git_error(
@@ -568,7 +597,10 @@ class GitSyncExecutor:
             )
             return [line.strip() for line in result.stdout.split("\n") if line.strip()]
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Could not get changed files: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Could not get changed files: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     def _count_commits_pulled(self, before_commit: str, after_commit: str) -> int:
@@ -583,7 +615,10 @@ class GitSyncExecutor:
             )
             return int(result.stdout.strip())
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Could not count commits: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Could not count commits: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return 0
 
     def _trigger_cidx_index(self) -> bool:
@@ -601,7 +636,10 @@ class GitSyncExecutor:
             from ...config import ConfigManager
             from pathlib import Path
 
-            logger.info(f"Starting internal CIDX indexing for {self.repository_path}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Starting internal CIDX indexing for {self.repository_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Get configuration for this repository
             config_manager = ConfigManager.create_with_backtrack(self.repository_path)
@@ -617,11 +655,17 @@ class GitSyncExecutor:
 
             # Health checks
             if not embedding_provider.health_check():
-                logger.error("Embedding provider health check failed", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    "Embedding provider health check failed",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
             if not vector_store_client.health_check():
-                logger.error("Vector store client health check failed", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    "Vector store client health check failed",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
             # Create SmartIndexer
@@ -649,15 +693,23 @@ class GitSyncExecutor:
             # Check if indexing was successful
             if stats and not getattr(stats, "cancelled", False):
                 logger.info(
-                    f"Internal CIDX indexing completed successfully: {stats.files_processed} files, {stats.chunks_created} chunks"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Internal CIDX indexing completed successfully: {stats.files_processed} files, {stats.chunks_created} chunks",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return True
             else:
-                logger.warning("Internal CIDX indexing was cancelled or failed", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    "Internal CIDX indexing was cancelled or failed",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
         except Exception as e:
-            logger.error(f"Internal CIDX indexing failed: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Internal CIDX indexing failed: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def restore_from_backup(self, backup_path: str) -> bool:
@@ -673,7 +725,10 @@ class GitSyncExecutor:
         try:
             backup_dir = Path(backup_path)
             if not backup_dir.exists():
-                logger.error(f"Backup path does not exist: {backup_path}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Backup path does not exist: {backup_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
             # Load backup metadata
@@ -681,7 +736,10 @@ class GitSyncExecutor:
             if metadata_file.exists():
                 with open(metadata_file) as f:
                     metadata = json.load(f)
-                logger.info(f"Restoring backup from {metadata['timestamp']}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Restoring backup from {metadata['timestamp']}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
             # Remove current working directory contents (except .git)
             for item in self.repository_path.iterdir():
@@ -703,9 +761,15 @@ class GitSyncExecutor:
                 elif item.is_dir():
                     shutil.copytree(item, dest)
 
-            logger.info(f"Repository restored from backup: {backup_path}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Repository restored from backup: {backup_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
 
         except Exception as e:
-            logger.error(f"Backup restoration failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Backup restoration failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False

@@ -79,7 +79,6 @@ class TestAdminMCPCredentialsListCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             # Configure mock to return credentials
             mock_client_instance = MagicMock()
             mock_client_instance.list_mcp_credentials = AsyncMock(
@@ -140,7 +139,6 @@ class TestAdminMCPCredentialsListCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             # Configure mock to return credentials
             mock_client_instance = MagicMock()
             credentials_data = [
@@ -198,7 +196,6 @@ class TestAdminMCPCredentialsListCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.list_mcp_credentials = AsyncMock(
                 side_effect=Exception("User not found")
@@ -243,7 +240,6 @@ class TestAdminMCPCredentialsCreateCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.create_mcp_credential = AsyncMock(
                 return_value={
@@ -300,7 +296,6 @@ class TestAdminMCPCredentialsCreateCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             credential_data = {
                 "credential_id": "new-cred-id",
@@ -358,7 +353,6 @@ class TestAdminMCPCredentialsCreateCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.create_mcp_credential = AsyncMock(
                 return_value={
@@ -409,7 +403,6 @@ class TestAdminMCPCredentialsRevokeCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.revoke_mcp_credential = AsyncMock(
                 return_value={"success": True}
@@ -456,7 +449,6 @@ class TestAdminMCPCredentialsRevokeCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.revoke_mcp_credential = AsyncMock(
                 side_effect=Exception("Credential not found")
@@ -507,7 +499,6 @@ class TestAdminMCPCredentialsListAllCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.list_all_mcp_credentials = AsyncMock(
                 return_value={
@@ -573,7 +564,6 @@ class TestAdminMCPCredentialsListAllCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             credentials_data = [
                 {
@@ -632,7 +622,6 @@ class TestAdminMCPCredentialsListAllCommand:
             ),
             patch("code_indexer.cli.AdminAPIClient") as mock_admin_client,
         ):
-
             mock_client_instance = MagicMock()
             mock_client_instance.list_all_mcp_credentials = AsyncMock(
                 return_value={

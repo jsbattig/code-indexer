@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Comprehensive audit logging for password change attempts.
 
@@ -6,6 +5,7 @@ Implements secure audit logging with IP addresses and timestamps.
 Following CLAUDE.md principles: NO MOCKS - Real audit logging implementation.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import logging
 import json
 from datetime import datetime, timezone
@@ -88,7 +88,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.info(f"PASSWORD_CHANGE_SUCCESS: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"PASSWORD_CHANGE_SUCCESS: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_password_change_failure(
         self,
@@ -118,7 +121,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.warning(f"PASSWORD_CHANGE_FAILURE: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.warning(
+            f"PASSWORD_CHANGE_FAILURE: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_rate_limit_triggered(
         self,
@@ -146,8 +152,9 @@ class PasswordChangeAuditLogger:
         }
 
         self.audit_logger.warning(
-            f"PASSWORD_CHANGE_RATE_LIMIT: {json.dumps(log_entry)}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"PASSWORD_CHANGE_RATE_LIMIT: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_concurrent_change_conflict(
         self, username: str, ip_address: str, user_agent: Optional[str] = None
@@ -169,8 +176,9 @@ class PasswordChangeAuditLogger:
         }
 
         self.audit_logger.warning(
-            f"PASSWORD_CHANGE_CONCURRENT_CONFLICT: {json.dumps(log_entry)}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"PASSWORD_CHANGE_CONCURRENT_CONFLICT: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_token_refresh_success(
         self,
@@ -200,7 +208,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.info(f"TOKEN_REFRESH_SUCCESS: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"TOKEN_REFRESH_SUCCESS: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_token_refresh_failure(
         self,
@@ -267,7 +278,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.error(f"SECURITY_INCIDENT: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.error(
+            f"SECURITY_INCIDENT: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_authentication_failure(
         self,
@@ -294,7 +308,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.warning(f"AUTHENTICATION_FAILURE: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.warning(
+            f"AUTHENTICATION_FAILURE: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_registration_attempt(
         self,
@@ -324,9 +341,13 @@ class PasswordChangeAuditLogger:
         log_message = f"REGISTRATION_{'SUCCESS' if success else 'ATTEMPT'}: {json.dumps(log_entry)}"
 
         if success:
-            self.audit_logger.info(log_message, extra={"correlation_id": get_correlation_id()})
+            self.audit_logger.info(
+                log_message, extra={"correlation_id": get_correlation_id()}
+            )
         else:
-            self.audit_logger.warning(log_message, extra={"correlation_id": get_correlation_id()})
+            self.audit_logger.warning(
+                log_message, extra={"correlation_id": get_correlation_id()}
+            )
 
     def log_password_reset_attempt(
         self,
@@ -353,7 +374,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.info(f"PASSWORD_RESET_ATTEMPT: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"PASSWORD_RESET_ATTEMPT: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_oauth_client_registration(
         self,
@@ -373,7 +397,10 @@ class PasswordChangeAuditLogger:
             "user_agent": user_agent,
             "additional_context": additional_context or {},
         }
-        self.audit_logger.info(f"OAUTH_CLIENT_REGISTRATION: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"OAUTH_CLIENT_REGISTRATION: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_oauth_authorization(
         self, username, client_id, ip_address, user_agent=None, additional_context=None
@@ -388,7 +415,10 @@ class PasswordChangeAuditLogger:
             "user_agent": user_agent,
             "additional_context": additional_context or {},
         }
-        self.audit_logger.info(f"OAUTH_AUTHORIZATION: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"OAUTH_AUTHORIZATION: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_oauth_token_exchange(
         self,
@@ -410,7 +440,10 @@ class PasswordChangeAuditLogger:
             "user_agent": user_agent,
             "additional_context": additional_context or {},
         }
-        self.audit_logger.info(f"OAUTH_TOKEN_EXCHANGE: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"OAUTH_TOKEN_EXCHANGE: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_oauth_token_revocation(
         self, username, token_type, ip_address, user_agent=None, additional_context=None
@@ -425,7 +458,10 @@ class PasswordChangeAuditLogger:
             "user_agent": user_agent,
             "additional_context": additional_context or {},
         }
-        self.audit_logger.info(f"OAUTH_TOKEN_REVOCATION: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"OAUTH_TOKEN_REVOCATION: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_pr_creation_success(
         self,
@@ -461,7 +497,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.info(f"PR_CREATION_SUCCESS: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"PR_CREATION_SUCCESS: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_pr_creation_failure(
         self,
@@ -491,7 +530,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.warning(f"PR_CREATION_FAILURE: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.warning(
+            f"PR_CREATION_FAILURE: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_pr_creation_disabled(
         self,
@@ -515,7 +557,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.info(f"PR_CREATION_DISABLED: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"PR_CREATION_DISABLED: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def log_cleanup(
         self,
@@ -539,7 +584,10 @@ class PasswordChangeAuditLogger:
             "additional_context": additional_context or {},
         }
 
-        self.audit_logger.info(f"GIT_CLEANUP: {json.dumps(log_entry)}", extra={"correlation_id": get_correlation_id()})
+        self.audit_logger.info(
+            f"GIT_CLEANUP: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_pr_logs(
         self,
@@ -629,7 +677,10 @@ class PasswordChangeAuditLogger:
 
         except Exception as e:
             # Log the error for debugging, but return empty list for graceful degradation
-            self.audit_logger.warning(f"Failed to parse log file: {e}", extra={"correlation_id": get_correlation_id()})
+            self.audit_logger.warning(
+                f"Failed to parse log file: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
 

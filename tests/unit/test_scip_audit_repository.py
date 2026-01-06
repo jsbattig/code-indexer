@@ -33,7 +33,7 @@ class TestSCIPAuditRepository:
 
     def test_init_creates_table(self, temp_db):
         """Test that initialization creates the audit table."""
-        repo = SCIPAuditRepository(db_path=temp_db)
+        SCIPAuditRepository(db_path=temp_db)
 
         # Verify table exists
         with sqlite3.connect(temp_db) as conn:
@@ -46,7 +46,7 @@ class TestSCIPAuditRepository:
 
     def test_init_creates_indexes(self, temp_db):
         """Test that initialization creates required indexes."""
-        repo = SCIPAuditRepository(db_path=temp_db)
+        SCIPAuditRepository(db_path=temp_db)
 
         # Verify indexes exist
         with sqlite3.connect(temp_db) as conn:
@@ -72,7 +72,7 @@ class TestSCIPAuditRepository:
             "package": "numpy",
             "command": "pip install numpy",
             "reasoning": "Required for scientific computing",
-            "username": "testuser"
+            "username": "testuser",
         }
 
         record_id = repository.create_audit_record(**record)
@@ -93,7 +93,7 @@ class TestSCIPAuditRepository:
             "package": "numpy",
             "command": "pip install numpy",
             "reasoning": None,  # Optional field
-            "username": "testuser"
+            "username": "testuser",
         }
 
         record_id = repository.create_audit_record(**record)
@@ -101,8 +101,7 @@ class TestSCIPAuditRepository:
         # Verify record is immediately queryable
         with sqlite3.connect(temp_db) as conn:
             cursor = conn.execute(
-                "SELECT * FROM scip_dependency_installations WHERE id = ?",
-                (record_id,)
+                "SELECT * FROM scip_dependency_installations WHERE id = ?", (record_id,)
             )
             row = cursor.fetchone()
             assert row is not None
@@ -118,7 +117,7 @@ class TestSCIPAuditRepository:
             "package": "some-package",
             "command": "install command",
             "reasoning": None,  # Optional
-            "username": None  # Optional
+            "username": None,  # Optional
         }
 
         record_id = repository.create_audit_record(**record)
@@ -137,7 +136,7 @@ class TestSCIPAuditRepository:
                 package=f"package-{i}",
                 command=f"pip install package-{i}",
                 reasoning="Test package",
-                username="testuser"
+                username="testuser",
             )
 
         # Query all records
@@ -158,7 +157,7 @@ class TestSCIPAuditRepository:
             package="package-1",
             command="install 1",
             reasoning=None,
-            username="user1"
+            username="user1",
         )
         repository.create_audit_record(
             job_id="job-2",
@@ -169,7 +168,7 @@ class TestSCIPAuditRepository:
             package="package-2",
             command="install 2",
             reasoning=None,
-            username="user2"
+            username="user2",
         )
 
         # Query by job_id
@@ -192,7 +191,7 @@ class TestSCIPAuditRepository:
                 package=f"package-{i}",
                 command=f"install {i}",
                 reasoning=None,
-                username="testuser"
+                username="testuser",
             )
 
         # Query by repo_alias
@@ -214,7 +213,7 @@ class TestSCIPAuditRepository:
             package="package-1",
             command="install 1",
             reasoning=None,
-            username="user1"
+            username="user1",
         )
         repository.create_audit_record(
             job_id="job-2",
@@ -225,7 +224,7 @@ class TestSCIPAuditRepository:
             package="package-2",
             command="install 2",
             reasoning=None,
-            username="user2"
+            username="user2",
         )
 
         # Query by project_language
@@ -247,7 +246,7 @@ class TestSCIPAuditRepository:
             package="package-1",
             command="install 1",
             reasoning=None,
-            username="user1"
+            username="user1",
         )
         repository.create_audit_record(
             job_id="job-2",
@@ -258,7 +257,7 @@ class TestSCIPAuditRepository:
             package="package-2",
             command="install 2",
             reasoning=None,
-            username="user2"
+            username="user2",
         )
 
         # Query by project_build_system
@@ -281,7 +280,7 @@ class TestSCIPAuditRepository:
                 package=f"package-{i}",
                 command=f"install {i}",
                 reasoning=None,
-                username="testuser"
+                username="testuser",
             )
 
         # Query with pagination
@@ -297,7 +296,7 @@ class TestSCIPAuditRepository:
     def test_query_audit_records_time_range(self, repository):
         """Test filtering audit records by time range."""
         # Create record
-        record_id = repository.create_audit_record(
+        repository.create_audit_record(
             job_id="job-1",
             repo_alias="test-repo",
             project_path="src/project",
@@ -306,7 +305,7 @@ class TestSCIPAuditRepository:
             package="package-1",
             command="install 1",
             reasoning=None,
-            username="testuser"
+            username="testuser",
         )
 
         # Query with time range (should include the record)
@@ -315,10 +314,7 @@ class TestSCIPAuditRepository:
         since = (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
         until = (now + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
-        records, total = repository.query_audit_records(
-            since=since,
-            until=until
-        )
+        records, total = repository.query_audit_records(since=since, until=until)
 
         assert len(records) == 1
         assert total == 1
@@ -335,7 +331,7 @@ class TestSCIPAuditRepository:
             package="package-1",
             command="install 1",
             reasoning=None,
-            username="user1"
+            username="user1",
         )
         repository.create_audit_record(
             job_id="job-1",
@@ -346,7 +342,7 @@ class TestSCIPAuditRepository:
             package="package-2",
             command="install 2",
             reasoning=None,
-            username="user2"
+            username="user2",
         )
         repository.create_audit_record(
             job_id="job-2",
@@ -357,13 +353,12 @@ class TestSCIPAuditRepository:
             package="package-3",
             command="install 3",
             reasoning=None,
-            username="user3"
+            username="user3",
         )
 
         # Query with multiple filters
         records, total = repository.query_audit_records(
-            job_id="job-1",
-            project_language="python"
+            job_id="job-1", project_language="python"
         )
 
         assert len(records) == 1
@@ -373,7 +368,7 @@ class TestSCIPAuditRepository:
 
     def test_query_audit_records_returns_all_fields(self, repository):
         """Test that query returns all expected fields."""
-        record_id = repository.create_audit_record(
+        repository.create_audit_record(
             job_id="job-1",
             repo_alias="test-repo",
             project_path="src/myproject",
@@ -382,7 +377,7 @@ class TestSCIPAuditRepository:
             package="numpy",
             command="pip install numpy",
             reasoning="Scientific computing",
-            username="testuser"
+            username="testuser",
         )
 
         records, total = repository.query_audit_records()
@@ -421,5 +416,5 @@ class TestSCIPAuditRepository:
                 package="package-1",
                 command="install 1",
                 reasoning=None,
-                username="testuser"
+                username="testuser",
             )

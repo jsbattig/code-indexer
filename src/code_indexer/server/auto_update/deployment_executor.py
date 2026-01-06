@@ -1,6 +1,6 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """DeploymentExecutor - deployment command execution for auto-update service."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from pathlib import Path
 import subprocess
 import logging
@@ -36,14 +36,23 @@ class DeploymentExecutor:
             )
 
             if result.returncode != 0:
-                logger.error(f"Git pull failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Git pull failed: {result.stderr}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
-            logger.info(f"Git pull successful: {result.stdout.strip()}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Git pull successful: {result.stdout.strip()}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
 
         except Exception as e:
-            logger.exception(f"Git pull exception: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.exception(
+                f"Git pull exception: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def pip_install(self) -> bool:
@@ -69,14 +78,22 @@ class DeploymentExecutor:
             )
 
             if result.returncode != 0:
-                logger.error(f"Pip install failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Pip install failed: {result.stderr}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
-            logger.info("Pip install successful", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Pip install successful", extra={"correlation_id": get_correlation_id()}
+            )
             return True
 
         except Exception as e:
-            logger.exception(f"Pip install exception: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.exception(
+                f"Pip install exception: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def restart_server(self) -> bool:
@@ -93,14 +110,23 @@ class DeploymentExecutor:
             )
 
             if result.returncode != 0:
-                logger.error(f"Server restart failed: {result.stderr}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Server restart failed: {result.stderr}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return False
 
-            logger.info("Server restarted successfully", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Server restarted successfully",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
 
         except Exception as e:
-            logger.exception(f"Server restart exception: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.exception(
+                f"Server restart exception: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def execute(self) -> bool:
@@ -109,17 +135,29 @@ class DeploymentExecutor:
         Returns:
             True if all steps successful, False otherwise
         """
-        logger.info("Starting deployment execution", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Starting deployment execution",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Step 1: Git pull
         if not self.git_pull():
-            logger.error("Deployment failed at git pull step", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                "Deployment failed at git pull step",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
         # Step 2: Pip install
         if not self.pip_install():
-            logger.error("Deployment failed at pip install step", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                "Deployment failed at pip install step",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
-        logger.info("Deployment execution completed successfully", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Deployment execution completed successfully",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return True

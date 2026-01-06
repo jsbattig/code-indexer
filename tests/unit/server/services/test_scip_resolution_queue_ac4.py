@@ -100,6 +100,7 @@ class TestSCIPResolutionQueueAC4:
         self, queue, mock_self_healing_service
     ):
         """Test AC4: Verify only one project processes at a time (serialized)."""
+
         # Make invoke_claude_code take time
         async def slow_invoke(*args, **kwargs):
             await asyncio.sleep(0.2)

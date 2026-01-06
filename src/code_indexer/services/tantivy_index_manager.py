@@ -10,7 +10,10 @@ import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
+
+if TYPE_CHECKING:
+    from tantivy import Index, Schema  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +47,9 @@ class TantivyIndexManager:
             index_dir: Directory where Tantivy index will be stored
         """
         self.index_dir = Path(index_dir)
-        self._index = None
-        self._schema = None
-        self._writer = None
+        self._index: Optional[Index] = None
+        self._schema: Optional[Schema] = None
+        self._writer: Optional[Any] = None
         self._heap_size = 1_000_000_000  # Fixed 1GB heap size
         self._metadata_file = self.index_dir / "metadata.json"
         self._lock = threading.Lock()  # Thread safety for writer operations
@@ -148,6 +151,7 @@ class TantivyIndexManager:
                 self._create_schema()
 
             # Create or open index
+            assert self._schema is not None  # For mypy
             if create_new or not (self.index_dir / "meta.json").exists():
                 self._index = self._tantivy.Index(self._schema, str(self.index_dir))
                 logger.info(
@@ -299,7 +303,7 @@ class TantivyIndexManager:
             self._index.reload()
             searcher = self._index.searcher()
             # num_docs is a property, not a method
-            return searcher.num_docs
+            return cast(int, searcher.num_docs)
         except Exception as e:
             logger.error(f"Failed to get document count: {e}")
             return 0
@@ -487,6 +491,7 @@ class TantivyIndexManager:
             # that cause catastrophic backtracking in PCRE/Python are safe here.
             if use_regex:
                 # Build regex query using Tantivy's regex_query
+                assert self._schema is not None  # For mypy
                 try:
                     text_query = TantivyQuery.regex_query(
                         self._schema,
@@ -514,6 +519,7 @@ class TantivyIndexManager:
                 # Build language facet queries (OR semantics: match any specified language)
                 from tantivy import Facet
 
+                assert self._schema is not None  # For mypy
                 language_queries = [
                     TantivyQuery.term_query(
                         self._schema, "language_facet", Facet.from_string(f"/{lang}")
@@ -975,6 +981,9 @@ class TantivyIndexManager:
 
             with self._lock:
                 # Delete old version if it exists using query-based deletion (idempotent)
+                assert (
+                    self._index is not None
+                ), "Index must be initialized when writer is initialized"
                 delete_query = self._index.parse_query(file_path, ["path"])
                 self._writer.delete_documents_by_query(delete_query)
 
@@ -1011,6 +1020,9 @@ class TantivyIndexManager:
         try:
             with self._lock:
                 # Delete document using query-based deletion (idempotent)
+                assert (
+                    self._index is not None
+                ), "Index must be initialized when writer is initialized"
                 delete_query = self._index.parse_query(file_path, ["path"])
                 self._writer.delete_documents_by_query(delete_query)
 

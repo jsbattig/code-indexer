@@ -40,7 +40,7 @@ class ClassOne:
         return "method one"
 """,
         "file2.py": """def function_two():
-    '''This is function two''' 
+    '''This is function two'''
     return "original content 2"
 
 def helper_function():
@@ -50,7 +50,7 @@ def helper_function():
     '''This is class three'''
     def __init__(self):
         self.value = "original value"
-    
+
     def get_value(self):
         return self.value
 """,
@@ -91,7 +91,6 @@ def test_comprehensive_reconcile_modify_add_delete():
     with shared_container_test_environment(
         "test_comprehensive_reconcile_modify_add_delete", EmbeddingProvider.VOYAGE_AI
     ) as project_path:
-
         # === PHASE 1: Create initial files and index them ===
         print("\n=== PHASE 1: Initial index ===")
         create_initial_test_files(project_path)
@@ -166,7 +165,7 @@ def test_comprehensive_reconcile_modify_add_delete():
 class ClassOne:
     def method_one(self):
         return "MODIFIED method one"
-    
+
     def new_method(self):
         return "This is a new method added"
 """
@@ -347,7 +346,6 @@ def test_comprehensive_reconcile_branch_visibility_scenarios():
         "test_comprehensive_reconcile_branch_visibility_scenarios",
         EmbeddingProvider.VOYAGE_AI,
     ) as project_path:
-
         print("\n=== COMPREHENSIVE BRANCH VISIBILITY TEST ===")
 
         # === PHASE 1: Set up git repository with multiple branches ===

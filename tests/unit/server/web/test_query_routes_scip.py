@@ -62,7 +62,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Call query_submit with SCIP parameters
             # This should NOT raise an error even though parameters don't exist yet
             try:
@@ -148,7 +147,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Setup mock engine
             mock_engine = MagicMock()
             mock_engine.find_definition.return_value = [mock_query_result]
@@ -232,7 +230,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             try:
                 _ = await query_submit(
                     request=request,
@@ -320,7 +317,6 @@ class TestSCIPQueryExecution:
                 patch("code_indexer.server.web.routes._create_query_page_response"),
                 patch("code_indexer.server.web.routes._add_to_query_history"),
             ):
-
                 # Setup mock engine
                 mock_engine = MagicMock()
                 mock_result = QueryResult(
@@ -406,7 +402,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Setup mock engine to raise exception
             mock_engine = MagicMock()
             mock_engine.find_definition.side_effect = FileNotFoundError(
@@ -490,7 +485,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Setup mock engine to raise exception
             mock_engine = MagicMock()
             mock_engine.find_definition.side_effect = Exception("Index corrupted")
@@ -581,7 +575,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Setup mock engine to raise FileNotFoundError
             mock_engine = MagicMock()
             mock_engine.find_definition.side_effect = FileNotFoundError(
@@ -690,7 +683,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             try:
                 _ = await query_submit(
                     request=request,
@@ -760,7 +752,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             mock_engine = MagicMock()
             mock_chain = CallChain(
                 path=["main", "run", "UserService"], length=2, has_cycle=False
@@ -836,7 +827,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             # Execute query with invalid input (single symbol, no space)
             await query_submit(
                 request=request,
@@ -925,7 +915,6 @@ class TestSCIPQueryExecution:
             ) as mock_response,
             patch("code_indexer.server.web.routes._add_to_query_history"),
         ):
-
             try:
                 _ = await query_submit(
                     request=request,

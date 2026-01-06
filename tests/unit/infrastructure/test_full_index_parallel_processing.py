@@ -114,7 +114,6 @@ class TestFullIndexParallelProcessing:
             patch.object(indexer, "get_git_status") as mock_git_status,
             patch.object(indexer.file_finder, "find_files") as mock_find_files,
         ):
-
             mock_git_status.return_value = {
                 "git_available": False,
                 "project_id": "test",
@@ -183,7 +182,6 @@ class TestFullIndexParallelProcessing:
             ) as mock_high_throughput,
             patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
         ):
-
             mock_git_status.return_value = {
                 "git_available": False,
                 "project_id": "test",
@@ -326,7 +324,6 @@ class TestFullIndexParallelProcessing:
             ) as mock_high_throughput,
             patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
         ):
-
             mock_git_status.return_value = {
                 "git_available": False,
                 "project_id": "test",
@@ -394,7 +391,6 @@ class TestFullIndexParallelProcessing:
             ) as mock_direct_processing,
             patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
         ):
-
             mock_git_status.return_value = {
                 "git_available": False,
                 "project_id": "test",

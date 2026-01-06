@@ -17,7 +17,8 @@ def log_db_path(tmp_path):
     # Create database with schema (matching SQLiteLogHandler)
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
@@ -28,7 +29,8 @@ def log_db_path(tmp_path):
             user_id TEXT,
             request_path TEXT
         )
-    """)
+    """
+    )
 
     # Create indexes
     cursor.execute("CREATE INDEX idx_timestamp ON logs(timestamp)")
@@ -100,7 +102,7 @@ def insert_test_logs(db_path: Path, count: int = 10):
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (timestamp, level, source, message, correlation_id, user_id, request_path)
+            (timestamp, level, source, message, correlation_id, user_id, request_path),
         )
 
     conn.commit()
@@ -115,6 +117,7 @@ class TestAdminLogsQueryPermissions:
         """Test admin user can query logs."""
         # Set log_db_path in app.state
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data
@@ -135,9 +138,12 @@ class TestAdminLogsQueryPermissions:
         assert len(data["logs"]) == 5
 
     @pytest.mark.asyncio
-    async def test_power_user_cannot_query_logs(self, log_db_path, power_user, monkeypatch):
+    async def test_power_user_cannot_query_logs(
+        self, log_db_path, power_user, monkeypatch
+    ):
         """Test power_user cannot query logs (requires admin role)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Attempt to query logs
@@ -149,9 +155,12 @@ class TestAdminLogsQueryPermissions:
         assert "permission" in data["error"].lower() or "admin" in data["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_normal_user_cannot_query_logs(self, log_db_path, normal_user, monkeypatch):
+    async def test_normal_user_cannot_query_logs(
+        self, log_db_path, normal_user, monkeypatch
+    ):
         """Test normal_user cannot query logs (requires admin role)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Attempt to query logs
@@ -170,6 +179,7 @@ class TestAdminLogsQueryPagination:
     async def test_default_pagination(self, log_db_path, admin_user, monkeypatch):
         """Test default pagination (page 1, page_size 50)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 30)
@@ -188,6 +198,7 @@ class TestAdminLogsQueryPagination:
     async def test_custom_page_size(self, log_db_path, admin_user, monkeypatch):
         """Test custom page_size parameter."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 30)
@@ -204,11 +215,14 @@ class TestAdminLogsQueryPagination:
     async def test_second_page(self, log_db_path, admin_user, monkeypatch):
         """Test requesting second page."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 30)
 
-        response = await handle_admin_logs_query({"page": 2, "page_size": 10}, admin_user)
+        response = await handle_admin_logs_query(
+            {"page": 2, "page_size": 10}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -224,6 +238,7 @@ class TestAdminLogsQuerySorting:
     async def test_default_sort_desc(self, log_db_path, admin_user, monkeypatch):
         """Test default sort order is DESC (newest first)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 5)
@@ -240,6 +255,7 @@ class TestAdminLogsQuerySorting:
     async def test_sort_asc(self, log_db_path, admin_user, monkeypatch):
         """Test ascending sort order."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 5)
@@ -257,9 +273,12 @@ class TestAdminLogsQueryEmptyDatabase:
     """Test handling of empty database."""
 
     @pytest.mark.asyncio
-    async def test_empty_database_returns_empty_array(self, log_db_path, admin_user, monkeypatch):
+    async def test_empty_database_returns_empty_array(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test querying empty database returns empty logs array."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         response = await handle_admin_logs_query({}, admin_user)
@@ -278,6 +297,7 @@ class TestAdminLogsQueryResponseFormat:
     async def test_mcp_response_structure(self, log_db_path, admin_user, monkeypatch):
         """Test response follows MCP content array format."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 3)
@@ -303,6 +323,7 @@ class TestAdminLogsQueryResponseFormat:
     async def test_log_entry_structure(self, log_db_path, admin_user, monkeypatch):
         """Test individual log entry has all required fields."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 1)
@@ -328,27 +349,33 @@ class TestAdminLogsQuerySearch:
     async def test_search_in_message(self, log_db_path, admin_user, monkeypatch):
         """Test search parameter filters logs by message text."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data with distinctive messages
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'INFO', 'test', 'User authentication successful', 'corr-1', 'user1', '/login'),
                 (?, 'ERROR', 'test', 'Database connection failed', 'corr-2', 'user2', '/api'),
                 (?, 'INFO', 'test', 'Password reset requested', 'corr-3', 'user3', '/reset')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
         # Search for "authentication"
-        response = await handle_admin_logs_query({"search": "authentication"}, admin_user)
+        response = await handle_admin_logs_query(
+            {"search": "authentication"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -359,22 +386,26 @@ class TestAdminLogsQuerySearch:
     async def test_search_in_correlation_id(self, log_db_path, admin_user, monkeypatch):
         """Test search parameter filters logs by correlation_id."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data with distinctive correlation IDs
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'INFO', 'test', 'Request started', 'req-abc-123', 'user1', '/api'),
                 (?, 'INFO', 'test', 'Request processing', 'req-xyz-456', 'user2', '/api'),
                 (?, 'INFO', 'test', 'Request completed', 'req-abc-123', 'user1', '/api')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
@@ -391,15 +422,19 @@ class TestAdminLogsQuerySearch:
     async def test_search_case_insensitive(self, log_db_path, admin_user, monkeypatch):
         """Test search is case-insensitive."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES (?, 'ERROR', 'test', 'Database ERROR occurred', 'corr-1', 'user1', '/api')
-        """, (datetime.now(timezone.utc).isoformat(),))
+        """,
+            (datetime.now(timezone.utc).isoformat(),),
+        )
         conn.commit()
         conn.close()
 
@@ -414,12 +449,15 @@ class TestAdminLogsQuerySearch:
     async def test_search_no_matches(self, log_db_path, admin_user, monkeypatch):
         """Test search with no matches returns empty results."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 5)
 
         # Search for non-existent term
-        response = await handle_admin_logs_query({"search": "nonexistent_xyz_123"}, admin_user)
+        response = await handle_admin_logs_query(
+            {"search": "nonexistent_xyz_123"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -430,21 +468,27 @@ class TestAdminLogsQuerySearch:
     async def test_search_with_pagination(self, log_db_path, admin_user, monkeypatch):
         """Test search works with pagination."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert multiple matching logs
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
         for i in range(15):
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
                 VALUES (?, 'INFO', 'test', 'Error processing request', ?, 'user1', '/api')
-            """, (datetime.now(timezone.utc).isoformat(), f"corr-{i}"))
+            """,
+                (datetime.now(timezone.utc).isoformat(), f"corr-{i}"),
+            )
         conn.commit()
         conn.close()
 
         # Search with page_size=10
-        response = await handle_admin_logs_query({"search": "Error", "page_size": 10}, admin_user)
+        response = await handle_admin_logs_query(
+            {"search": "Error", "page_size": 10}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -456,6 +500,7 @@ class TestAdminLogsQuerySearch:
     async def test_search_empty_string(self, log_db_path, admin_user, monkeypatch):
         """Test empty search string returns all logs."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         insert_test_logs(log_db_path, 5)
@@ -475,24 +520,28 @@ class TestAdminLogsQueryLevelFilter:
     async def test_single_level_filter(self, log_db_path, admin_user, monkeypatch):
         """Test filtering by single log level."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert mixed level logs
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'ERROR', 'test', 'Error 1', 'corr-1', 'user1', '/api'),
                 (?, 'INFO', 'test', 'Info 1', 'corr-2', 'user2', '/api'),
                 (?, 'ERROR', 'test', 'Error 2', 'corr-3', 'user1', '/api'),
                 (?, 'WARNING', 'test', 'Warning 1', 'corr-4', 'user3', '/api')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
@@ -508,24 +557,28 @@ class TestAdminLogsQueryLevelFilter:
     async def test_multiple_levels_filter(self, log_db_path, admin_user, monkeypatch):
         """Test filtering by multiple log levels (comma-separated)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert mixed level logs
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'ERROR', 'test', 'Error 1', 'corr-1', 'user1', '/api'),
                 (?, 'INFO', 'test', 'Info 1', 'corr-2', 'user2', '/api'),
                 (?, 'WARNING', 'test', 'Warning 1', 'corr-3', 'user3', '/api'),
                 (?, 'DEBUG', 'test', 'Debug 1', 'corr-4', 'user1', '/api')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
@@ -541,15 +594,19 @@ class TestAdminLogsQueryLevelFilter:
     async def test_level_filter_no_matches(self, log_db_path, admin_user, monkeypatch):
         """Test level filter with no matches returns empty results."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert only INFO logs
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES (?, 'INFO', 'test', 'Info message', 'corr-1', 'user1', '/api')
-        """, (datetime.now(timezone.utc).isoformat(),))
+        """,
+            (datetime.now(timezone.utc).isoformat(),),
+        )
         conn.commit()
         conn.close()
 
@@ -562,9 +619,12 @@ class TestAdminLogsQueryLevelFilter:
         assert data["pagination"]["total"] == 0
 
     @pytest.mark.asyncio
-    async def test_level_filter_with_pagination(self, log_db_path, admin_user, monkeypatch):
+    async def test_level_filter_with_pagination(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test level filter works with pagination."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert multiple ERROR logs
@@ -572,15 +632,20 @@ class TestAdminLogsQueryLevelFilter:
         cursor = conn.cursor()
         for i in range(15):
             level = "ERROR" if i < 10 else "INFO"
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
                 VALUES (?, ?, 'test', 'Test message', ?, 'user1', '/api')
-            """, (datetime.now(timezone.utc).isoformat(), level, f"corr-{i}"))
+            """,
+                (datetime.now(timezone.utc).isoformat(), level, f"corr-{i}"),
+            )
         conn.commit()
         conn.close()
 
         # Filter by ERROR with page_size=5
-        response = await handle_admin_logs_query({"level": "ERROR", "page_size": 5}, admin_user)
+        response = await handle_admin_logs_query(
+            {"level": "ERROR", "page_size": 5}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -593,32 +658,40 @@ class TestAdminLogsQueryCombinedFilters:
     """Test combined search and level filtering (AC5 - MCP API filtering)."""
 
     @pytest.mark.asyncio
-    async def test_search_and_level_combined(self, log_db_path, admin_user, monkeypatch):
+    async def test_search_and_level_combined(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test search and level filters work together (AND logic)."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'ERROR', 'test', 'Database error occurred', 'corr-1', 'user1', '/api'),
                 (?, 'INFO', 'test', 'Database connection successful', 'corr-2', 'user2', '/api'),
                 (?, 'ERROR', 'test', 'Authentication failed', 'corr-3', 'user3', '/login'),
                 (?, 'WARNING', 'test', 'Database slow query', 'corr-4', 'user1', '/api')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
         # Search for "database" AND level ERROR
-        response = await handle_admin_logs_query({"search": "database", "level": "ERROR"}, admin_user)
+        response = await handle_admin_logs_query(
+            {"search": "database", "level": "ERROR"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -627,32 +700,40 @@ class TestAdminLogsQueryCombinedFilters:
         assert data["logs"][0]["level"] == "ERROR"
 
     @pytest.mark.asyncio
-    async def test_search_and_multiple_levels(self, log_db_path, admin_user, monkeypatch):
+    async def test_search_and_multiple_levels(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test search with multiple level filters."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES
                 (?, 'ERROR', 'test', 'Connection timeout', 'corr-1', 'user1', '/api'),
                 (?, 'INFO', 'test', 'Connection established', 'corr-2', 'user2', '/api'),
                 (?, 'WARNING', 'test', 'Connection slow', 'corr-3', 'user3', '/api'),
                 (?, 'DEBUG', 'test', 'Connection details', 'corr-4', 'user1', '/api')
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-            datetime.now(timezone.utc).isoformat(),
-        ))
+        """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
 
         # Search for "connection" AND level ERROR,WARNING
-        response = await handle_admin_logs_query({"search": "connection", "level": "ERROR,WARNING"}, admin_user)
+        response = await handle_admin_logs_query(
+            {"search": "connection", "level": "ERROR,WARNING"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True
@@ -661,23 +742,31 @@ class TestAdminLogsQueryCombinedFilters:
         assert all(log["level"] in ["ERROR", "WARNING"] for log in data["logs"])
 
     @pytest.mark.asyncio
-    async def test_combined_filters_no_matches(self, log_db_path, admin_user, monkeypatch):
+    async def test_combined_filters_no_matches(
+        self, log_db_path, admin_user, monkeypatch
+    ):
         """Test combined filters with no matches returns empty results."""
         from code_indexer.server import app as app_module
+
         app_module.app.state.log_db_path = str(log_db_path)
 
         # Insert test data
         conn = sqlite3.connect(str(log_db_path))
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO logs (timestamp, level, source, message, correlation_id, user_id, request_path)
             VALUES (?, 'INFO', 'test', 'Normal operation', 'corr-1', 'user1', '/api')
-        """, (datetime.now(timezone.utc).isoformat(),))
+        """,
+            (datetime.now(timezone.utc).isoformat(),),
+        )
         conn.commit()
         conn.close()
 
         # Search for "error" AND level ERROR (no matches)
-        response = await handle_admin_logs_query({"search": "error", "level": "ERROR"}, admin_user)
+        response = await handle_admin_logs_query(
+            {"search": "error", "level": "ERROR"}, admin_user
+        )
         data = json.loads(response["content"][0]["text"])
 
         assert data["success"] is True

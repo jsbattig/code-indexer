@@ -8,6 +8,8 @@ ensuring all parameters are properly wired to the underlying search functions.
 import json
 import pytest
 from pathlib import Path
+from typing import cast
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from datetime import datetime
 from unittest.mock import patch
@@ -112,7 +114,7 @@ class TestLanguageFilterWiring:
         self, test_client: TestClient, tmp_path: Path
     ):
         """Test that language and exclude_language are processed and passed to FTS search."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         app.dependency_overrides[dependencies.get_current_user] = (
             override_get_current_user
         )
@@ -183,7 +185,7 @@ class TestLanguageFilterWiring:
         self, test_client: TestClient, tmp_path: Path
     ):
         """Test that path_filter and exclude_path are processed correctly."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         app.dependency_overrides[dependencies.get_current_user] = (
             override_get_current_user
         )
@@ -244,7 +246,7 @@ class TestLanguageFilterWiring:
 
     def test_regex_mode_passed_to_fts(self, test_client: TestClient, tmp_path: Path):
         """Test that regex=True is passed to FTS search."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         app.dependency_overrides[dependencies.get_current_user] = (
             override_get_current_user
         )

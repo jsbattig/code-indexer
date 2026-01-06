@@ -5,7 +5,6 @@ Tests that BackgroundJobManager.get_job_status() and list_jobs() include
 extended self-healing fields when present.
 """
 
-
 from src.code_indexer.server.repositories.background_jobs import (
     BackgroundJobManager,
 )
@@ -57,7 +56,11 @@ class TestExtendedJobAPIResponse:
         # Assert
         assert status is not None
         assert status["resolution_attempts"] == 3
-        assert status["claude_actions"] == ["installed poetry", "installed maven", "retried scip"]
+        assert status["claude_actions"] == [
+            "installed poetry",
+            "installed maven",
+            "retried scip",
+        ]
         assert status["failure_reason"] == "1 project unresolvable"
         assert status["extended_error"] == {
             "original_error": "scip failed",
@@ -184,4 +187,6 @@ class TestExtendedJobAPIResponse:
         assert job_data["claude_actions"] == ["action1", "action2"]
         assert job_data["failure_reason"] == "Unresolvable"
         assert job_data["extended_error"] == {"error": "details"}
-        assert job_data["language_resolution_status"] == {"backend/": {"status": "resolved"}}
+        assert job_data["language_resolution_status"] == {
+            "backend/": {"status": "resolved"}
+        }

@@ -30,6 +30,7 @@ class TestUserLogin:
     ):
         """Test that normal_user can login via /user/login."""
         client = web_infrastructure.client
+        assert client is not None  # Guaranteed by web_infrastructure fixture
 
         # Get login page and extract CSRF token
         login_response = client.get("/user/login")
@@ -56,6 +57,7 @@ class TestUserLogin:
     ):
         """Test that power_user can login via /user/login."""
         client = web_infrastructure.client
+        assert client is not None  # Guaranteed by web_infrastructure fixture
 
         # Get login page and extract CSRF token
         login_response = client.get("/user/login")
@@ -79,6 +81,7 @@ class TestUserLogin:
     ):
         """Test that admin can also login via /user/login."""
         client = web_infrastructure.client
+        assert client is not None  # Guaranteed by web_infrastructure fixture
 
         # Get login page and extract CSRF token
         login_response = client.get("/user/login")
@@ -102,6 +105,7 @@ class TestUserLogin:
     ):
         """Test that invalid credentials show error message."""
         client = web_infrastructure.client
+        assert client is not None  # Guaranteed by web_infrastructure fixture
 
         # Get login page and extract CSRF token
         login_response = client.get("/user/login")
@@ -125,6 +129,7 @@ class TestUserLogin:
     ):
         """Test that login requires valid CSRF token."""
         client = web_infrastructure.client
+        assert client is not None  # Guaranteed by web_infrastructure fixture
 
         # Try to submit without CSRF token
         login_data = {

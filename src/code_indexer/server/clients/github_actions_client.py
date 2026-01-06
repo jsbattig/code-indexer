@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 GitHub Actions API client.
 
@@ -6,11 +5,12 @@ Story #633: Complete GitHub Actions Monitoring
 Provides workflow run monitoring, log search, and workflow control operations.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 import re
 import logging
 import httpx
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -22,7 +22,7 @@ from tenacity import (
 logger = logging.getLogger(__name__)
 
 
-def _is_retryable_error(exception: Exception) -> bool:
+def _is_retryable_error(exception: BaseException) -> bool:
     """
     Check if exception is retryable (network errors or server errors).
 
@@ -214,7 +214,10 @@ class GitHubActionsClient:
             updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
             return int((updated - created).total_seconds())
         except (ValueError, AttributeError) as e:
-            logger.warning(f"Failed to calculate duration: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to calculate duration: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return None
 
     async def _fetch_jobs(
@@ -229,8 +232,9 @@ class GitHubActionsClient:
             response = await client.get(jobs_url, headers=headers)
             if response.status_code != 200:
                 logger.warning(
-                    f"Failed to fetch jobs for run {run_id}: HTTP {response.status_code}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to fetch jobs for run {run_id}: HTTP {response.status_code}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return []
 
             jobs_data = response.json()
@@ -257,7 +261,10 @@ class GitHubActionsClient:
                 )
             return jobs
         except Exception as e:
-            logger.error(f"Error fetching jobs for run {run_id}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error fetching jobs for run {run_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     async def _fetch_artifacts(
@@ -272,8 +279,9 @@ class GitHubActionsClient:
             response = await client.get(artifacts_url, headers=headers)
             if response.status_code != 200:
                 logger.warning(
-                    f"Failed to fetch artifacts for run {run_id}: HTTP {response.status_code}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to fetch artifacts for run {run_id}: HTTP {response.status_code}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return []
 
             artifacts_data = response.json()
@@ -290,7 +298,10 @@ class GitHubActionsClient:
                 )
             return artifacts
         except Exception as e:
-            logger.error(f"Error fetching artifacts for run {run_id}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error fetching artifacts for run {run_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
     @retry(
@@ -498,7 +509,7 @@ class GitHubActionsClient:
                     f"GitHub API error getting job logs: {response.status_code}"
                 )
 
-            return response.text
+            return cast(str, response.text)
 
     @retry(
         stop=stop_after_attempt(4),

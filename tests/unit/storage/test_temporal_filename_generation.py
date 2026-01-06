@@ -35,7 +35,7 @@ class TestTemporalFilenameGeneration:
                 "id": point_id,
                 "vector": [0.1] * 1024,
                 "payload": {"path": long_file_path, "commit_hash": "646986fd"},
-                "chunk_text": "test content"
+                "chunk_text": "test content",
             }
             store.upsert_points("code-indexer-temporal", [point])
 
@@ -44,7 +44,9 @@ class TestTemporalFilenameGeneration:
             collection_path = Path(tmpdir) / "code-indexer-temporal"
             vector_files = list(collection_path.rglob("vector_*.json"))
 
-            assert len(vector_files) == 1, f"Expected 1 vector file, found {len(vector_files)}"
+            assert (
+                len(vector_files) == 1
+            ), f"Expected 1 vector file, found {len(vector_files)}"
             actual_filename = vector_files[0].name
 
             assert actual_filename == expected_filename, (
@@ -53,14 +55,14 @@ class TestTemporalFilenameGeneration:
             )
 
             # Verify filename length is under 255 characters
-            assert len(actual_filename) < 255, (
-                f"Filename '{actual_filename}' exceeds 255 character limit"
-            )
+            assert (
+                len(actual_filename) < 255
+            ), f"Filename '{actual_filename}' exceeds 255 character limit"
 
             # Verify filename is exactly 28 characters (vector_ + 16 hex + .json)
-            assert len(actual_filename) == 28, (
-                f"V2 format filename should be 28 chars, got {len(actual_filename)}"
-            )
+            assert (
+                len(actual_filename) == 28
+            ), f"V2 format filename should be 28 chars, got {len(actual_filename)}"
 
     def test_hash_determinism_same_point_id_produces_same_hash(self):
         """AC2: Same point_id always produces same hash prefix (deterministic)."""
@@ -76,7 +78,7 @@ class TestTemporalFilenameGeneration:
                 "id": point_id,
                 "vector": [0.1] * 1024,
                 "payload": {"path": "path/to/file.py"},
-                "chunk_text": "content"
+                "chunk_text": "content",
             }
 
             # First upsert
@@ -90,10 +92,12 @@ class TestTemporalFilenameGeneration:
 
             # Then: Same filename should be used both times (deterministic hash)
             assert len(files_after_first) == 1, "First upsert should create 1 file"
-            assert len(files_after_second) == 1, "Second upsert should not create duplicate"
-            assert files_after_first[0] == files_after_second[0], (
-                "Same point_id should produce same filename (deterministic hash)"
-            )
+            assert (
+                len(files_after_second) == 1
+            ), "Second upsert should not create duplicate"
+            assert (
+                files_after_first[0] == files_after_second[0]
+            ), "Same point_id should produce same filename (deterministic hash)"
 
     def test_non_temporal_collection_uses_original_format(self):
         """Non-temporal collections should continue using original filename format."""
@@ -109,7 +113,7 @@ class TestTemporalFilenameGeneration:
                 "id": point_id,
                 "vector": [0.1] * 1024,
                 "payload": {"path": "file.py"},
-                "chunk_text": "content"
+                "chunk_text": "content",
             }
             store.upsert_points("default", [point])
 
@@ -133,7 +137,9 @@ class TestTemporalFilenameGeneration:
         long_path = "deeply/nested/" + "subdirectory/" * 20 + "VeryLongFileName.cs"
         point_id = f"project-id-here:diff:commit-hash-here:{long_path}:999"
 
-        assert len(point_id) > 255, f"Test setup: point_id should exceed 255 chars, got {len(point_id)}"
+        assert (
+            len(point_id) > 255
+        ), f"Test setup: point_id should exceed 255 chars, got {len(point_id)}"
 
         with tempfile.TemporaryDirectory() as tmpdir:
             store = FilesystemVectorStore(base_path=Path(tmpdir))
@@ -144,7 +150,7 @@ class TestTemporalFilenameGeneration:
                 "id": point_id,
                 "vector": [0.1] * 1024,
                 "payload": {"path": long_path},
-                "chunk_text": "content"
+                "chunk_text": "content",
             }
             store.upsert_points("code-indexer-temporal", [point])
 
@@ -155,14 +161,14 @@ class TestTemporalFilenameGeneration:
             assert len(vector_files) == 1
             actual_filename = vector_files[0].name
 
-            assert len(actual_filename) < 255, (
-                f"Filename length {len(actual_filename)} exceeds 255 char limit"
-            )
+            assert (
+                len(actual_filename) < 255
+            ), f"Filename length {len(actual_filename)} exceeds 255 char limit"
 
             # Verify it's using v2 format (28 chars exactly)
-            assert len(actual_filename) == 28, (
-                f"V2 format should produce 28-char filename, got {len(actual_filename)}"
-            )
+            assert (
+                len(actual_filename) == 28
+            ), f"V2 format should produce 28-char filename, got {len(actual_filename)}"
 
     def test_different_point_ids_produce_different_hashes(self):
         """Different point_ids should produce different hash prefixes (collision avoidance)."""
@@ -180,14 +186,14 @@ class TestTemporalFilenameGeneration:
                     "id": point_id_1,
                     "vector": [0.1] * 1024,
                     "payload": {"path": "file1.py"},
-                    "chunk_text": "content1"
+                    "chunk_text": "content1",
                 },
                 {
                     "id": point_id_2,
                     "vector": [0.2] * 1024,
                     "payload": {"path": "file2.py"},
-                    "chunk_text": "content2"
-                }
+                    "chunk_text": "content2",
+                },
             ]
             store.upsert_points("code-indexer-temporal", points)
 
@@ -199,4 +205,6 @@ class TestTemporalFilenameGeneration:
 
             # Filenames should be different (different hashes)
             filenames = {f.name for f in vector_files}
-            assert len(filenames) == 2, "Different point_ids should produce different filenames"
+            assert (
+                len(filenames) == 2
+            ), "Different point_ids should produce different filenames"

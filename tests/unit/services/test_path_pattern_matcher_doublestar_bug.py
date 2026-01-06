@@ -42,7 +42,9 @@ class TestDoubleStarPatternBug:
         assert matcher.matches_pattern("code/src/App.java", "code/src/**/*.java")
 
         # These should also match - files in subdirectories
-        assert matcher.matches_pattern("code/src/util/Helper.java", "code/src/**/*.java")
+        assert matcher.matches_pattern(
+            "code/src/util/Helper.java", "code/src/**/*.java"
+        )
         assert matcher.matches_pattern("code/src/model/User.java", "code/src/**/*.java")
 
         # These should NOT match - wrong extension or path
@@ -60,9 +62,15 @@ class TestDoubleStarPatternBug:
 
         # These MUST match - files at various depths
         assert matcher.matches_pattern("RedisSynchronizer.java", "**/*Synchronizer*")
-        assert matcher.matches_pattern("src/RedisSynchronizer.java", "**/*Synchronizer*")
-        assert matcher.matches_pattern("src/sync/RedisSynchronizer.java", "**/*Synchronizer*")
-        assert matcher.matches_pattern("code/src/sync/RedisSynchronizer.java", "**/*Synchronizer*")
+        assert matcher.matches_pattern(
+            "src/RedisSynchronizer.java", "**/*Synchronizer*"
+        )
+        assert matcher.matches_pattern(
+            "src/sync/RedisSynchronizer.java", "**/*Synchronizer*"
+        )
+        assert matcher.matches_pattern(
+            "code/src/sync/RedisSynchronizer.java", "**/*Synchronizer*"
+        )
 
         # These should NOT match - name doesn't contain "Synchronizer"
         assert not matcher.matches_pattern("src/sync/Helper.java", "**/*Synchronizer*")
@@ -79,7 +87,9 @@ class TestDoubleStarPatternBug:
         assert matcher.matches_pattern("src/main.py", "**/src/**/*.py")
         assert matcher.matches_pattern("src/util/helper.py", "**/src/**/*.py")
         assert matcher.matches_pattern("project/src/main.py", "**/src/**/*.py")
-        assert matcher.matches_pattern("project/code/src/util/helper.py", "**/src/**/*.py")
+        assert matcher.matches_pattern(
+            "project/code/src/util/helper.py", "**/src/**/*.py"
+        )
 
         # These should NOT match - not under src/ or wrong extension
         assert not matcher.matches_pattern("main.py", "**/src/**/*.py")
@@ -119,7 +129,9 @@ class TestBackwardCompatibility:
         # Simple wildcard patterns should match at any depth (gitignore-style)
         assert matcher.matches_pattern("main.py", "*.py")
         assert matcher.matches_pattern("test.py", "*.py")
-        assert matcher.matches_pattern("src/main.py", "*.py")  # gitignore-style matches subdirs too
+        assert matcher.matches_pattern(
+            "src/main.py", "*.py"
+        )  # gitignore-style matches subdirs too
 
     def test_simple_path_pattern_still_works(self):
         """
@@ -136,7 +148,9 @@ class TestBackwardCompatibility:
 
         # Should NOT match files in subdirectories (correct gitignore behavior)
         # Use src/tests/**/*.py for recursive matching
-        assert not matcher.matches_pattern("src/tests/unit/test_auth.py", "src/tests/*.py")
+        assert not matcher.matches_pattern(
+            "src/tests/unit/test_auth.py", "src/tests/*.py"
+        )
 
         # Should NOT match different paths
         assert not matcher.matches_pattern("src/main.py", "src/tests/*.py")

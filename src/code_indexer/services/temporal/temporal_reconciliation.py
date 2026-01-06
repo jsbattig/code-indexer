@@ -46,7 +46,9 @@ def _cleanup_v1_format_files(collection_path: Path) -> int:
 
     # V1 format detected - delete all vector files for migration
     logger.info("Detected v1 format temporal collection (legacy long filenames)")
-    logger.info("Cleaning up v1 vector files to enable v2 migration (hash-based naming)")
+    logger.info(
+        "Cleaning up v1 vector files to enable v2 migration (hash-based naming)"
+    )
 
     deleted_count = 0
     try:

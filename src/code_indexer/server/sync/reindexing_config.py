@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Configuration management for re-indexing decision engine.
 
 Provides configuration classes for managing re-indexing thresholds,
 triggers, and behavior customization.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import os
 from dataclasses import dataclass, field
@@ -267,7 +268,10 @@ class ReindexingConfig:
                     return True
             except Exception as e:
                 # Log pattern parsing errors for debugging
-                logger.debug(f"Pattern '{pattern}' failed to parse: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Pattern '{pattern}' failed to parse: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 # Skip pattern on parse error
                 continue
 

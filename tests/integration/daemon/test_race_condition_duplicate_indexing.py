@@ -22,7 +22,7 @@ Expected Behavior After Fix:
 
 import threading
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 import pytest
 
@@ -45,7 +45,7 @@ class TestRaceConditionDuplicateIndexing:
         service, project_path = daemon_service_with_project
 
         # Storage for indexing responses
-        responses: List[Dict[str, Any]] = []
+        responses: List[Tuple[int, Dict[str, Any]]] = []
         responses_lock = threading.Lock()
 
         def start_indexing(call_id: int):
@@ -154,7 +154,7 @@ class TestRaceConditionDuplicateIndexing:
         service, project_path = daemon_service_with_project
 
         # Storage for responses
-        responses: List[Dict[str, Any]] = []
+        responses: List[Tuple[int, Dict[str, Any]]] = []
         responses_lock = threading.Lock()
 
         def attempt_indexing(attempt_id: int):

@@ -5,6 +5,7 @@ import tempfile
 import time
 import logging
 from pathlib import Path
+from typing import cast
 
 try:
     from pysqlite3 import dbapi2 as sqlite3
@@ -477,7 +478,7 @@ def _get_symbol_id(conn: sqlite3.Connection, symbol_name: str) -> int:
     cursor.execute("SELECT id FROM symbols WHERE name = ?", (symbol_name,))
     row = cursor.fetchone()
     assert row is not None, f"Symbol {symbol_name} not found in database"
-    return row[0]
+    return cast(int, row[0])
 
 
 def _add_call_graph_edges(conn: sqlite3.Connection, num_edges: int = 1000):

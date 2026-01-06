@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Resource-managed repository operations for CIDX server.
 
@@ -13,6 +12,8 @@ Following CLAUDE.md principles:
 - Genuine database connection handling
 - Comprehensive error handling with resource cleanup
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import asyncio
 import logging
@@ -64,7 +65,10 @@ class ResourceManagedGoldenRepoOperations:
             GitOperationError: If repository operations fail
         """
         async with create_server_resource_manager() as rm:
-            logger.info(f"Starting resource-managed addition of golden repo: {alias}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Starting resource-managed addition of golden repo: {alias}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             try:
                 # Create temporary files for git operations
@@ -110,15 +114,16 @@ class ResourceManagedGoldenRepoOperations:
                     "alias": alias,
                     "repo_url": repo_url,
                     "status": "completed",
-                    "clone_path": result.get("clone_path", ""),
+                    "job_id": result,  # result is job_id (str), not dict - clone_path available after job completes
                 }
                 json.dump(status_data, clone_status_file)
                 clone_status_file.flush()
 
                 logger.info(
-                    f"Successfully added golden repository {alias} with resource management"
-                , extra={"correlation_id": get_correlation_id()})
-                return result
+                    f"Successfully added golden repository {alias} with resource management",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                return {"job_id": result, "alias": alias, "status": "submitted"}
 
             except Exception as e:
                 # Log error to tracked files before cleanup
@@ -129,11 +134,15 @@ class ResourceManagedGoldenRepoOperations:
                     git_log_file.flush()
                 except Exception as log_error:
                     logger.debug(
-                        f"Failed to write to git log during cleanup: {log_error}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Failed to write to git log during cleanup: {log_error}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     # Continue cleanup - don't fail entire operation for logging issue
 
-                logger.error(f"Golden repo addition failed for {alias}: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Golden repo addition failed for {alias}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 raise GitOperationError(
                     f"Resource-managed golden repo addition failed: {str(e)}"
                 )
@@ -170,7 +179,10 @@ class ResourceManagedActivatedRepoOperations:
             Sync operation result
         """
         async with create_server_resource_manager() as rm:
-            logger.info(f"Starting resource-managed sync for {username}/{user_alias}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Starting resource-managed sync for {username}/{user_alias}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             try:
                 # Create temporary resources for sync operation
@@ -236,14 +248,16 @@ class ResourceManagedActivatedRepoOperations:
                 sync_log.flush()
 
                 logger.info(
-                    f"Successfully synced {username}/{user_alias} with resource management"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Successfully synced {username}/{user_alias} with resource management",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return result
 
             except Exception as e:
                 logger.error(
-                    f"Resource-managed sync failed for {username}/{user_alias}: {e}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Resource-managed sync failed for {username}/{user_alias}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 raise
 
         # All tracked resources automatically cleaned up
@@ -281,7 +295,10 @@ class ResourceManagedBackgroundJobOperations:
             Job execution result
         """
         async with create_server_resource_manager() as rm:
-            logger.info(f"Starting resource-managed job execution: {job_id}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Starting resource-managed job execution: {job_id}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             try:
                 # Create job workspace and tracking files
@@ -322,8 +339,9 @@ class ResourceManagedBackgroundJobOperations:
                 progress_log.flush()
 
                 logger.info(
-                    f"Successfully executed job {job_id} with resource management"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Successfully executed job {job_id} with resource management",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return job_result
 
             except Exception as e:
@@ -333,11 +351,15 @@ class ResourceManagedBackgroundJobOperations:
                     error_log.flush()
                 except Exception as log_error:
                     logger.debug(
-                        f"Failed to write to error log during cleanup: {log_error}"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Failed to write to error log during cleanup: {log_error}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     # Continue cleanup - don't fail entire operation for logging issue
 
-                logger.error(f"Resource-managed job {job_id} failed: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Resource-managed job {job_id} failed: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 raise
 
         # All job resources automatically cleaned up
@@ -368,16 +390,25 @@ async def resource_managed_repository_operation(operation_name: str):
     Yields:
         ResourceManager instance for resource tracking
     """
-    logger.debug(f"Starting resource-managed operation: {operation_name}", extra={"correlation_id": get_correlation_id()})
+    logger.debug(
+        f"Starting resource-managed operation: {operation_name}",
+        extra={"correlation_id": get_correlation_id()},
+    )
 
     async with create_server_resource_manager() as rm:
         try:
             yield rm
         except Exception as e:
-            logger.error(f"Resource-managed operation {operation_name} failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Resource-managed operation {operation_name} failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise
         finally:
-            logger.debug(f"Completed resource-managed operation: {operation_name}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Completed resource-managed operation: {operation_name}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
 
 # Integration helper functions
@@ -402,9 +433,15 @@ async def integrate_resource_manager_with_existing_operations():
         result = await resource_managed_golden.add_golden_repo_with_resource_management(
             repo_url="https://github.com/example/repo.git", alias="example-repo"
         )
-        logger.info(f"Golden repo added with resource management: {result}", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Golden repo added with resource management: {result}",
+            extra={"correlation_id": get_correlation_id()},
+        )
     except Exception as e:
-        logger.error(f"Failed to add golden repo with resource management: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Failed to add golden repo with resource management: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     # Example: Using the context manager for custom operations
     async with resource_managed_repository_operation("custom_repo_sync") as rm:
@@ -413,7 +450,10 @@ async def integrate_resource_manager_with_existing_operations():
         rm.track_temp_file(temp_dir)
 
         # Perform custom operation...
-        logger.info("Custom repository operation completed", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Custom repository operation completed",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
 
 # Server lifecycle integration
@@ -434,7 +474,10 @@ async def setup_server_with_resource_management():
     # Set up graceful shutdown with resource cleanup
     shutdown_handler = setup_graceful_shutdown(server_resource_manager)
 
-    logger.info("Server started with comprehensive resource management", extra={"correlation_id": get_correlation_id()})
+    logger.info(
+        "Server started with comprehensive resource management",
+        extra={"correlation_id": get_correlation_id()},
+    )
 
     # Server would continue running here...
     # All resources will be cleaned up on shutdown via signal handlers

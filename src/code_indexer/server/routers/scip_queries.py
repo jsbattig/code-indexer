@@ -1,9 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SCIP Query REST API Router.
 
 Provides endpoints for SCIP call graph queries (definition, references, dependencies, dependents).
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from fastapi import APIRouter, Query
@@ -124,7 +125,10 @@ async def get_definition(
             all_results.extend(results)
         except Exception as e:
             # Log and skip files that fail to load/query
-            logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to query SCIP file {scip_file}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             continue
 
     # Convert to JSON-serializable format
@@ -175,7 +179,10 @@ async def get_references(
                 all_results = all_results[:limit]
                 break
         except Exception as e:
-            logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to query SCIP file {scip_file}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             continue
 
     results_dicts = [_query_result_to_dict(r) for r in all_results]
@@ -220,7 +227,10 @@ async def get_dependencies(
 
             all_results.extend(results)
         except Exception as e:
-            logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to query SCIP file {scip_file}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             continue
 
     results_dicts = [_query_result_to_dict(r) for r in all_results]
@@ -265,7 +275,10 @@ async def get_dependents(
 
             all_results.extend(results)
         except Exception as e:
-            logger.warning(f"Failed to query SCIP file {scip_file}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to query SCIP file {scip_file}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             continue
 
     results_dicts = [_query_result_to_dict(r) for r in all_results]
@@ -333,7 +346,10 @@ async def get_impact(
             ],
         }
     except Exception as e:
-        logger.warning(f"Impact analysis failed: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"Impact analysis failed: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return {"success": False, "error": str(e)}
 
 
@@ -391,7 +407,10 @@ async def get_callchain(
             ],
         }
     except Exception as e:
-        logger.warning(f"Call chain tracing failed: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"Call chain tracing failed: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return {"success": False, "error": str(e)}
 
 
@@ -458,5 +477,8 @@ async def get_context(
             ],
         }
     except Exception as e:
-        logger.warning(f"Smart context query failed: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"Smart context query failed: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return {"success": False, "error": str(e)}

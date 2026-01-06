@@ -156,7 +156,6 @@ class TestSemanticQueryManagerFileExtensionBugReproduction:
             "_search_single_repository",
             side_effect=mock_search_single_repo,
         ):
-
             # TEST 1: Request only .js files - should only return JavaScript files
             results = semantic_query_manager.query_user_repositories(
                 username="testuser",
@@ -291,7 +290,6 @@ class TestSemanticQueryManagerFileExtensionBugReproduction:
             "_search_single_repository",
             side_effect=mock_search_single_repo,
         ):
-
             # TEST: Request .js files - should match test.min.js
             results = semantic_query_manager.query_user_repositories(
                 username="testuser",

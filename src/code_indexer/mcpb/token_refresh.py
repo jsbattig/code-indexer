@@ -19,7 +19,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Dict, cast
 
 import httpx
 from rich.console import Console
@@ -38,7 +38,7 @@ def load_config(config_path: Path) -> Dict:
 
     try:
         with open(config_path) as f:
-            return json.load(f)
+            return cast(Dict, json.load(f))
     except json.JSONDecodeError as e:
         console.print(f"[red]❌ Invalid JSON in config file: {e}[/red]")
         sys.exit(1)
@@ -70,7 +70,7 @@ def refresh_token(server_url: str, refresh_token: str) -> Dict:
             )
 
             if response.status_code == 200:
-                return response.json()
+                return cast(Dict, response.json())
             elif response.status_code == 401:
                 console.print("[red]❌ Refresh token is invalid or expired[/red]")
                 console.print(

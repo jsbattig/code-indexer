@@ -214,7 +214,6 @@ class TestFTSSnippetLinesZeroDaemon:
                 "code_indexer.cli_daemon_delegation._connect_to_daemon"
             ) as mock_connect,
         ):
-
             # Setup mocks
             mock_config_path = Path("/tmp/test/.code-indexer/config.json")
             mock_find.return_value = mock_config_path

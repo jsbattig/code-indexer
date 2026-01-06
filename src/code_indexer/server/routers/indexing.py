@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Re-indexing REST API Router.
 
@@ -6,8 +5,10 @@ Provides REST endpoints for triggering re-indexing and querying index status
 with OAuth authentication and service layer integration.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -103,13 +104,23 @@ async def trigger_reindex(
         )
         return TriggerReindexResponse(**result)
     except FileNotFoundError as e:
-        logger.warning(f"Repository not found: {alias}", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"Repository not found: {alias}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValueError as e:
-        logger.warning(f"Invalid request for {alias}: {e}", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"Invalid request for {alias}: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        logger.error(f"Trigger reindex failed for {alias}: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Trigger reindex failed for {alias}: {e}",
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}",
@@ -193,10 +204,17 @@ async def get_index_status(
             scip=transform_index_status(result["scip"]),
         )
     except FileNotFoundError as e:
-        logger.warning(f"Repository not found: {alias}", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"Repository not found: {alias}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        logger.error(f"Get index status failed for {alias}: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Get index status failed for {alias}: {e}",
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}",
@@ -232,13 +250,22 @@ async def get_temporal_status(
         from code_indexer.server.services.dashboard_service import DashboardService
 
         service = DashboardService()
-        result = service.get_temporal_index_status(username=user.username, repo_alias=alias)
-        return result
+        result = service.get_temporal_index_status(
+            username=user.username, repo_alias=alias
+        )
+        return cast(Dict[str, Any], result)
     except FileNotFoundError as e:
-        logger.warning(f"Repository not found: {alias}", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"Repository not found: {alias}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        logger.error(f"Get temporal status failed for {alias}: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"Get temporal status failed for {alias}: {e}",
+            exc_info=True,
+            extra={"correlation_id": get_correlation_id()},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}",

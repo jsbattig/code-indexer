@@ -97,7 +97,8 @@ class TestEliteAPICompatibility:
 
             # Verify it uses the CORRECT endpoint (repository details)
             mock_request.assert_called_once_with(
-                "GET", "/api/repositories/test-repo"  # CORRECT ENDPOINT!
+                "GET",
+                "/api/repositories/test-repo",  # CORRECT ENDPOINT!
             )
 
             # Verify stats are extracted correctly
@@ -210,7 +211,8 @@ class TestEliteAPICompatibility:
 
             # Verify it called the CORRECT endpoint
             mock_request.assert_called_with(
-                "GET", "/api/repositories/test-repo"  # CORRECT endpoint!
+                "GET",
+                "/api/repositories/test-repo",  # CORRECT endpoint!
             )
 
             # Verify stats are properly extracted

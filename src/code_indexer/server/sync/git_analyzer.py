@@ -47,8 +47,9 @@ class GitChangeAnalyzer:
             raise ValueError(f"Path is not a git repository: {self.repository_path}")
 
         logger.info(
-            f"GitChangeAnalyzer initialized for repository: {self.repository_path}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"GitChangeAnalyzer initialized for repository: {self.repository_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def analyze_recent_changes(self, commits_back: int = 1) -> ChangeSet:
         """
@@ -64,7 +65,10 @@ class GitChangeAnalyzer:
             RuntimeError: If git commands fail
         """
         try:
-            logger.debug(f"Analyzing changes for last {commits_back} commits", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Analyzing changes for last {commits_back} commits",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Get commit range for analysis
             if commits_back == 1:
@@ -136,7 +140,10 @@ class GitChangeAnalyzer:
         Returns:
             ChangeSet with detailed analysis
         """
-        logger.debug(f"Analyzing commit range: {commit_range}", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"Analyzing commit range: {commit_range}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Get file change statistics
         files_changed, files_added, files_deleted = self._get_file_changes(commit_range)
@@ -169,8 +176,9 @@ class GitChangeAnalyzer:
 
         logger.info(
             f"Change analysis complete: {change_set.change_count} changes "
-            f"({change_set.percentage_changed:.1%} of {total_files} files)"
-        , extra={"correlation_id": get_correlation_id()})
+            f"({change_set.percentage_changed:.1%} of {total_files} files)",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         return change_set
 
@@ -229,8 +237,9 @@ class GitChangeAnalyzer:
 
             logger.debug(
                 f"File changes: {len(files_changed)} modified, "
-                f"{len(files_added)} added, {len(files_deleted)} deleted"
-            , extra={"correlation_id": get_correlation_id()})
+                f"{len(files_added)} added, {len(files_deleted)} deleted",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return files_changed, files_added, files_deleted
 
@@ -307,8 +316,9 @@ class GitChangeAnalyzer:
 
         logger.debug(
             f"Directory changes: {len(directories_added)} added, "
-            f"{len(directories_removed)} removed"
-        , extra={"correlation_id": get_correlation_id()})
+            f"{len(directories_removed)} removed",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         return directories_added, directories_removed
 
@@ -343,7 +353,10 @@ class GitChangeAnalyzer:
                             old_path, new_path = parts[1], parts[2]
                             file_moves.append((old_path, new_path))
 
-            logger.debug(f"File moves detected: {len(file_moves)}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"File moves detected: {len(file_moves)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return file_moves
 
         except subprocess.CalledProcessError as e:
@@ -386,7 +399,10 @@ class GitChangeAnalyzer:
 
             if file_name in config_patterns or file_suffix in config_extensions:
                 change_set.has_config_changes = True
-                logger.debug(f"Configuration change detected: {file_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Configuration change detected: {file_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 break
 
     def _detect_structural_changes(self, change_set: ChangeSet) -> None:
@@ -416,7 +432,10 @@ class GitChangeAnalyzer:
             file_name = Path(file_path).name
             if file_name in structural_indicators:
                 change_set.has_structural_changes = True
-                logger.debug(f"Structural indicator changed: {file_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Structural indicator changed: {file_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 break
 
         # Check for significant directory changes
@@ -425,12 +444,18 @@ class GitChangeAnalyzer:
         )
         if dir_changes >= 3:  # Threshold for significant structural change
             change_set.has_structural_changes = True
-            logger.debug(f"Significant directory changes: {dir_changes}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Significant directory changes: {dir_changes}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Check for many file moves (suggests restructuring)
         if len(change_set.file_moves) >= 5:
             change_set.has_structural_changes = True
-            logger.debug(f"Many file moves detected: {len(change_set.file_moves)}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Many file moves detected: {len(change_set.file_moves)}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
     def _detect_schema_changes(self, change_set: ChangeSet) -> None:
         """
@@ -463,13 +488,19 @@ class GitChangeAnalyzer:
             # Check filename patterns
             if any(pattern in file_name.lower() for pattern in schema_patterns):
                 change_set.has_schema_changes = True
-                logger.debug(f"Schema change detected: {file_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Schema change detected: {file_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 break
 
             # Check file extensions
             if file_suffix in schema_extensions:
                 change_set.has_schema_changes = True
-                logger.debug(f"Schema file changed: {file_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Schema file changed: {file_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 break
 
             # Check path patterns
@@ -478,7 +509,10 @@ class GitChangeAnalyzer:
                 for pattern in ["migration", "schema", "model"]
             ):
                 change_set.has_schema_changes = True
-                logger.debug(f"Schema-related path changed: {file_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Schema-related path changed: {file_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 break
 
     def get_commit_details(self, commit_range: str) -> Dict[str, Any]:

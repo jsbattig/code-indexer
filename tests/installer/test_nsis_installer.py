@@ -323,9 +323,10 @@ class TestNSISSyntaxPatterns:
         """Script does NOT use PowerShell (per user constraint)."""
         # Check for actual PowerShell execution, not comments about avoiding it
         if re.search(r"(Exec|nsExec).*powershell", nsis_script_content, re.IGNORECASE):
-            pytest.fail(
-                "PowerShell execution is prohibited"
-            ), "PowerShell is prohibited in enterprise environments"
+            (
+                pytest.fail("PowerShell execution is prohibited"),
+                "PowerShell is prohibited in enterprise environments",
+            )
 
     def test_uses_mui2_page_macros(self, nsis_script_content):
         """Script uses MUI2 page macros."""

@@ -20,7 +20,7 @@ Expected Behavior After Fix:
 
 import threading
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 import pytest
 
@@ -43,7 +43,7 @@ class TestRaceConditionDuplicateWatch:
         service, project_path = daemon_service_with_project
 
         # Storage for watch responses
-        responses: List[Dict[str, Any]] = []
+        responses: List[Tuple[int, Dict[str, Any]]] = []
         responses_lock = threading.Lock()
 
         def start_watch(call_id: int):
@@ -153,7 +153,7 @@ class TestRaceConditionDuplicateWatch:
         service, project_path = daemon_service_with_project
 
         # Storage for responses
-        responses: List[Dict[str, Any]] = []
+        responses: List[Tuple[int, Dict[str, Any]]] = []
         responses_lock = threading.Lock()
 
         def attempt_watch(attempt_id: int):

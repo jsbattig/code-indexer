@@ -320,7 +320,33 @@ For complete configuration reference including environment variables, daemon set
 
 ## Contributing
 
-Contributions welcome! Please see the [GitHub Issues](https://github.com/jsbattig/code-indexer/issues) page to report bugs or suggest features.
+Contributions welcome! We appreciate bug reports, feature suggestions, and code contributions.
+
+### For Developers
+
+**Quick Setup:**
+```bash
+# 1. Clone and install
+git clone https://github.com/YOUR_USERNAME/code-indexer.git
+cd code-indexer
+pip install -e ".[dev]"
+
+# 2. Install pre-commit hooks (REQUIRED)
+pre-commit install
+
+# 3. Run tests
+./fast-automation.sh
+```
+
+**Pre-commit Hooks**: All commits are automatically checked for linting, formatting, and type errors. Hooks auto-fix most issues.
+
+**See [CONTRIBUTING.md](CONTRIBUTING.md) for complete development setup, testing guidelines, and code quality standards.**
+
+### Reporting Issues
+
+- **Bugs**: [GitHub Issues](https://github.com/jsbattig/code-indexer/issues)
+- **Features**: [GitHub Issues](https://github.com/jsbattig/code-indexer/issues)
+- **Questions**: [GitHub Discussions](https://github.com/jsbattig/code-indexer/discussions)
 
 ## License
 

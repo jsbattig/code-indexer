@@ -179,8 +179,10 @@ async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any
     handler = HANDLER_REGISTRY[tool_name]
 
     # Call handler with arguments
+    from typing import cast
+
     result = await handler(arguments, user)
-    return result
+    return cast(Dict[str, Any], result)
 
 
 async def process_jsonrpc_request(

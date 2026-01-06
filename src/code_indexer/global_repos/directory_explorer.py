@@ -201,7 +201,9 @@ class DirectoryExplorerService:
 
             for entry in entries:
                 # Calculate entry's relative path
-                entry_rel_path = f"{relative_path}/{entry.name}" if relative_path else entry.name
+                entry_rel_path = (
+                    f"{relative_path}/{entry.name}" if relative_path else entry.name
+                )
 
                 # Skip excluded entries
                 if should_exclude(entry.name, entry.is_dir(), entry_rel_path):

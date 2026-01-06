@@ -47,7 +47,7 @@ def client(user_manager):
     test_client = TestClient(app)
 
     # Login to get session
-    login_response = test_client.post(
+    test_client.post(
         "/user/login",
         data={"username": "testuser", "password": "Test123!@#Password"},
         follow_redirects=False,

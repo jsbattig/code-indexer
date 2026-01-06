@@ -44,7 +44,6 @@ class TestGitSearchCommitsPolymorphic:
                 "code_indexer.global_repos.git_operations.GitOperationsService"
             ) as mock_service_class,
         ):
-
             mock_get_dir.return_value = str(tmp_path)
             mock_resolve.return_value = str(tmp_path / "repo1")
 
@@ -109,7 +108,6 @@ class TestGitLogPolymorphic:
                 "code_indexer.global_repos.git_operations.GitOperationsService"
             ) as mock_service_class,
         ):
-
             mock_get_dir.return_value = str(tmp_path)
             mock_resolve.return_value = str(tmp_path / "repo1")
 

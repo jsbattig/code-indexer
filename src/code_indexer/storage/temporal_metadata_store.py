@@ -128,7 +128,7 @@ class TemporalMetadataStore:
         Returns:
             16-character SHA256 hash prefix
         """
-        return hashlib.sha256(point_id.encode()).hexdigest()[:self.HASH_PREFIX_LENGTH]
+        return hashlib.sha256(point_id.encode()).hexdigest()[: self.HASH_PREFIX_LENGTH]
 
     def save_metadata(self, point_id: str, payload: Dict) -> str:
         """Save metadata for a point and return hash prefix.
@@ -166,7 +166,14 @@ class TemporalMetadataStore:
                 (hash_prefix, point_id, commit_hash, file_path, chunk_index, created_at, format_version)
                 VALUES (?, ?, ?, ?, ?, ?, 2)
             """,
-                (hash_prefix, point_id, commit_hash, file_path, chunk_index, created_at),
+                (
+                    hash_prefix,
+                    point_id,
+                    commit_hash,
+                    file_path,
+                    chunk_index,
+                    created_at,
+                ),
             )
             conn.commit()
         finally:

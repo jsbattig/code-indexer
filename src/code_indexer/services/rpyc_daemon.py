@@ -20,7 +20,7 @@ import logging
 import threading
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, cast
 from threading import Lock
 
 try:
@@ -39,7 +39,7 @@ from code_indexer.daemon.cache import CacheEntry
 logger = logging.getLogger(__name__)
 
 
-class CIDXDaemonService(rpyc.Service if rpyc else object):
+class CIDXDaemonService(rpyc.Service if rpyc else object):  # type: ignore[misc]
     """RPyC service for CIDX daemon with in-memory caching."""
 
     def __init__(self):
@@ -238,7 +238,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             if cached_result is not None:
                 self.cache_entry.last_accessed = datetime.now()
                 self.cache_entry.access_count += 1
-                return cached_result
+                return cast(Dict[Any, Any], cached_result)
 
             # Get reference to searcher while holding read lock
             tantivy_searcher = self.cache_entry.tantivy_searcher
@@ -404,7 +404,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 if self.cache_entry is None:
                     self.cache_entry = CacheEntry(project_path_obj)
 
-                self.watch_handler = GitAwareWatchHandler(
+                self.watch_handler = GitAwareWatchHandler(  # type: ignore[call-arg]
                     project_path=project_path_obj,
                     indexer=self._get_or_create_indexer(project_path_obj),
                     progress_callback=callback,
@@ -595,9 +595,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             # Load HNSW index
             from ..storage.hnsw_index_manager import HNSWIndexManager
 
-            hnsw_manager = HNSWIndexManager(
-                index_dir=entry.project_path / ".code-indexer" / "index"
-            )
+            hnsw_manager = HNSWIndexManager()
             entry.hnsw_index = hnsw_manager.load_index(Path("code_vectors"))
 
             # Load ID mapping
@@ -674,6 +672,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         2. Direct index access
         3. Efficient result formatting
         """
+        assert self.cache_entry is not None  # Must be called with cache loaded
         try:
             # Fast path - minimal overhead
             if hnsw_index is None:
@@ -911,11 +910,22 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 )
             else:
                 # Regular file indexing (non-temporal)
-                from ..services.file_chunking_manager import FileChunkingManager
+                from ..services.smart_indexer import SmartIndexer
+                from ..services.embedding_factory import EmbeddingProviderFactory
+                from ..backends.backend_factory import BackendFactory
 
-                chunking_manager = FileChunkingManager(config_manager)
-                chunking_manager.index_repository(
-                    repo_path=str(project_path),
+                config = config_manager.load()
+                embedding_provider = EmbeddingProviderFactory.create(config)
+                backend = BackendFactory.create(
+                    config=config, project_root=Path(config.codebase_dir)
+                )
+                vector_store_client = backend.get_vector_store_client()
+                metadata_path = config_manager.config_path.parent / "metadata.json"
+
+                indexer = SmartIndexer(
+                    config, embedding_provider, vector_store_client, metadata_path
+                )
+                indexer.index(
                     force_reindex=kwargs.get("force_reindex", False),
                     progress_callback=callback,
                 )

@@ -30,7 +30,10 @@ class OIDCManager:
             from .oidc_provider import OIDCProvider
 
             logger = logging.getLogger(__name__)
-            logger.info("Initializing SSO provider", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Initializing SSO provider",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             try:
                 # Create provider and discover metadata atomically
@@ -40,7 +43,10 @@ class OIDCManager:
 
                 # Success - now we can set self.provider
                 self.provider = provider
-                logger.info("SSO provider initialized successfully", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "SSO provider initialized successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             except Exception as e:
                 logger.error(
                     f"Failed to initialize SSO provider: {e}",
@@ -112,8 +118,9 @@ class OIDCManager:
 
         logger = logging.getLogger(__name__)
         logger.info(
-            f"match_or_create_user called with subject={user_info.subject}, email={user_info.email}, email_verified={user_info.email_verified}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"match_or_create_user called with subject={user_info.subject}, email={user_info.email}, email_verified={user_info.email_verified}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Check if OIDC subject already exists in database (fast path)
         async with aiosqlite.connect(self.db_path) as db:
@@ -127,11 +134,15 @@ class OIDCManager:
                 # Subject exists, check if user still exists
                 username = result[0]
                 logger.info(
-                    f"Found existing OIDC link: subject={user_info.subject} -> username={username}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Found existing OIDC link: subject={user_info.subject} -> username={username}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 existing_user = self.user_manager.get_user(username)
                 if existing_user:
-                    logger.info(f"Returning existing user: {username}", extra={"correlation_id": get_correlation_id()})
+                    logger.info(
+                        f"Returning existing user: {username}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     return existing_user
                 else:
                     # Stale OIDC link (defensive check - should be cleaned up on user deletion)
@@ -181,8 +192,9 @@ class OIDCManager:
 
             base_username = user_info.username
             logger.info(
-                f"Using username from OIDC username_claim '{self.config.username_claim}': {base_username}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Using username from OIDC username_claim '{self.config.username_claim}': {base_username}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Check if username already exists (collision detection)
             if self.user_manager.get_user(base_username):

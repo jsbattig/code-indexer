@@ -54,13 +54,13 @@ class TestCITokenManagerEncryption:
         assert token_file.exists()
 
         # And the token value should be encrypted (not plaintext)
-        with open(token_file, 'r') as f:
+        with open(token_file, "r") as f:
             data = json.load(f)
 
         assert "github" in data
         assert data["github"]["token"] != github_token
         # Encrypted value should look like base64
-        assert re.match(r'^[A-Za-z0-9+/=]+$', data["github"]["token"])
+        assert re.match(r"^[A-Za-z0-9+/=]+$", data["github"]["token"])
 
     def test_token_file_has_secure_permissions(self, token_manager, temp_server_dir):
         """Test that token file has 0600 permissions (AC14)."""
@@ -87,7 +87,7 @@ class TestCITokenManagerEncryption:
         assert encrypted != token
 
         # And should be base64 encoded (AES-256-CBC output)
-        assert re.match(r'^[A-Za-z0-9+/=]+$', encrypted)
+        assert re.match(r"^[A-Za-z0-9+/=]+$", encrypted)
 
         # And should decrypt back to original
         decrypted = token_manager._decrypt_token(encrypted)

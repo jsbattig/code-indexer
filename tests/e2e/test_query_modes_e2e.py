@@ -15,7 +15,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import pytest
 import requests
@@ -114,7 +114,7 @@ def get_auth_token(
         timeout=30,
     )
     response.raise_for_status()
-    return response.json()["access_token"]
+    return cast(str, response.json()["access_token"])
 
 
 def get_admin_session(
@@ -238,7 +238,7 @@ def wait_for_job(
                 file=sys.stderr,
                 flush=True,
             )
-            return status
+            return cast(Dict[str, Any], status)
         if current_status == "failed":
             error_msg = status.get("error_message", "Unknown error")
             print(
@@ -302,7 +302,7 @@ def register_golden_repo(
         raise ValueError(f"No job_id returned from registration: {result}")
 
     logger.info(f"Golden repo registration started: job_id={job_id}")
-    return job_id
+    return cast(str, job_id)
 
 
 def delete_golden_repo(base_url: str, token: str, alias: str) -> Optional[str]:
@@ -340,7 +340,7 @@ def delete_golden_repo(base_url: str, token: str, alias: str) -> Optional[str]:
     # Check if there's a job_id in response
     try:
         result = resp.json()
-        return result.get("job_id")
+        return cast(Optional[str], result.get("job_id"))
     except (json.JSONDecodeError, ValueError):
         return None
 
@@ -433,7 +433,7 @@ def query_rest_api(
     )
     resp.raise_for_status()
 
-    return resp.json()
+    return cast(Dict[str, Any], resp.json())
 
 
 def query_web_ui(

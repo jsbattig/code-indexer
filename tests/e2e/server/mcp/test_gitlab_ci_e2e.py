@@ -381,8 +381,7 @@ class TestGitLabCIE2EWriteOperations:
         list_result = await handle_gitlab_ci_list_pipelines(list_args, mock_user)
 
         active_pipelines = [
-            p for p in list_result["pipelines"]
-            if p["status"] in ("running", "pending")
+            p for p in list_result["pipelines"] if p["status"] in ("running", "pending")
         ]
 
         if not active_pipelines:

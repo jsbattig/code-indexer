@@ -62,9 +62,7 @@ def workspace_root(tmp_path):
 class TestWorkspaceCleanupServiceAC2:
     """AC2: Periodic Cleanup Job tests."""
 
-    def test_cleanup_service_initializes_with_config(
-        self, server_config, job_manager
-    ):
+    def test_cleanup_service_initializes_with_config(self, server_config, job_manager):
         """
         Given a ServerConfig and BackgroundJobManager
         When WorkspaceCleanupService is initialized
@@ -73,9 +71,7 @@ class TestWorkspaceCleanupServiceAC2:
         if WorkspaceCleanupService is None:
             pytest.skip("WorkspaceCleanupService not implemented yet (TDD red phase)")
 
-        service = WorkspaceCleanupService(
-            config=server_config, job_manager=job_manager
-        )
+        service = WorkspaceCleanupService(config=server_config, job_manager=job_manager)
 
         assert service.retention_days == 7
         assert service.job_manager is job_manager

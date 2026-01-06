@@ -6,7 +6,7 @@ to replace all JWT-related mocks in Foundation #1 compliance.
 
 import jwt
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, cast
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from dataclasses import dataclass
@@ -20,7 +20,7 @@ class RealTokenPair:
     refresh_token: str
     expires_in: int
     token_type: str = "bearer"
-    created_at: datetime = None
+    created_at: Optional[datetime] = None
 
     def __post_init__(self):
         if self.created_at is None:
@@ -78,8 +78,8 @@ class RealJWTManager:
     def create_test_user_token(
         self,
         username: str,
-        user_id: str = None,
-        additional_claims: Dict[str, Any] = None,
+        user_id: Optional[str] = None,
+        additional_claims: Optional[Dict[str, Any]] = None,
     ) -> RealTokenPair:
         """Create real JWT tokens for test user.
 
@@ -185,7 +185,10 @@ class RealJWTManager:
             ValueError: If token was not issued by this manager
         """
         # Verify token signature and decode
-        payload = jwt.decode(token, self.public_key_pem, algorithms=[self.algorithm])
+        payload = cast(
+            dict[str, Any],
+            jwt.decode(token, self.public_key_pem, algorithms=[self.algorithm]),
+        )
 
         # Verify token was issued by this manager
         if token not in self.issued_tokens:
@@ -300,7 +303,7 @@ class RealJWTManager:
         # Create new token pair
         return self.create_test_user_token(username, user_id)
 
-    def create_expired_token(self, username: str, user_id: str = None) -> str:
+    def create_expired_token(self, username: str, user_id: Optional[str] = None) -> str:
         """Create an expired JWT token for testing expiry handling.
 
         Args:
@@ -336,7 +339,7 @@ class RealJWTManager:
         return token
 
     def create_near_expiry_token(
-        self, username: str, user_id: str = None, expiry_seconds: int = 30
+        self, username: str, user_id: Optional[str] = None, expiry_seconds: int = 30
     ) -> str:
         """Create JWT token that expires soon for testing near-expiry handling.
 
@@ -436,7 +439,7 @@ def create_real_jwt_manager() -> RealJWTManager:
 
 
 def create_test_token_pair(
-    username: str = "testuser", user_id: str = None
+    username: str = "testuser", user_id: Optional[str] = None
 ) -> Tuple[RealJWTManager, RealTokenPair]:
     """Create JWT manager and test token pair.
 

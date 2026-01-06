@@ -1,9 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 File Content Limits Configuration Manager for database persistence.
 
 Manages persistent storage of file content token limits configuration.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import sqlite3
@@ -74,8 +75,9 @@ class FileContentLimitsConfigManager:
             conn.commit()
 
         logger.info(
-            f"File content limits config database initialized at {self.db_path}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"File content limits config database initialized at {self.db_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_config(self) -> FileContentLimitsConfig:
         """
@@ -101,7 +103,10 @@ class FileContentLimitsConfigManager:
                     )
                 else:
                     # Return default if somehow not found
-                    logger.warning("Config not found in database, using defaults", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        "Config not found in database, using defaults",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     return FileContentLimitsConfig()
 
     def update_config(self, config: FileContentLimitsConfig):
@@ -126,8 +131,9 @@ class FileContentLimitsConfigManager:
                 conn.commit()
 
         logger.info(
-            f"Updated file content limits config: {config.max_tokens_per_request} tokens, {config.chars_per_token} chars/token"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Updated file content limits config: {config.max_tokens_per_request} tokens, {config.chars_per_token} chars/token",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     @classmethod
     def get_instance(

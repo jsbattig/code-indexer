@@ -163,7 +163,9 @@ class TestTokenAuthenticator:
 
     def test_resolve_token_from_environment_github(self):
         """AC3: Resolve GitHub token from GH_TOKEN environment variable."""
-        from src.code_indexer.server.services.git_state_manager import TokenAuthenticator
+        from src.code_indexer.server.services.git_state_manager import (
+            TokenAuthenticator,
+        )
 
         # ARRANGE
         with patch.dict("os.environ", {"GH_TOKEN": "env_token_12345"}):
@@ -175,7 +177,9 @@ class TestTokenAuthenticator:
 
     def test_resolve_token_from_environment_gitlab(self):
         """AC3: Resolve GitLab token from GITLAB_TOKEN environment variable."""
-        from src.code_indexer.server.services.git_state_manager import TokenAuthenticator
+        from src.code_indexer.server.services.git_state_manager import (
+            TokenAuthenticator,
+        )
 
         # ARRANGE
         with patch.dict("os.environ", {"GITLAB_TOKEN": "gitlab_token_456"}):
@@ -187,14 +191,15 @@ class TestTokenAuthenticator:
 
     def test_resolve_token_not_found(self):
         """AC3: Return None if token not found."""
-        from src.code_indexer.server.services.git_state_manager import TokenAuthenticator
+        from src.code_indexer.server.services.git_state_manager import (
+            TokenAuthenticator,
+        )
 
         # ARRANGE: No environment variable, no file
         with (
             patch.dict("os.environ", {}, clear=True),
             patch("pathlib.Path.exists", return_value=False),
         ):
-
             # ACT
             token = TokenAuthenticator.resolve_token("github")
 
@@ -229,7 +234,6 @@ class TestGitStateManagerPRCreation:
                 "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             # Setup mocks
             mock_token.return_value = "github_token_123"
             mock_git.side_effect = [
@@ -295,7 +299,6 @@ class TestGitStateManagerPRCreation:
                 "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             mock_token.return_value = "gitlab_token_456"
             mock_git.side_effect = [
                 Mock(stdout="develop\n"),  # Current branch
@@ -341,7 +344,6 @@ class TestGitStateManagerPRCreation:
                 "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             mock_token.return_value = "token"
             mock_git.side_effect = [
                 Mock(stdout="main\n"),  # Current branch
@@ -390,7 +392,6 @@ class TestGitStateManagerPRCreation:
                 "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             mock_token.return_value = "token"
             mock_git.side_effect = [
                 Mock(stdout="main\n"),
@@ -438,7 +439,6 @@ class TestGitStateManagerPRCreation:
                 "src.code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             mock_token.return_value = "token"
             # Simulate failure during commit, but still return to original branch
             mock_git.side_effect = [

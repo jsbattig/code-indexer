@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Repository Listing Manager for CIDX Server.
 
 Provides repository listing functionality with search, filtering, and statistics.
 Handles both golden repositories and user activated repositories.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import os
 import subprocess
@@ -184,7 +185,10 @@ class RepositoryListingManager:
         try:
             details["branches_list"] = self.get_available_branches(alias)
         except Exception as e:
-            self.logger.warning(f"Could not get branches for {alias}: {e}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Could not get branches for {alias}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             details["branches_list"] = [golden_repo["default_branch"]]
 
         # Add repository statistics
@@ -194,7 +198,10 @@ class RepositoryListingManager:
             details["index_size"] = stats["index_size"]
             details["last_updated"] = stats["last_updated"]
         except Exception as e:
-            self.logger.warning(f"Could not get statistics for {alias}: {e}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Could not get statistics for {alias}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             details["file_count"] = 0
             details["index_size"] = 0
             details["last_updated"] = golden_repo["created_at"]
@@ -261,10 +268,16 @@ class RepositoryListingManager:
             return branches or [golden_repo["default_branch"]]
 
         except subprocess.TimeoutExpired:
-            self.logger.warning(f"Git ls-remote timed out for repository {alias}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Git ls-remote timed out for repository {alias}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return [golden_repo["default_branch"]]
         except Exception as e:
-            self.logger.warning(f"Failed to get branches for repository {alias}: {e}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Failed to get branches for repository {alias}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return [golden_repo["default_branch"]]
 
     def get_repository_statistics(self, alias: str) -> Dict[str, Any]:
@@ -390,7 +403,10 @@ class RepositoryListingManager:
                     continue
                 file_count += len(files)
         except Exception as e:
-            self.logger.warning(f"Failed to count files in {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Failed to count files in {repo_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         return file_count
 
@@ -415,7 +431,10 @@ class RepositoryListingManager:
                         # Skip files we can't access
                         pass
         except Exception as e:
-            self.logger.warning(f"Failed to calculate size for {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            self.logger.warning(
+                f"Failed to calculate size for {repo_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         return total_size
 
@@ -453,6 +472,7 @@ class RepositoryListingManager:
 
         except Exception as e:
             self.logger.warning(
-                f"Failed to get last modified time for {repo_path}: {e}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Failed to get last modified time for {repo_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return datetime.now(timezone.utc).isoformat()

@@ -1,6 +1,6 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """AutoUpdateService - polling service for automatic CIDX server deployment."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -59,8 +59,9 @@ class AutoUpdateService:
             new_state: Target state to transition to
         """
         logger.info(
-            f"State transition: {self.current_state.value} -> {new_state.value}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"State transition: {self.current_state.value} -> {new_state.value}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Record timestamp when entering DEPLOYING state
         if new_state == ServiceState.DEPLOYING:
@@ -87,7 +88,10 @@ class AutoUpdateService:
 
         # Skip if not in IDLE state
         if self.current_state != ServiceState.IDLE:
-            logger.debug(f"Skipping poll - current state: {self.current_state.value}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Skipping poll - current state: {self.current_state.value}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         try:
@@ -99,16 +103,25 @@ class AutoUpdateService:
 
             if not has_changes:
                 # No changes - return to IDLE
-                logger.debug("No changes detected", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    "No changes detected",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 self.transition_to(ServiceState.IDLE)
                 return
 
             # Changes detected - attempt deployment
-            logger.info("Changes detected, attempting deployment", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Changes detected, attempting deployment",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Try to acquire deployment lock
             if not self.deployment_lock.acquire():
-                logger.warning("Another deployment in progress, skipping", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    "Another deployment in progress, skipping",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 self.transition_to(ServiceState.IDLE)
                 return
 
@@ -121,13 +134,22 @@ class AutoUpdateService:
                     # Restart server after successful deployment
                     self.transition_to(ServiceState.RESTARTING)
                     self.deployment_executor.restart_server()
-                    logger.info("Deployment and restart completed successfully", extra={"correlation_id": get_correlation_id()})
+                    logger.info(
+                        "Deployment and restart completed successfully",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                 else:
-                    logger.error("Deployment failed", extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        "Deployment failed",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
             except Exception as e:
                 # Record error and continue
-                logger.exception(f"Deployment error: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.exception(
+                    f"Deployment error: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 self.last_error = e
 
             finally:
@@ -138,6 +160,9 @@ class AutoUpdateService:
 
         except Exception as e:
             # Catch any unexpected errors during polling
-            logger.exception(f"Unexpected error during polling: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.exception(
+                f"Unexpected error during polling: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             self.last_error = e
             self.transition_to(ServiceState.IDLE)

@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Queue-based manager for Claude CLI invocations with concurrency control.
 
@@ -8,6 +7,8 @@ Provides:
 - Configurable worker pool for concurrency control
 - CLI availability checking with caching
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import fcntl
 import json
@@ -51,9 +52,7 @@ class ClaudeCliManager:
         """
         self._api_key = api_key
         self._max_workers = max_workers
-        self._work_queue: (
-            "queue.Queue[Optional[Tuple[Path, Callable[[bool, str], None]]]]"
-        ) = queue.Queue()
+        self._work_queue: "queue.Queue[Optional[Tuple[Path, Callable[[bool, str], None]]]]" = queue.Queue()
         self._worker_threads: List[threading.Thread] = []
         self._shutdown_event = threading.Event()
         self._cli_available: Optional[bool] = None
@@ -71,7 +70,10 @@ class ClaudeCliManager:
             self._worker_threads.append(t)
             t.start()
 
-        logger.info(f"ClaudeCliManager started with {max_workers} workers", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"ClaudeCliManager started with {max_workers} workers",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def submit_work(
         self, repo_path: Path, callback: Callable[[bool, str], None]
@@ -84,7 +86,10 @@ class ClaudeCliManager:
             callback: Callback function(success: bool, result: str) invoked on completion
         """
         self._work_queue.put((repo_path, callback))
-        logger.debug(f"Work queued for {repo_path}", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"Work queued for {repo_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def sync_api_key(self) -> None:
         """
@@ -94,7 +99,10 @@ class ClaudeCliManager:
         Preserves existing fields in ~/.claude.json.
         """
         if not self._api_key:
-            logger.debug("No API key configured, skipping sync", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "No API key configured, skipping sync",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return
 
         lock_path = Path.home() / ".claude.json.lock"
@@ -110,16 +118,26 @@ class ClaudeCliManager:
                         try:
                             existing = json.loads(json_path.read_text())
                         except json.JSONDecodeError:
-                            logger.warning(f"Invalid JSON in {json_path}, overwriting", extra={"correlation_id": get_correlation_id()})
+                            logger.warning(
+                                f"Invalid JSON in {json_path}, overwriting",
+                                extra={"correlation_id": get_correlation_id()},
+                            )
 
                     # Update primaryApiKey
                     existing["primaryApiKey"] = self._api_key
                     json_path.write_text(json.dumps(existing, indent=2))
-                    logger.debug(f"API key synced to {json_path}", extra={"correlation_id": get_correlation_id()})
+                    logger.debug(
+                        f"API key synced to {json_path}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                 finally:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         except Exception as e:
-            logger.error(f"Failed to sync API key: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to sync API key: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise
 
     def check_cli_available(self) -> bool:
@@ -141,10 +159,16 @@ class ClaudeCliManager:
                 ["which", "claude"], capture_output=True, text=True, timeout=5
             )
             self._cli_available = result.returncode == 0
-            logger.debug(f"CLI availability check: {self._cli_available}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"CLI availability check: {self._cli_available}",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             self._cli_available = False
-            logger.debug("CLI availability check: False (timeout/not found)", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "CLI availability check: False (timeout/not found)",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         self._cli_check_time = now
         return self._cli_available
@@ -157,7 +181,10 @@ class ClaudeCliManager:
             meta_dir: Path to the cidx-meta directory
         """
         self._meta_dir = meta_dir
-        logger.debug(f"Meta directory set to: {meta_dir}", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"Meta directory set to: {meta_dir}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def scan_for_fallbacks(self) -> List[Tuple[str, Path]]:
         """
@@ -167,7 +194,10 @@ class ClaudeCliManager:
             List of (alias, fallback_path) tuples for each fallback file found
         """
         if not self._meta_dir or not self._meta_dir.exists():
-            logger.debug(f"Meta directory not set or doesn't exist: {self._meta_dir}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Meta directory not set or doesn't exist: {self._meta_dir}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return []
 
         fallbacks = []
@@ -175,9 +205,15 @@ class ClaudeCliManager:
             # Extract alias: my-repo_README.md -> my-repo
             alias = path.stem.rsplit("_README", 1)[0]
             fallbacks.append((alias, path))
-            logger.debug(f"Found fallback: {alias} -> {path}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Found fallback: {alias} -> {path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
-        logger.info(f"Scanned meta directory, found {len(fallbacks)} fallback(s)", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Scanned meta directory, found {len(fallbacks)} fallback(s)",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return fallbacks
 
     def process_all_fallbacks(self) -> "CatchupResult":
@@ -198,10 +234,16 @@ class ClaudeCliManager:
 
         fallbacks = self.scan_for_fallbacks()
         if not fallbacks:
-            logger.info("No fallbacks to process", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "No fallbacks to process",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return CatchupResult(partial=False, processed=[], remaining=[])
 
-        logger.info(f"Starting catch-up processing for {len(fallbacks)} fallbacks", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Starting catch-up processing for {len(fallbacks)} fallbacks",
+            extra={"correlation_id": get_correlation_id()},
+        )
         processed: List[str] = []
         remaining = [alias for alias, _ in fallbacks]
 
@@ -218,7 +260,10 @@ class ClaudeCliManager:
                 processed.append(alias)
                 remaining.remove(alias)
             except Exception as e:
-                logger.error(f"Catch-up failed for {alias}: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"Catch-up failed for {alias}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return CatchupResult(
                     partial=True, processed=processed, remaining=remaining, error=str(e)
                 )
@@ -227,7 +272,10 @@ class ClaudeCliManager:
         if processed:
             self._commit_and_reindex(processed)
 
-        logger.info(f"Catch-up complete: {len(processed)} files processed", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Catch-up complete: {len(processed)} files processed",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return CatchupResult(partial=False, processed=processed, remaining=[])
 
     def _process_single_fallback(self, alias: str, fallback_path: Path) -> bool:
@@ -252,10 +300,16 @@ class ClaudeCliManager:
             # Rename fallback to generated filename
             # In production, would generate new content via Claude CLI
             fallback_path.rename(generated_path)
-            logger.info(f"Processed fallback for {alias}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Processed fallback for {alias}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to process fallback for {alias}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to process fallback for {alias}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return False
 
     def _commit_and_reindex(self, processed: List[str]) -> None:
@@ -282,9 +336,15 @@ class ClaudeCliManager:
                 capture_output=True,
                 check=False,
             )
-            logger.info(f"Committed catch-up changes for {len(processed)} files", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Committed catch-up changes for {len(processed)} files",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except Exception as e:
-            logger.warning(f"Git commit failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Git commit failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         try:
             subprocess.run(
@@ -293,16 +353,24 @@ class ClaudeCliManager:
                 capture_output=True,
                 check=False,
             )
-            logger.info("Re-indexed meta directory", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Re-indexed meta directory",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except Exception as e:
-            logger.warning(f"Re-index failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Re-index failed: {e}", extra={"correlation_id": get_correlation_id()}
+            )
 
     def _on_cli_success(self) -> None:
         """Called when CLI invocation succeeds. Triggers catch-up if first success."""
         with self._cli_state_lock:
             if self._cli_was_unavailable and self._meta_dir:
                 self._cli_was_unavailable = False
-                logger.info("CLI became available, triggering catch-up processing", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "CLI became available, triggering catch-up processing",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 threading.Thread(
                     target=self.process_all_fallbacks,
                     name="CatchupProcessor",
@@ -316,7 +384,10 @@ class ClaudeCliManager:
         Args:
             timeout: Maximum time to wait for each worker thread to stop
         """
-        logger.info("Shutting down ClaudeCliManager", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Shutting down ClaudeCliManager",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Add sentinel values to signal workers to stop (after completing queued work)
         for _ in self._worker_threads:
@@ -326,35 +397,55 @@ class ClaudeCliManager:
         for t in self._worker_threads:
             t.join(timeout=timeout)
             if t.is_alive():
-                logger.warning(f"Worker thread {t.name} did not stop within timeout", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    f"Worker thread {t.name} did not stop within timeout",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         # Set shutdown event for any remaining logic
         self._shutdown_event.set()
 
-        logger.info("ClaudeCliManager shutdown complete", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "ClaudeCliManager shutdown complete",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def _worker_loop(self) -> None:
         """Worker thread main loop."""
         thread_name = threading.current_thread().name
-        logger.debug(f"{thread_name} started", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"{thread_name} started", extra={"correlation_id": get_correlation_id()}
+        )
 
         while not self._shutdown_event.is_set():
             try:
                 item = self._work_queue.get(timeout=1.0)
                 if item is None:  # Sentinel for shutdown
-                    logger.debug(f"{thread_name} received shutdown sentinel", extra={"correlation_id": get_correlation_id()})
+                    logger.debug(
+                        f"{thread_name} received shutdown sentinel",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     break
 
                 repo_path, callback = item
-                logger.debug(f"{thread_name} processing {repo_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"{thread_name} processing {repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 self._process_work(repo_path, callback)
 
             except queue.Empty:
                 continue
             except Exception as e:
-                logger.error(f"{thread_name} error: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    f"{thread_name} error: {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
-        logger.debug(f"{thread_name} stopped", extra={"correlation_id": get_correlation_id()})
+        logger.debug(
+            f"{thread_name} stopped", extra={"correlation_id": get_correlation_id()}
+        )
 
     def _process_work(
         self, repo_path: Path, callback: Callable[[bool, str], None]
@@ -369,7 +460,10 @@ class ClaudeCliManager:
         try:
             # Check CLI availability
             if not self.check_cli_available():
-                logger.warning(f"Claude CLI not available for {repo_path}", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    f"Claude CLI not available for {repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 callback(False, "Claude CLI not available")
                 return
 
@@ -386,5 +480,9 @@ class ClaudeCliManager:
             self._on_cli_success()
 
         except Exception as e:
-            logger.error(f"Error processing {repo_path}: {e}", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error processing {repo_path}: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             callback(False, str(e))

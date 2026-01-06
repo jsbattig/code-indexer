@@ -82,7 +82,6 @@ class TestRemoteQueryExecution:
                 with patch(
                     "code_indexer.remote.query_execution._execute_authenticated_query"
                 ) as mock_execute_query:
-
                     # Mock configuration loading
                     mock_load_config.return_value = {
                         "server_url": "https://cidx.example.com",
@@ -141,7 +140,6 @@ class TestRemoteQueryExecution:
                 with patch(
                     "code_indexer.remote.query_execution._execute_authenticated_query"
                 ) as mock_execute_query:
-
                     # Mock configuration loading
                     mock_load_config.return_value = {
                         "server_url": "https://cidx.example.com",
@@ -205,7 +203,6 @@ class TestRemoteQueryExecution:
                 with patch(
                     "code_indexer.remote.query_execution._execute_authenticated_query"
                 ) as mock_execute_query:
-
                     # Mock configuration without repository link (first query)
                     mock_load_config.return_value = {
                         "server_url": "https://cidx.example.com",
@@ -272,7 +269,6 @@ class TestRemoteQueryExecution:
                     with patch(
                         "code_indexer.remote.query_execution._execute_authenticated_query"
                     ) as mock_execute_query:
-
                         # Mock configuration
                         mock_load_config.return_value = {
                             "server_url": "https://cidx.example.com",
@@ -321,7 +317,6 @@ class TestRemoteQueryExecution:
             with patch(
                 "code_indexer.remote.query_execution._establish_repository_link"
             ) as mock_establish_link:
-
                 # Mock configuration without repository link
                 mock_load_config.return_value = {
                     "server_url": "https://cidx.example.com",
@@ -371,7 +366,6 @@ class TestRemoteQueryExecution:
                 with patch(
                     "code_indexer.remote.query_execution._execute_authenticated_query"
                 ) as mock_execute_query:
-
                     # Mock configuration
                     mock_load_config.return_value = {
                         "server_url": "https://cidx.example.com",
@@ -415,7 +409,6 @@ class TestRemoteQueryExecution:
                 with patch(
                     "code_indexer.remote.query_execution._execute_authenticated_query"
                 ) as mock_execute_query:
-
                     # Mock configuration
                     mock_load_config.return_value = {
                         "server_url": "https://cidx.example.com",
@@ -498,7 +491,6 @@ class TestRemoteQueryCLIIntegration:
 
         with patch("code_indexer.remote.query_execution.execute_remote_query"):
             with patch("code_indexer.cli.asyncio.run") as mock_asyncio_run:
-
                 # Mock successful remote query execution
                 mock_query_results = [
                     Mock(
@@ -612,7 +604,6 @@ class TestRepositoryLinkingIntegration:
                         with patch(
                             "code_indexer.remote.query_execution._execute_authenticated_query"
                         ) as mock_execute_query:
-
                             # Mock configuration loading
                             mock_load_config.return_value = {
                                 "server_url": "https://cidx.example.com",
@@ -689,7 +680,6 @@ class TestRepositoryLinkingIntegration:
             with patch(
                 "code_indexer.remote.query_execution._execute_authenticated_query"
             ) as mock_execute_query:
-
                 # Mock repository link establishment
                 test_link = RepositoryLink(
                     alias="persistent-repo",

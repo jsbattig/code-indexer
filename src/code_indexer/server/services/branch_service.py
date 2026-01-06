@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Branch service for retrieving git branch information.
 
 Provides branch listing functionality using real GitPython operations
 without mocking, following CLAUDE.md Foundation #1 (Anti-Mock).
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from pathlib import Path
@@ -89,10 +90,18 @@ class BranchService:
             return branches
 
         except (GitCommandError, InvalidGitRepositoryError):
-            logger.error("Git operation failed listing branches", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                "Git operation failed listing branches",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise  # Preserve original exception
         except Exception as e:
-            logger.error("Unexpected error listing branches", exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                "Unexpected error listing branches",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError("Failed to retrieve branch information") from e
 
     def get_branch_by_name(self, branch_name: str) -> Optional[BranchInfo]:
@@ -116,13 +125,17 @@ class BranchService:
 
         except (GitCommandError, InvalidGitRepositoryError):
             logger.error(
-                f"Git operation failed getting branch '{branch_name}'", exc_info=True
-            , extra={"correlation_id": get_correlation_id()})
+                f"Git operation failed getting branch '{branch_name}'",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return None
         except Exception:
             logger.error(
-                f"Unexpected error getting branch '{branch_name}'", exc_info=True
-            , extra={"correlation_id": get_correlation_id()})
+                f"Unexpected error getting branch '{branch_name}'",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
             return None
 
     def _create_branch_info(
@@ -179,8 +192,9 @@ class BranchService:
                 )
             except Exception as e:
                 logger.warning(
-                    f"Failed to get index status for branch '{branch_name}': {e}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to get index status for branch '{branch_name}': {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         # Default status when index manager not available or fails
         return IndexStatus(
@@ -221,8 +235,9 @@ class BranchService:
 
             except (GitCommandError, ValueError) as e:
                 logger.warning(
-                    f"Failed to calculate ahead/behind for branch '{branch.name}': {e}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Failed to calculate ahead/behind for branch '{branch.name}': {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 behind = ahead = 0
 
             return RemoteTrackingInfo(
@@ -231,8 +246,9 @@ class BranchService:
 
         except Exception as e:
             logger.warning(
-                f"Failed to get remote tracking info for branch '{branch.name}': {e}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Failed to get remote tracking info for branch '{branch.name}': {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return None
 
     def close(self):
@@ -245,7 +261,10 @@ class BranchService:
             try:
                 self.repo.close()
             except Exception as e:
-                logger.warning(f"Error closing git repository: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    f"Error closing git repository: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             finally:
                 self._closed = True
 

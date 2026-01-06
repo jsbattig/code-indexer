@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Service for golden repository branch operations.
 
 Provides branch listing functionality for golden repositories with proper
 git operations and branch classification, following CLAUDE.md Anti-Mock principles.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import subprocess
@@ -154,8 +155,9 @@ class GoldenRepoBranchService:
                                 )
                         except (ValueError, AttributeError) as e:
                             logger.warning(
-                                f"Failed to parse commit date '{commit_date_str}': {e}"
-                            , extra={"correlation_id": get_correlation_id()})
+                                f"Failed to parse commit date '{commit_date_str}': {e}",
+                                extra={"correlation_id": get_correlation_id()},
+                            )
 
                         # Classify branch type
                         branch_type = classify_branch_type(branch_name)
@@ -171,7 +173,10 @@ class GoldenRepoBranchService:
                         branches.append(branch_info)
 
                 except (IndexError, ValueError) as e:
-                    logger.warning(f"Failed to parse git output line '{line}': {e}", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        f"Failed to parse git output line '{line}': {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     continue
 
             # Sort branches: default first, then by name
@@ -189,7 +194,9 @@ class GoldenRepoBranchService:
             raise GitOperationError(error_msg)
         except Exception as e:
             error_msg = f"Unexpected error during git operation: {e}"
-            logger.error(error_msg, exc_info=True, extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                error_msg, exc_info=True, extra={"correlation_id": get_correlation_id()}
+            )
             raise GitOperationError(error_msg)
 
     def _get_default_branch(self, repo_path: Path) -> Optional[str]:
@@ -220,7 +227,10 @@ class GoldenRepoBranchService:
                     return default_ref[len("refs/remotes/origin/") :]
 
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            logger.debug("Could not determine default branch from remote HEAD", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "Could not determine default branch from remote HEAD",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Fallback: try common default branch names
         try:
@@ -249,6 +259,9 @@ class GoldenRepoBranchService:
                     return branches[0]
 
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            logger.debug("Could not list branches to determine default", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                "Could not list branches to determine default",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         return None

@@ -10,7 +10,7 @@ Target: <150ms total startup for daemon-mode queries
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, cast
 
 # ONLY import what's absolutely needed for daemon delegation
 # Import timeout-aware connection function from delegation module
@@ -33,7 +33,7 @@ def get_socket_path(config_path: Path) -> Path:
     from code_indexer.config import ConfigManager
 
     config_manager = ConfigManager(config_path)
-    return config_manager.get_socket_path()
+    return cast(Path, config_manager.get_socket_path())
 
 
 def parse_query_args(args: List[str]) -> Dict[str, Any]:

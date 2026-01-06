@@ -50,7 +50,6 @@ class TestLoadSemanticIndexesMetadata:
                 "code_indexer.storage.id_index_manager.IDIndexManager"
             ) as mock_id_manager_class,
         ):
-
             # Mock FilesystemVectorStore.list_collections()
             mock_vector_store = Mock()
             mock_vector_store.list_collections.return_value = [collection_name]

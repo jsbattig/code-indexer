@@ -55,7 +55,6 @@ def mock_auth_admin():
         patch("code_indexer.server.auth.dependencies.jwt_manager") as mock_jwt,
         patch("code_indexer.server.auth.dependencies.user_manager") as mock_user_mgr,
     ):
-
         mock_jwt.validate_token.return_value = {
             "username": "admin",
             "role": "admin",

@@ -9,9 +9,10 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Generator
+from typing import Generator, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from code_indexer.server.app import create_app
@@ -58,7 +59,7 @@ class TestServerLifecycleIntegration:
     def test_server_starts_with_lifecycle_manager(self, test_client: TestClient):
         """Test that server starts successfully with GlobalReposLifecycleManager."""
         # Access app through test client
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
 
         # Verify lifecycle manager is in app state
         assert hasattr(app.state, "global_lifecycle_manager")
@@ -69,7 +70,7 @@ class TestServerLifecycleIntegration:
 
     def test_query_tracker_accessible_via_app_state(self, test_client: TestClient):
         """Test that QueryTracker is accessible via app.state."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
 
         # Verify query tracker is in app state
         assert hasattr(app.state, "query_tracker")
@@ -78,7 +79,7 @@ class TestServerLifecycleIntegration:
 
     def test_background_services_are_running(self, test_client: TestClient):
         """Test that background services are running after startup."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         lifecycle_manager = app.state.global_lifecycle_manager
 
         # Verify lifecycle manager is running
@@ -90,7 +91,7 @@ class TestServerLifecycleIntegration:
 
     def test_query_tracker_works_from_app_state(self, test_client: TestClient):
         """Test that QueryTracker from app.state works correctly."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         tracker = app.state.query_tracker
 
         test_path = "/test/index/path"
@@ -107,7 +108,7 @@ class TestServerLifecycleIntegration:
 
     def test_services_remain_active_after_app_creation(self, test_client: TestClient):
         """Test that background services remain active after app creation."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
         lifecycle_manager = app.state.global_lifecycle_manager
 
         # Wait a moment to ensure services are stable
@@ -141,7 +142,7 @@ class TestServerLifecycleIntegration:
 
     def test_multiple_requests_share_query_tracker(self, test_client: TestClient):
         """Test that multiple requests share the same QueryTracker instance."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
 
         # Get tracker from app state
         tracker1 = app.state.query_tracker
@@ -159,7 +160,7 @@ class TestServerLifecycleIntegration:
         self, test_client: TestClient
     ):
         """Test that lifecycle manager persists and remains stable."""
-        app = test_client.app
+        app = cast(FastAPI, test_client.app)
 
         # Get lifecycle manager
         manager_before = app.state.global_lifecycle_manager

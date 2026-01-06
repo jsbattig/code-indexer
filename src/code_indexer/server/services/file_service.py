@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 File Listing Service.
 
@@ -6,9 +5,11 @@ Provides real file listing operations following CLAUDE.md Foundation #1: No mock
 All operations use real file system operations with proper pagination and filtering.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any, Set
+from typing import List, Optional, Tuple, Dict, Any, Set, cast
 from datetime import datetime, timezone
 import logging
 import math
@@ -195,10 +196,13 @@ class FileListingService:
                     f"Repository '{repo_id}' not found for user '{username}'"
                 )
 
-            return activated_path
+            return cast(str, activated_path)
 
         except Exception as e:
-            logger.error(f"Failed to get repository path for {repo_id}/{username}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get repository path for {repo_id}/{username}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             if isinstance(e, FileNotFoundError):
                 raise
             raise RuntimeError(f"Unable to access repository {repo_id}: {e}")
@@ -255,11 +259,17 @@ class FileListingService:
                         files.append(file_info)
 
                     except (OSError, PermissionError) as e:
-                        logger.warning(f"Cannot access file {file_path}: {e}", extra={"correlation_id": get_correlation_id()})
+                        logger.warning(
+                            f"Cannot access file {file_path}: {e}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         continue
 
         except PermissionError as e:
-            logger.error(f"Cannot access repository directory {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Cannot access repository directory {repo_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise
 
         return files
@@ -304,7 +314,10 @@ class FileListingService:
                 "gitwildmatch", gitignore_content.splitlines()
             )
         except (OSError, UnicodeDecodeError) as e:
-            logger.warning(f"Failed to read .gitignore at {gitignore_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to read .gitignore at {gitignore_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return None
 
     def _detect_language(self, file_path: Path) -> Optional[str]:
@@ -414,7 +427,10 @@ class FileListingService:
 
         if sort_by is None or sort_by not in valid_sort_fields:
             if sort_by is not None:
-                logger.warning(f"Invalid sort field '{sort_by}', using 'path'", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    f"Invalid sort field '{sort_by}', using 'path'",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             sort_by = "path"
 
         if sort_by == "path":
@@ -510,6 +526,9 @@ class FileListingService:
         pagination_hint = ""
         if requires_pagination:
             if truncated:
+                assert (
+                    truncated_at_line is not None
+                ), "truncated_at_line must be set when truncated=True"
                 pagination_hint = f"Content truncated at line {truncated_at_line} due to token limit. Use offset={truncated_at_line + 1} to continue reading."
             else:
                 next_offset = effective_offset + returned_lines

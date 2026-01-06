@@ -72,7 +72,6 @@ class TestTemporalSlotSizeAccumulation(unittest.TestCase):
                 "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
             ) as mock_provider_info,
         ):
-
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",

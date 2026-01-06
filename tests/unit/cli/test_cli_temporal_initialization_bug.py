@@ -63,7 +63,6 @@ def test_temporal_service_initialization_includes_vector_store_client():
                 "src.code_indexer.cli.EmbeddingProviderFactory"
             ) as mock_embedding_factory,
         ):
-
             # Setup mocks
             mock_config = Mock()
             mock_config.codebase_dir = project_root

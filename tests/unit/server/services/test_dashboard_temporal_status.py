@@ -21,30 +21,40 @@ class TestGetTemporalIndexStatus:
         username = "testuser"
         repo_alias = "test-repo"
 
-        with patch.object(service, "_get_activated_repo_manager") as mock_manager_getter:
+        with patch.object(
+            service, "_get_activated_repo_manager"
+        ) as mock_manager_getter:
             mock_manager = MagicMock()
             mock_manager.data_dir = "/fake/data"
             mock_manager.get_repository.return_value = {
                 "alias": repo_alias,
                 "path": "/fake/repo/path",
-                "collection_name": "test-collection"
+                "collection_name": "test-collection",
             }
             mock_manager_getter.return_value = mock_manager
 
             # Mock temporal collection path exists
-            with patch("code_indexer.server.services.dashboard_service.Path") as MockPath:
+            with patch(
+                "code_indexer.server.services.dashboard_service.Path"
+            ) as MockPath:
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = True
                 MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
 
                 # Mock format detection at source module
-                with patch("code_indexer.storage.temporal_metadata_store.TemporalMetadataStore") as MockStore:
+                with patch(
+                    "code_indexer.storage.temporal_metadata_store.TemporalMetadataStore"
+                ) as MockStore:
                     MockStore.detect_format.return_value = "v2"
 
                     # Mock vector file count at source module
-                    with patch("code_indexer.storage.filesystem_vector_store.FilesystemVectorStore") as MockVectorStore:
+                    with patch(
+                        "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+                    ) as MockVectorStore:
                         mock_store_instance = MockVectorStore.return_value
-                        mock_store_instance.get_indexed_file_count_fast.return_value = 150
+                        mock_store_instance.get_indexed_file_count_fast.return_value = (
+                            150
+                        )
 
                         # Act
                         result = service.get_temporal_index_status(username, repo_alias)
@@ -53,7 +63,10 @@ class TestGetTemporalIndexStatus:
                         assert result["format"] == "v2"
                         assert result["file_count"] == 150
                         assert result["needs_reindex"] is False
-                        assert "active" in result["message"].lower() or "v2" in result["message"].lower()
+                        assert (
+                            "active" in result["message"].lower()
+                            or "v2" in result["message"].lower()
+                        )
                         assert "150" in result["message"]
 
     def test_get_temporal_status_v1_format(self):
@@ -63,30 +76,40 @@ class TestGetTemporalIndexStatus:
         username = "testuser"
         repo_alias = "test-repo"
 
-        with patch.object(service, "_get_activated_repo_manager") as mock_manager_getter:
+        with patch.object(
+            service, "_get_activated_repo_manager"
+        ) as mock_manager_getter:
             mock_manager = MagicMock()
             mock_manager.data_dir = "/fake/data"
             mock_manager.get_repository.return_value = {
                 "alias": repo_alias,
                 "path": "/fake/repo/path",
-                "collection_name": "test-collection"
+                "collection_name": "test-collection",
             }
             mock_manager_getter.return_value = mock_manager
 
             # Mock temporal collection path exists
-            with patch("code_indexer.server.services.dashboard_service.Path") as MockPath:
+            with patch(
+                "code_indexer.server.services.dashboard_service.Path"
+            ) as MockPath:
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = True
                 MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
 
                 # Mock format detection at source module
-                with patch("code_indexer.storage.temporal_metadata_store.TemporalMetadataStore") as MockStore:
+                with patch(
+                    "code_indexer.storage.temporal_metadata_store.TemporalMetadataStore"
+                ) as MockStore:
                     MockStore.detect_format.return_value = "v1"
 
                     # Mock vector file count at source module
-                    with patch("code_indexer.storage.filesystem_vector_store.FilesystemVectorStore") as MockVectorStore:
+                    with patch(
+                        "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+                    ) as MockVectorStore:
                         mock_store_instance = MockVectorStore.return_value
-                        mock_store_instance.get_indexed_file_count_fast.return_value = 85
+                        mock_store_instance.get_indexed_file_count_fast.return_value = (
+                            85
+                        )
 
                         # Act
                         result = service.get_temporal_index_status(username, repo_alias)
@@ -95,7 +118,10 @@ class TestGetTemporalIndexStatus:
                         assert result["format"] == "v1"
                         assert result["file_count"] == 85
                         assert result["needs_reindex"] is True
-                        assert "legacy" in result["message"].lower() or "v1" in result["message"].lower()
+                        assert (
+                            "legacy" in result["message"].lower()
+                            or "v1" in result["message"].lower()
+                        )
                         assert "re-index" in result["message"].lower()
 
     def test_get_temporal_status_no_index(self):
@@ -105,17 +131,21 @@ class TestGetTemporalIndexStatus:
         username = "testuser"
         repo_alias = "test-repo"
 
-        with patch.object(service, "_get_activated_repo_manager") as mock_manager_getter:
+        with patch.object(
+            service, "_get_activated_repo_manager"
+        ) as mock_manager_getter:
             mock_manager = MagicMock()
             mock_manager.data_dir = "/fake/data"
             mock_manager.get_repository.return_value = {
                 "alias": repo_alias,
                 "path": "/fake/repo/path",
-                "collection_name": "test-collection"
+                "collection_name": "test-collection",
             }
             mock_manager_getter.return_value = mock_manager
 
-            with patch("code_indexer.server.services.dashboard_service.Path") as MockPath:
+            with patch(
+                "code_indexer.server.services.dashboard_service.Path"
+            ) as MockPath:
                 # Mock temporal collection path does not exist
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = False
@@ -137,7 +167,9 @@ class TestGetTemporalIndexStatus:
         username = "testuser"
         repo_alias = "nonexistent-repo"
 
-        with patch.object(service, "_get_activated_repo_manager") as mock_manager_getter:
+        with patch.object(
+            service, "_get_activated_repo_manager"
+        ) as mock_manager_getter:
             mock_manager = MagicMock()
             mock_manager.get_repository.return_value = None
             mock_manager_getter.return_value = mock_manager
@@ -160,26 +192,34 @@ class TestGetTemporalIndexStatus:
         username = "testuser"
         repo_alias = "test-repo"
 
-        with patch.object(service, "_get_activated_repo_manager") as mock_manager_getter:
+        with patch.object(
+            service, "_get_activated_repo_manager"
+        ) as mock_manager_getter:
             mock_manager = MagicMock()
             mock_manager.data_dir = "/fake/data"
             # Mock the CORRECT signature: get_repository(username, user_alias)
             mock_manager.get_repository.return_value = {
                 "alias": repo_alias,
                 "path": "/fake/repo/path",
-                "collection_name": "test-collection"
+                "collection_name": "test-collection",
             }
             mock_manager_getter.return_value = mock_manager
 
             # Mock temporal collection path does not exist for simple test
-            with patch("code_indexer.server.services.dashboard_service.Path") as MockPath:
+            with patch(
+                "code_indexer.server.services.dashboard_service.Path"
+            ) as MockPath:
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = False
                 MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
 
                 # Act - Call with username parameter
-                result = service.get_temporal_index_status(username=username, repo_alias=repo_alias)
+                result = service.get_temporal_index_status(
+                    username=username, repo_alias=repo_alias
+                )
 
                 # Assert - Verify get_repository was called with correct signature
-                mock_manager.get_repository.assert_called_once_with(username, repo_alias)
+                mock_manager.get_repository.assert_called_once_with(
+                    username, repo_alias
+                )
                 assert result["format"] == "none"

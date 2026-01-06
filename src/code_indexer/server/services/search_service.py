@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Semantic Search Service.
 
 Provides real semantic search operations following CLAUDE.md Foundation #1: No mocks.
 All operations use real vector embeddings and vector store searches.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import os
 from pathlib import Path
@@ -152,7 +153,10 @@ class SemanticSearchService:
             config_manager = ConfigManager.create_with_backtrack(Path(repo_path))
             config = config_manager.get_config()
 
-            logger.info(f"Loaded repository config from {repo_path}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Loaded repository config from {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Create backend using BackendFactory (Story #526: pass server cache)
             # Import here to avoid circular dependency
@@ -165,7 +169,10 @@ class SemanticSearchService:
             )
             vector_store_client = backend.get_vector_store_client()
 
-            logger.info(f"Using backend: {type(backend).__name__}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Using backend: {type(backend).__name__}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Create repository-specific embedding service
             embedding_service = EmbeddingProviderFactory.create(config=config)
@@ -175,7 +182,10 @@ class SemanticSearchService:
                 config, embedding_service
             )
 
-            logger.info(f"Using collection: {collection_name}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Using collection: {collection_name}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Real vector search - different parameter patterns for different backends
             # FilesystemVectorStore: parallel execution (query + embedding_provider)
@@ -201,11 +211,16 @@ class SemanticSearchService:
                     collection_name=collection_name,
                 )
 
-            logger.info(f"Found {len(search_results)} results", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Found {len(search_results)} results",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Format results for response
             formatted_results = []
             for result in search_results:
+                if not isinstance(result, dict):
+                    continue  # Skip malformed results
                 payload = result.get("payload", {})
                 score = result.get("score", 0.0)
 
@@ -221,13 +236,18 @@ class SemanticSearchService:
                     score=score,
                     content=source_content or payload.get("snippet", ""),
                     language=self._detect_language_from_path(payload.get("path", "")),
+                    file_last_modified=payload.get("file_last_modified"),
+                    indexed_timestamp=payload.get("indexed_timestamp"),
                 )
                 formatted_results.append(search_item)
 
             return formatted_results
 
         except Exception as e:
-            logger.error(f"Semantic search failed for repo {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Semantic search failed for repo {repo_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError(f"Semantic search failed: {e}")
 
     def _detect_language_from_path(self, file_path: str) -> Optional[str]:
@@ -290,7 +310,10 @@ class SemanticSearchService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to get repository path for {repo_id}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to get repository path for {repo_id}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             if isinstance(e, FileNotFoundError):
                 raise
             raise RuntimeError(f"Unable to access repository {repo_id}: {e}")

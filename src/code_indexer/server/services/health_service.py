@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Health Check Service.
 
 Provides real system health monitoring following CLAUDE.md Foundation #1: No mocks.
 All operations use real system checks, database connections, and service monitoring.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import psutil
 import time
@@ -56,7 +57,10 @@ class HealthCheckService:
             self.database_url = f"sqlite:///{self.data_dir}/cidx_server.db"
 
         except Exception as e:
-            logger.error(f"Failed to initialize real dependencies: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to initialize real dependencies: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             raise RuntimeError(f"Cannot initialize health check service: {e}")
 
     def get_system_health(self) -> HealthCheckResponse:
@@ -82,7 +86,10 @@ class HealthCheckService:
         overall_status = self._calculate_overall_status(services, system_info)
 
         end_time = time.time()
-        logger.info(f"Health check completed in {end_time - start_time:.3f} seconds", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Health check completed in {end_time - start_time:.3f} seconds",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         return HealthCheckResponse(
             status=overall_status,
@@ -130,11 +137,16 @@ class HealthCheckService:
             else:
                 status = HealthStatus.UNHEALTHY
 
-            return ServiceHealthInfo(status=status, response_time_ms=response_time)
+            return ServiceHealthInfo(
+                status=status, response_time_ms=response_time, error_message=None
+            )
 
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"Database health check failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Database health check failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return ServiceHealthInfo(
                 status=HealthStatus.UNHEALTHY,
@@ -199,16 +211,15 @@ class HealthCheckService:
             return ServiceHealthInfo(
                 status=status,
                 response_time_ms=response_time,
-                metadata={
-                    "golden_repos": golden_count,
-                    "activated_repos": activated_count,
-                    "total_collections": total_collections,
-                },
+                error_message=None,
             )
 
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"Vector store health check failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Vector store health check failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return ServiceHealthInfo(
                 status=HealthStatus.UNHEALTHY,
@@ -264,7 +275,10 @@ class HealthCheckService:
 
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"Storage health check failed: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Storage health check failed: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return ServiceHealthInfo(
                 status=HealthStatus.UNHEALTHY,
@@ -353,7 +367,10 @@ class HealthCheckService:
             if background_job_manager:
                 return background_job_manager.get_active_job_count()
         except Exception as e:
-            logger.warning(f"Failed to get active job count: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to get active job count: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Return 0 if job manager not available or failed to query
         return 0

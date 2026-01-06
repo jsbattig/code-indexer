@@ -7,7 +7,7 @@ Following Story 2 requirements for reusable projection matrices.
 
 import numpy as np
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 
 class ProjectionMatrixManager:
@@ -105,4 +105,4 @@ class ProjectionMatrixManager:
         matrix = np.load(matrix_path)
         self._matrix_cache[cache_key] = matrix
 
-        return matrix
+        return cast(np.ndarray, matrix)

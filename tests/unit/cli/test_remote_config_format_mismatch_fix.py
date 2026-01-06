@@ -39,7 +39,6 @@ class TestRemoteConfigurationFormatMismatch:
                 "code_indexer.remote.initialization.validate_credentials"
             ) as mock_creds,
         ):
-
             # Configure mocks to return successful validation
             mock_url.return_value = "http://127.0.0.1:8095"
             mock_conn.return_value = AsyncMock()
@@ -305,7 +304,6 @@ class TestRemoteConfigurationFormatAfterFix:
                 "code_indexer.remote.initialization.validate_credentials"
             ) as mock_creds,
         ):
-
             # Configure mocks to return successful validation
             mock_url.return_value = "http://127.0.0.1:8095"
             mock_conn.return_value = AsyncMock()

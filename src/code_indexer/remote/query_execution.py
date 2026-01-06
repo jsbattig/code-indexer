@@ -232,7 +232,6 @@ async def _establish_repository_link(project_root: Path) -> Optional[RepositoryL
         async with RepositoryLinkingClient(
             server_url=server_url, credentials=credentials
         ) as linking_client:
-
             exact_matcher = ExactBranchMatcher(linking_client)
 
             # Attempt exact branch matching
@@ -299,7 +298,6 @@ async def _execute_authenticated_query(
         async with RemoteQueryClient(
             server_url=server_url, credentials=credentials
         ) as query_client:
-
             results = await query_client.execute_query(
                 repository_alias=repository_alias,
                 query=query,

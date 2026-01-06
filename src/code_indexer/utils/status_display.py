@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union, Callable
 
-from rich.console import Console
+from rich.console import Console, Status
 from rich.progress import (
     Progress,
     TextColumn,
@@ -32,6 +32,7 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
     Column,
+    TaskID,
 )
 from rich.markdown import Markdown
 from rich.layout import Layout
@@ -176,7 +177,7 @@ class ProgressBarDisplay(BaseStatusDisplay):
         self.show_time_remaining = show_time_remaining
         self.bar_width = bar_width
         self.progress: Optional[Progress] = None
-        self.task_id: Optional[int] = None
+        self.task_id: Optional[TaskID] = None
 
     def start(self, operation_name: str) -> None:
         """Start progress bar display."""
@@ -190,16 +191,16 @@ class ProgressBarDisplay(BaseStatusDisplay):
             TextColumn(f"[bold blue]{operation_name}", justify="right"),
             BarColumn(bar_width=self.bar_width),
             TaskProgressColumn(),
-            "•",
+            TextColumn("•"),
             TimeElapsedColumn(),
         ]
 
         if self.show_time_remaining:
-            columns.extend(["•", TimeRemainingColumn()])
+            columns.extend([TextColumn("•"), TimeRemainingColumn()])
 
         columns.extend(
             [
-                "•",
+                TextColumn("•"),
                 TextColumn(
                     "[cyan]{task.description}",
                     table_column=Column(no_wrap=False, overflow="fold"),
@@ -278,7 +279,7 @@ class SpinnerDisplay(BaseStatusDisplay):
 
     def __init__(self, console: Optional[Console] = None):
         super().__init__(console)
-        self.status_context = None
+        self.status_context: Optional[Status] = None
 
     def start(self, operation_name: str) -> None:
         """Start spinner display."""
@@ -389,6 +390,7 @@ class SplitStreamDisplay(BaseStatusDisplay):
         content_text = "".join(self.content_buffer)
 
         # Check if content contains markdown and render appropriately
+        rendered_content: Union[Markdown, str]
         if self._has_markdown_patterns(content_text):
             try:
                 processed_content = _process_markdown_for_readability(content_text)

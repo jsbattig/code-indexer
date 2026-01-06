@@ -17,7 +17,7 @@ import shutil
 import os
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, cast
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -134,7 +134,7 @@ class RealComponentTestInfrastructure:
 
         # The create_app() function will create its own managers using our test environment
         # Since we set CIDX_SERVER_DATA_DIR, it will use our temp directory
-        app = create_app()
+        app = cast(FastAPI, create_app())
 
         # Override with our test components
         dependencies.user_manager = test_user_manager

@@ -414,8 +414,8 @@ class RealAuthenticatedHTTPClient(RealHTTPClient):
         if auth_response.status_code != 200:
             raise httpx.HTTPStatusError(
                 f"Authentication failed: HTTP {auth_response.status_code}",
-                request=None,
-                response=None,
+                request=auth_response.request,  # type: ignore[arg-type]
+                response=auth_response,  # type: ignore[arg-type]
             )
 
         # Extract real tokens from response
@@ -461,8 +461,8 @@ class RealAuthenticatedHTTPClient(RealHTTPClient):
         if refresh_response.status_code != 200:
             raise httpx.HTTPStatusError(
                 f"Token refresh failed: HTTP {refresh_response.status_code}",
-                request=None,
-                response=None,
+                request=refresh_response.request,  # type: ignore[arg-type]
+                response=refresh_response,  # type: ignore[arg-type]
             )
 
         # Extract new tokens

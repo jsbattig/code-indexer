@@ -108,7 +108,6 @@ class TestTimestampIntegrationWorkflow:
             mock_dependencies["slot_tracker"],
             codebase_dir=file_path.parent,
         ) as manager:
-
             metadata = {
                 "project_id": "integration-test-project",
                 "file_hash": "integration-hash",
@@ -283,7 +282,6 @@ class TestTimestampIntegrationWorkflow:
             mock_dependencies["slot_tracker"],
             codebase_dir=file_path.parent,
         ) as manager:
-
             chunk = {
                 "text": "universal timestamps",
                 "chunk_index": 0,
@@ -358,7 +356,6 @@ class TestTimestampIntegrationWorkflow:
                 mock_dependencies["slot_tracker"],
                 codebase_dir=tmp_path,
             ) as manager:
-
                 chunk = {
                     "text": "performance test",
                     "chunk_index": 0,
@@ -416,7 +413,6 @@ class TestTimestampIntegrationWorkflow:
             mock_dependencies["slot_tracker"],
             codebase_dir=tmp_path,
         ) as manager:
-
             chunk = {
                 "text": "error handling test",
                 "chunk_index": 0,

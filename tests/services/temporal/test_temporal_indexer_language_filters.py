@@ -64,7 +64,6 @@ class TestTemporalIndexerLanguageFilters:
                 "code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
             ) as mock_vcm_class,
         ):
-
             # Create commit info
             from code_indexer.services.temporal.models import CommitInfo
 
@@ -205,7 +204,6 @@ class TestTemporalIndexerLanguageFilters:
                     "code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
                 ) as mock_vcm_class,
             ):
-
                 # Create commit info
                 from code_indexer.services.temporal.models import CommitInfo
 

@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Data sanitization middleware for CIDX Server.
 
 Sanitizes sensitive information from error messages and logs following
 CLAUDE.md Foundation #1: No mocks - real sanitization with actual pattern matching.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import re
 import logging
@@ -42,8 +43,9 @@ class SensitiveDataSanitizer:
                 )
             except re.error as e:
                 logger.warning(
-                    f"Invalid sanitization regex pattern '{rule.pattern}': {e}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Invalid sanitization regex pattern '{rule.pattern}': {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def sanitize_string(self, text: str) -> str:
         """
@@ -156,7 +158,7 @@ class SensitiveDataSanitizer:
         """
         try:
             # Basic request info
-            request_info = {
+            request_info: Dict[str, Any] = {
                 "method": request.method,
                 "path": request.url.path,
                 "query_params": str(request.url.query) if request.url.query else None,
@@ -182,5 +184,8 @@ class SensitiveDataSanitizer:
             return request_info
 
         except Exception as e:
-            logger.warning(f"Error sanitizing request info: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Error sanitizing request info: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {"method": "UNKNOWN", "path": "UNKNOWN"}

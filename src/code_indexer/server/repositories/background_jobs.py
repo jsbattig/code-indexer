@@ -55,7 +55,9 @@ class BackgroundJob:
     claude_actions: Optional[List[str]] = None  # Aggregated actions from all projects
     failure_reason: Optional[str] = None  # Human-readable failure explanation
     extended_error: Optional[Dict[str, Any]] = None  # Structured error context
-    language_resolution_status: Optional[Dict[str, Dict[str, Any]]] = None  # Per-project tracking
+    language_resolution_status: Optional[Dict[str, Dict[str, Any]]] = (
+        None  # Per-project tracking
+    )
 
 
 class BackgroundJobManager:
@@ -802,7 +804,11 @@ class BackgroundJobManager:
 
             # Sort by completion time (newest first)
             recent_jobs.sort(
-                key=lambda x: x["completed_at"] if x["completed_at"] else "",
+                key=lambda x: (
+                    int(x["completed_at"])
+                    if isinstance(x["completed_at"], (int, str)) and x["completed_at"]
+                    else 0
+                ),
                 reverse=True,
             )
 

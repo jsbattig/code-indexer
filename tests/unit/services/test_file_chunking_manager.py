@@ -258,7 +258,6 @@ class TestFileChunkingManagerAcceptanceCriteria:
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
         ) as manager:
-
             metadata = {"project_id": "test", "file_hash": "abc123"}
             progress_callback = Mock()
 
@@ -285,7 +284,6 @@ class TestFileChunkingManagerAcceptanceCriteria:
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
         ) as manager:
-
             metadata = {"project_id": "test", "file_hash": "abc123"}
             progress_callback = Mock()
 
@@ -400,7 +398,6 @@ class TestFileChunkingManagerAcceptanceCriteria:
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
         ) as manager:
-
             metadata = {"project_id": "test", "file_hash": "abc123"}
 
             future: Future[Any] = manager.submit_file_for_processing(
@@ -429,9 +426,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         failing_vector_manager.embedding_provider.get_current_model.return_value = (
             "voyage-large-2-instruct"
         )
-        failing_vector_manager.embedding_provider._get_model_token_limit.return_value = (
-            120000
-        )
+        failing_vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Create a mock future that returns a result with error
         failing_future: Future[Any] = Future()
@@ -768,7 +763,6 @@ class TestFileChunkingManagerValidation:
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
         ) as manager:
-
             test_file = tempfile.NamedTemporaryFile(
                 mode="w", delete=False, suffix=".py"
             )

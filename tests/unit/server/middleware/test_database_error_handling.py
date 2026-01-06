@@ -310,7 +310,8 @@ class TestDatabaseErrorHandling:
     ):
         """Test specific handling of database deadlock errors."""
         deadlock_error = DatabaseRetryableError(
-            "deadlock detected", error_code="40P01"  # PostgreSQL deadlock error
+            "deadlock detected",
+            error_code="40P01",  # PostgreSQL deadlock error
         )
 
         # Deadlocks should be retried with shorter delays

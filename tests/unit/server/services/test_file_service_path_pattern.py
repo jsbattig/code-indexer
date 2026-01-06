@@ -189,7 +189,9 @@ class TestPathPatternRecursiveGlob:
     def test_pattern_with_no_matches(self, temp_repo, service):
         """Test that non-matching pattern returns empty results."""
         query_params = FileListQueryParams(
-            path_pattern="**/*.cpp", page=1, limit=100  # No .cpp files exist
+            path_pattern="**/*.cpp",
+            page=1,
+            limit=100,  # No .cpp files exist
         )
 
         result = service.list_files_by_path(
@@ -203,7 +205,9 @@ class TestPathPatternRecursiveGlob:
     def test_case_sensitive_pattern_matching(self, temp_repo, service):
         """Test that pattern matching is case-sensitive."""
         query_params = FileListQueryParams(
-            path_pattern="**/*synchronizer*", page=1, limit=100  # lowercase 's'
+            path_pattern="**/*synchronizer*",
+            page=1,
+            limit=100,  # lowercase 's'
         )
 
         result = service.list_files_by_path(

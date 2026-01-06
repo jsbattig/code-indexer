@@ -63,12 +63,9 @@ class TestFilterParsingPerformance:
             ) as mock_path_filter_builder_class,
             patch.object(Path, "exists", mock_exists),
         ):
-
             # Setup mocks
             mock_config = Mock()
-            mock_config_mgr.create_with_backtrack.return_value.get_config.return_value = (
-                mock_config
-            )
+            mock_config_mgr.create_with_backtrack.return_value.get_config.return_value = mock_config
 
             mock_embedding_provider = Mock()
             mock_embedding_provider.embed.return_value = np.zeros(1024)

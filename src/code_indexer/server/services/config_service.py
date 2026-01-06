@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Configuration Service for CIDX Server Admin UI.
 
 Provides a high-level interface for reading and updating server configuration.
 All settings persist to ~/.cidx-server/config.json via ServerConfigManager.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from typing import Any, Dict, Optional
@@ -61,6 +62,7 @@ class ConfigService:
         """
         if self._config is None:
             self.load_config()
+        assert self._config is not None  # load_config() always sets self._config
         return self._config
 
     def get_all_settings(self) -> Dict[str, Any]:
@@ -71,6 +73,13 @@ class ConfigService:
             Dictionary with all settings flattened for easy access
         """
         config = self.get_config()
+
+        # These are guaranteed to be non-None by ServerConfig.__post_init__
+        assert config.cache_config is not None
+        assert config.reindexing_config is not None
+        assert config.resource_config is not None
+        assert config.password_security is not None
+        assert config.oidc_provider_config is not None
 
         settings = {
             # Server settings
@@ -187,7 +196,13 @@ class ConfigService:
         if not skip_validation:
             self.config_manager.validate_config(config)
             self.config_manager.save_config(config)
-            logger.info("Updated setting %s.%s to %s", category, key, value, extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "Updated setting %s.%s to %s",
+                category,
+                key,
+                value,
+                extra={"correlation_id": get_correlation_id()},
+            )
         else:
             # Just update in memory, don't validate or save yet
             logger.debug(
@@ -195,7 +210,7 @@ class ConfigService:
                 category,
                 key,
                 value,
-            extra={"correlation_id": get_correlation_id()},
+                extra={"correlation_id": get_correlation_id()},
             )
 
     def _update_server_setting(
@@ -218,6 +233,7 @@ class ConfigService:
     def _update_cache_setting(self, config: ServerConfig, key: str, value: Any) -> None:
         """Update a cache setting."""
         cache = config.cache_config
+        assert cache is not None  # Guaranteed by ServerConfig.__post_init__
         if key == "index_cache_ttl_minutes":
             cache.index_cache_ttl_minutes = float(value)
         elif key == "index_cache_cleanup_interval":
@@ -240,6 +256,7 @@ class ConfigService:
     ) -> None:
         """Update a reindexing setting."""
         reindex = config.reindexing_config
+        assert reindex is not None  # Guaranteed by ServerConfig.__post_init__
         if key == "change_percentage_threshold":
             reindex.change_percentage_threshold = float(value)
         elif key == "accuracy_threshold":
@@ -270,6 +287,7 @@ class ConfigService:
     ) -> None:
         """Update a timeout setting."""
         timeouts = config.resource_config
+        assert timeouts is not None  # Guaranteed by ServerConfig.__post_init__
         if key == "git_clone_timeout":
             timeouts.git_clone_timeout = int(value)
         elif key == "git_pull_timeout":
@@ -286,6 +304,7 @@ class ConfigService:
     ) -> None:
         """Update a password security setting."""
         pwd = config.password_security
+        assert pwd is not None  # Guaranteed by ServerConfig.__post_init__
         if key == "min_length":
             pwd.min_length = int(value)
         elif key == "max_length":
@@ -313,6 +332,7 @@ class ConfigService:
     def _update_oidc_setting(self, config: ServerConfig, key: str, value: Any) -> None:
         """Update an OIDC setting."""
         oidc = config.oidc_provider_config
+        assert oidc is not None  # Guaranteed by ServerConfig.__post_init__
         if key == "enabled":
             oidc.enabled = value in ["true", True]
         elif key == "issuer_url":
@@ -382,7 +402,9 @@ class ConfigService:
         # Validate and save
         self.config_manager.validate_config(config)
         self.config_manager.save_config(config)
-        logger.info("Saved all settings", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Saved all settings", extra={"correlation_id": get_correlation_id()}
+        )
 
     def get_config_file_path(self) -> str:
         """Get the path to the configuration file."""

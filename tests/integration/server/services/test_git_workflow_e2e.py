@@ -135,7 +135,6 @@ class TestGitWorkflowE2E:
                 "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             mock_token.return_value = "fake_token_12345"
             mock_pr_instance = Mock()
             mock_pr_instance.create_pull_request.return_value = (
@@ -266,7 +265,6 @@ class TestGitWorkflowE2E:
                 "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             mock_token.return_value = "token"
             mock_pr_instance = Mock()
             mock_pr_instance.create_pull_request.return_value = (
@@ -336,7 +334,6 @@ class TestGitWorkflowE2E:
                 "code_indexer.server.services.git_state_manager.TokenAuthenticator.resolve_token"
             ) as mock_token,
         ):
-
             mock_token.return_value = "token"
             mock_pr_instance = Mock()
             mock_pr_instance.create_pull_request.return_value = (

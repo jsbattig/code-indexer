@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 GitStateManager: Git state management for SCIP self-healing workflows.
 
@@ -11,6 +10,8 @@ Provides git operations orchestration for:
 Story #659: Git State Management for SCIP Self-Healing with PR Workflow
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import httpx
 import logging
 import os
@@ -19,7 +20,7 @@ import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Union, cast
 
 from code_indexer.utils.git_runner import run_git_command
 
@@ -112,7 +113,10 @@ class GitStateManager:
         status_output = status_result.stdout.strip()
         if not status_output:
             # Already clean, no action needed
-            logger.info(f"Repository {repo_path} is already clean, skipping clearing", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Repository {repo_path} is already clean, skipping clearing",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return CleanupResult(was_dirty=False, files_cleared=0)
 
         # Count files to be cleared
@@ -120,15 +124,19 @@ class GitStateManager:
             [line for line in status_output.split("\n") if line.strip()]
         )
         logger.info(
-            f"Repository {repo_path} has {files_to_clear} uncommitted changes, clearing"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Repository {repo_path} has {files_to_clear} uncommitted changes, clearing",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Execute git reset --hard HEAD
         try:
             run_git_command(
                 ["git", "reset", "--hard", "HEAD"], cwd=repo_path, check=True
             )
-            logger.debug(f"git reset --hard HEAD succeeded for {repo_path}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"git reset --hard HEAD succeeded for {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except subprocess.CalledProcessError as e:
             error_msg = f"git reset --hard failed: {e.stderr if hasattr(e, 'stderr') else str(e)}"
             logger.error(error_msg, extra={"correlation_id": get_correlation_id()})
@@ -137,7 +145,10 @@ class GitStateManager:
         # Execute git clean -fd
         try:
             run_git_command(["git", "clean", "-fd"], cwd=repo_path, check=True)
-            logger.debug(f"git clean -fd succeeded for {repo_path}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"git clean -fd succeeded for {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except subprocess.CalledProcessError as e:
             error_msg = (
                 f"git clean -fd failed: {e.stderr if hasattr(e, 'stderr') else str(e)}"
@@ -159,7 +170,10 @@ class GitStateManager:
             logger.error(error_msg, extra={"correlation_id": get_correlation_id()})
             raise GitStateError(error_msg)
 
-        logger.info(f"Successfully cleared {files_to_clear} files from {repo_path}", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Successfully cleared {files_to_clear} files from {repo_path}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Log to audit if available
         if self.audit_logger:
@@ -197,7 +211,10 @@ class GitStateManager:
         """
         # AC6: Check if PR creation is enabled
         if not self.config.enable_pr_creation:
-            logger.info("PR creation disabled in configuration", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                "PR creation disabled in configuration",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # AC7: Audit log that PR creation was disabled
             if self.audit_logger and job_id:
@@ -319,8 +336,11 @@ class GitStateManager:
                 ["git", "branch", "--show-current"], cwd=repo_path, check=True
             )
             branch_name = result.stdout.strip()
-            logger.debug(f"Current branch: {branch_name}", extra={"correlation_id": get_correlation_id()})
-            return branch_name
+            logger.debug(
+                f"Current branch: {branch_name}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            return cast(str, branch_name)
         except subprocess.CalledProcessError as e:
             raise GitStateError(f"Failed to get current branch: {e}")
 
@@ -344,7 +364,10 @@ class GitStateManager:
             run_git_command(
                 ["git", "checkout", "-b", branch_name], cwd=repo_path, check=True
             )
-            logger.info(f"Created and checked out branch: {branch_name}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Created and checked out branch: {branch_name}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return branch_name
         except subprocess.CalledProcessError as e:
             raise GitStateError(f"Failed to create branch {branch_name}: {e}")
@@ -370,7 +393,10 @@ class GitStateManager:
         try:
             file_paths = [str(f) for f in files_modified]
             run_git_command(["git", "add"] + file_paths, cwd=repo_path, check=True)
-            logger.debug(f"Staged {len(files_modified)} files", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Staged {len(files_modified)} files",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except subprocess.CalledProcessError as e:
             raise GitStateError(f"Failed to stage files: {e}")
 
@@ -384,15 +410,21 @@ class GitStateManager:
             run_git_command(
                 ["git", "commit", "-m", commit_message], cwd=repo_path, check=True
             )
-            logger.info(f"Committed changes: {fix_description}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Committed changes: {fix_description}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # Get commit hash
             result = run_git_command(
                 ["git", "rev-parse", "HEAD"], cwd=repo_path, check=True
             )
             commit_hash = result.stdout.strip()
-            logger.debug(f"Commit hash: {commit_hash}", extra={"correlation_id": get_correlation_id()})
-            return commit_hash
+            logger.debug(
+                f"Commit hash: {commit_hash}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            return cast(str, commit_hash)
 
         except subprocess.CalledProcessError as e:
             error_detail = e.stderr if hasattr(e, "stderr") else str(e)
@@ -413,7 +445,10 @@ class GitStateManager:
             run_git_command(
                 ["git", "push", "-u", "origin", branch_name], cwd=repo_path, check=True
             )
-            logger.info(f"Pushed branch {branch_name} to remote", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Pushed branch {branch_name} to remote",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except subprocess.CalledProcessError as e:
             error_detail = e.stderr if hasattr(e, "stderr") else str(e)
             raise GitStateError(f"git push failed: {error_detail}")
@@ -460,6 +495,7 @@ class GitStateManager:
         base_branch = getattr(self.config, "pr_base_branch", self.config.default_branch)
 
         # Create PR/MR using platform-specific client
+        client: Union[GitHubPRClient, GitLabPRClient]
         if platform == "github":
             client = GitHubPRClient(repo_path, token)
             pr_url = client.create_pull_request(
@@ -476,7 +512,9 @@ class GitStateManager:
         else:
             raise ValueError(f"Unsupported platform: {platform}")
 
-        logger.info(f"Created PR: {pr_url}", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            f"Created PR: {pr_url}", extra={"correlation_id": get_correlation_id()}
+        )
         return pr_url
 
     def _return_to_branch(self, repo_path: Path, branch_name: str) -> None:
@@ -489,9 +527,15 @@ class GitStateManager:
         """
         try:
             run_git_command(["git", "checkout", branch_name], cwd=repo_path, check=True)
-            logger.info(f"Returned to branch: {branch_name}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Returned to branch: {branch_name}",
+                extra={"correlation_id": get_correlation_id()},
+            )
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to return to branch {branch_name}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Failed to return to branch {branch_name}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
 
 class TokenAuthenticator:
@@ -519,12 +563,18 @@ class TokenAuthenticator:
         if platform == "github":
             env_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
             if env_token:
-                logger.debug("Resolved GitHub token from environment variable", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    "Resolved GitHub token from environment variable",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return env_token
         elif platform == "gitlab":
             env_token = os.environ.get("GITLAB_TOKEN")
             if env_token:
-                logger.debug("Resolved GitLab token from environment variable", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    "Resolved GitLab token from environment variable",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return env_token
 
         # Priority 2: File-based token storage (with decryption)
@@ -536,13 +586,22 @@ class TokenAuthenticator:
             token_data = token_manager.get_token(platform)
 
             if token_data:
-                logger.debug(f"Resolved {platform} token from encrypted file storage", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Resolved {platform} token from encrypted file storage",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return token_data.token
         except Exception as e:
-            logger.warning(f"Failed to load token from encrypted storage: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to load token from encrypted storage: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # No token found
-        logger.warning(f"No {platform} token found in environment or file storage", extra={"correlation_id": get_correlation_id()})
+        logger.warning(
+            f"No {platform} token found in environment or file storage",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return None
 
 
@@ -628,8 +687,11 @@ class GitHubPRClient:
                 pr_url = pr_data["html_url"]
                 pr_number = pr_data["number"]
 
-                logger.info(f"Created GitHub PR #{pr_number}: {pr_url}", extra={"correlation_id": get_correlation_id()})
-                return pr_url
+                logger.info(
+                    f"Created GitHub PR #{pr_number}: {pr_url}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                return cast(str, pr_url)
 
         except httpx.HTTPStatusError as e:
             error_body = e.response.text
@@ -733,8 +795,11 @@ class GitLabPRClient:
                 mr_url = mr_data["web_url"]
                 mr_iid = mr_data["iid"]
 
-                logger.info(f"Created GitLab MR !{mr_iid}: {mr_url}", extra={"correlation_id": get_correlation_id()})
-                return mr_url
+                logger.info(
+                    f"Created GitLab MR !{mr_iid}: {mr_url}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                return cast(str, mr_url)
 
         except httpx.HTTPStatusError as e:
             error_body = e.response.text

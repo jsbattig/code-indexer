@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Search Result File Manager for temp file management and size checking.
 
 Manages temporary output files from search operations with size limit
 enforcement and cleanup.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 import os
@@ -145,6 +146,12 @@ class SearchResultFileManager:
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
-                logger.debug(f"Cleaned up temp file: {file_path}", extra={"correlation_id": get_correlation_id()})
+                logger.debug(
+                    f"Cleaned up temp file: {file_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
         except Exception as e:
-            logger.warning(f"Failed to cleanup temp file {file_path}: {e}", extra={"correlation_id": get_correlation_id()})
+            logger.warning(
+                f"Failed to cleanup temp file {file_path}: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )

@@ -1,10 +1,11 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Golden Repository Manager for CIDX Server.
 
 Manages golden repositories that can be activated by users for semantic search.
 Golden repositories are stored in ~/.cidx-server/data/golden-repos/ with metadata tracking.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import errno
 import json
@@ -16,13 +17,17 @@ import time
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from code_indexer.server.models.golden_repo_branch_models import (
         GoldenRepoBranchInfo,
     )
     from code_indexer.server.utils.config_manager import ServerResourceConfig
+    from code_indexer.server.services.background_job_manager import BackgroundJobManager
+    from code_indexer.server.repositories.activated_repo_manager import (
+        ActivatedRepoManager,
+    )
 
 from pydantic import BaseModel
 
@@ -82,6 +87,10 @@ class GoldenRepoManager:
     Golden repositories are admin-managed, globally unique namespaced repositories
     that support git operations with Copy-on-Write (CoW) cloning.
     """
+
+    # Dynamically injected by app.py at runtime
+    background_job_manager: "BackgroundJobManager"
+    activated_repo_manager: "ActivatedRepoManager"
 
     def __init__(
         self,
@@ -327,7 +336,7 @@ class GoldenRepoManager:
             is_admin=True,
             repo_alias=alias,  # AC5: Fix unknown repo bug
         )
-        return job_id
+        return cast(str, job_id)
 
     def list_golden_repos(self) -> List[Dict[str, str]]:
         """
@@ -363,7 +372,7 @@ class GoldenRepoManager:
         def background_worker() -> Dict[str, Any]:
             """Execute removal in background thread."""
             # Initialize cascade results tracking
-            cascade_results = {
+            cascade_results: Dict[str, Any] = {
                 "activated_repos_deleted": [],
                 "activated_repos_failed": [],
                 "global_alias_deleted": False,
@@ -521,7 +530,7 @@ class GoldenRepoManager:
             is_admin=True,
             repo_alias=alias,  # AC5: Fix unknown repo bug
         )
-        return job_id
+        return cast(str, job_id)
 
     def _validate_git_repository(self, repo_url: str) -> bool:
         """
@@ -1141,7 +1150,7 @@ class GoldenRepoManager:
             is_admin=True,
             repo_alias=alias,  # AC5: Fix unknown repo bug
         )
-        return job_id
+        return cast(str, job_id)
 
     def _is_recoverable_init_error(self, error_output: str) -> bool:
         """
@@ -1573,8 +1582,9 @@ class GoldenRepoManager:
                         # Skip malformed version directories gracefully
                         logger.warning(
                             f"Skipping malformed version directory: {v_dir} "
-                            f"(expected format: v_TIMESTAMP, error: {e})"
-                        , extra={"correlation_id": get_correlation_id()})
+                            f"(expected format: v_TIMESTAMP, error: {e})",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         continue
 
                 if valid_versions:
@@ -1636,9 +1646,9 @@ class GoldenRepoManager:
             raise GoldenRepoError(f"Golden repository '{alias}' not found")
 
         branch_service = GoldenRepoBranchService(self)
-        branches: List["GoldenRepoBranchInfo"] = (
-            await branch_service.get_golden_repo_branches(alias)
-        )
+        branches: List[
+            "GoldenRepoBranchInfo"
+        ] = await branch_service.get_golden_repo_branches(alias)
         return branches
 
     def add_index_to_golden_repo(
@@ -1782,7 +1792,7 @@ class GoldenRepoManager:
             is_admin=True,
             repo_alias=alias,  # AC5: Fix unknown repo bug
         )
-        return job_id
+        return cast(str, job_id)
 
     def _index_exists(self, golden_repo: GoldenRepo, index_type: str) -> bool:
         """
@@ -1837,21 +1847,29 @@ class GoldenRepoManager:
                 return False
 
             # Validate at least one .scip.db file has data
+            sqlite3_module = None
             try:
                 import sqlite3
+
+                sqlite3_module = sqlite3
             except ImportError:
                 try:
-                    from pysqlite3 import dbapi2 as sqlite3
+                    from pysqlite3 import dbapi2 as pysqlite3_compat
+
+                    sqlite3_module = pysqlite3_compat
                 except ImportError:
-                    # If sqlite3 not available, fall back to file size check
-                    return any(f.stat().st_size > 0 for f in scip_db_files)
+                    pass
+
+            if sqlite3_module is None:
+                # If sqlite3 not available, fall back to file size check
+                return any(f.stat().st_size > 0 for f in scip_db_files)
 
             # Check if any database has symbols
             for db_file in scip_db_files:
                 if db_file.stat().st_size == 0:
                     continue
                 try:
-                    conn = sqlite3.connect(str(db_file))
+                    conn = sqlite3_module.connect(str(db_file))
                     cursor = conn.cursor()
                     cursor.execute("SELECT COUNT(*) FROM symbols")
                     count = cursor.fetchone()[0]

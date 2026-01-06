@@ -20,6 +20,7 @@ from rich.progress import (
     TaskProgressColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
+    TaskID,
 )
 
 
@@ -196,7 +197,7 @@ class AggregateProgressDisplay:
         """
         self.console = console
         self.progress_bar = create_aggregate_progress_bar()
-        self.task_id: Optional[int] = None
+        self.task_id: Optional[TaskID] = None
         self.current_state: Optional[ProgressState] = None
 
     def update_progress(

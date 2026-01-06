@@ -392,14 +392,14 @@ class TestSSOInitiation:
         # Before fix (broken): encodeURIComponent("/oauth/authorize?client_id=test123&amp;redirect_uri=...")
 
         # Verify the JavaScript uses Unicode escapes (\u0026), not HTML entities (&amp;)
-        assert 'encodeURIComponent("/oauth/authorize?client_id=test123' in response.text, (
-            "JavaScript should have the OAuth authorize URL"
-        )
+        assert (
+            'encodeURIComponent("/oauth/authorize?client_id=test123' in response.text
+        ), "JavaScript should have the OAuth authorize URL"
 
         # The key fix: tojson escapes & as \u0026 (Unicode escape) not &amp; (HTML entity)
-        assert r"\u0026" in response.text or "&" in response.text, (
-            "JavaScript should use either raw & or Unicode escape \\u0026, not HTML entities"
-        )
+        assert (
+            r"\u0026" in response.text or "&" in response.text
+        ), "JavaScript should use either raw & or Unicode escape \\u0026, not HTML entities"
 
         # Verify NO HTML entities in JavaScript context
         # Note: &amp; may still appear in HTML form fields (correct), but not in <script> blocks
@@ -458,7 +458,9 @@ class TestSSOInitiation:
         client = TestClient(app)
 
         # Mock CIDX_ISSUER_URL environment variable
-        with patch.dict(os.environ, {"CIDX_ISSUER_URL": "https://linner.ddns.net:8383"}):
+        with patch.dict(
+            os.environ, {"CIDX_ISSUER_URL": "https://linner.ddns.net:8383"}
+        ):
             # Make request
             client.get("/login/sso", follow_redirects=False)
 
@@ -532,7 +534,9 @@ class TestSSOInitiation:
             # Should be http://testserver (TestClient default)
             assert callback_url.startswith("http://testserver")
 
-    def test_sso_without_redirect_to_uses_role_based_redirect(self, web_client: TestClient):
+    def test_sso_without_redirect_to_uses_role_based_redirect(
+        self, web_client: TestClient
+    ):
         """
         SSO without redirect_to parameter lets callback determine redirect based on user role.
 
@@ -557,8 +561,10 @@ class TestSSOInitiation:
 
         # Endpoint should exist (may return error if OIDC not configured)
         assert response.status_code in [
-            302, 303,  # Redirect to OIDC provider (OIDC configured)
-            400, 404,  # Error (OIDC not configured - acceptable)
+            302,
+            303,  # Redirect to OIDC provider (OIDC configured)
+            400,
+            404,  # Error (OIDC not configured - acceptable)
         ], f"Endpoint should exist, got {response.status_code}"
 
         # Note: Full callback testing with role-based redirect requires OIDC mock

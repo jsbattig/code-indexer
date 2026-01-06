@@ -1,13 +1,14 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Omni-search service for cross-repository search.
 
 Orchestrates parallel search across multiple repositories.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, cast
 
 from .repo_pattern_matcher import RepoPatternMatcher
 from .result_aggregator import ResultAggregator
@@ -84,7 +85,7 @@ class OmniSearchService:
 
         if not target_repos:
             # No matching repos
-            empty_cursor = self.cache.store_results([], page_size=limit)
+            empty_cursor = self.cache.store_results([])
             return {
                 "cursor": empty_cursor,
                 "total_results": 0,
@@ -125,17 +126,23 @@ class OmniSearchService:
                     errors[repo_alias] = (
                         f"Search timeout after {self.config.per_repo_timeout_seconds}s"
                     )
-                    logger.warning(f"Search timeout for repo {repo_alias}", extra={"correlation_id": get_correlation_id()})
+                    logger.warning(
+                        f"Search timeout for repo {repo_alias}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                 except Exception as e:
                     errors[repo_alias] = str(e)
-                    logger.error(f"Search error for repo {repo_alias}: {e}", extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        f"Search error for repo {repo_alias}: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
         # Aggregate results
         aggregator = ResultAggregator(mode=aggregation_mode, limit=limit)
         aggregated_results = aggregator.aggregate(repo_results)
 
         # Store in cache
-        cursor = self.cache.store_results(aggregated_results, page_size=limit)
+        cursor = self.cache.store_results(aggregated_results)
 
         return {
             "cursor": cursor,
@@ -157,20 +164,29 @@ class OmniSearchService:
         Returns:
             Search result dict from query service
         """
-        return self.query_service.query(repo_alias, query, **kwargs)
+        return cast(
+            Dict[Any, Any], self.query_service.query(repo_alias, query, **kwargs)
+        )
 
-    def get_page(self, cursor: str, page: int) -> Optional[List[Dict]]:
+    def get_page(
+        self, cursor: str, page: int, page_size: int = 10
+    ) -> Optional[List[Dict]]:
         """
         Retrieve a page of cached results.
 
         Args:
             cursor: Cursor from search()
             page: Page number (0-indexed)
+            page_size: Number of results per page (default: 10)
 
         Returns:
             List of results for the page, or None if invalid/expired
         """
-        return self.cache.get_page(cursor, page)
+        offset = page * page_size
+        return cast(
+            Optional[List[Dict]],
+            self.cache.get_results(cursor, offset=offset, limit=page_size),
+        )
 
     def get_metadata(self, cursor: str) -> Optional[Dict]:
         """

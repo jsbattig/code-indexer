@@ -18,7 +18,7 @@ MAX_FILES_TO_DISPLAY = 20  # Maximum number of files to show in summary
 SEPARATOR_WIDTH = 70  # Width of separator lines in output
 
 # Logging method names to check
-LOGGING_METHODS = ('info', 'warning', 'error', 'exception', 'debug', 'critical')
+LOGGING_METHODS = ("info", "warning", "error", "exception", "debug", "critical")
 
 
 class LoggingCallVisitor(ast.NodeVisitor):
@@ -38,7 +38,7 @@ class LoggingCallVisitor(ast.NodeVisitor):
             return
         if not isinstance(node.func.value, ast.Name):
             return
-        if node.func.value.id != 'logger':
+        if node.func.value.id != "logger":
             return
 
         method = node.func.attr
@@ -51,24 +51,26 @@ class LoggingCallVisitor(ast.NodeVisitor):
         # Get call text
         line_start = node.lineno
         line_end = node.end_lineno or line_start
-        call_text = '\n'.join(self.source_lines[line_start - 1:line_end])
+        call_text = "\n".join(self.source_lines[line_start - 1 : line_end])
 
-        self.calls.append({
-            'line': line_start,
-            'method': method,
-            'has_correlation_id': has_correlation_id,
-            'text': call_text[:MAX_CALL_TEXT_LENGTH]
-        })
+        self.calls.append(
+            {
+                "line": line_start,
+                "method": method,
+                "has_correlation_id": has_correlation_id,
+                "text": call_text[:MAX_CALL_TEXT_LENGTH],
+            }
+        )
 
     def _has_correlation_id(self, node: ast.Call) -> bool:
         """Check if call has correlation_id in extra parameter."""
         for keyword in node.keywords:
-            if keyword.arg == 'extra':
+            if keyword.arg == "extra":
                 # Check if extra dict contains correlation_id
                 if isinstance(keyword.value, ast.Dict):
                     for key in keyword.value.keys:
                         if isinstance(key, ast.Constant):
-                            if key.value == 'correlation_id':
+                            if key.value == "correlation_id":
                                 return True
         return False
 
@@ -84,15 +86,15 @@ def analyze_file(file_path: Path) -> Tuple[int, int, List[dict]]:
         Tuple of (total_calls, covered_calls, uncovered_calls_list)
     """
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             source = f.read()
 
-        source_lines = source.split('\n')
+        source_lines = source.split("\n")
         tree = ast.parse(source)
         visitor = LoggingCallVisitor(source_lines)
         visitor.visit(tree)
 
-        uncovered = [call for call in visitor.calls if not call['has_correlation_id']]
+        uncovered = [call for call in visitor.calls if not call["has_correlation_id"]]
         total = len(visitor.calls)
         covered = total - len(uncovered)
 
@@ -113,8 +115,12 @@ def parse_arguments():
     import argparse
 
     parser = argparse.ArgumentParser(description="Verify correlation_id coverage")
-    parser.add_argument("--detailed", action="store_true", help="Show detailed output per file")
-    parser.add_argument("files", nargs='*', help="Files to check (default: all server files)")
+    parser.add_argument(
+        "--detailed", action="store_true", help="Show detailed output per file"
+    )
+    parser.add_argument(
+        "files", nargs="*", help="Files to check (default: all server files)"
+    )
 
     return parser.parse_args()
 
@@ -176,11 +182,17 @@ def main():
         total_covered += file_covered
 
         if uncovered_calls:
-            rel_path = file_path.relative_to(Path.cwd()) if Path.cwd() in file_path.parents else file_path
+            rel_path = (
+                file_path.relative_to(Path.cwd())
+                if Path.cwd() in file_path.parents
+                else file_path
+            )
             files_with_issues.append((len(uncovered_calls), rel_path, uncovered_calls))
 
             if args.detailed:
-                print(f"\n{rel_path}: {len(uncovered_calls)}/{file_total} calls missing correlation_id")
+                print(
+                    f"\n{rel_path}: {len(uncovered_calls)}/{file_total} calls missing correlation_id"
+                )
                 for call in uncovered_calls:
                     print(f"  Line {call['line']}: logger.{call['method']}(...)")
                     print(f"    {call['text'][:MAX_DISPLAY_TEXT_LENGTH]}...")

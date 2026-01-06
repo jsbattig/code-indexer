@@ -576,7 +576,6 @@ class TestGetSmartContext:
                 return_value=mock_impact,
             ),
         ):
-
             result_zero = get_smart_context(symbol="fn", scip_dir=scip_dir, limit=0)
             result_high = get_smart_context(symbol="fn", scip_dir=scip_dir, limit=1000)
 

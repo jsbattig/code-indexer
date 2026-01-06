@@ -33,7 +33,9 @@ class TestTemporalStatusStringHandling:
         # Create FileData with temporal status string
         temporal_status = "abc12345 - Vectorizing 50% (4/8 chunks)"
         file_data = FileData(
-            filename=temporal_status, file_size=1024 * 50, status="vectorizing"  # 50 KB
+            filename=temporal_status,
+            file_size=1024 * 50,
+            status="vectorizing",  # 50 KB
         )
 
         # Format the line

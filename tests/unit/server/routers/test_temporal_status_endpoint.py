@@ -22,7 +22,7 @@ def mock_user():
         email="test@example.com",
         role=UserRole.ADMIN,
         password_hash="fake_hash",
-        created_at=datetime.now()
+        created_at=datetime.now(),
     )
 
 
@@ -52,13 +52,15 @@ class TestTemporalStatusEndpoint:
         repo_alias = "test-repo"
 
         # Mock at source module
-        with patch("code_indexer.server.services.dashboard_service.DashboardService") as MockService:
+        with patch(
+            "code_indexer.server.services.dashboard_service.DashboardService"
+        ) as MockService:
             mock_service_instance = MockService.return_value
             mock_service_instance.get_temporal_index_status.return_value = {
                 "format": "v2",
                 "file_count": 150,
                 "needs_reindex": False,
-                "message": "Temporal indexing active (v2 format) - 150 files indexed"
+                "message": "Temporal indexing active (v2 format) - 150 files indexed",
             }
 
             # Act
@@ -79,13 +81,15 @@ class TestTemporalStatusEndpoint:
         repo_alias = "test-repo"
 
         # Mock at source module
-        with patch("code_indexer.server.services.dashboard_service.DashboardService") as MockService:
+        with patch(
+            "code_indexer.server.services.dashboard_service.DashboardService"
+        ) as MockService:
             mock_service_instance = MockService.return_value
             mock_service_instance.get_temporal_index_status.return_value = {
                 "format": "v1",
                 "file_count": 85,
                 "needs_reindex": True,
-                "message": "Legacy temporal index format (v1) detected - Re-index required: cidx index --index-commits --reconcile"
+                "message": "Legacy temporal index format (v1) detected - Re-index required: cidx index --index-commits --reconcile",
             }
 
             # Act
@@ -97,7 +101,9 @@ class TestTemporalStatusEndpoint:
             assert data["format"] == "v1"
             assert data["file_count"] == 85
             assert data["needs_reindex"] is True
-            assert "legacy" in data["message"].lower() or "v1" in data["message"].lower()
+            assert (
+                "legacy" in data["message"].lower() or "v1" in data["message"].lower()
+            )
             assert "re-index" in data["message"].lower()
 
     def test_temporal_status_no_index_returns_none(self, client):
@@ -106,13 +112,15 @@ class TestTemporalStatusEndpoint:
         repo_alias = "test-repo"
 
         # Mock at source module
-        with patch("code_indexer.server.services.dashboard_service.DashboardService") as MockService:
+        with patch(
+            "code_indexer.server.services.dashboard_service.DashboardService"
+        ) as MockService:
             mock_service_instance = MockService.return_value
             mock_service_instance.get_temporal_index_status.return_value = {
                 "format": "none",
                 "file_count": 0,
                 "needs_reindex": False,
-                "message": "No temporal index (git history not indexed)"
+                "message": "No temporal index (git history not indexed)",
             }
 
             # Act
@@ -146,10 +154,12 @@ class TestTemporalStatusEndpoint:
         repo_alias = "nonexistent-repo"
 
         # Mock at source module
-        with patch("code_indexer.server.services.dashboard_service.DashboardService") as MockService:
+        with patch(
+            "code_indexer.server.services.dashboard_service.DashboardService"
+        ) as MockService:
             mock_service_instance = MockService.return_value
-            mock_service_instance.get_temporal_index_status.side_effect = FileNotFoundError(
-                f"Repository not found: {repo_alias}"
+            mock_service_instance.get_temporal_index_status.side_effect = (
+                FileNotFoundError(f"Repository not found: {repo_alias}")
             )
 
             # Act
@@ -159,7 +169,9 @@ class TestTemporalStatusEndpoint:
             assert response.status_code == 404
             assert "not found" in response.json()["detail"].lower()
 
-    def test_temporal_status_endpoint_passes_username_to_service(self, client, mock_user):
+    def test_temporal_status_endpoint_passes_username_to_service(
+        self, client, mock_user
+    ):
         """Test temporal status endpoint passes authenticated username to service.
 
         This test verifies that the endpoint correctly extracts user.username from
@@ -169,13 +181,15 @@ class TestTemporalStatusEndpoint:
         repo_alias = "test-repo"
 
         # Mock at source module
-        with patch("code_indexer.server.services.dashboard_service.DashboardService") as MockService:
+        with patch(
+            "code_indexer.server.services.dashboard_service.DashboardService"
+        ) as MockService:
             mock_service_instance = MockService.return_value
             mock_service_instance.get_temporal_index_status.return_value = {
                 "format": "v2",
                 "file_count": 100,
                 "needs_reindex": False,
-                "message": "Temporal indexing active"
+                "message": "Temporal indexing active",
             }
 
             # Act
@@ -185,6 +199,5 @@ class TestTemporalStatusEndpoint:
             assert response.status_code == 200
             # Verify service method was called with correct username and repo_alias
             mock_service_instance.get_temporal_index_status.assert_called_once_with(
-                username=mock_user.username,
-                repo_alias=repo_alias
+                username=mock_user.username, repo_alias=repo_alias
             )

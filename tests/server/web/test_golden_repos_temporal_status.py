@@ -48,9 +48,16 @@ def mock_global_registry():
 @patch("pathlib.Path.iterdir", return_value=[])
 @patch("pathlib.Path.glob", return_value=[])
 @patch("pathlib.Path.exists", return_value=False)
-@patch("builtins.open", new_callable=lambda: mock_open(read_data=json.dumps(ALIAS_DATA)))
+@patch(
+    "builtins.open", new_callable=lambda: mock_open(read_data=json.dumps(ALIAS_DATA))
+)
 def test_golden_repos_list_includes_v2_temporal_status(
-    mock_file, mock_exists, mock_glob, mock_iterdir, mock_golden_repo_manager, mock_global_registry
+    mock_file,
+    mock_exists,
+    mock_glob,
+    mock_iterdir,
+    mock_golden_repo_manager,
+    mock_global_registry,
 ):
     """Test that _get_golden_repos_list includes v2 temporal status for global repos."""
     from code_indexer.server.web.routes import _get_golden_repos_list
@@ -62,9 +69,18 @@ def test_golden_repos_list_includes_v2_temporal_status(
         "indexed_files": 150,
     }
 
-    with patch("code_indexer.server.web.routes._get_golden_repo_manager", return_value=mock_golden_repo_manager):
-        with patch("code_indexer.global_repos.global_registry.GlobalRegistry", return_value=mock_global_registry):
-            with patch("code_indexer.server.services.dashboard_service.DashboardService", return_value=mock_dashboard):
+    with patch(
+        "code_indexer.server.web.routes._get_golden_repo_manager",
+        return_value=mock_golden_repo_manager,
+    ):
+        with patch(
+            "code_indexer.global_repos.global_registry.GlobalRegistry",
+            return_value=mock_global_registry,
+        ):
+            with patch(
+                "code_indexer.server.services.dashboard_service.DashboardService",
+                return_value=mock_dashboard,
+            ):
                 repos = _get_golden_repos_list()
 
     # Verify temporal status was added to globally activated repo
@@ -78,9 +94,16 @@ def test_golden_repos_list_includes_v2_temporal_status(
 @patch("pathlib.Path.iterdir", return_value=[])
 @patch("pathlib.Path.glob", return_value=[])
 @patch("pathlib.Path.exists", return_value=False)
-@patch("builtins.open", new_callable=lambda: mock_open(read_data=json.dumps(ALIAS_DATA)))
+@patch(
+    "builtins.open", new_callable=lambda: mock_open(read_data=json.dumps(ALIAS_DATA))
+)
 def test_golden_repos_list_handles_temporal_status_errors_gracefully(
-    mock_file, mock_exists, mock_glob, mock_iterdir, mock_golden_repo_manager, mock_global_registry
+    mock_file,
+    mock_exists,
+    mock_glob,
+    mock_iterdir,
+    mock_golden_repo_manager,
+    mock_global_registry,
 ):
     """Test that _get_golden_repos_list handles errors gracefully when fetching temporal status."""
     from code_indexer.server.web.routes import _get_golden_repos_list
@@ -88,9 +111,18 @@ def test_golden_repos_list_handles_temporal_status_errors_gracefully(
     mock_dashboard = MagicMock()
     mock_dashboard.get_temporal_index_status.side_effect = Exception("Test error")
 
-    with patch("code_indexer.server.web.routes._get_golden_repo_manager", return_value=mock_golden_repo_manager):
-        with patch("code_indexer.global_repos.global_registry.GlobalRegistry", return_value=mock_global_registry):
-            with patch("code_indexer.server.services.dashboard_service.DashboardService", return_value=mock_dashboard):
+    with patch(
+        "code_indexer.server.web.routes._get_golden_repo_manager",
+        return_value=mock_golden_repo_manager,
+    ):
+        with patch(
+            "code_indexer.global_repos.global_registry.GlobalRegistry",
+            return_value=mock_global_registry,
+        ):
+            with patch(
+                "code_indexer.server.services.dashboard_service.DashboardService",
+                return_value=mock_dashboard,
+            ):
                 repos = _get_golden_repos_list()
 
     # Verify error is captured in temporal_status

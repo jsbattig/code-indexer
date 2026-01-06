@@ -557,7 +557,9 @@ class MockMagicMock:
 try:
     from unittest.mock import MagicMock
 except ImportError:
-    MagicMock = MockMagicMock
+    from typing import Any
+
+    MagicMock: type[Any] = MockMagicMock  # type: ignore[misc]
 
 
 if __name__ == "__main__":

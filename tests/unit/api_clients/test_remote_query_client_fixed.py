@@ -102,7 +102,8 @@ class TestFixedRemoteQueryClient:
 
             # Verify it calls the CORRECT endpoint
             mock_request.assert_called_once_with(
-                "GET", "/api/repositories/test-repo"  # CORRECT endpoint!
+                "GET",
+                "/api/repositories/test-repo",  # CORRECT endpoint!
             )
 
             # Verify it extracts statistics correctly

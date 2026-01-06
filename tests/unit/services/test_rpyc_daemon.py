@@ -241,7 +241,6 @@ class TestRPyCDaemon(TestCase):
             with patch.object(
                 service, "_execute_search_optimized", side_effect=slow_search
             ):
-
                 # Run 10 concurrent queries
                 with ThreadPoolExecutor(max_workers=10) as executor:
                     start = time.perf_counter()

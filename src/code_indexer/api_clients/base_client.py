@@ -247,16 +247,13 @@ class CIDXRemoteAPIClient:
                 if not token or not isinstance(token, str):
                     raise AuthenticationError("No valid access token in response")
 
-                # Type assertion after validation - token is guaranteed to be str here
-                token = cast(str, token)
-
                 # Record successful authentication
                 self._record_auth_success()
 
                 # Store token persistently if possible
-                await self._store_token_persistently(token)
+                await self._store_token_persistently(cast(str, token))
 
-                return token
+                return cast(str, token)
 
             elif response.status_code == 401:
                 self._record_auth_failure()

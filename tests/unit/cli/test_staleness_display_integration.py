@@ -50,7 +50,6 @@ class TestCLIStalenessDisplayIntegration:
                 "code_indexer.mode_detection.command_mode_detector.CommandModeDetector"
             ) as mock_detector,
         ):
-
             # Mock the mode detection for require_mode decorator
             mock_detect_mode.return_value = "remote"
 

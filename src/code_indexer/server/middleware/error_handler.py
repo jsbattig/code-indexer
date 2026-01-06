@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 Global error handler middleware for CIDX Server.
 
@@ -14,9 +13,11 @@ Key Features:
 - Security-compliant error messages
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
 import traceback
-from typing import Dict, Any, Optional, Union, Callable, TypeVar
+from typing import Dict, Any, Optional, Union, Callable, TypeVar, cast
 from fastapi import Request, Response, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
@@ -145,7 +146,7 @@ class GlobalErrorHandler(BaseHTTPMiddleware):
         try:
             # Process the request through the rest of the application
             response = await call_next(request)
-            return response
+            return cast(Response, response)
 
         except (PydanticValidationError, RequestValidationError) as e:
             # Handle Pydantic validation errors (both direct and FastAPI request validation)
@@ -361,10 +362,17 @@ class GlobalErrorHandler(BaseHTTPMiddleware):
 
             # Log at appropriate level
             if error_type in ["ValidationError", "HTTPException"]:
-                logger.warning(log_message, extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    log_message, extra={"correlation_id": get_correlation_id()}
+                )
             else:
-                logger.error(log_message, extra={"correlation_id": get_correlation_id()})
+                logger.error(
+                    log_message, extra={"correlation_id": get_correlation_id()}
+                )
 
         except Exception as log_error:
             # Fallback logging if there's an error in the logging process
-            logger.error(f"Error logging failed [ID: {correlation_id}]: {log_error}", extra={"correlation_id": get_correlation_id()})
+            logger.error(
+                f"Error logging failed [ID: {correlation_id}]: {log_error}",
+                extra={"correlation_id": get_correlation_id()},
+            )

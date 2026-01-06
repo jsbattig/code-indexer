@@ -23,7 +23,7 @@ class TestSCIPAuditLogAPI:
             username="admin",
             role=UserRole.ADMIN,
             password_hash="hash123",
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
     @pytest.fixture
@@ -33,13 +33,15 @@ class TestSCIPAuditLogAPI:
             username="user",
             role=UserRole.NORMAL_USER,
             password_hash="hash456",
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
     @pytest.fixture
     def mock_audit_repo(self):
         """Create mock SCIPAuditRepository."""
-        with patch('code_indexer.server.mcp.handlers.scip_audit_repository') as mock_repo:
+        with patch(
+            "code_indexer.server.mcp.handlers.scip_audit_repository"
+        ) as mock_repo:
             yield mock_repo
 
     @pytest.mark.asyncio
@@ -58,7 +60,7 @@ class TestSCIPAuditLogAPI:
                 "package": "numpy",
                 "command": "pip install numpy",
                 "reasoning": "Scientific computing",
-                "username": "testuser"
+                "username": "testuser",
             }
         ]
         mock_audit_repo.query_audit_records.return_value = (mock_records, 1)
@@ -82,7 +84,9 @@ class TestSCIPAuditLogAPI:
         assert data["total"] == 1
 
     @pytest.mark.asyncio
-    async def test_get_audit_log_permission_denied_non_admin(self, normal_user, mock_audit_repo):
+    async def test_get_audit_log_permission_denied_non_admin(
+        self, normal_user, mock_audit_repo
+    ):
         """Test that non-admin users are denied access."""
         params = {}
         response = await get_scip_audit_log(params, normal_user)
@@ -107,7 +111,7 @@ class TestSCIPAuditLogAPI:
                 "package": "numpy",
                 "command": "pip install numpy",
                 "reasoning": None,
-                "username": "testuser"
+                "username": "testuser",
             }
         ]
         mock_audit_repo.query_audit_records.return_value = (mock_records, 1)
@@ -127,7 +131,9 @@ class TestSCIPAuditLogAPI:
         assert data["filters"]["job_id"] == "job-1"
 
     @pytest.mark.asyncio
-    async def test_get_audit_log_filter_by_repo_alias(self, admin_user, mock_audit_repo):
+    async def test_get_audit_log_filter_by_repo_alias(
+        self, admin_user, mock_audit_repo
+    ):
         """Test filtering audit log by repo_alias."""
         mock_audit_repo.query_audit_records.return_value = ([], 0)
 
@@ -142,7 +148,9 @@ class TestSCIPAuditLogAPI:
         assert data["filters"]["repo_alias"] == "my-repo"
 
     @pytest.mark.asyncio
-    async def test_get_audit_log_filter_by_project_language(self, admin_user, mock_audit_repo):
+    async def test_get_audit_log_filter_by_project_language(
+        self, admin_user, mock_audit_repo
+    ):
         """Test filtering audit log by project_language."""
         mock_audit_repo.query_audit_records.return_value = ([], 0)
 
@@ -157,7 +165,9 @@ class TestSCIPAuditLogAPI:
         assert data["filters"]["project_language"] == "python"
 
     @pytest.mark.asyncio
-    async def test_get_audit_log_filter_by_build_system(self, admin_user, mock_audit_repo):
+    async def test_get_audit_log_filter_by_build_system(
+        self, admin_user, mock_audit_repo
+    ):
         """Test filtering audit log by project_build_system."""
         mock_audit_repo.query_audit_records.return_value = ([], 0)
 
@@ -177,7 +187,7 @@ class TestSCIPAuditLogAPI:
         mock_audit_repo.query_audit_records.return_value = ([], 0)
 
         params = {"limit": 50, "offset": 10}
-        response = await get_scip_audit_log(params, admin_user)
+        await get_scip_audit_log(params, admin_user)
 
         # Verify pagination params
         call_kwargs = mock_audit_repo.query_audit_records.call_args.kwargs
@@ -190,12 +200,12 @@ class TestSCIPAuditLogAPI:
         mock_audit_repo.query_audit_records.return_value = ([], 0)
 
         params = {}
-        response = await get_scip_audit_log(params, admin_user)
+        await get_scip_audit_log(params, admin_user)
 
         # Verify defaults
         call_kwargs = mock_audit_repo.query_audit_records.call_args.kwargs
         assert call_kwargs["limit"] == 100  # Default limit
-        assert call_kwargs["offset"] == 0   # Default offset
+        assert call_kwargs["offset"] == 0  # Default offset
 
     @pytest.mark.asyncio
     async def test_get_audit_log_multiple_filters(self, admin_user, mock_audit_repo):
@@ -206,7 +216,7 @@ class TestSCIPAuditLogAPI:
             "job_id": "job-1",
             "repo_alias": "test-repo",
             "project_language": "python",
-            "limit": 20
+            "limit": 20,
         }
         response = await get_scip_audit_log(params, admin_user)
 
@@ -267,7 +277,7 @@ class TestSCIPAuditLogAPI:
                 "package": "numpy",
                 "command": "pip install numpy",
                 "reasoning": "Scientific computing",
-                "username": "testuser"
+                "username": "testuser",
             }
         ]
         mock_audit_repo.query_audit_records.return_value = (mock_records, 1)

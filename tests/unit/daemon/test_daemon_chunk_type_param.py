@@ -85,7 +85,6 @@ def test_daemon_passes_chunk_type_to_search_service():
         patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect,
         patch("code_indexer.utils.temporal_display.display_temporal_results"),
     ):
-
         mock_find.return_value = Path("/fake/.code-indexer/config.json")
         mock_socket.return_value = Path("/fake/.code-indexer/daemon.sock")
         mock_connect.return_value = mock_conn

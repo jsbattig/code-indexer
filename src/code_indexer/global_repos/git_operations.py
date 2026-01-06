@@ -10,7 +10,7 @@ import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from code_indexer.utils.git_runner import run_git_command
 
@@ -504,7 +504,7 @@ class GitOperationsService:
 
         try:
             result = run_git_command(cmd, cwd=self.repo_path, check=True)
-            return result.stdout
+            return cast(str, result.stdout)
         except subprocess.CalledProcessError:
             return ""
 
@@ -803,7 +803,7 @@ class GitOperationsService:
 
         current_file = None
         current_hunk = None
-        hunk_content = []
+        hunk_content: List[str] = []
 
         for line in output.split("\n"):
             # File header
@@ -1257,7 +1257,7 @@ class GitOperationsService:
             # No matching commits
             elapsed = (time.time() - start_time) * 1000
             return DiffSearchResult(
-                search_term=search_term,
+                search_term=search_term or "",
                 is_regex=is_regex or bool(search_pattern),
                 matches=[],
                 total_matches=0,
@@ -1276,7 +1276,7 @@ class GitOperationsService:
         elapsed = (time.time() - start_time) * 1000
 
         return DiffSearchResult(
-            search_term=search_term,
+            search_term=search_term or "",
             is_regex=is_regex or bool(search_pattern),
             matches=matches,
             total_matches=len(matches),
@@ -1295,7 +1295,7 @@ class GitOperationsService:
         """
         matches = []
         current_match = None
-        files_changed = []
+        files_changed: List[str] = []
 
         for line in output.split("\n"):
             # Check if this is a commit line (contains NUL characters)

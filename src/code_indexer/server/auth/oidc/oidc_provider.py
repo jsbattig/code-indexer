@@ -1,6 +1,6 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """OIDC provider implementation for generic OIDC-compliant providers."""
 
+from code_indexer.server.middleware.correlation import get_correlation_id
 from dataclasses import dataclass
 from typing import Optional
 
@@ -147,19 +147,25 @@ class OIDCProvider:
 
         # Log claim extraction for debugging
         logger.info(
-            f"Extracting claims - email_claim: {self.config.email_claim}, username_claim: {self.config.username_claim}"
-        , extra={"correlation_id": get_correlation_id()})
-        logger.info(f"Available claims in userinfo: {list(data.keys())}", extra={"correlation_id": get_correlation_id()})
+            f"Extracting claims - email_claim: {self.config.email_claim}, username_claim: {self.config.username_claim}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        logger.info(
+            f"Available claims in userinfo: {list(data.keys())}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         email_value = data.get(self.config.email_claim)
         logger.info(
-            f"Extracted email from '{self.config.email_claim}' claim: {email_value}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Extracted email from '{self.config.email_claim}' claim: {email_value}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         username_value = data.get(self.config.username_claim)
         logger.info(
-            f"Extracted username from '{self.config.username_claim}' claim: {username_value}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Extracted username from '{self.config.username_claim}' claim: {username_value}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Create OIDCUserInfo from response
         user_info = OIDCUserInfo(

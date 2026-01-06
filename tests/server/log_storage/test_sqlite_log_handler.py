@@ -53,13 +53,17 @@ class TestSQLiteLogHandlerBasics:
 
         assert temp_db_path.exists()
 
-    def test_handler_creates_logs_table(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_creates_logs_table(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler creates logs table with correct schema."""
         conn = sqlite3.connect(str(temp_db_path))
         cursor = conn.cursor()
 
         # Check table exists
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='logs'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='logs'"
+        )
         assert cursor.fetchone() is not None
 
         # Check schema
@@ -80,13 +84,17 @@ class TestSQLiteLogHandlerBasics:
 
         conn.close()
 
-    def test_handler_creates_required_indexes(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_creates_required_indexes(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler creates required indexes from AC5."""
         conn = sqlite3.connect(str(temp_db_path))
         cursor = conn.cursor()
 
         # Get all indexes on logs table
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='logs'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='logs'"
+        )
         indexes = {row[0] for row in cursor.fetchall()}
 
         # Required indexes from AC5
@@ -101,7 +109,9 @@ class TestSQLiteLogHandlerBasics:
 class TestSQLiteLogHandlerWriting:
     """Test log record writing functionality."""
 
-    def test_handler_writes_simple_log_record(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_writes_simple_log_record(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler writes a simple log record to database."""
         # Create logger and attach handler
         logger = logging.getLogger("test.simple")
@@ -124,7 +134,9 @@ class TestSQLiteLogHandlerWriting:
 
         conn.close()
 
-    def test_handler_writes_log_with_extra_fields(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_writes_log_with_extra_fields(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler writes log records with extra fields (correlation_id, user_id, request_path)."""
         logger = logging.getLogger("test.extra")
         logger.addHandler(log_handler)
@@ -136,8 +148,8 @@ class TestSQLiteLogHandlerWriting:
             extra={
                 "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
                 "user_id": "admin@example.com",
-                "request_path": "/admin/logs"
-            }
+                "request_path": "/admin/logs",
+            },
         )
 
         # Verify all fields in database
@@ -158,15 +170,17 @@ class TestSQLiteLogHandlerWriting:
 
         conn.close()
 
-    def test_handler_stores_timestamp_correctly(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_stores_timestamp_correctly(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler stores timestamp in ISO 8601 format."""
         logger = logging.getLogger("test.timestamp")
         logger.addHandler(log_handler)
         logger.setLevel(logging.INFO)
 
-        before_log = time.time()
+        time.time()
         logger.info("Timestamped message")
-        after_log = time.time()
+        time.time()
 
         # Verify timestamp is within expected range
         conn = sqlite3.connect(str(temp_db_path))
@@ -179,11 +193,17 @@ class TestSQLiteLogHandlerWriting:
 
         # Verify ISO 8601 format (basic check)
         assert "T" in timestamp_str
-        assert timestamp_str.endswith("Z") or "+" in timestamp_str or "-" in timestamp_str[-6:]
+        assert (
+            timestamp_str.endswith("Z")
+            or "+" in timestamp_str
+            or "-" in timestamp_str[-6:]
+        )
 
         conn.close()
 
-    def test_handler_handles_different_log_levels(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_handles_different_log_levels(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler correctly stores different log levels."""
         logger = logging.getLogger("test.levels")
         logger.addHandler(log_handler)
@@ -214,7 +234,9 @@ class TestSQLiteLogHandlerWriting:
 class TestSQLiteLogHandlerConcurrency:
     """Test thread-safe concurrent writes (AC5 requirement)."""
 
-    def test_handler_handles_concurrent_writes(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_handles_concurrent_writes(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler safely handles concurrent writes from multiple threads."""
         logger = logging.getLogger("test.concurrent")
         logger.addHandler(log_handler)
@@ -262,8 +284,8 @@ class TestSQLiteLogHandlerConcurrency:
                     f"Thread {thread_id} message {i}",
                     extra={
                         "correlation_id": f"corr-{thread_id}-{i}",
-                        "user_id": f"user{thread_id}"
-                    }
+                        "user_id": f"user{thread_id}",
+                    },
                 )
 
         threads = []
@@ -297,7 +319,9 @@ class TestSQLiteLogHandlerConcurrency:
 class TestSQLiteLogHandlerExtraData:
     """Test handling of extra_data field for arbitrary key-value pairs."""
 
-    def test_handler_stores_extra_data_as_json(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_stores_extra_data_as_json(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler stores arbitrary extra data as JSON."""
         logger = logging.getLogger("test.extra_data")
         logger.addHandler(log_handler)
@@ -310,8 +334,8 @@ class TestSQLiteLogHandlerExtraData:
                 "correlation_id": "test-123",
                 "custom_field1": "value1",
                 "custom_field2": 42,
-                "custom_field3": {"nested": "data"}
-            }
+                "custom_field3": {"nested": "data"},
+            },
         )
 
         # Verify extra_data stored as JSON
@@ -325,6 +349,7 @@ class TestSQLiteLogHandlerExtraData:
 
         # Should be JSON string
         import json
+
         parsed = json.loads(extra_data)
         assert parsed["custom_field1"] == "value1"
         assert parsed["custom_field2"] == 42
@@ -336,7 +361,9 @@ class TestSQLiteLogHandlerExtraData:
 class TestSQLiteLogHandlerEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_handler_handles_very_long_messages(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_handles_very_long_messages(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler can store very long log messages."""
         logger = logging.getLogger("test.long")
         logger.addHandler(log_handler)
@@ -355,7 +382,9 @@ class TestSQLiteLogHandlerEdgeCases:
 
         conn.close()
 
-    def test_handler_handles_null_extra_fields(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_handles_null_extra_fields(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler handles missing extra fields gracefully."""
         logger = logging.getLogger("test.nulls")
         logger.addHandler(log_handler)
@@ -377,7 +406,9 @@ class TestSQLiteLogHandlerEdgeCases:
 
         conn.close()
 
-    def test_handler_handles_unicode_messages(self, log_handler: SQLiteLogHandler, temp_db_path: Path):
+    def test_handler_handles_unicode_messages(
+        self, log_handler: SQLiteLogHandler, temp_db_path: Path
+    ):
         """Test that handler correctly stores Unicode messages."""
         logger = logging.getLogger("test.unicode")
         logger.addHandler(log_handler)

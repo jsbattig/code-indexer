@@ -1,4 +1,3 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 AutoWatchManager - Story #640.
 
@@ -6,11 +5,13 @@ Manages auto-watch lifecycle for server file operations, enabling automatic
 watch mode activation during file modifications with timeout-based auto-stop.
 """
 
+from code_indexer.server.middleware.correlation import get_correlation_id
+
 import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, cast
 
 from code_indexer.daemon.watch_manager import DaemonWatchManager
 from code_indexer.config import ConfigManager
@@ -56,7 +57,10 @@ class AutoWatchManager:
             name="AutoWatchTimeoutChecker",
         )
         self._timeout_thread.start()
-        logger.info("AutoWatchManager timeout checker thread started", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "AutoWatchManager timeout checker thread started",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def is_watching(self, repo_path: str) -> bool:
         """
@@ -95,7 +99,10 @@ class AutoWatchManager:
         """
         # Check if auto-watch is enabled
         if not self.auto_watch_enabled:
-            logger.info(f"Auto-watch disabled, not starting watch for {repo_path}", extra={"correlation_id": get_correlation_id()})
+            logger.info(
+                f"Auto-watch disabled, not starting watch for {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return {
                 "status": "disabled",
                 "message": "Auto-watch is disabled",
@@ -109,8 +116,9 @@ class AutoWatchManager:
                 self._watch_state[repo_path]["last_activity"] = datetime.now()
                 self._watch_state[repo_path]["timeout_seconds"] = timeout_seconds
                 logger.info(
-                    f"Watch already running for {repo_path}, timeout reset to {timeout_seconds}s"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Watch already running for {repo_path}, timeout reset to {timeout_seconds}s",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return {
                     "status": "success",
                     "message": "Timeout reset",
@@ -126,13 +134,19 @@ class AutoWatchManager:
                 watch_instance = DaemonWatchManager()
 
                 # Start watch
-                result = watch_instance.start_watch(
-                    project_path=repo_path,
-                    config=config,
+                result = cast(
+                    dict[str, Any],
+                    watch_instance.start_watch(
+                        project_path=repo_path,
+                        config=config,
+                    ),
                 )
 
                 if result.get("status") != "success":
-                    logger.error(f"Failed to start watch for {repo_path}: {result}", extra={"correlation_id": get_correlation_id()})
+                    logger.error(
+                        f"Failed to start watch for {repo_path}: {result}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     return result
 
                 # Track watch state
@@ -144,15 +158,19 @@ class AutoWatchManager:
                 }
 
                 logger.info(
-                    f"Auto-watch started for {repo_path} with {timeout_seconds}s timeout"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Auto-watch started for {repo_path} with {timeout_seconds}s timeout",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return {
                     "status": "success",
                     "message": f"Watch started with {timeout_seconds}s timeout",
                 }
 
             except Exception as e:
-                logger.exception(f"Error starting auto-watch for {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.exception(
+                    f"Error starting auto-watch for {repo_path}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return {
                     "status": "error",
                     "message": f"Failed to start watch: {str(e)}",
@@ -173,7 +191,10 @@ class AutoWatchManager:
             if repo_path not in self._watch_state or not self._watch_state[
                 repo_path
             ].get("watch_running", False):
-                logger.warning(f"No watch running for {repo_path}", extra={"correlation_id": get_correlation_id()})
+                logger.warning(
+                    f"No watch running for {repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return {
                     "status": "error",
                     "message": "Watch not running",
@@ -187,7 +208,10 @@ class AutoWatchManager:
                 # Clear state
                 del self._watch_state[repo_path]
 
-                logger.info(f"Auto-watch stopped for {repo_path}", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    f"Auto-watch stopped for {repo_path}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return {
                     "status": "success",
                     "message": "Watch stopped",
@@ -195,7 +219,10 @@ class AutoWatchManager:
                 }
 
             except Exception as e:
-                logger.exception(f"Error stopping auto-watch for {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.exception(
+                    f"Error stopping auto-watch for {repo_path}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return {
                     "status": "error",
                     "message": f"Failed to stop watch: {str(e)}",
@@ -216,8 +243,9 @@ class AutoWatchManager:
                 repo_path
             ].get("watch_running", False):
                 logger.warning(
-                    f"No watch running for {repo_path}, cannot reset timeout"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"No watch running for {repo_path}, cannot reset timeout",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return {
                     "status": "error",
                     "message": "Watch not running",
@@ -225,7 +253,10 @@ class AutoWatchManager:
 
             # Update last activity timestamp
             self._watch_state[repo_path]["last_activity"] = datetime.now()
-            logger.debug(f"Timeout reset for {repo_path}", extra={"correlation_id": get_correlation_id()})
+            logger.debug(
+                f"Timeout reset for {repo_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             return {
                 "status": "success",
@@ -238,7 +269,10 @@ class AutoWatchManager:
 
         Runs until shutdown event is set.
         """
-        logger.info("Timeout checker loop started", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Timeout checker loop started",
+            extra={"correlation_id": get_correlation_id()},
+        )
         while not self._shutdown_event.is_set():
             # Wait for check interval or until shutdown event
             if self._shutdown_event.wait(timeout=self.TIMEOUT_CHECK_INTERVAL_SECONDS):
@@ -248,9 +282,15 @@ class AutoWatchManager:
             try:
                 self._check_timeouts()
             except Exception as e:
-                logger.exception(f"Error in timeout checker loop: {e}", extra={"correlation_id": get_correlation_id()})
+                logger.exception(
+                    f"Error in timeout checker loop: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
-        logger.info("Timeout checker loop stopped", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Timeout checker loop stopped",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def _check_timeouts(self) -> None:
         """
@@ -272,8 +312,9 @@ class AutoWatchManager:
                 if elapsed > timeout_seconds:
                     logger.info(
                         f"Watch timeout expired for {repo_path} "
-                        f"({elapsed:.1f}s > {timeout_seconds}s)"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"({elapsed:.1f}s > {timeout_seconds}s)",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     repos_to_stop.append(repo_path)
 
             # Stop expired watches (outside iteration to avoid dict modification during iteration)
@@ -282,9 +323,15 @@ class AutoWatchManager:
                     watch_instance = self._watch_state[repo_path]["watch_instance"]
                     watch_instance.stop_watch()
                     del self._watch_state[repo_path]
-                    logger.info(f"Auto-stopped watch for {repo_path} due to timeout", extra={"correlation_id": get_correlation_id()})
+                    logger.info(
+                        f"Auto-stopped watch for {repo_path} due to timeout",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                 except Exception as e:
-                    logger.exception(f"Error auto-stopping watch for {repo_path}: {e}", extra={"correlation_id": get_correlation_id()})
+                    logger.exception(
+                        f"Error auto-stopping watch for {repo_path}: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
     def shutdown(self) -> None:
         """
@@ -292,7 +339,10 @@ class AutoWatchManager:
 
         Should be called when server is shutting down to ensure clean resource cleanup.
         """
-        logger.info("Shutting down AutoWatchManager...", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "Shutting down AutoWatchManager...",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Signal background thread to stop
         self._shutdown_event.set()
@@ -303,10 +353,14 @@ class AutoWatchManager:
             if self._timeout_thread.is_alive():
                 logger.warning(
                     f"Timeout checker thread did not stop within "
-                    f"{self.SHUTDOWN_THREAD_JOIN_TIMEOUT_SECONDS} seconds"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"{self.SHUTDOWN_THREAD_JOIN_TIMEOUT_SECONDS} seconds",
+                    extra={"correlation_id": get_correlation_id()},
+                )
             else:
-                logger.info("Timeout checker thread stopped successfully", extra={"correlation_id": get_correlation_id()})
+                logger.info(
+                    "Timeout checker thread stopped successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
         # Stop all active watches
         with self._lock:
@@ -317,10 +371,14 @@ class AutoWatchManager:
                 self.stop_watch(repo_path)
             except Exception as e:
                 logger.exception(
-                    f"Error stopping watch during shutdown for {repo_path}: {e}"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Error stopping watch during shutdown for {repo_path}: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
-        logger.info("AutoWatchManager shutdown complete", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "AutoWatchManager shutdown complete",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def get_state(self, repo_path: str) -> Optional[Dict[str, Any]]:
         """

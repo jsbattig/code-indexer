@@ -1,9 +1,10 @@
-from code_indexer.server.middleware.correlation import get_correlation_id
 """
 SSH Key Migration Startup Service.
 
 Provides a simple entry point for running SSH key migration during server startup.
 """
+
+from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from pathlib import Path
@@ -46,7 +47,10 @@ def run_ssh_migration_on_startup(
     migration_metadata_path = server_data_path / "ssh_migration.json"
     cidx_config_path = server_data_path / "config.json"
 
-    logger.info("SSH key migration: Checking if migration is needed...", extra={"correlation_id": get_correlation_id()})
+    logger.info(
+        "SSH key migration: Checking if migration is needed...",
+        extra={"correlation_id": get_correlation_id()},
+    )
 
     # Create orchestrator
     orchestrator = MigrationOrchestrator(
@@ -59,14 +63,20 @@ def run_ssh_migration_on_startup(
 
     # Check if migration should run
     if not orchestrator.should_run_migration():
-        logger.info("SSH key migration: Already completed, skipping", extra={"correlation_id": get_correlation_id()})
+        logger.info(
+            "SSH key migration: Already completed, skipping",
+            extra={"correlation_id": get_correlation_id()},
+        )
         return MigrationResult(
             skipped=True,
             reason="Already completed",
         )
 
     # Run migration
-    logger.info("SSH key migration: Running first-time migration...", extra={"correlation_id": get_correlation_id()})
+    logger.info(
+        "SSH key migration: Running first-time migration...",
+        extra={"correlation_id": get_correlation_id()},
+    )
 
     try:
         result = orchestrator.run_migration()
@@ -76,22 +86,28 @@ def run_ssh_migration_on_startup(
                 f"SSH key migration: Completed successfully - "
                 f"{result.keys_discovered} keys discovered, "
                 f"{result.keys_imported} imported, "
-                f"{result.mappings_imported} existing mappings imported"
-            , extra={"correlation_id": get_correlation_id()})
+                f"{result.mappings_imported} existing mappings imported",
+                extra={"correlation_id": get_correlation_id()},
+            )
             if result.failed_hosts:
                 logger.warning(
                     f"SSH key migration: {len(result.failed_hosts)} hosts failed "
-                    f"during key testing (timeouts or connection failures)"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"during key testing (timeouts or connection failures)",
+                    extra={"correlation_id": get_correlation_id()},
+                )
         else:
             logger.warning(
-                f"SSH key migration: Completed with issues - {result.reason}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"SSH key migration: Completed with issues - {result.reason}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         return result
 
     except Exception as e:
-        logger.error(f"SSH key migration: Failed with error - {e}", extra={"correlation_id": get_correlation_id()})
+        logger.error(
+            f"SSH key migration: Failed with error - {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
         # Return a failed result but don't crash server startup
         return MigrationResult(
             completed=False,

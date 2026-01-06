@@ -215,7 +215,10 @@ class RetryWithBackoffStrategy(RecoveryStrategy):
         current_error = error
         original_error = error  # Keep reference to original error
 
-        self.logger.info(f"Starting retry recovery for error {error.error_code}", extra={"correlation_id": get_correlation_id()})
+        self.logger.info(
+            f"Starting retry recovery for error {error.error_code}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         for attempt_num in range(1, self.retry_policy.max_attempts + 1):
             # Calculate delay with jitter
@@ -231,8 +234,9 @@ class RetryWithBackoffStrategy(RecoveryStrategy):
                 total_delay = delay + jitter
 
                 self.logger.info(
-                    f"Retry attempt {attempt_num} after {total_delay:.2f}s delay"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Retry attempt {attempt_num} after {total_delay:.2f}s delay",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
                 if progress_callback:
                     progress_callback(
@@ -267,8 +271,9 @@ class RetryWithBackoffStrategy(RecoveryStrategy):
                 recovery_time = time.time() - start_time
 
                 self.logger.info(
-                    f"Recovery successful after {attempt_num} attempts in {recovery_time:.2f}s"
-                , extra={"correlation_id": get_correlation_id()})
+                    f"Recovery successful after {attempt_num} attempts in {recovery_time:.2f}s",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
                 return RecoveryResult(
                     success=True,
@@ -378,7 +383,10 @@ class RollbackStrategy(RecoveryStrategy):
         start_time = time.time()
         attempts = []
 
-        self.logger.info(f"Starting rollback recovery for error {error.error_code}", extra={"correlation_id": get_correlation_id()})
+        self.logger.info(
+            f"Starting rollback recovery for error {error.error_code}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         attempt = RecoveryAttempt(
             attempt_number=1,
@@ -410,8 +418,9 @@ class RollbackStrategy(RecoveryStrategy):
                     recovery_time = time.time() - start_time
 
                     self.logger.info(
-                        f"Rollback and retry successful in {recovery_time:.2f}s"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Rollback and retry successful in {recovery_time:.2f}s",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
                     return RecoveryResult(
                         success=True,
@@ -559,7 +568,10 @@ class RollbackStrategy(RecoveryStrategy):
             # Reset to HEAD if we have dirty working tree
             try:
                 run_git_command(["reset", "--hard", "HEAD"], cwd=repository_path)
-                self.logger.info("Git rollback: reset to HEAD successful", extra={"correlation_id": get_correlation_id()})
+                self.logger.info(
+                    "Git rollback: reset to HEAD successful",
+                    extra={"correlation_id": get_correlation_id()},
+                )
                 return True
             except Exception as e:
                 self.logger.error(
@@ -590,7 +602,10 @@ class RollbackStrategy(RecoveryStrategy):
 
             # This is a placeholder - actual implementation would depend on
             # the specific indexing system and backup mechanisms available
-            self.logger.info("Indexing rollback: clearing partial indexes", extra={"correlation_id": get_correlation_id()})
+            self.logger.info(
+                "Indexing rollback: clearing partial indexes",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # TODO: Implement actual indexing rollback logic
             # - Restore index from backup
@@ -619,7 +634,10 @@ class RollbackStrategy(RecoveryStrategy):
 
             # File system rollback is tricky without explicit transaction log
             # For now, just log the attempt
-            self.logger.info("File system rollback: limited rollback available", extra={"correlation_id": get_correlation_id()})
+            self.logger.info(
+                "File system rollback: limited rollback available",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             # TODO: Implement file system rollback if we maintain operation logs
             # - Restore files from backup
@@ -670,7 +688,10 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
         start_time = time.time()
         attempts = []
 
-        self.logger.info(f"Starting checkpoint recovery for error {error.error_code}", extra={"correlation_id": get_correlation_id()})
+        self.logger.info(
+            f"Starting checkpoint recovery for error {error.error_code}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         attempt = RecoveryAttempt(
             attempt_number=1,
@@ -710,8 +731,9 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
                     recovery_time = time.time() - start_time
 
                     self.logger.info(
-                        f"Checkpoint recovery successful in {recovery_time:.2f}s"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"Checkpoint recovery successful in {recovery_time:.2f}s",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
                     return RecoveryResult(
                         success=True,
@@ -808,7 +830,10 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
                     indent=2,
                 )
 
-            self.logger.info(f"Created checkpoint {checkpoint.checkpoint_id}", extra={"correlation_id": get_correlation_id()})
+            self.logger.info(
+                f"Created checkpoint {checkpoint.checkpoint_id}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         except Exception as e:
             self.logger.error(
@@ -862,8 +887,9 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
                 self._execute_rollback_action(rollback_action)
 
             self.logger.info(
-                f"Successfully restored from checkpoint {checkpoint.checkpoint_id}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Successfully restored from checkpoint {checkpoint.checkpoint_id}",
+                extra={"correlation_id": get_correlation_id()},
+            )
             return True
 
         except Exception as e:
@@ -914,8 +940,9 @@ class RecoveryOrchestrator:
         self.strategies.append(strategy)
         self.strategies.sort(key=lambda s: s.priority, reverse=True)
         self.logger.info(
-            f"Registered recovery strategy: {strategy.name} (priority {strategy.priority})"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Registered recovery strategy: {strategy.name} (priority {strategy.priority})",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
     def attempt_recovery(
         self,
@@ -939,8 +966,9 @@ class RecoveryOrchestrator:
             RecoveryResult indicating final outcome
         """
         self.logger.info(
-            f"Starting recovery for error {error.error_code} (severity: {error.severity.value})"
-        , extra={"correlation_id": get_correlation_id()})
+            f"Starting recovery for error {error.error_code} (severity: {error.severity.value})",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Find applicable strategies
         applicable_strategies = [
@@ -965,16 +993,18 @@ class RecoveryOrchestrator:
 
         self.logger.info(
             f"Found {len(applicable_strategies)} applicable recovery strategies: "
-            f"{[s.name for s in applicable_strategies]}"
-        , extra={"correlation_id": get_correlation_id()})
+            f"{[s.name for s in applicable_strategies]}",
+            extra={"correlation_id": get_correlation_id()},
+        )
 
         # Try strategies in priority order
         for attempt_num, strategy in enumerate(
             applicable_strategies[:max_recovery_attempts], 1
         ):
             self.logger.info(
-                f"Attempting recovery {attempt_num} using strategy: {strategy.name}"
-            , extra={"correlation_id": get_correlation_id()})
+                f"Attempting recovery {attempt_num} using strategy: {strategy.name}",
+                extra={"correlation_id": get_correlation_id()},
+            )
 
             try:
                 if progress_callback:
@@ -995,8 +1025,9 @@ class RecoveryOrchestrator:
                 if result.success:
                     self.logger.info(
                         f"Recovery successful using strategy {strategy.name} "
-                        f"after {result.recovery_time_seconds:.2f}s"
-                    , extra={"correlation_id": get_correlation_id()})
+                        f"after {result.recovery_time_seconds:.2f}s",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
                     return result
 
                 else:
@@ -1008,8 +1039,9 @@ class RecoveryOrchestrator:
                     # If this strategy escalated, don't try others
                     if result.outcome == RecoveryOutcome.ESCALATED:
                         self.logger.info(
-                            "Recovery strategy escalated - stopping recovery attempts"
-                        , extra={"correlation_id": get_correlation_id()})
+                            "Recovery strategy escalated - stopping recovery attempts",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                         return result
 
                     # Update error for next strategy

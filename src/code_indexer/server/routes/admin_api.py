@@ -35,10 +35,14 @@ class LogEntry(BaseModel):
     """Log entry model for API responses."""
 
     timestamp: str = Field(..., description="ISO 8601 timestamp")
-    level: str = Field(..., description="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    level: str = Field(
+        ..., description="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    )
     message: str = Field(..., description="Log message")
     source: str = Field(..., description="Logger name/source")
-    correlation_id: Optional[str] = Field(None, description="Correlation ID for request tracking")
+    correlation_id: Optional[str] = Field(
+        None, description="Correlation ID for request tracking"
+    )
     metadata: dict = Field(default_factory=dict, description="Additional metadata")
 
 
@@ -63,10 +67,7 @@ def _require_admin(user: User = Depends(get_current_user)) -> User:
         HTTPException: 403 if user is not admin
     """
     if user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required"
-        )
+        raise HTTPException(status_code=403, detail="Admin role required")
     return user
 
 
@@ -217,7 +218,5 @@ async def export_logs(
     return Response(
         content=content,
         media_type=media_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

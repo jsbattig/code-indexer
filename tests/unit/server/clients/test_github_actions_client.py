@@ -205,8 +205,14 @@ class TestGitHubActionsClientGetRun:
             assert run_details["branch"] == "main"
             assert run_details["created_at"] == "2024-01-01T12:00:00Z"
             assert run_details["updated_at"] == "2024-01-01T12:05:00Z"
-            assert run_details["html_url"] == "https://github.com/owner/repo/actions/runs/12345"
-            assert run_details["jobs_url"] == "https://api.github.com/repos/owner/repo/actions/runs/12345/jobs"
+            assert (
+                run_details["html_url"]
+                == "https://github.com/owner/repo/actions/runs/12345"
+            )
+            assert (
+                run_details["jobs_url"]
+                == "https://api.github.com/repos/owner/repo/actions/runs/12345/jobs"
+            )
             assert run_details["run_started_at"] == "2024-01-01T12:00:30Z"
 
 
@@ -262,7 +268,9 @@ class TestGitHubActionsClientSearchLogs:
 
             # Verify we got matching lines
             assert len(matches) > 0
-            assert any("Error: compilation failed" in match["line"] for match in matches)
+            assert any(
+                "Error: compilation failed" in match["line"] for match in matches
+            )
             assert all("job_id" in match for match in matches)
             assert all("job_name" in match for match in matches)
             assert all("line_number" in match for match in matches)
@@ -290,7 +298,7 @@ class TestGitHubActionsClientGetJobLogs:
                 "2024-01-01T12:02:00 Running tests\n"
                 "2024-01-01T12:03:00 All tests passed\n"
                 "2024-01-01T12:04:00 Job completed successfully\n"
-            )
+            ),
         )
 
         mock_client_instance = AsyncMock()
@@ -433,7 +441,7 @@ class TestGitHubActionsClientRateLimiting:
         with patch("httpx.AsyncClient", return_value=mock_client_instance):
             client = GitHubActionsClient(token="fake-token")
             # Store rate limit in client instance
-            runs = await client.list_runs(repository="owner/repo")
+            await client.list_runs(repository="owner/repo")
 
             # Verify rate limit is tracked (accessed via property)
             rate_limit = client.last_rate_limit

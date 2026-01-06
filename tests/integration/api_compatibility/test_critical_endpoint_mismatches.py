@@ -128,7 +128,8 @@ class TestBranchListingEndpointMismatch:
 
         # Verify client called wrong endpoint
         mock_client._authenticated_request.assert_called_once_with(
-            "GET", "/api/v1/repositories/test-repo/branches"  # WRONG endpoint
+            "GET",
+            "/api/v1/repositories/test-repo/branches",  # WRONG endpoint
         )
 
 
@@ -171,7 +172,8 @@ class TestRepositoryListingEndpointMismatch:
 
         # Verify the endpoint called
         mock_query_client._authenticated_request.assert_called_once_with(
-            "GET", "/api/repositories"  # Check if this matches server
+            "GET",
+            "/api/repositories",  # Check if this matches server
         )
 
     @pytest.mark.asyncio
@@ -195,7 +197,8 @@ class TestRepositoryListingEndpointMismatch:
 
         # Verify wrong endpoint called
         mock_linking_client._authenticated_request.assert_called_once_with(
-            "GET", "/api/v1/repositories"  # WRONG - server expects /api/repos
+            "GET",
+            "/api/v1/repositories",  # WRONG - server expects /api/repos
         )
 
 
@@ -227,7 +230,8 @@ class TestRepositoryDeactivationEndpointMismatch:
 
         # Verify wrong endpoint called
         mock_client._authenticated_request.assert_called_once_with(
-            "DELETE", "/api/v1/repositories/test-user-repo/deactivate"  # WRONG endpoint
+            "DELETE",
+            "/api/v1/repositories/test-user-repo/deactivate",  # WRONG endpoint
         )
 
 
