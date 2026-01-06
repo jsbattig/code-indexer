@@ -88,7 +88,7 @@ async def multi_repository_definition(
         },
         "metadata": {
             "total_results": 1,
-            "total_repos_searched": 2,
+            "repos_searched": 2,
             "execution_time_ms": 150
         },
         "errors": {}
@@ -140,7 +140,7 @@ async def multi_repository_definition(
         # Log response summary
         logger.info(
             f"SCIP multi-definition completed: {response.metadata.total_results} results "
-            f"from {response.metadata.total_repos_searched} repos "
+            f"from {response.metadata.repos_searched} repos "
             f"in {response.metadata.execution_time_ms}ms"
         )
 
@@ -215,7 +215,7 @@ async def multi_repository_references(
         # Log response summary
         logger.info(
             f"SCIP multi-references completed: {response.metadata.total_results} results "
-            f"from {response.metadata.total_repos_searched} repos "
+            f"from {response.metadata.repos_searched} repos "
             f"in {response.metadata.execution_time_ms}ms"
         )
 
@@ -290,7 +290,7 @@ async def multi_repository_dependencies(
         # Log response summary
         logger.info(
             f"SCIP multi-dependencies completed: {response.metadata.total_results} results "
-            f"from {response.metadata.total_repos_searched} repos "
+            f"from {response.metadata.repos_searched} repos "
             f"in {response.metadata.execution_time_ms}ms"
         )
 
@@ -365,7 +365,7 @@ async def multi_repository_dependents(
         # Log response summary
         logger.info(
             f"SCIP multi-dependents completed: {response.metadata.total_results} results "
-            f"from {response.metadata.total_repos_searched} repos "
+            f"from {response.metadata.repos_searched} repos "
             f"in {response.metadata.execution_time_ms}ms"
         )
 
@@ -443,7 +443,7 @@ async def multi_repository_callchain(
         # Log response summary
         logger.info(
             f"SCIP multi-callchain completed: {response.metadata.total_results} results "
-            f"from {response.metadata.total_repos_searched} repos "
+            f"from {response.metadata.repos_searched} repos "
             f"in {response.metadata.execution_time_ms}ms"
         )
 
