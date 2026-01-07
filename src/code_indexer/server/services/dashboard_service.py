@@ -413,7 +413,7 @@ class DashboardService:
         Detects format (v1/v2/none) and returns status information.
 
         Args:
-            username: Username for repository lookup
+            username: Username for repository lookup ("_global" for global repos)
             repo_alias: Repository alias
 
         Returns:
@@ -422,17 +422,39 @@ class DashboardService:
         Raises:
             FileNotFoundError: If repository not found
         """
-        # Get repository info
-        activated_manager = self._get_activated_repo_manager()
-        if not activated_manager:
-            raise FileNotFoundError(f"Repository not found: {repo_alias}")
+        # Get index_dir based on whether this is a global repo or activated repo
+        if username == "_global":
+            # Global repos use GlobalRegistry to get index_path
+            import os
+            from code_indexer.global_repos.global_registry import GlobalRegistry
 
-        repo_info = activated_manager.get_repository(username, repo_alias)
-        if not repo_info:
-            raise FileNotFoundError(f"Repository not found: {repo_alias}")
+            server_data_dir = os.environ.get(
+                "CIDX_SERVER_DATA_DIR",
+                os.path.expanduser("~/.cidx-server"),
+            )
+            golden_repos_dir = f"{server_data_dir}/data/golden-repos"
+            registry = GlobalRegistry(golden_repos_dir)
+            repo_info = registry.get_global_repo(repo_alias)
 
-        # Check if temporal collection exists
-        index_dir = Path(activated_manager.data_dir) / "index"
+            if not repo_info:
+                raise FileNotFoundError(f"Repository not found: {repo_alias}")
+
+            # index_path from registry points to the repo root (e.g., /path/to/repo/v_123)
+            # The actual index is at index_path/.code-indexer/index
+            index_path = repo_info.get("index_path", "")
+            index_dir = Path(index_path) / ".code-indexer" / "index"
+        else:
+            # Activated repos use activated_manager
+            activated_manager = self._get_activated_repo_manager()
+            if not activated_manager:
+                raise FileNotFoundError(f"Repository not found: {repo_alias}")
+
+            repo_info = activated_manager.get_repository(username, repo_alias)
+            if not repo_info:
+                raise FileNotFoundError(f"Repository not found: {repo_alias}")
+
+            # Check if temporal collection exists
+            index_dir = Path(activated_manager.data_dir) / "index"
         temporal_collection_name = "code-indexer-temporal"
         temporal_collection_path = index_dir / temporal_collection_name
 
