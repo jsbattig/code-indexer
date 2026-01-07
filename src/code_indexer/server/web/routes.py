@@ -841,7 +841,7 @@ def _get_golden_repos_list():
                         if scip_files:
                             repo["has_scip"] = True
 
-        return repos
+        return sorted(repos, key=lambda r: r.get("alias", "").lower())
     except Exception as e:
         logger.error(
             "Failed to get golden repos list: %s",
@@ -1230,8 +1230,8 @@ def _get_all_activated_repos() -> list:
 
                     all_repos.append(repo)
 
-        # Sort by activation date (newest first)
-        all_repos.sort(key=lambda r: r.get("activated_at", ""), reverse=True)
+        # Sort by user_alias alphabetically (case-insensitive)
+        all_repos.sort(key=lambda r: r.get("user_alias", "").lower())
         return all_repos
 
     except Exception as e:
@@ -1874,7 +1874,7 @@ def _get_all_activated_repos_for_query() -> list:
         repo["is_global"] = False
         repos.append(repo)
 
-    return repos
+    return sorted(repos, key=lambda r: r.get("user_alias", "").lower())
 
 
 def _create_query_page_response(
