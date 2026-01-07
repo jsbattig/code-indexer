@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 GITHUB_TOKEN_PATTERN = re.compile(
     r"^(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,255})$"
 )
-GITLAB_TOKEN_PATTERN = re.compile(r"^glpat-[A-Za-z0-9_-]{20,}$")
+# GitLab tokens can have periods in newer versioned formats (e.g., glpat-xxx.01.yyy)
+GITLAB_TOKEN_PATTERN = re.compile(r"^glpat-[A-Za-z0-9_.-]{20,}$")
 
 # Encryption constants
 PBKDF2_ITERATIONS = 100000

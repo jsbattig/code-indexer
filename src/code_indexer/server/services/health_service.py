@@ -11,7 +11,7 @@ import psutil
 import time
 import logging
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional, Any
 from datetime import datetime, timezone
 
 from ..models.api_models import (
@@ -55,6 +55,13 @@ class HealthCheckService:
             # Real database URL for health checks
             # Use SQLite as the default database for CIDX Server
             self.database_url = f"sqlite:///{self.data_dir}/cidx_server.db"
+
+            # State tracking for interval-averaged I/O metrics
+            # These store the previous readings to calculate rates
+            self._last_disk_counters: Optional[Any] = None
+            self._last_disk_time: Optional[float] = None
+            self._last_net_counters: Optional[Any] = None
+            self._last_net_time: Optional[float] = None
 
         except Exception as e:
             logger.error(
@@ -288,23 +295,80 @@ class HealthCheckService:
 
     def _get_system_info(self) -> SystemHealthInfo:
         """
-        Get current system resource information.
+        Get current system resource information with interval-averaged metrics.
+
+        CPU, disk I/O, and network I/O are calculated as interval averages
+        between calls rather than spot readings, providing more meaningful
+        performance metrics for dashboard display.
 
         Returns:
-            System health information
+            System health information with interval-averaged I/O rates
         """
+        current_time = time.time()
+
         # Get memory usage
         memory = psutil.virtual_memory()
         memory_percent = memory.percent
 
-        # Get CPU usage (with short interval for responsiveness)
-        cpu_percent = psutil.cpu_percent(interval=0.1)
+        # Get CPU usage - interval=None for interval-averaged measurement
+        # This returns the average CPU usage since the last call (or 0.0 on first call)
+        cpu_percent = psutil.cpu_percent(interval=None)
 
         # Get disk space
         disk_usage = psutil.disk_usage("/")
         free_space_gb = disk_usage.free / (1024**3)
 
-        # Get active job count (placeholder)
+        # Calculate disk I/O rates (KB/s) from counter diffs
+        disk_counters = psutil.disk_io_counters()
+        disk_read_kb_s = 0.0
+        disk_write_kb_s = 0.0
+
+        if (
+            self._last_disk_counters is not None
+            and self._last_disk_time is not None
+            and disk_counters is not None
+        ):
+            elapsed = current_time - self._last_disk_time
+            if elapsed > 0:
+                bytes_read_diff = (
+                    disk_counters.read_bytes - self._last_disk_counters.read_bytes
+                )
+                bytes_write_diff = (
+                    disk_counters.write_bytes - self._last_disk_counters.write_bytes
+                )
+                disk_read_kb_s = (bytes_read_diff / 1024) / elapsed
+                disk_write_kb_s = (bytes_write_diff / 1024) / elapsed
+
+        # Update disk state for next call
+        self._last_disk_counters = disk_counters
+        self._last_disk_time = current_time
+
+        # Calculate network I/O rates (KB/s) from counter diffs
+        net_counters = psutil.net_io_counters()
+        net_rx_kb_s = 0.0
+        net_tx_kb_s = 0.0
+
+        if (
+            self._last_net_counters is not None
+            and self._last_net_time is not None
+            and net_counters is not None
+        ):
+            elapsed = current_time - self._last_net_time
+            if elapsed > 0:
+                bytes_recv_diff = (
+                    net_counters.bytes_recv - self._last_net_counters.bytes_recv
+                )
+                bytes_sent_diff = (
+                    net_counters.bytes_sent - self._last_net_counters.bytes_sent
+                )
+                net_rx_kb_s = (bytes_recv_diff / 1024) / elapsed
+                net_tx_kb_s = (bytes_sent_diff / 1024) / elapsed
+
+        # Update network state for next call
+        self._last_net_counters = net_counters
+        self._last_net_time = current_time
+
+        # Get active job count
         active_jobs = self._get_active_jobs_count()
 
         return SystemHealthInfo(
@@ -312,6 +376,10 @@ class HealthCheckService:
             cpu_usage_percent=cpu_percent,
             active_jobs=active_jobs,
             disk_free_space_gb=free_space_gb,
+            disk_read_kb_s=disk_read_kb_s,
+            disk_write_kb_s=disk_write_kb_s,
+            net_rx_kb_s=net_rx_kb_s,
+            net_tx_kb_s=net_tx_kb_s,
         )
 
     def _calculate_overall_status(

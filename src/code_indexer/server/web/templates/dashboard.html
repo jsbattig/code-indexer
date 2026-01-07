@@ -40,9 +40,9 @@ function refreshAll() {
     htmx.ajax('GET', '/admin/partials/dashboard-stats', {target: '#stats-section', swap: 'innerHTML'});
 }
 
-// Start auto-refresh on page load (every 5 seconds)
+// Start auto-refresh on page load (every 2 seconds for responsive metrics)
 document.addEventListener('DOMContentLoaded', function() {
-    autoRefreshInterval = setInterval(refreshAll, 5000);
+    autoRefreshInterval = setInterval(refreshAll, 2000);
 });
 
 // Cleanup on page unload

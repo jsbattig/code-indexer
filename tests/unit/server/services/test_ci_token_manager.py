@@ -279,6 +279,16 @@ class TestCITokenManagerValidation:
         # Then no exception should be raised
         token_manager._validate_token_format("gitlab", valid_token)
 
+    def test_validate_gitlab_token_valid_versioned_format(self, token_manager):
+        """Test validation accepts newer GitLab versioned token format with periods."""
+        # Given a valid glpat- format token with versioned suffix (newer GitLab format)
+        # Example: glpat-x5DbmTJCwT6wqLXX6DxdmG86MQp1OmN5dG5qCw.01.120qe28y8
+        valid_versioned_token = "glpat-x5DbmTJCwT6wqLXX6DxdmG86MQp1OmN5dG5qCw.01.120qe28y8"
+
+        # When validating
+        # Then no exception should be raised
+        token_manager._validate_token_format("gitlab", valid_versioned_token)
+
     def test_validate_gitlab_token_invalid_format(self, token_manager):
         """Test validation rejects invalid GitLab token format (AC10)."""
         # Given invalid GitLab token formats

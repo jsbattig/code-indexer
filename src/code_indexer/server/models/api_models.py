@@ -55,6 +55,18 @@ class SystemHealthInfo(BaseModel):
     cpu_usage_percent: float = Field(..., description="CPU usage as percentage")
     active_jobs: int = Field(..., description="Number of active background jobs")
     disk_free_space_gb: float = Field(..., description="Free disk space in GB")
+    disk_read_kb_s: float = Field(
+        default=0.0, description="Disk read speed in KB/s (interval-averaged)"
+    )
+    disk_write_kb_s: float = Field(
+        default=0.0, description="Disk write speed in KB/s (interval-averaged)"
+    )
+    net_rx_kb_s: float = Field(
+        default=0.0, description="Network receive speed in KB/s (interval-averaged)"
+    )
+    net_tx_kb_s: float = Field(
+        default=0.0, description="Network transmit speed in KB/s (interval-averaged)"
+    )
 
 
 class HealthCheckResponse(BaseModel):
