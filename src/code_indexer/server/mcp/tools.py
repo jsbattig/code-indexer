@@ -2593,6 +2593,16 @@ TOOL_REGISTRY["git_log"] = {
                 "minimum": 1,
                 "maximum": 500,
             },
+            "offset": {
+                "type": "integer",
+                "description": (
+                    "Number of commits to skip (for pagination). Default: 0. "
+                    "Use with limit to paginate through history. Example: offset=50, limit=50 "
+                    "returns commits 51-100."
+                ),
+                "default": 0,
+                "minimum": 0,
+            },
             "path": {
                 "type": "string",
                 "description": (
@@ -2932,6 +2942,25 @@ TOOL_REGISTRY["git_diff"] = {
                 "description": "Return only statistics without hunks. Default: false.",
                 "default": False,
             },
+            "offset": {
+                "type": "integer",
+                "description": (
+                    "Number of diff lines to skip (for pagination). Default: 0. "
+                    "Use with limit to paginate through large diffs."
+                ),
+                "default": 0,
+                "minimum": 0,
+            },
+            "limit": {
+                "type": "integer",
+                "description": (
+                    "Maximum number of diff lines to return. Default: 500. Range: 1-5000. "
+                    "Use for paginating large diffs. Response includes has_more and next_offset."
+                ),
+                "default": 500,
+                "minimum": 1,
+                "maximum": 5000,
+            },
         },
         "required": ["repository_alias", "from_revision"],
     },
@@ -2947,6 +2976,10 @@ TOOL_REGISTRY["git_diff"] = {
             "total_deletions": {"type": "integer"},
             "stat_summary": {"type": "string"},
             "error": {"type": "string"},
+            "lines_returned": {"type": "integer"},
+            "total_lines": {"type": "integer"},
+            "has_more": {"type": "boolean"},
+            "next_offset": {"type": ["integer", "null"]},
         },
         "required": ["success"],
     },
@@ -6962,4 +6995,68 @@ TOOL_REGISTRY["github_actions_cancel_run"] = {
         },
     },
     "required_permission": "repository:write",
+}
+
+# Story #679: Semantic Search with Payload Control - Cache Retrieval Tool
+TOOL_REGISTRY["get_cached_content"] = {
+    "name": "get_cached_content",
+    "description": (
+        "TL;DR: Retrieve cached content by handle with pagination support. "
+        "USE CASE: Fetch full content when search results return truncated previews with cache_handle. "
+        "WHEN TO USE: After search_code returns results with cache_handle and has_more=true, "
+        "use this tool to retrieve the complete content page by page. "
+        "PAGINATION: Content is split into pages (default 5000 chars/page). "
+        "Use page parameter (0-indexed) to retrieve subsequent pages. "
+        "RESPONSE: Returns content, page number, total_pages, and has_more flag. "
+        "CACHE EXPIRY: Handles expire after 15 minutes (configurable). "
+        "If handle expired, returns error with cache_expired status. "
+        "RELATED TOOLS: search_code (returns cache_handle for large results)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "string",
+                "description": "UUID4 cache handle returned from search_code results",
+            },
+            "page": {
+                "type": "integer",
+                "description": "Page number (0-indexed). Defaults to 0 for first page.",
+                "default": 0,
+                "minimum": 0,
+            },
+        },
+        "required": ["handle"],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "Whether retrieval succeeded",
+            },
+            "content": {
+                "type": "string",
+                "description": "Retrieved content for requested page",
+            },
+            "page": {
+                "type": "integer",
+                "description": "Current page number (0-indexed)",
+            },
+            "total_pages": {
+                "type": "integer",
+                "description": "Total number of pages available",
+            },
+            "has_more": {
+                "type": "boolean",
+                "description": "Whether more pages are available after this one",
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message if retrieval failed",
+            },
+        },
+        "required": ["success"],
+    },
+    "required_permission": "query_repos",
 }

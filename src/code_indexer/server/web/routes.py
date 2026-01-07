@@ -3082,6 +3082,24 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                     field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
 
+        # Validate payload cache settings (Story #679)
+        for field in [
+            "payload_preview_size_chars",
+            "payload_max_fetch_size_chars",
+            "payload_cache_ttl_seconds",
+            "payload_cleanup_interval_seconds",
+        ]:
+            value = data.get(field)
+            if value is not None:
+                try:
+                    val_int = int(value)
+                    if val_int < 1:
+                        field_name = field.replace("_", " ").title()
+                        return f"{field_name} must be a positive number"
+                except (ValueError, TypeError):
+                    field_name = field.replace("_", " ").title()
+                    return f"{field_name} must be a valid number"
+
     elif section == "reindexing":
         # Validate thresholds (0-100 for percentage, 0-1 for accuracy)
         change_threshold = data.get("change_percentage_threshold")

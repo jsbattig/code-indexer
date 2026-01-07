@@ -17,11 +17,11 @@ All endpoints require JWT authentication and support:
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 from ..auth.dependencies import get_current_user
 from ..auth.user_manager import User
-from ..multi.scip_models import SCIPMultiRequest, SCIPMultiResponse
+from ..multi.scip_models import SCIPMultiRequest, SCIPMultiResponse, SCIPResult
 from ..multi.scip_multi_service import SCIPMultiService
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,36 @@ def get_scip_multi_service() -> SCIPMultiService:
     if _scip_multi_service is None:
         _scip_multi_service = SCIPMultiService()
     return _scip_multi_service
+
+
+async def _apply_multi_scip_truncation(
+    response: SCIPMultiResponse,
+) -> Dict[str, Any]:
+    """Apply SCIP payload truncation to multi-repo response results (Story #685).
+
+    Converts SCIPMultiResponse to dict and applies truncation to each
+    repository's results list, handling the context field truncation.
+
+    Args:
+        response: SCIPMultiResponse with results grouped by repository
+
+    Returns:
+        Dict representation with truncated context fields
+    """
+    # Lazy import to avoid circular dependency with handlers.py
+    from ..mcp.handlers import _apply_scip_payload_truncation
+
+    # Convert response to dict for modification
+    response_dict = response.model_dump()
+
+    # Apply truncation to each repository's results
+    for repo_id, results_list in response_dict["results"].items():
+        if results_list:
+            # Apply truncation (converts SCIPResult dicts with context field)
+            truncated_results = await _apply_scip_payload_truncation(results_list)
+            response_dict["results"][repo_id] = truncated_results
+
+    return response_dict
 
 
 @router.post("/definition", response_model=SCIPMultiResponse)
@@ -144,7 +174,8 @@ async def multi_repository_definition(
             f"in {response.metadata.execution_time_ms}ms"
         )
 
-        return response
+        # Story #685: Apply SCIP payload truncation to context fields
+        return await _apply_multi_scip_truncation(response)
 
     except ValueError as e:
         # Validation error from service
@@ -219,7 +250,8 @@ async def multi_repository_references(
             f"in {response.metadata.execution_time_ms}ms"
         )
 
-        return response
+        # Story #685: Apply SCIP payload truncation to context fields
+        return await _apply_multi_scip_truncation(response)
 
     except ValueError as e:
         # Validation error from service
@@ -294,7 +326,8 @@ async def multi_repository_dependencies(
             f"in {response.metadata.execution_time_ms}ms"
         )
 
-        return response
+        # Story #685: Apply SCIP payload truncation to context fields
+        return await _apply_multi_scip_truncation(response)
 
     except ValueError as e:
         # Validation error from service
@@ -369,7 +402,8 @@ async def multi_repository_dependents(
             f"in {response.metadata.execution_time_ms}ms"
         )
 
-        return response
+        # Story #685: Apply SCIP payload truncation to context fields
+        return await _apply_multi_scip_truncation(response)
 
     except ValueError as e:
         # Validation error from service

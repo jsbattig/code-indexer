@@ -9,7 +9,7 @@ Implements AC1: REST endpoint for multi-repository search.
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 from ..auth.dependencies import get_current_user
 from ..auth.user_manager import User
@@ -21,6 +21,37 @@ from ..multi import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _apply_multi_truncation(
+    grouped_results: Dict[str, List[Dict[str, Any]]], search_type: str
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Apply payload truncation to multi-repo grouped search results (Story #683).
+
+    Args:
+        grouped_results: Dict mapping repo_id to list of result dicts
+        search_type: Search type ('semantic', 'fts', 'temporal')
+
+    Returns:
+        Modified grouped_results with truncation applied to each result
+    """
+    from ..mcp.handlers import (
+        _apply_payload_truncation,
+        _apply_fts_payload_truncation,
+        _apply_temporal_payload_truncation,
+    )
+
+    for repo_id, results in grouped_results.items():
+        if search_type == "fts":
+            grouped_results[repo_id] = await _apply_fts_payload_truncation(results)
+        elif search_type == "temporal":
+            grouped_results[repo_id] = await _apply_temporal_payload_truncation(results)
+        else:
+            # Default to semantic truncation (handles both content and code_snippet)
+            grouped_results[repo_id] = await _apply_payload_truncation(results)
+
+    return grouped_results
+
 
 # Create router with /api/query prefix
 router = APIRouter(prefix="/api/query", tags=["multi-query"])
@@ -146,6 +177,11 @@ async def multi_repository_query(
 
         # Execute search
         response = await service.search(request)
+
+        # Story #683: Apply payload truncation to results
+        response.results = await _apply_multi_truncation(
+            response.results, request.search_type
+        )
 
         # Log response summary
         logger.info(

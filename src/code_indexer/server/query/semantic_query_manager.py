@@ -56,6 +56,8 @@ class QueryResult:
     similarity_score: float
     repository_alias: str
     source_repo: Optional[str] = None  # Which component repo (for composite repos)
+    # FTS-specific field (Story #680 - FTS Payload Control)
+    match_text: Optional[str] = None  # The exact matched text from FTS search
     # Temporal metadata fields (Story #503 - MCP/REST API parity with CLI)
     metadata: Optional[Dict[str, Any]] = (
         None  # Commit info: hash, date, author, message, diff_type
@@ -88,6 +90,9 @@ class QueryResult:
             "repository_alias": self.repository_alias,
             "source_repo": self.source_repo,
         }
+        # Include FTS match_text if present (Story #680)
+        if self.match_text is not None:
+            result["match_text"] = self.match_text
         # Include temporal metadata if present (Story #503)
         if self.metadata is not None:
             result["metadata"] = self.metadata
@@ -1638,6 +1643,8 @@ class SemanticQueryManager:
                     similarity_score=score,
                     repository_alias=repository_alias,
                     source_repo=None,
+                    # Story #680: Preserve match_text for FTS payload control
+                    match_text=result.get("match_text"),
                 )
                 query_results.append(query_result)
 

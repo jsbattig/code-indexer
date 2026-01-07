@@ -787,6 +787,10 @@ class GitOperationsService:
                 cwd=repo_path,
             )
 
+    # Story #686: Pagination constants for git_diff
+    DEFAULT_DIFF_LIMIT: int = 500  # Default lines returned when no limit specified
+    MAX_ALLOWED_DIFF_LINES: int = 5000  # Maximum lines client can request
+
     def git_diff(
         self,
         repo_path: Path,
@@ -796,9 +800,11 @@ class GitOperationsService:
         to_revision: Optional[str] = None,
         path: Optional[str] = None,
         stat_only: Optional[bool] = None,
+        offset: int = 0,
+        limit: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Get git diff output.
+        Get git diff output with pagination support.
 
         Args:
             repo_path: Path to git repository
@@ -808,14 +814,22 @@ class GitOperationsService:
             to_revision: Ending revision for diff (requires from_revision)
             path: Specific path to limit diff to
             stat_only: Show only file statistics (--stat flag)
+            offset: Number of lines to skip (default: 0)
+            limit: Maximum lines to return (default: 500, max: 5000)
 
         Returns:
-            Dict with diff_text and files_changed count
+            Dict with diff_text, files_changed, and pagination metadata
 
         Raises:
             GitCommandError: If git diff fails
         """
         try:
+            # Story #686: Validate and apply pagination defaults
+            if offset < 0:
+                offset = 0
+            effective_limit = self.DEFAULT_DIFF_LIMIT if limit is None else limit
+            effective_limit = min(effective_limit, self.MAX_ALLOWED_DIFF_LINES)
+
             cmd = ["git", "diff"]
 
             # Add context lines flag
@@ -844,10 +858,33 @@ class GitOperationsService:
                 cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True
             )
 
-            diff_text = result.stdout
-            files_changed = diff_text.count("diff --git")
+            full_diff_text = result.stdout
+            all_lines = full_diff_text.splitlines(keepends=True)
+            total_lines = len(all_lines)
 
-            return {"diff_text": diff_text, "files_changed": files_changed}
+            # Story #686: Apply pagination (offset and limit)
+            end_index = offset + effective_limit
+            selected_lines = all_lines[offset:end_index]
+            diff_text = "".join(selected_lines)
+
+            # Calculate pagination metadata
+            lines_returned = len(selected_lines)
+            has_more = (offset + lines_returned) < total_lines
+            next_offset = (offset + lines_returned) if has_more else None
+
+            files_changed = full_diff_text.count("diff --git")
+
+            return {
+                "diff_text": diff_text,
+                "files_changed": files_changed,
+                # Story #686: Pagination metadata
+                "lines_returned": lines_returned,
+                "total_lines": total_lines,
+                "has_more": has_more,
+                "next_offset": next_offset,
+                "offset": offset,
+                "limit": limit,
+            }
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
@@ -865,10 +902,15 @@ class GitOperationsService:
                 cwd=repo_path,
             )
 
+    # Story #686: Pagination constants for git_log
+    DEFAULT_LOG_LIMIT: int = 50  # Default commits returned when no limit specified
+    MAX_ALLOWED_COMMITS: int = 500  # Maximum commits client can request
+
     def git_log(
         self,
         repo_path: Path,
-        limit: int = 10,
+        limit: int = 50,
+        offset: int = 0,
         since_date: Optional[str] = None,
         until: Optional[str] = None,
         author: Optional[str] = None,
@@ -878,11 +920,12 @@ class GitOperationsService:
         response_format: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Get git commit history.
+        Get git commit history with pagination support.
 
         Args:
             repo_path: Path to git repository
-            limit: Maximum number of commits to return
+            limit: Maximum number of commits to return (default: 50, max: 500)
+            offset: Number of commits to skip (default: 0)
             since_date: Optional date filter for commits after this date (e.g., "2025-01-10")
             until: Optional date filter for commits before this date
             author: Optional author filter
@@ -892,32 +935,59 @@ class GitOperationsService:
             response_format: Optional MCP response format (affects response structure)
 
         Returns:
-            Dict with commits list
+            Dict with commits list and pagination metadata
 
         Raises:
             GitCommandError: If git log fails
         """
         try:
+            # Story #686: Validate offset
+            if offset < 0:
+                offset = 0
+
+            # Story #686: Cap limit at MAX_ALLOWED_COMMITS
+            effective_limit = min(limit, self.MAX_ALLOWED_COMMITS)
+
+            # Get total commit count (for pagination metadata)
+            # Use branch or HEAD as the revision specifier
+            rev_spec = branch if branch else "HEAD"
+            count_cmd = ["git", "rev-list", "--count", rev_spec]
+
+            # Add filters after the revision specifier
+            if since_date:
+                count_cmd.extend(["--since", since_date])
+            if until:
+                count_cmd.extend(["--until", until])
+            if author:
+                count_cmd.extend(["--author", author])
+            if path:
+                count_cmd.append("--")
+                count_cmd.append(path)
+
+            count_result = run_git_command(
+                count_cmd, cwd=repo_path, timeout=DEFAULT_TIMEOUT, check=True
+            )
+            total_commits = int(count_result.stdout.strip())
+
+            # Build log command
             format_str = (
                 '{"commit_hash": "%H", "author": "%an", "date": "%ai", "message": "%s"}'
             )
-            cmd = ["git", "log", f"--format={format_str}", f"-n{limit}"]
+            cmd = ["git", "log", f"--format={format_str}", f"-n{effective_limit}"]
+
+            # Story #686: Add offset via --skip
+            if offset > 0:
+                cmd.append(f"--skip={offset}")
 
             # Add date filters
             if since_date:
                 cmd.append(f"--since={since_date}")
             if until:
                 cmd.append(f"--until={until}")
-
-            # Add author filter
             if author:
                 cmd.append(f"--author={author}")
-
-            # Add branch specifier (must come before path separator)
             if branch:
                 cmd.append(branch)
-
-            # Add path filter with -- separator
             if path:
                 cmd.append("--")
                 cmd.append(path)
@@ -935,11 +1005,20 @@ class GitOperationsService:
                     except json.JSONDecodeError:
                         continue
 
-            # Note: aggregation_mode and response_format are accepted for MCP compatibility
-            # but not implemented yet. They would affect post-processing of commits list.
-            # For now, we return standard format regardless of these parameters.
+            # Story #686: Calculate pagination metadata
+            commits_returned = len(commits)
+            has_more = (offset + commits_returned) < total_commits
+            next_offset = (offset + commits_returned) if has_more else None
 
-            return {"commits": commits}
+            return {
+                "commits": commits,
+                "commits_returned": commits_returned,
+                "total_commits": total_commits,
+                "has_more": has_more,
+                "next_offset": next_offset,
+                "offset": offset,
+                "limit": limit,
+            }
 
         except subprocess.CalledProcessError as e:
             raise GitCommandError(

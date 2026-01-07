@@ -3,6 +3,7 @@ Server-side cache module for CIDX server.
 
 Story #526: Provides singleton HNSW index cache for server-wide performance optimization.
 Story #XXX: Provides singleton FTS (Tantivy) index cache for FTS query performance.
+Story #679: Provides PayloadCache for semantic search result truncation.
 """
 
 from code_indexer.server.middleware.correlation import get_correlation_id
@@ -17,6 +18,11 @@ from .fts_index_cache import (
     FTSIndexCacheConfig,
     FTSIndexCacheEntry,
     FTSIndexCacheStats,
+)
+from .payload_cache import (
+    PayloadCache,
+    PayloadCacheConfig,
+    CacheNotFoundError,
 )
 
 # Server-wide singleton cache instances
@@ -177,4 +183,8 @@ __all__ = [
     "FTSIndexCacheStats",
     "get_global_fts_cache",
     "reset_global_fts_cache",
+    # Payload cache exports (Story #679)
+    "PayloadCache",
+    "PayloadCacheConfig",
+    "CacheNotFoundError",
 ]

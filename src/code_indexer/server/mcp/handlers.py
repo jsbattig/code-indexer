@@ -115,6 +115,377 @@ def _get_query_tracker():
     return getattr(app_module.app.state, "query_tracker", None)
 
 
+async def _apply_payload_truncation(
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply payload truncation to search results (Story #679, Bug Fix #683).
+
+    For results with large content, replaces content with preview + cache_handle.
+    This reduces response size while allowing clients to fetch full content on demand.
+
+    Handles both 'content' field (REST API format) and 'code_snippet' field
+    (semantic search QueryResult.to_dict() format).
+
+    Args:
+        results: List of search result dicts with 'content' or 'code_snippet' field
+
+    Returns:
+        Modified results list with truncation applied
+    """
+    payload_cache = getattr(app_module.app.state, "payload_cache", None)
+    if payload_cache is None:
+        # Cache not available, return results unchanged
+        return results
+
+    for result_dict in results:
+        # Handle both content and code_snippet fields (Bug Fix #683)
+        # Logic for field selection:
+        # - If ONLY code_snippet exists: truncate code_snippet (semantic search format)
+        # - If ONLY content exists: truncate content (REST API format)
+        # - If BOTH exist: truncate content (hybrid mode - code_snippet handled by FTS)
+        has_code_snippet = "code_snippet" in result_dict
+        has_content = "content" in result_dict
+
+        if has_content:
+            # Content field exists - truncate it (works for both legacy and hybrid)
+            content = result_dict.get("content")
+            field_name = "content"
+        elif has_code_snippet:
+            # Only code_snippet exists - truncate it (semantic search format)
+            content = result_dict.get("code_snippet")
+            field_name = "code_snippet"
+        else:
+            # No content field to truncate, add default metadata
+            result_dict["cache_handle"] = None
+            result_dict["has_more"] = False
+            continue
+
+        if content is None:
+            # Field exists but is None, add default metadata
+            result_dict["cache_handle"] = None
+            result_dict["has_more"] = False
+            continue
+
+        try:
+            truncated = await payload_cache.truncate_result(content)
+            if truncated.get("has_more", False):
+                # Large content: replace with preview and cache handle
+                result_dict["preview"] = truncated["preview"]
+                result_dict["cache_handle"] = truncated["cache_handle"]
+                result_dict["has_more"] = True
+                result_dict["total_size"] = truncated["total_size"]
+                del result_dict[field_name]  # Remove full content
+            else:
+                # Small content: keep as-is, add metadata
+                result_dict["cache_handle"] = None
+                result_dict["has_more"] = False
+        except Exception as e:
+            # Log error but don't fail the search
+            logger.warning(
+                f"Failed to truncate result: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            # Keep original content on error
+            result_dict["cache_handle"] = None
+            result_dict["has_more"] = False
+
+    return results
+
+
+async def _apply_fts_payload_truncation(
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply payload truncation to FTS search results (Story #680).
+
+    For FTS results with large code_snippet or match_text fields, replaces
+    them with preview + cache_handle. Each field is cached independently.
+
+    Args:
+        results: List of FTS search result dicts with 'code_snippet' and/or
+                 'match_text' fields
+
+    Returns:
+        Modified results list with truncation applied to FTS fields
+    """
+    payload_cache = getattr(app_module.app.state, "payload_cache", None)
+    if payload_cache is None:
+        # Cache not available, return results unchanged
+        return results
+
+    preview_size = payload_cache.config.preview_size_chars
+
+    for result_dict in results:
+        # Handle code_snippet field (AC1)
+        code_snippet = result_dict.get("code_snippet")
+        if code_snippet is not None:
+            try:
+                if len(code_snippet) > preview_size:
+                    # Large snippet: store and replace with preview
+                    cache_handle = await payload_cache.store(code_snippet)
+                    result_dict["snippet_preview"] = code_snippet[:preview_size]
+                    result_dict["snippet_cache_handle"] = cache_handle
+                    result_dict["snippet_has_more"] = True
+                    result_dict["snippet_total_size"] = len(code_snippet)
+                    del result_dict["code_snippet"]
+                else:
+                    # Small snippet: keep as-is, add metadata
+                    result_dict["snippet_cache_handle"] = None
+                    result_dict["snippet_has_more"] = False
+            except Exception as e:
+                logger.warning(
+                    f"Failed to truncate code_snippet: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                result_dict["snippet_cache_handle"] = None
+                result_dict["snippet_has_more"] = False
+
+        # Handle match_text field (AC2)
+        match_text = result_dict.get("match_text")
+        if match_text is not None:
+            try:
+                if len(match_text) > preview_size:
+                    # Large match_text: store and replace with preview
+                    cache_handle = await payload_cache.store(match_text)
+                    result_dict["match_text_preview"] = match_text[:preview_size]
+                    result_dict["match_text_cache_handle"] = cache_handle
+                    result_dict["match_text_has_more"] = True
+                    result_dict["match_text_total_size"] = len(match_text)
+                    del result_dict["match_text"]
+                else:
+                    # Small match_text: keep as-is, add metadata
+                    result_dict["match_text_cache_handle"] = None
+                    result_dict["match_text_has_more"] = False
+            except Exception as e:
+                logger.warning(
+                    f"Failed to truncate match_text: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                result_dict["match_text_cache_handle"] = None
+                result_dict["match_text_has_more"] = False
+
+    return results
+
+
+async def _truncate_regex_field(
+    result_dict: Dict[str, Any],
+    field_name: str,
+    payload_cache,
+    preview_size: int,
+    is_list: bool = False,
+) -> None:
+    """Truncate a single regex field if needed (Story #684 helper).
+
+    Args:
+        result_dict: Dict containing the field to truncate
+        field_name: Name of the field (e.g., "line_content", "context_before")
+        payload_cache: PayloadCache instance for storing large content
+        preview_size: Maximum chars before truncation
+        is_list: If True, field is a list of strings to join with newlines
+    """
+    field_value = result_dict.get(field_name)
+    if field_value is None:
+        return
+
+    try:
+        content = "\n".join(field_value) if is_list else field_value
+        if len(content) > preview_size:
+            cache_handle = await payload_cache.store(content)
+            result_dict[f"{field_name}_preview"] = content[:preview_size]
+            result_dict[f"{field_name}_cache_handle"] = cache_handle
+            result_dict[f"{field_name}_has_more"] = True
+            result_dict[f"{field_name}_total_size"] = len(content)
+            del result_dict[field_name]
+        else:
+            result_dict[f"{field_name}_cache_handle"] = None
+            result_dict[f"{field_name}_has_more"] = False
+    except Exception as e:
+        logger.warning(
+            f"Failed to truncate {field_name}: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        result_dict[f"{field_name}_cache_handle"] = None
+        result_dict[f"{field_name}_has_more"] = False
+
+
+async def _apply_regex_payload_truncation(
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply payload truncation to regex search results (Story #684).
+
+    For regex results with large line_content, context_before, or context_after
+    fields, replaces them with preview + cache_handle. Each field is cached
+    independently.
+
+    Args:
+        results: List of regex search result dicts
+
+    Returns:
+        Modified results list with truncation applied to regex fields
+    """
+    payload_cache = getattr(app_module.app.state, "payload_cache", None)
+    if payload_cache is None:
+        return results
+
+    preview_size = payload_cache.config.preview_size_chars
+
+    for result_dict in results:
+        # AC1: Handle line_content field
+        await _truncate_regex_field(
+            result_dict, "line_content", payload_cache, preview_size, is_list=False
+        )
+        # AC2: Handle context_before field (list of strings)
+        await _truncate_regex_field(
+            result_dict, "context_before", payload_cache, preview_size, is_list=True
+        )
+        # AC2: Handle context_after field (list of strings)
+        await _truncate_regex_field(
+            result_dict, "context_after", payload_cache, preview_size, is_list=True
+        )
+
+    return results
+
+
+async def _truncate_field(
+    container: Dict[str, Any],
+    field_name: str,
+    payload_cache,
+    preview_size: int,
+    log_context: str = "field",
+) -> None:
+    """Truncate a single field if it exceeds preview_size (Story #681 helper).
+
+    Args:
+        container: Dict containing the field to truncate
+        field_name: Name of the field (e.g., "content", "diff")
+        payload_cache: PayloadCache instance for storing large content
+        preview_size: Maximum chars before truncation
+        log_context: Context string for warning messages
+    """
+    value = container.get(field_name)
+    if value is None:
+        return
+
+    try:
+        if len(value) > preview_size:
+            cache_handle = await payload_cache.store(value)
+            container[f"{field_name}_preview"] = value[:preview_size]
+            container[f"{field_name}_cache_handle"] = cache_handle
+            container[f"{field_name}_has_more"] = True
+            container[f"{field_name}_total_size"] = len(value)
+            del container[field_name]
+        else:
+            container[f"{field_name}_cache_handle"] = None
+            container[f"{field_name}_has_more"] = False
+    except Exception as e:
+        logger.warning(
+            f"Failed to truncate {log_context}: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        container[f"{field_name}_cache_handle"] = None
+        container[f"{field_name}_has_more"] = False
+
+
+async def _apply_temporal_payload_truncation(
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply payload truncation to temporal search results (Story #681).
+
+    Truncates large content fields with preview + cache_handle pattern.
+
+    Args:
+        results: List of temporal search result dicts
+
+    Returns:
+        Modified results with truncation applied to content and evolution entries
+    """
+    payload_cache = getattr(app_module.app.state, "payload_cache", None)
+    if payload_cache is None:
+        return results
+
+    preview_size = payload_cache.config.preview_size_chars
+
+    for result_dict in results:
+        # AC1: Handle main content field
+        await _truncate_field(
+            result_dict, "content", payload_cache, preview_size, "temporal content"
+        )
+
+        # AC2/AC3: Handle temporal_context.evolution entries
+        temporal_context = result_dict.get("temporal_context")
+        if temporal_context and "evolution" in temporal_context:
+            for entry in temporal_context["evolution"]:
+                await _truncate_field(
+                    entry, "content", payload_cache, preview_size, "evolution content"
+                )
+                await _truncate_field(
+                    entry, "diff", payload_cache, preview_size, "evolution diff"
+                )
+
+    return results
+
+
+async def _apply_scip_payload_truncation(
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply payload truncation to SCIP query results (Story #685).
+
+    For SCIP results with large context fields (> preview_size_chars), replaces
+    context with context_preview + context_cache_handle. This reduces response
+    size while allowing clients to fetch full context on demand.
+
+    Args:
+        results: List of SCIP result dicts with optional 'context' field
+
+    Returns:
+        Modified results list with truncation applied to context fields
+    """
+    payload_cache = getattr(app_module.app.state, "payload_cache", None)
+    if payload_cache is None:
+        # Cache not available, return results unchanged
+        return results
+
+    preview_size = payload_cache.config.preview_size_chars
+
+    for result_dict in results:
+        context = result_dict.get("context")
+
+        # Handle missing context field
+        if "context" not in result_dict:
+            result_dict["context_cache_handle"] = None
+            result_dict["context_has_more"] = False
+            continue
+
+        # Handle None context
+        if context is None:
+            result_dict["context_cache_handle"] = None
+            result_dict["context_has_more"] = False
+            continue
+
+        try:
+            if len(context) > preview_size:
+                # Large context: store full content and replace with preview
+                cache_handle = await payload_cache.store(context)
+                result_dict["context_preview"] = context[:preview_size]
+                result_dict["context_cache_handle"] = cache_handle
+                result_dict["context_has_more"] = True
+                result_dict["context_total_size"] = len(context)
+                del result_dict["context"]
+            else:
+                # Small context: keep as-is, add metadata
+                result_dict["context_cache_handle"] = None
+                result_dict["context_has_more"] = False
+        except Exception as e:
+            logger.warning(
+                f"Failed to truncate SCIP context: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            # Keep original context on error, add metadata
+            result_dict["context_cache_handle"] = None
+            result_dict["context_has_more"] = False
+
+    return results
+
+
 def _error_with_suggestions(
     error_msg: str,
     attempted_value: str,
@@ -433,6 +804,17 @@ async def _omni_search_code(params: Dict[str, Any], user: User) -> Dict[str, Any
     # Get response_format parameter (default to "flat" for backward compatibility)
     response_format = params.get("response_format", "flat")
 
+    # Story #683: Apply payload truncation to aggregated multi-repo results
+    # This ensures consistency with REST API which calls _apply_multi_truncation()
+    search_mode = params.get("search_mode", "semantic")
+    if final_results:
+        if search_mode in ["fts", "hybrid"]:
+            final_results = await _apply_fts_payload_truncation(final_results)
+        elif _is_temporal_query(params):
+            final_results = await _apply_temporal_payload_truncation(final_results)
+        else:
+            final_results = await _apply_payload_truncation(final_results)
+
     # Use _format_omni_response helper to format results
     formatted = _format_omni_response(
         all_results=final_results,
@@ -599,6 +981,20 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 )
                 response_results.append(result_dict)
 
+            # Apply payload truncation based on search mode
+            search_mode = params.get("search_mode", "semantic")
+            if search_mode in ["fts", "hybrid"]:
+                # Story #680: FTS truncation for code_snippet and match_text
+                response_results = await _apply_fts_payload_truncation(response_results)
+            # Story #681: Temporal truncation for temporal queries
+            if _is_temporal_query(params):
+                response_results = await _apply_temporal_payload_truncation(
+                    response_results
+                )
+            else:
+                # Story #679: Semantic truncation for content field
+                response_results = await _apply_payload_truncation(response_results)
+
             result = {
                 "results": response_results,
                 "total_results": len(response_results),
@@ -645,6 +1041,24 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             author=params.get("author"),
             chunk_type=params.get("chunk_type"),
         )
+
+        # Apply payload truncation based on search mode
+        if "results" in result and isinstance(result["results"], list):
+            search_mode = params.get("search_mode", "semantic")
+            if search_mode in ["fts", "hybrid"]:
+                # Story #680: FTS truncation for code_snippet and match_text
+                result["results"] = await _apply_fts_payload_truncation(
+                    result["results"]
+                )
+            # Story #681: Temporal truncation for temporal queries
+            if _is_temporal_query(params):
+                result["results"] = await _apply_temporal_payload_truncation(
+                    result["results"]
+                )
+            else:
+                # Story #679: Semantic truncation for content field
+                result["results"] = await _apply_payload_truncation(result["results"])
+
         return _mcp_response({"success": True, "results": result})
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "results": []})
@@ -2141,6 +2555,9 @@ async def handle_regex_search(args: Dict[str, Any], user: User) -> Dict[str, Any
             }
             for m in result.matches
         ]
+
+        # Story #684: Apply payload truncation to regex search results
+        matches = await _apply_regex_payload_truncation(matches)
 
         return _mcp_response(
             {
@@ -3972,6 +4389,9 @@ async def scip_definition(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             for r in all_results
         ]
 
+        # Story #685: Apply SCIP payload truncation to context fields
+        results_dicts = await _apply_scip_payload_truncation(results_dicts)
+
         return _mcp_response(
             {
                 "success": True,
@@ -4065,6 +4485,9 @@ async def scip_references(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             for r in all_results
         ]
 
+        # Story #685: Apply SCIP payload truncation to context fields
+        results_dicts = await _apply_scip_payload_truncation(results_dicts)
+
         return _mcp_response(
             {
                 "success": True,
@@ -4153,6 +4576,9 @@ async def scip_dependencies(params: Dict[str, Any], user: User) -> Dict[str, Any
             for r in all_results
         ]
 
+        # Story #685: Apply SCIP payload truncation to context fields
+        results_dicts = await _apply_scip_payload_truncation(results_dicts)
+
         return _mcp_response(
             {
                 "success": True,
@@ -4240,6 +4666,9 @@ async def scip_dependents(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             }
             for r in all_results
         ]
+
+        # Story #685: Apply SCIP payload truncation to context fields
+        results_dicts = await _apply_scip_payload_truncation(results_dicts)
 
         return _mcp_response(
             {
@@ -5744,7 +6173,7 @@ HANDLER_REGISTRY["git_branch_delete"] = git_branch_delete
 
 
 async def git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Handler for git_diff tool - get diff of working tree changes."""
+    """Handler for git_diff tool - get diff of working tree changes with pagination."""
     repository_alias = args.get("repository_alias")
     if not repository_alias:
         return _mcp_response(
@@ -5757,8 +6186,14 @@ async def git_diff(args: Dict[str, Any], user: User) -> Dict[str, Any]:
             username=user.username, user_alias=repository_alias
         )
 
+        # Story #686: Extract pagination parameters
         file_paths = args.get("file_paths")
-        result = git_operations_service.git_diff(Path(repo_path), file_paths=file_paths)
+        offset = args.get("offset", 0)
+        limit = args.get("limit")  # None means use default (500)
+
+        result = git_operations_service.git_diff(
+            Path(repo_path), file_paths=file_paths, offset=offset, limit=limit
+        )
         result["success"] = True
         return _mcp_response(result)
 
@@ -5789,7 +6224,7 @@ HANDLER_REGISTRY["git_diff"] = git_diff
 
 
 async def git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Handler for git_log tool - get commit history."""
+    """Handler for git_log tool - get commit history with pagination."""
     repository_alias = args.get("repository_alias")
     if not repository_alias:
         return _mcp_response(
@@ -5802,10 +6237,12 @@ async def git_log(args: Dict[str, Any], user: User) -> Dict[str, Any]:
             username=user.username, user_alias=repository_alias
         )
 
-        limit = args.get("limit", 10)
+        # Story #686: Updated default limit to 50, added offset parameter
+        limit = args.get("limit", 50)
+        offset = args.get("offset", 0)
         since_date = args.get("since_date")
         result = git_operations_service.git_log(
-            Path(repo_path), limit=limit, since_date=since_date
+            Path(repo_path), limit=limit, offset=offset, since_date=since_date
         )
         result["success"] = True
         return _mcp_response(result)
@@ -8187,3 +8624,84 @@ HANDLER_REGISTRY["github_actions_search_logs"] = handle_github_actions_search_lo
 HANDLER_REGISTRY["github_actions_get_job_logs"] = handle_github_actions_get_job_logs
 HANDLER_REGISTRY["github_actions_retry_run"] = handle_github_actions_retry_run
 HANDLER_REGISTRY["github_actions_cancel_run"] = handle_github_actions_cancel_run
+
+
+# ============================================================================
+# Story #679: Semantic Search with Payload Control - Cache Retrieval Handler
+# ============================================================================
+
+
+async def handle_get_cached_content(args: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """
+    Handler for get_cached_content tool.
+
+    Retrieves cached content by handle with pagination support.
+    Implements AC5 of Story #679.
+
+    Args:
+        args: Tool arguments containing:
+            - handle (str): UUID4 cache handle from search results
+            - page (int, optional): Page number (0-indexed, default 0)
+        user: Authenticated user
+
+    Returns:
+        MCP response with content and pagination info
+    """
+    from code_indexer.server.cache.payload_cache import CacheNotFoundError
+
+    handle = args.get("handle")
+    page = args.get("page", 0)
+
+    if not handle:
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "Missing required parameter: handle",
+            }
+        )
+
+    # Get payload_cache from app.state
+    payload_cache = getattr(app_module.app.state, "payload_cache", None)
+
+    if payload_cache is None:
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "Cache service not available",
+            }
+        )
+
+    try:
+        result = await payload_cache.retrieve(handle, page=page)
+        return _mcp_response(
+            {
+                "success": True,
+                "content": result.content,
+                "page": result.page,
+                "total_pages": result.total_pages,
+                "has_more": result.has_more,
+            }
+        )
+    except CacheNotFoundError as e:
+        logger.warning(
+            f"Cache handle not found or expired: {handle}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        return _mcp_response(
+            {
+                "success": False,
+                "error": "cache_expired",
+                "message": str(e),
+                "handle": handle,
+            }
+        )
+    except Exception as e:
+        logger.exception(
+            f"Error in get_cached_content: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Register cache retrieval handler
+HANDLER_REGISTRY["get_cached_content"] = handle_get_cached_content

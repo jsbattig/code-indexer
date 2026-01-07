@@ -132,6 +132,26 @@
                         <td class="config-value">{{ 'Yes' if config.cache.fts_cache_reload_on_access else 'No' }}</td>
                         <td class="config-note"></td>
                     </tr>
+                    <tr>
+                        <td class="config-label">Payload Preview Size (chars)</td>
+                        <td class="config-value">{{ config.cache.payload_preview_size_chars }}</td>
+                        <td class="config-note"><small>Characters shown in search results preview</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Payload Max Fetch Size (chars)</td>
+                        <td class="config-value">{{ config.cache.payload_max_fetch_size_chars }}</td>
+                        <td class="config-note"><small>Max chars per page when fetching full content</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Payload Cache TTL (seconds)</td>
+                        <td class="config-value">{{ config.cache.payload_cache_ttl_seconds }}</td>
+                        <td class="config-note"><small>Time-to-live for cached search results</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Payload Cleanup Interval (seconds)</td>
+                        <td class="config-value">{{ config.cache.payload_cleanup_interval_seconds }}</td>
+                        <td class="config-note"><small>Interval between cache cleanup runs</small></td>
+                    </tr>
                 </tbody>
             </table>
             <div class="section-actions">
@@ -160,6 +180,26 @@
                 <label for="cache-fts-cleanup">
                     FTS Cache Cleanup Interval (sec)
                     <input type="number" id="cache-fts-cleanup" name="fts_cache_cleanup_interval" value="{{ config.cache.fts_cache_cleanup_interval }}" min="1">
+                </label>
+                <label for="cache-payload-preview">
+                    Payload Preview Size (chars)
+                    <input type="number" id="cache-payload-preview" name="payload_preview_size_chars" value="{{ config.cache.payload_preview_size_chars }}" min="100">
+                    <small>Characters shown in search results preview</small>
+                </label>
+                <label for="cache-payload-fetch">
+                    Payload Max Fetch Size (chars)
+                    <input type="number" id="cache-payload-fetch" name="payload_max_fetch_size_chars" value="{{ config.cache.payload_max_fetch_size_chars }}" min="100">
+                    <small>Max chars per page when fetching full content</small>
+                </label>
+                <label for="cache-payload-ttl">
+                    Payload Cache TTL (seconds)
+                    <input type="number" id="cache-payload-ttl" name="payload_cache_ttl_seconds" value="{{ config.cache.payload_cache_ttl_seconds }}" min="1">
+                    <small>Time-to-live for cached search results</small>
+                </label>
+                <label for="cache-payload-cleanup">
+                    Payload Cleanup Interval (seconds)
+                    <input type="number" id="cache-payload-cleanup" name="payload_cleanup_interval_seconds" value="{{ config.cache.payload_cleanup_interval_seconds }}" min="1">
+                    <small>Interval between cache cleanup runs</small>
                 </label>
             </div>
             <div class="form-actions">

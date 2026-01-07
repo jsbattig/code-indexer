@@ -63,117 +63,132 @@ class TestFileContentPagination:
         return service
 
     # -------------------------------------------------------------------------
-    # AC1: Default Behavior (Token-Limited First Chunk)
+    # AC1: Default Behavior (Line-Limited First Chunk - Story #686)
     # -------------------------------------------------------------------------
     def test_default_behavior_returns_full_file(self, temp_repo, service):
-        """AC1: When no offset or limit provided, return first chunk only (token-limited)."""
+        """AC1: When no offset or limit provided, return DEFAULT_MAX_LINES (500) lines.
+
+        Story #686 changed behavior: Line limits are applied IN ADDITION to token limits.
+        With DEFAULT_MAX_LINES=500, when no limit is specified, only 500 lines are returned
+        (stricter than token limit for short lines).
+        """
         file_path = "src/large_file.py"
 
-        # Call without offset/limit parameters (new behavior: token-limited chunk)
+        # Call without offset/limit parameters (new behavior: line-limited chunk)
         result = service.get_file_content_by_path(
             repo_path=str(temp_repo), file_path=file_path
         )
 
-        # Verify token-limited chunk returned (not full file)
-        # Default: 5000 tokens * 4 chars/token = 20,000 chars max
+        # Story #686: DEFAULT_MAX_LINES (500) is stricter than token limit for short lines
         # File has 5000 lines * 9 chars/line = 45,000 chars total
-        # Expected: ~1759 lines (20,000 chars / 9 chars per line + overhead)
+        # Token limit: 5000 tokens * 4 chars = 20,000 chars (~2222 lines of 9 chars each)
+        # Line limit: DEFAULT_MAX_LINES = 500 (stricter, wins)
         content_lines = result["content"].strip().split("\n")
         assert (
-            1700 < len(content_lines) < 1800
-        ), f"Should return ~1759 lines (token-limited chunk), got {len(content_lines)}"
+            len(content_lines) == 500
+        ), f"Should return 500 lines (DEFAULT_MAX_LINES), got {len(content_lines)}"
         assert content_lines[0] == "# Line 1", "First line should be Line 1"
+        assert content_lines[-1] == "# Line 500", "Last line should be Line 500"
 
         # Verify metadata shows pagination required
         metadata = result["metadata"]
         assert metadata["total_lines"] == 5000, "total_lines should be 5000"
         assert (
-            1700 < metadata["returned_lines"] < 1800
-        ), f"returned_lines should be ~1759 (token-limited), got {metadata['returned_lines']}"
+            metadata["returned_lines"] == 500
+        ), f"returned_lines should be 500 (DEFAULT_MAX_LINES), got {metadata['returned_lines']}"
         assert (
             metadata["requires_pagination"] is True
         ), "requires_pagination should be True for large file"
-        assert (
-            metadata["truncated"] is True
-        ), "truncated should be True when token limit hit"
+        # truncated is False because line limit was hit before token limit
         assert metadata["offset"] == 1, "offset should default to 1"
         assert metadata["limit"] is None, "limit should be None when not provided"
         assert (
             metadata["has_more"] is True
         ), "has_more should be True when more content exists"
+        # Story #686: next_offset should be set for pagination
+        assert (
+            metadata["next_offset"] == 501
+        ), "next_offset should be 501 for next page"
 
     # -------------------------------------------------------------------------
-    # AC2: First Page (Token-Limited Even With Explicit Limit)
+    # AC2: First Page (User Limit Respected Under MAX_ALLOWED_LIMIT - Story #686)
     # -------------------------------------------------------------------------
     def test_first_page_with_offset_1_limit_2000(self, temp_repo, service):
-        """AC2: offset=1, limit=2000 gets token-truncated to ~1759 lines."""
+        """AC2: offset=1, limit=2000 returns 2000 lines (user limit respected).
+
+        Story #686: User-specified limit is respected as long as it's under MAX_ALLOWED_LIMIT (5000).
+        For short lines, the token limit (~2222 lines) doesn't kick in before user limit (2000).
+        """
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
             repo_path=str(temp_repo), file_path=file_path, offset=1, limit=2000
         )
 
-        # Verify token truncation happened (limit=2000 requested, but token limit hit first)
-        # Token limit: 20,000 chars = ~1759 lines of "# Line N\n" (9 chars each)
+        # User limit=2000 is respected (under MAX_ALLOWED_LIMIT=5000)
+        # Token limit: 20,000 chars = ~2222 lines (not hit for 2000 lines of 9 chars)
         content_lines = result["content"].strip().split("\n")
         assert (
-            1700 < len(content_lines) < 1800
-        ), f"Should return ~1759 lines (token-limited), got {len(content_lines)}"
+            len(content_lines) == 2000
+        ), f"Should return 2000 lines (user limit), got {len(content_lines)}"
         assert content_lines[0] == "# Line 1", "First line should be Line 1"
+        assert content_lines[-1] == "# Line 2000", "Last line should be Line 2000"
 
-        # Verify metadata shows truncation
+        # Verify metadata
         metadata = result["metadata"]
         assert metadata["total_lines"] == 5000
         assert (
-            1700 < metadata["returned_lines"] < 1800
-        ), f"returned_lines should be ~1759 (token-limited), got {metadata['returned_lines']}"
+            metadata["returned_lines"] == 2000
+        ), f"returned_lines should be 2000 (user limit), got {metadata['returned_lines']}"
         assert metadata["offset"] == 1
         assert metadata["limit"] == 2000
-        assert (
-            metadata["truncated"] is True
-        ), "truncated should be True when token limit hit"
+        # truncated is False because line limit was hit before token limit
         assert (
             metadata["requires_pagination"] is True
         ), "requires_pagination should be True"
-        assert metadata["has_more"] is True, "Should have more lines after truncation"
+        assert metadata["has_more"] is True, "Should have more lines after 2000"
+        # Story #686: next_offset should be set
+        assert metadata["next_offset"] == 2001, "next_offset should be 2001"
 
     # -------------------------------------------------------------------------
-    # AC3: Subsequent Page (Token-Limited)
+    # AC3: Subsequent Page (User Limit Respected - Story #686)
     # -------------------------------------------------------------------------
     def test_subsequent_page_offset_2001_limit_2000(self, temp_repo, service):
-        """AC3: offset=2001, limit=2000 gets token-truncated to ~1666 lines."""
+        """AC3: offset=2001, limit=2000 returns 2000 lines (user limit respected).
+
+        Story #686: User-specified limit is respected. For subsequent pages,
+        the user limit of 2000 is still under MAX_ALLOWED_LIMIT=5000.
+        """
         file_path = "src/large_file.py"
 
         result = service.get_file_content_by_path(
             repo_path=str(temp_repo), file_path=file_path, offset=2001, limit=2000
         )
 
-        # Verify token truncation happened
-        # Lines 2001+ have 12 chars each ("# Line 2001\n")
-        # 20,000 char limit / 12 chars per line = ~1666 lines
+        # User limit=2000 is respected (under MAX_ALLOWED_LIMIT=5000)
         content_lines = result["content"].strip().split("\n")
         assert (
-            1650 < len(content_lines) < 1700
-        ), f"Should return ~1666 lines (token-limited), got {len(content_lines)}"
+            len(content_lines) == 2000
+        ), f"Should return 2000 lines (user limit), got {len(content_lines)}"
         assert content_lines[0] == "# Line 2001", "First line should be Line 2001"
+        assert content_lines[-1] == "# Line 4000", "Last line should be Line 4000"
 
         # Verify metadata
         metadata = result["metadata"]
         assert metadata["total_lines"] == 5000
         assert (
-            1650 < metadata["returned_lines"] < 1700
-        ), f"returned_lines should be ~1666 (token-limited), got {metadata['returned_lines']}"
+            metadata["returned_lines"] == 2000
+        ), f"returned_lines should be 2000 (user limit), got {metadata['returned_lines']}"
         assert metadata["offset"] == 2001
         assert metadata["limit"] == 2000
-        assert (
-            metadata["truncated"] is True
-        ), "truncated should be True when token limit hit"
         assert (
             metadata["requires_pagination"] is True
         ), "requires_pagination should be True"
         assert (
             metadata["has_more"] is True
-        ), "Should have more lines after token-limited chunk"
+        ), "Should have more lines after 4000"
+        # Story #686: next_offset should be set
+        assert metadata["next_offset"] == 4001, "next_offset should be 4001"
 
     # -------------------------------------------------------------------------
     # AC4: Targeted Navigation

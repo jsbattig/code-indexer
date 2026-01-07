@@ -82,6 +82,11 @@ class FileListingService:
     # Directories that are always excluded from file listings
     ALWAYS_EXCLUDED_DIRS: Set[str] = {".code-indexer", ".git"}
 
+    # Story #686: Line-based default chunking limits
+    # Applied IN ADDITION to token limits - the stricter limit wins
+    DEFAULT_MAX_LINES: int = 500  # Default limit when no explicit limit provided
+    MAX_ALLOWED_LIMIT: int = 5000  # Maximum limit client can request
+
     def __init__(self):
         """Initialize the file listing service."""
         # Import here to avoid circular imports
@@ -603,22 +608,38 @@ class FileListingService:
         effective_offset = offset if offset is not None else 1
         start_index = max(0, effective_offset - 1)
 
-        # Apply limit (if user specified)
+        # Story #686: Apply line-based limits IN ADDITION to token limits
+        # The stricter of (line limit, token limit) wins
         if limit is None:
-            # No user-specified limit: read from offset to end, will be token-limited
-            selected_lines = all_lines[start_index:]
+            # No user-specified limit: apply default max lines
+            effective_limit = self.DEFAULT_MAX_LINES
         else:
-            # User specified limit: respect it but still apply token limits
-            end_index = start_index + limit
-            selected_lines = all_lines[start_index:end_index]
+            # User specified limit: cap at max allowed
+            effective_limit = min(limit, self.MAX_ALLOWED_LIMIT)
+
+        # Apply the effective limit
+        end_index = start_index + effective_limit
+        selected_lines = all_lines[start_index:end_index]
 
         # Build content string
         content = "".join(selected_lines)
 
-        # Apply token enforcement (may truncate content)
+        # Apply token enforcement (may truncate content further)
         enforced_content, token_metadata = self._enforce_token_limits(
             content, total_lines, effective_offset
         )
+
+        # Calculate returned_lines from enforced content
+        returned_lines = enforced_content.count("\n") + (
+            1 if enforced_content and not enforced_content.endswith("\n") else 0
+        )
+
+        # Calculate has_more: true if more content exists after returned lines
+        last_returned_line = effective_offset + returned_lines - 1
+        has_more = last_returned_line < total_lines
+
+        # Story #686: Calculate next_offset for pagination
+        next_offset = effective_offset + returned_lines if has_more else None
 
         # Build metadata with pagination info
         stat_info = full_file_path.stat()
@@ -631,13 +652,12 @@ class FileListingService:
             "path": file_path,
             # Original pagination metadata
             "total_lines": total_lines,
-            "returned_lines": enforced_content.count("\n")
-            + (1 if enforced_content and not enforced_content.endswith("\n") else 0),
+            "returned_lines": returned_lines,
             "offset": effective_offset,
-            "limit": limit,
-            "has_more": token_metadata[
-                "requires_pagination"
-            ],  # Updated by token enforcement
+            "limit": limit,  # Keep original limit for client visibility
+            "has_more": has_more,
+            # Story #686: Add next_offset for easy pagination
+            "next_offset": next_offset,
         }
 
         # Merge token enforcement metadata
@@ -706,22 +726,38 @@ class FileListingService:
         effective_offset = offset if offset is not None else 1
         start_index = max(0, effective_offset - 1)
 
-        # Apply limit (if user specified)
+        # Story #686: Apply line-based limits IN ADDITION to token limits
+        # The stricter of (line limit, token limit) wins
         if limit is None:
-            # No user-specified limit: read from offset to end, will be token-limited
-            selected_lines = all_lines[start_index:]
+            # No user-specified limit: apply default max lines
+            effective_limit = self.DEFAULT_MAX_LINES
         else:
-            # User specified limit: respect it but still apply token limits
-            end_index = start_index + limit
-            selected_lines = all_lines[start_index:end_index]
+            # User specified limit: cap at max allowed
+            effective_limit = min(limit, self.MAX_ALLOWED_LIMIT)
+
+        # Apply the effective limit
+        end_index = start_index + effective_limit
+        selected_lines = all_lines[start_index:end_index]
 
         # Build content string
         content = "".join(selected_lines)
 
-        # Apply token enforcement (may truncate content)
+        # Apply token enforcement (may truncate content further)
         enforced_content, token_metadata = self._enforce_token_limits(
             content, total_lines, effective_offset
         )
+
+        # Calculate returned_lines from enforced content
+        returned_lines = enforced_content.count("\n") + (
+            1 if enforced_content and not enforced_content.endswith("\n") else 0
+        )
+
+        # Calculate has_more: true if more content exists after returned lines
+        last_returned_line = effective_offset + returned_lines - 1
+        has_more = last_returned_line < total_lines
+
+        # Story #686: Calculate next_offset for pagination
+        next_offset = effective_offset + returned_lines if has_more else None
 
         # Build metadata with pagination info
         stat_info = full_file_path.stat()
@@ -734,13 +770,12 @@ class FileListingService:
             "path": file_path,
             # Original pagination metadata
             "total_lines": total_lines,
-            "returned_lines": enforced_content.count("\n")
-            + (1 if enforced_content and not enforced_content.endswith("\n") else 0),
+            "returned_lines": returned_lines,
             "offset": effective_offset,
-            "limit": limit,
-            "has_more": token_metadata[
-                "requires_pagination"
-            ],  # Updated by token enforcement
+            "limit": limit,  # Keep original limit for client visibility
+            "has_more": has_more,
+            # Story #686: Add next_offset for easy pagination
+            "next_offset": next_offset,
         }
 
         # Merge token enforcement metadata

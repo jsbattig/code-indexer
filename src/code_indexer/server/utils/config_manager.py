@@ -42,6 +42,12 @@ class CacheConfig:
     fts_cache_max_size_mb: Optional[int] = None
     fts_cache_reload_on_access: bool = True
 
+    # Payload cache settings (Story #679)
+    payload_preview_size_chars: int = 2000
+    payload_max_fetch_size_chars: int = 5000
+    payload_cache_ttl_seconds: int = 900
+    payload_cleanup_interval_seconds: int = 60
+
 
 @dataclass
 class ReindexingConfig:

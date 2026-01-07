@@ -134,6 +134,12 @@ async def get_definition(
     # Convert to JSON-serializable format
     results_dicts = [_query_result_to_dict(r) for r in all_results]
 
+    # Story #685: Apply SCIP payload truncation to context fields
+    # Lazy import to avoid circular dependency with handlers.py
+    from code_indexer.server.mcp.handlers import _apply_scip_payload_truncation
+
+    results_dicts = await _apply_scip_payload_truncation(results_dicts)
+
     return {
         "success": True,
         "symbol": symbol,
@@ -187,6 +193,12 @@ async def get_references(
 
     results_dicts = [_query_result_to_dict(r) for r in all_results]
 
+    # Story #685: Apply SCIP payload truncation to context fields
+    # Lazy import to avoid circular dependency with handlers.py
+    from code_indexer.server.mcp.handlers import _apply_scip_payload_truncation
+
+    results_dicts = await _apply_scip_payload_truncation(results_dicts)
+
     return {
         "success": True,
         "symbol": symbol,
@@ -235,6 +247,12 @@ async def get_dependencies(
 
     results_dicts = [_query_result_to_dict(r) for r in all_results]
 
+    # Story #685: Apply SCIP payload truncation to context fields
+    # Lazy import to avoid circular dependency with handlers.py
+    from code_indexer.server.mcp.handlers import _apply_scip_payload_truncation
+
+    results_dicts = await _apply_scip_payload_truncation(results_dicts)
+
     return {
         "success": True,
         "symbol": symbol,
@@ -282,6 +300,12 @@ async def get_dependents(
             continue
 
     results_dicts = [_query_result_to_dict(r) for r in all_results]
+
+    # Story #685: Apply SCIP payload truncation to context fields
+    # Lazy import to avoid circular dependency with handlers.py
+    from code_indexer.server.mcp.handlers import _apply_scip_payload_truncation
+
+    results_dicts = await _apply_scip_payload_truncation(results_dicts)
 
     return {
         "success": True,

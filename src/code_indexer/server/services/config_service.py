@@ -99,6 +99,11 @@ class ConfigService:
                 "fts_cache_cleanup_interval": config.cache_config.fts_cache_cleanup_interval,
                 "fts_cache_max_size_mb": config.cache_config.fts_cache_max_size_mb,
                 "fts_cache_reload_on_access": config.cache_config.fts_cache_reload_on_access,
+                # Payload cache settings (Story #679)
+                "payload_preview_size_chars": config.cache_config.payload_preview_size_chars,
+                "payload_max_fetch_size_chars": config.cache_config.payload_max_fetch_size_chars,
+                "payload_cache_ttl_seconds": config.cache_config.payload_cache_ttl_seconds,
+                "payload_cleanup_interval_seconds": config.cache_config.payload_cleanup_interval_seconds,
             },
             # Reindexing settings
             "reindexing": {
@@ -248,6 +253,15 @@ class ConfigService:
             cache.fts_cache_max_size_mb = int(value) if value else None
         elif key == "fts_cache_reload_on_access":
             cache.fts_cache_reload_on_access = bool(value)
+        # Payload cache settings (Story #679)
+        elif key == "payload_preview_size_chars":
+            cache.payload_preview_size_chars = int(value)
+        elif key == "payload_max_fetch_size_chars":
+            cache.payload_max_fetch_size_chars = int(value)
+        elif key == "payload_cache_ttl_seconds":
+            cache.payload_cache_ttl_seconds = int(value)
+        elif key == "payload_cleanup_interval_seconds":
+            cache.payload_cleanup_interval_seconds = int(value)
         else:
             raise ValueError(f"Unknown cache setting: {key}")
 

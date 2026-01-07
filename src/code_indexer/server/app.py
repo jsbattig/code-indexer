@@ -79,6 +79,7 @@ from .routers.scip_queries import router as scip_queries_router
 from .routers.files import router as files_router
 from .routers.git import router as git_router
 from .routers.indexing import router as indexing_router
+from .routers.cache import router as cache_router
 from .routes.multi_query_routes import router as multi_query_router
 from .routes.scip_multi_routes import router as scip_multi_router
 from .models.branch_models import BranchListResponse
@@ -1363,6 +1364,133 @@ def get_recent_errors() -> Optional[List[Dict[str, Any]]]:
         return None
 
 
+async def _apply_rest_semantic_truncation(
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply payload truncation to semantic search results from REST API.
+
+    For results with large code_snippet content, replaces content with preview + cache_handle.
+    This provides consistency with MCP handlers (Story #683 follow-up).
+
+    Args:
+        results: List of semantic search result dicts with 'code_snippet' field
+
+    Returns:
+        Modified results list with truncation applied
+    """
+    payload_cache = getattr(app.state, "payload_cache", None)
+    if payload_cache is None:
+        # Cache not available, return results unchanged
+        return results
+
+    preview_size = payload_cache.config.preview_size_chars
+
+    for result_dict in results:
+        code_snippet = result_dict.get("code_snippet")
+        if code_snippet is None:
+            # No content to truncate, add default metadata
+            result_dict["cache_handle"] = None
+            result_dict["has_more"] = False
+            continue
+
+        try:
+            if len(code_snippet) > preview_size:
+                # Large snippet: store and replace with preview
+                cache_handle = await payload_cache.store(code_snippet)
+                result_dict["preview"] = code_snippet[:preview_size]
+                result_dict["cache_handle"] = cache_handle
+                result_dict["has_more"] = True
+                result_dict["total_size"] = len(code_snippet)
+                del result_dict["code_snippet"]
+            else:
+                # Small snippet: keep as-is, add metadata
+                result_dict["cache_handle"] = None
+                result_dict["has_more"] = False
+        except Exception as e:
+            logger.warning(
+                f"Failed to truncate code_snippet in REST API: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            result_dict["cache_handle"] = None
+            result_dict["has_more"] = False
+
+    return results
+
+
+async def _apply_rest_fts_truncation(
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply payload truncation to FTS search results from REST API.
+
+    For FTS results with large snippet or match_text content, replaces content with
+    preview + cache_handle. This provides consistency with MCP handlers
+    (Story #680 follow-up, Bug Fix - Issue #2 from code review).
+
+    Args:
+        results: List of FTS search result dicts with 'snippet' and/or 'match_text' fields
+
+    Returns:
+        Modified results list with truncation applied to FTS fields
+    """
+    payload_cache = getattr(app.state, "payload_cache", None)
+    if payload_cache is None:
+        # Cache not available, return results unchanged
+        return results
+
+    preview_size = payload_cache.config.preview_size_chars
+
+    for result_dict in results:
+        # Handle snippet field (FTS-specific)
+        snippet = result_dict.get("snippet")
+        if snippet is not None:
+            try:
+                if len(snippet) > preview_size:
+                    # Large snippet: store and replace with preview
+                    cache_handle = await payload_cache.store(snippet)
+                    result_dict["snippet_preview"] = snippet[:preview_size]
+                    result_dict["snippet_cache_handle"] = cache_handle
+                    result_dict["snippet_has_more"] = True
+                    result_dict["snippet_total_size"] = len(snippet)
+                    del result_dict["snippet"]
+                else:
+                    # Small snippet: keep as-is, add metadata
+                    result_dict["snippet_cache_handle"] = None
+                    result_dict["snippet_has_more"] = False
+            except Exception as e:
+                logger.warning(
+                    f"Failed to truncate FTS snippet in REST API: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                result_dict["snippet_cache_handle"] = None
+                result_dict["snippet_has_more"] = False
+
+        # Handle match_text field (Issue #2 - MCP parity with _apply_fts_payload_truncation)
+        match_text = result_dict.get("match_text")
+        if match_text is not None:
+            try:
+                if len(match_text) > preview_size:
+                    # Large match_text: store and replace with preview
+                    cache_handle = await payload_cache.store(match_text)
+                    result_dict["match_text_preview"] = match_text[:preview_size]
+                    result_dict["match_text_cache_handle"] = cache_handle
+                    result_dict["match_text_has_more"] = True
+                    result_dict["match_text_total_size"] = len(match_text)
+                    del result_dict["match_text"]
+                else:
+                    # Small match_text: keep as-is, add metadata
+                    result_dict["match_text_cache_handle"] = None
+                    result_dict["match_text_has_more"] = False
+            except Exception as e:
+                logger.warning(
+                    f"Failed to truncate FTS match_text in REST API: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                result_dict["match_text_cache_handle"] = None
+                result_dict["match_text_has_more"] = False
+
+    return results
+
+
 def _execute_repository_sync(
     repo_id: str,
     username: str,
@@ -1797,18 +1925,7 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI app
     """
-    global \
-        jwt_manager, \
-        user_manager, \
-        refresh_token_manager, \
-        golden_repo_manager, \
-        background_job_manager, \
-        activated_repo_manager, \
-        repository_listing_manager, \
-        semantic_query_manager, \
-        _server_start_time, \
-        _server_hnsw_cache, \
-        _server_fts_cache
+    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time, _server_hnsw_cache, _server_fts_cache
 
     # Story #526: Initialize server-side HNSW cache at bootstrap for 1800x performance
     # Import and initialize global cache instance
@@ -1995,6 +2112,51 @@ def create_app() -> FastAPI:
                 extra={"correlation_id": get_correlation_id()},
             )
 
+        # Startup: Initialize PayloadCache for semantic search result truncation (Story #679)
+        payload_cache = None
+        logger.info(
+            "Server startup: Initializing PayloadCache for semantic search",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        try:
+            from code_indexer.server.cache.payload_cache import (
+                PayloadCache,
+                PayloadCacheConfig,
+            )
+            from code_indexer.server.services.config_service import get_config_service
+
+            # Get server config for payload cache settings (Story #679)
+            # Use config service to get CacheConfig, with env var overrides applied
+            config_service = get_config_service()
+            server_config = config_service.get_config()
+            payload_cache_config = PayloadCacheConfig.from_server_config(
+                server_config.cache_config
+            )
+            cache_db_path = Path(golden_repos_dir) / ".cache" / "payload_cache.db"
+            payload_cache = PayloadCache(
+                db_path=cache_db_path, config=payload_cache_config
+            )
+            await payload_cache.initialize()
+            payload_cache.start_background_cleanup()
+            app.state.payload_cache = payload_cache
+
+            logger.info(
+                f"PayloadCache initialized: {cache_db_path} "
+                f"(preview_size={payload_cache_config.preview_size_chars}, "
+                f"ttl={payload_cache_config.cache_ttl_seconds}s)",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to initialize PayloadCache: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
+            # Set payload_cache to None so handlers know it's unavailable
+            app.state.payload_cache = None
+
         # Startup: Initialize OIDC authentication if configured
         logger.info(
             "Server startup: Checking OIDC configuration",
@@ -2080,6 +2242,21 @@ def create_app() -> FastAPI:
             except Exception as e:
                 logger.error(
                     f"Error stopping global repos background services: {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
+        # Shutdown: Stop PayloadCache background cleanup (Story #679)
+        if payload_cache is not None:
+            try:
+                await payload_cache.close()
+                logger.info(
+                    "PayloadCache stopped successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error stopping PayloadCache: {e}",
                     exc_info=True,
                     extra={"correlation_id": get_correlation_id()},
                 )
@@ -5430,30 +5607,28 @@ def create_app() -> FastAPI:
                 # Execute semantic search for hybrid or degraded mode
                 if search_mode_actual in ["semantic", "hybrid"]:
                     try:
-                        semantic_results_raw = (
-                            semantic_query_manager.query_user_repositories(
-                                username=current_user.username,
-                                query_text=request.query_text,
-                                repository_alias=request.repository_alias,
-                                limit=request.limit,
-                                min_score=request.min_score,
-                                file_extensions=request.file_extensions,
-                                # Phase 1 parameters (Story #503)
-                                exclude_language=request.exclude_language,
-                                exclude_path=request.exclude_path,
-                                accuracy=request.accuracy,
-                                # Temporal parameters (Story #446)
-                                time_range=request.time_range,
-                                time_range_all=request.time_range_all,
-                                at_commit=request.at_commit,
-                                include_removed=request.include_removed,
-                                show_evolution=request.show_evolution,
-                                evolution_limit=request.evolution_limit,
-                                # Phase 3 temporal filtering parameters (Story #503)
-                                diff_type=request.diff_type,
-                                author=request.author,
-                                chunk_type=request.chunk_type,
-                            )
+                        semantic_results_raw = semantic_query_manager.query_user_repositories(
+                            username=current_user.username,
+                            query_text=request.query_text,
+                            repository_alias=request.repository_alias,
+                            limit=request.limit,
+                            min_score=request.min_score,
+                            file_extensions=request.file_extensions,
+                            # Phase 1 parameters (Story #503)
+                            exclude_language=request.exclude_language,
+                            exclude_path=request.exclude_path,
+                            accuracy=request.accuracy,
+                            # Temporal parameters (Story #446)
+                            time_range=request.time_range,
+                            time_range_all=request.time_range_all,
+                            at_commit=request.at_commit,
+                            include_removed=request.include_removed,
+                            show_evolution=request.show_evolution,
+                            evolution_limit=request.evolution_limit,
+                            # Phase 3 temporal filtering parameters (Story #503)
+                            diff_type=request.diff_type,
+                            author=request.author,
+                            chunk_type=request.chunk_type,
                         )
                         semantic_results_list = [
                             QueryResultItem(**result)
@@ -5483,21 +5658,36 @@ def create_app() -> FastAPI:
                 # Calculate execution time
                 execution_time_ms = int((time.time() - start_time) * 1000)
 
-                # Return unified response
-                return UnifiedSearchResponse(
-                    search_mode=search_mode_actual,
-                    query=request.query_text,
-                    fts_results=fts_results,
-                    semantic_results=semantic_results_list,
-                    metadata=UnifiedSearchMetadata(
-                        query_text=request.query_text,
-                        search_mode_requested=request.search_mode,
-                        search_mode_actual=search_mode_actual,
-                        execution_time_ms=execution_time_ms,
-                        fts_available=fts_available,
-                        semantic_available=True,  # Assuming semantic always available
-                        repositories_searched=len(activated_repos),
-                    ),
+                # Apply payload truncation for consistency with MCP handlers
+                # Convert FTS results to dicts and apply truncation
+                fts_dicts = [r.model_dump() for r in fts_results]
+                truncated_fts = await _apply_rest_fts_truncation(fts_dicts)
+
+                # Convert semantic results to dicts and apply truncation
+                semantic_dicts = [r.model_dump() for r in semantic_results_list]
+                truncated_semantic = await _apply_rest_semantic_truncation(
+                    semantic_dicts
+                )
+
+                # Return as JSONResponse to support truncated fields
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    content={
+                        "search_mode": search_mode_actual,
+                        "query": request.query_text,
+                        "fts_results": truncated_fts,
+                        "semantic_results": truncated_semantic,
+                        "metadata": {
+                            "query_text": request.query_text,
+                            "search_mode_requested": request.search_mode,
+                            "search_mode_actual": search_mode_actual,
+                            "execution_time_ms": execution_time_ms,
+                            "fts_available": fts_available,
+                            "semantic_available": True,
+                            "repositories_searched": len(activated_repos),
+                        },
+                    }
                 )
 
             # Default semantic mode (backward compatibility)
@@ -5525,11 +5715,21 @@ def create_app() -> FastAPI:
                 chunk_type=request.chunk_type,
             )
 
-            return SemanticQueryResponse(
-                results=[QueryResultItem(**result) for result in results["results"]],
-                total_results=results["total_results"],
-                query_metadata=QueryMetadata(**results["query_metadata"]),
-                warning=results.get("warning"),  # Pass warning from backend
+            # Apply payload truncation for consistency with MCP handlers
+            truncated_results = await _apply_rest_semantic_truncation(
+                results["results"]
+            )
+
+            # Return as JSONResponse to support truncated fields
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                content={
+                    "results": truncated_results,
+                    "total_results": results["total_results"],
+                    "query_metadata": results["query_metadata"],
+                    "warning": results.get("warning"),
+                }
             )
 
         except HTTPException:
@@ -6942,6 +7142,7 @@ def create_app() -> FastAPI:
     app.include_router(files_router)
     app.include_router(git_router)
     app.include_router(indexing_router)
+    app.include_router(cache_router)
     app.include_router(multi_query_router)
     app.include_router(scip_multi_router)
 
