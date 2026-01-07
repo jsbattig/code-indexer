@@ -280,6 +280,37 @@ header.admin-header {
     background-color: #ef4444;
 }
 
+/* I/O Metrics (Disk I/O, Network I/O) - no progress bar */
+.system-metrics .metric.io-metric {
+    grid-template-columns: 75px 1fr;
+    gap: 0.75rem;
+}
+
+.system-metrics .io-value {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    text-align: left;
+}
+
+.system-metrics .io-separator {
+    color: var(--pico-muted-color);
+    margin: 0 0.15rem;
+}
+
+/* Read/Rx indicators (incoming data) - blue tint */
+.system-metrics .io-read,
+.system-metrics .io-rx {
+    color: #3b82f6;
+}
+
+/* Write/Tx indicators (outgoing data) - orange tint */
+.system-metrics .io-write,
+.system-metrics .io-tx {
+    color: #f59e0b;
+}
+
 /* Status Indicators */
 .status-indicator {
     display: inline-block;
