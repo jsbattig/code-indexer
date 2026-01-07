@@ -410,6 +410,15 @@ async def _apply_temporal_payload_truncation(
             result_dict, "content", payload_cache, preview_size, "temporal content"
         )
 
+        # Handle code_snippet field (temporal results use QueryResult.to_dict() format)
+        await _truncate_field(
+            result_dict,
+            "code_snippet",
+            payload_cache,
+            preview_size,
+            "temporal code_snippet",
+        )
+
         # AC2/AC3: Handle temporal_context.evolution entries
         temporal_context = result_dict.get("temporal_context")
         if temporal_context and "evolution" in temporal_context:
