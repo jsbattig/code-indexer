@@ -280,15 +280,19 @@ header.admin-header {
     background-color: #ef4444;
 }
 
-/* I/O Metrics (Disk I/O, Network I/O) - no progress bar */
+/* I/O Metrics (Disk I/O, Network I/O) - no progress bar, 2-column layout */
+.system-metrics .metric.io-metric {
+    grid-template-columns: 80px 1fr;  /* Override: label + full-width value */
+}
+
 .system-metrics .metric.io-metric .io-value {
-    grid-column: 2 / -1;  /* Span from column 2 to end (across value + bar columns) */
     display: flex;
     align-items: center;
     justify-content: flex-start;
     gap: 0.25rem;
     font-size: 0.85rem;
     font-weight: 600;
+    text-align: left;
 }
 
 .system-metrics .io-separator {
