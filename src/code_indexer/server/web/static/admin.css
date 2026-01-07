@@ -280,41 +280,45 @@ header.admin-header {
     background-color: #ef4444;
 }
 
-/* I/O Metrics (Disk I/O, Network I/O) - no progress bar, 2-column layout */
+/* I/O Metrics (Disk I/O, Network I/O) - use flexbox instead of grid */
 .system-metrics .metric.io-metric {
-    display: grid !important;
-    grid-template-columns: 75px 1fr !important;  /* Override: label + full-width value */
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 0.5rem !important;
+}
+
+.system-metrics .metric.io-metric .metric-label {
+    flex: 0 0 75px;  /* Fixed width label */
+    min-width: 75px;
 }
 
 .system-metrics .metric.io-metric .metric-value,
 .system-metrics .metric.io-metric .io-value {
+    flex: 1 1 auto;  /* Take remaining space */
     display: inline-flex !important;
     align-items: center;
-    justify-content: flex-start;
     gap: 0.35rem;
     font-size: 0.85rem;
     font-weight: 600;
-    text-align: left;
-    white-space: nowrap;  /* Prevent word wrap */
+    white-space: nowrap;
 }
 
 .system-metrics .io-separator {
     color: var(--pico-muted-color);
-    margin: 0 0.1rem;
 }
 
 /* Read/Rx indicators (incoming data) - blue tint */
 .system-metrics .io-read,
 .system-metrics .io-rx {
     color: #3b82f6;
-    white-space: nowrap;
 }
 
 /* Write/Tx indicators (outgoing data) - orange tint */
 .system-metrics .io-write,
 .system-metrics .io-tx {
     color: #f59e0b;
-    white-space: nowrap;
 }
 
 /* Status Indicators */
