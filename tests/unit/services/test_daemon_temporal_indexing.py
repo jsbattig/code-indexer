@@ -44,7 +44,8 @@ class TestDaemonTemporalIndexing(TestCase):
                         "enabled": True,
                         "ttl_minutes": 10,
                         "auto_shutdown_on_idle": False,
-                    }
+                    },
+                    "vector_store": {"provider": "filesystem"},
                 }
             )
         )

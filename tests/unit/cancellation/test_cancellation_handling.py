@@ -59,6 +59,7 @@ class TestCancellationHandling:
 
         # Mock embedding provider with NO delays for fast testing
         self.mock_embedding_provider = MockEmbeddingProvider(delay=0.0)
+        self.config.embedding_provider = self.mock_embedding_provider
 
     @pytest.mark.unit
     def test_high_throughput_processor_cancellation(self):

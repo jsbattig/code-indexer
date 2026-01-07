@@ -90,6 +90,9 @@ class TestBranchIsolationPerformance:
         mock_embedding_provider.get_provider_name = Mock(return_value="test-provider")
         mock_embedding_provider.get_current_model = Mock(return_value="test-model")
 
+        # Add embedding_provider to config (required by production code)
+        mock_config.embedding_provider = mock_embedding_provider
+
         processor = HighThroughputProcessor(
             config=mock_config,
             vector_store_client=mock_filesystem_client,
