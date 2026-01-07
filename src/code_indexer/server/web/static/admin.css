@@ -282,34 +282,39 @@ header.admin-header {
 
 /* I/O Metrics (Disk I/O, Network I/O) - no progress bar, 2-column layout */
 .system-metrics .metric.io-metric {
-    grid-template-columns: 80px 1fr;  /* Override: label + full-width value */
+    display: grid !important;
+    grid-template-columns: 75px 1fr !important;  /* Override: label + full-width value */
 }
 
+.system-metrics .metric.io-metric .metric-value,
 .system-metrics .metric.io-metric .io-value {
-    display: flex;
+    display: inline-flex !important;
     align-items: center;
     justify-content: flex-start;
-    gap: 0.25rem;
+    gap: 0.35rem;
     font-size: 0.85rem;
     font-weight: 600;
     text-align: left;
+    white-space: nowrap;  /* Prevent word wrap */
 }
 
 .system-metrics .io-separator {
     color: var(--pico-muted-color);
-    margin: 0 0.15rem;
+    margin: 0 0.1rem;
 }
 
 /* Read/Rx indicators (incoming data) - blue tint */
 .system-metrics .io-read,
 .system-metrics .io-rx {
     color: #3b82f6;
+    white-space: nowrap;
 }
 
 /* Write/Tx indicators (outgoing data) - orange tint */
 .system-metrics .io-write,
 .system-metrics .io-tx {
     color: #f59e0b;
+    white-space: nowrap;
 }
 
 /* Status Indicators */
