@@ -170,6 +170,8 @@ def test_git_diff_parameter_parity(mcp_tool_registry):
             "to_revision",
             "path",
             "stat_only",
+            "limit",
+            "offset",
         ],
     )
 
@@ -185,6 +187,7 @@ def test_git_log_parameter_parity(mcp_tool_registry):
         None,
         rest_params_explicit=[
             "limit",
+            "offset",
             "path",
             "author",
             "since",

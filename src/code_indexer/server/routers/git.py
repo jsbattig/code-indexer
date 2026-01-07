@@ -114,6 +114,12 @@ async def git_diff(
     to_revision: Optional[str] = Query(None, description="Ending revision for diff"),
     path: Optional[str] = Query(None, description="Specific path to diff"),
     stat_only: Optional[bool] = Query(None, description="Show only file statistics"),
+    limit: Optional[int] = Query(
+        None, description="Maximum number of diff lines to return (default 500)"
+    ),
+    offset: Optional[int] = Query(
+        None, description="Number of lines to skip for pagination"
+    ),
     user: User = Depends(get_current_user),
 ) -> GitDiffResponse:
     """Get git diff of the repository."""
@@ -131,6 +137,10 @@ async def git_diff(
             kwargs["path"] = path
         if stat_only is not None:
             kwargs["stat_only"] = stat_only
+        if limit is not None:
+            kwargs["limit"] = limit
+        if offset is not None:
+            kwargs["offset"] = offset
 
         result = service.get_diff(repo_alias=alias, username=user.username, **kwargs)
         return GitDiffResponse(**result)
@@ -169,6 +179,9 @@ async def git_log(
     limit: Optional[int] = Query(
         None, description="Maximum number of commits to return"
     ),
+    offset: Optional[int] = Query(
+        None, description="Number of commits to skip for pagination"
+    ),
     path: Optional[str] = Query(None, description="Filter commits affecting this path"),
     author: Optional[str] = Query(None, description="Filter commits by author"),
     since: Optional[str] = Query(
@@ -193,6 +206,8 @@ async def git_log(
         kwargs: dict[str, Any] = {}
         if limit is not None:
             kwargs["limit"] = limit
+        if offset is not None:
+            kwargs["offset"] = offset
         if path is not None:
             kwargs["path"] = path
         if author is not None:
