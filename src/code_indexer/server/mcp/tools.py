@@ -246,11 +246,25 @@ Aggregation strategies:
 - aggregation_mode='global' (default): Returns top N results by score across ALL repos - use when finding BEST matches
 - aggregation_mode='per_repo': Returns N results distributed evenly - use when COMPARING implementations
 
+LIMIT BEHAVIOR (IMPORTANT):
+- 'global' mode: limit=10 returns top 10 by score (may be 7+3+0 distribution)
+- 'per_repo' mode: limit=10 with 3 repos returns 4+3+3=10 total (NOT 30!)
+- Per-repo mode does NOT multiply the limit, it distributes it evenly
+
+CACHING WITH PARALLEL QUERIES:
+- Large results (>2000 chars) return preview + cache_handle
+- Each result has its own cache_handle (not per-repo)
+- Use get_cached_content(handle) to fetch full content page by page
+
+ERROR HANDLING:
+- Partial results supported: successful repos return results even if others fail
+- Check 'errors' field in response for per-repo failures
+
 Response formats:
 - response_format='flat' (default): Results with source_repo field for attribution
 - response_format='grouped': Results organized by repository
 
-PERFORMANCE NOTE: Searching 5+ repos increases token usage proportionally. Start with limit=3-5 for multi-repo searches.
+PERFORMANCE: Searching 5+ repos increases token usage proportionally. Start with limit=3-5 for multi-repo searches.
 
 NOISE FILTERING: Use exclude_path to filter out low-value files:
 - exclude_path='**/package-lock.json' (npm lockfiles)
@@ -301,7 +315,7 @@ WHEN NOT TO USE: (1) Need ALL matches with pattern -> use regex_search, (2) Expl
                     "type": "string",
                     "enum": ["global", "per_repo"],
                     "default": "global",
-                    "description": "Result aggregation for multi-repo searches. 'global' (default): Top N results by score across ALL repos - best for finding absolute best matches anywhere. 'per_repo': Distributes N results evenly across repos - best for comparing implementations or ensuring representation from each repo. Example: limit=10 with 3 repos in 'global' mode might return 7 from repo1, 3 from repo2, 0 from repo3. In 'per_repo' mode returns ~3 from each.",
+                    "description": "Result aggregation for multi-repo searches. 'global' (default): Top N results by score across ALL repos - best for finding absolute best matches anywhere. 'per_repo': Distributes N results evenly across repos - best for comparing implementations or ensuring representation from each repo. LIMIT MATH: limit=10 with 3 repos in 'global' mode might return 7+3+0=10 total. In 'per_repo' mode returns 4+3+3=10 total (NOT 30 - per_repo does NOT multiply the limit).",
                 },
                 "exclude_patterns": {
                     "type": "array",
@@ -4818,6 +4832,14 @@ TOOL_REGISTRY["cidx_quick_reference"] = {
         "(1) DISCOVERY: When user doesn't specify a repo, search cidx-meta-global FIRST to find relevant repositories. "
         "(2) SINGLE-REPO: For deep-diving into one codebase, use repository_alias as string. "
         "(3) MULTI-REPO: For cross-cutting analysis, use repository_alias as array with aggregation_mode='per_repo' (comparison) or 'global' (best matches). "
+        "MULTI-REPO SEARCH GUIDE: "
+        "TOOLS SUPPORTING MULTI-REPO: search_code, regex_search, git_log, git_search_commits, list_files. "
+        "SYNTAX: repository_alias=['repo1-global', 'repo2-global'] or wildcard '*-global'. "
+        "AGGREGATION: 'global' returns top N by score across all repos. 'per_repo' distributes N evenly (limit/repos each, NOT limit per repo). "
+        "LIMIT MATH: limit=10 with 3 repos in per_repo mode returns 4+3+3=10 total results, not 30. "
+        "CACHING: Large results (>2000 chars) return preview + cache_handle. Each result has its own handle (not per-repo). Use get_cached_content(handle) to fetch full content. "
+        "ERROR HANDLING: Partial results supported. Failed repos appear in 'errors' field, successful repos return results. "
+        "PERFORMANCE: Start with limit=3-5 for multi-repo searches. Token usage scales with number of repos. "
         "CATEGORIES: search, scip, git_exploration, git_operations, files, repo_management, golden_repos, system, user_management, ssh_keys, meta. "
         "OUTPUT: Tool names with TL;DR descriptions. Use category filter to narrow results. "
         'EXAMPLE: {"category": "search"} returns search tools with summaries.'
@@ -5001,10 +5023,21 @@ WORKFLOW A - Unknown Repository (Discovery):
 2. Read returned .md file to identify relevant repo
 3. search_code('your topic', repository_alias='identified-repo-global')
 
-WORKFLOW B - Cross-Cutting Analysis:
+WORKFLOW B - Cross-Cutting Analysis (Multi-Repo Search):
 1. list_global_repos() to see available repos
-2. search_code('topic', repository_alias=['repo1-global', 'repo2-global'], aggregation_mode='per_repo')
-3. Compare results across repos
+2. Choose aggregation strategy:
+   - aggregation_mode='per_repo': Distributes results evenly across repos (for comparison)
+   - aggregation_mode='global': Returns best matches regardless of source (for discovery)
+3. Run multi-repo search:
+   search_code('topic', repository_alias=['repo1-global', 'repo2-global'], aggregation_mode='per_repo', limit=10)
+4. Understand the results:
+   - LIMIT BEHAVIOR: limit=10 with 3 repos returns 10 total (NOT 30). Per-repo mode distributes evenly.
+   - CACHING: Large results return preview + cache_handle. Each result has its own handle.
+   - ERRORS: Failed repos appear in 'errors' field, successful repos still return results.
+5. For large results, fetch full content:
+   get_cached_content(handle='uuid-from-result', page=0)
+
+TOOLS SUPPORTING MULTI-REPO: search_code, regex_search, git_log, git_search_commits, list_files
 
 WORKFLOW C - Deep Dive (Single Repo):
 1. list_global_repos() to find repo name
@@ -5026,6 +5059,12 @@ A: search_code uses pre-built indexes (fast, approximate). regex_search scans fi
 
 Q: Why can't I edit files in global repos?
 A: Global repos are read-only. Activate them first to get your personal writable copy.
+
+Q: How does limit work with multi-repo searches?
+A: limit=10 with 3 repos returns 10 TOTAL results, not 30. In 'per_repo' mode, results are distributed evenly (4+3+3=10). In 'global' mode, top 10 by score regardless of source.
+
+Q: What happens if one repo fails in a multi-repo search?
+A: You get partial results. Successful repos return results normally, failed repos appear in 'errors' field.
 """,
     "inputSchema": {"type": "object", "properties": {}, "required": []},
     "required_permission": None,
@@ -7005,12 +7044,20 @@ TOOL_REGISTRY["get_cached_content"] = {
         "USE CASE: Fetch full content when search results return truncated previews with cache_handle. "
         "WHEN TO USE: After search_code returns results with cache_handle and has_more=true, "
         "use this tool to retrieve the complete content page by page. "
+        "WORKS WITH PARALLEL QUERIES: When multi-repo search returns results with cache_handles, "
+        "each result has its own independent handle (not per-repo). "
+        "Call this tool separately for each handle you want to expand. "
+        "WORKFLOW: "
+        "(1) search_code returns results with has_more=true and cache_handle. "
+        "(2) Call get_cached_content(handle, page=0) to get first chunk. "
+        "(3) If response has_more=true, call with page=1, page=2, etc. "
+        "(4) Repeat until has_more=false. "
         "PAGINATION: Content is split into pages (default 5000 chars/page). "
         "Use page parameter (0-indexed) to retrieve subsequent pages. "
         "RESPONSE: Returns content, page number, total_pages, and has_more flag. "
         "CACHE EXPIRY: Handles expire after 15 minutes (configurable). "
-        "If handle expired, returns error with cache_expired status. "
-        "RELATED TOOLS: search_code (returns cache_handle for large results)."
+        "If handle expired, re-run the search to get fresh handles. "
+        "RELATED TOOLS: search_code, regex_search, git_log (all return cache_handle for large results)."
     ),
     "inputSchema": {
         "type": "object",
