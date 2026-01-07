@@ -803,11 +803,12 @@ class BackgroundJobManager:
                     recent_jobs.append(job_dict)
 
             # Sort by completion time (newest first)
+            # Note: completed_at is an ISO format datetime string from .isoformat()
             recent_jobs.sort(
                 key=lambda x: (
-                    int(x["completed_at"])
-                    if isinstance(x["completed_at"], (int, str)) and x["completed_at"]
-                    else 0
+                    datetime.fromisoformat(x["completed_at"])
+                    if isinstance(x["completed_at"], str) and x["completed_at"]
+                    else datetime.min.replace(tzinfo=timezone.utc)
                 ),
                 reverse=True,
             )

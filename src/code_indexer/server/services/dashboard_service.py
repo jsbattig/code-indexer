@@ -256,10 +256,14 @@ class DashboardService:
                 for repo in activated_repos or []:
                     try:
                         # Get indexed file count from vector store for this repo
-                        collection_name = repo.get("collection_name")
+                        # Derive collection_name from user_alias if not present (legacy repos)
+                        collection_name = repo.get("collection_name") or repo.get(
+                            "user_alias"
+                        )
                         if not collection_name:
+                            # Both collection_name and user_alias are missing - malformed data
                             logger.warning(
-                                f"Repo missing collection_name: {repo}",
+                                f"Repo missing both collection_name and user_alias: {repo}",
                                 extra={"correlation_id": get_correlation_id()},
                             )
                             continue
