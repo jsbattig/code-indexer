@@ -120,17 +120,17 @@
                 </div>
             </div>
             <div class="metric io-metric">
-                <span class="metric-label">Disk I/O</span>
+                <span class="metric-label">Disk (R/W)</span>
                 <span class="metric-value io-value">
-                    <span class="io-read" title="Read">{{ "%.1f"|format(health.system.disk_read_kb_s) }} KB/s</span>
+                    <span class="io-read" title="Read">{{ "%.1f"|format(health.system.disk_read_kb_s) }}</span>
                     <span class="io-separator">/</span>
                     <span class="io-write" title="Write">{{ "%.1f"|format(health.system.disk_write_kb_s) }} KB/s</span>
                 </span>
             </div>
             <div class="metric io-metric">
-                <span class="metric-label">Network I/O</span>
+                <span class="metric-label">Net (Rx/Tx)</span>
                 <span class="metric-value io-value">
-                    <span class="io-rx" title="Receive (Rx)">{{ "%.1f"|format(health.system.net_rx_kb_s) }} KB/s</span>
+                    <span class="io-rx" title="Receive (Rx)">{{ "%.1f"|format(health.system.net_rx_kb_s) }}</span>
                     <span class="io-separator">/</span>
                     <span class="io-tx" title="Transmit (Tx)">{{ "%.1f"|format(health.system.net_tx_kb_s) }} KB/s</span>
                 </span>
