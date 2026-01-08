@@ -5,7 +5,7 @@
 {% block content %}
 <div class="auto-discovery-header">
     <h1>Repository Auto-Discovery</h1>
-    <p class="subtitle">Discover repositories from GitLab to add as golden repos</p>
+    <p class="subtitle">Discover repositories from GitLab and GitHub to add as golden repos</p>
 </div>
 
 <!-- GitLab Section -->
@@ -39,6 +39,37 @@
     </div>
 </section>
 
+<!-- GitHub Section -->
+<section class="discovery-section">
+    <div class="section-header">
+        <h2>GitHub Repositories</h2>
+        <div class="section-actions">
+            <button
+                id="refresh-github-btn"
+                class="outline"
+                hx-get="/admin/partials/auto-discovery/github"
+                hx-target="#github-repos-section"
+                hx-swap="innerHTML"
+                hx-indicator="#github-refresh-indicator"
+            >
+                Refresh
+            </button>
+            <span id="github-refresh-indicator" class="htmx-indicator">Loading...</span>
+        </div>
+    </div>
+
+    <!-- GitHub Repositories List (loaded via HTMX) -->
+    <div id="github-repos-section"
+        hx-get="/admin/partials/auto-discovery/github"
+        hx-trigger="load"
+        hx-swap="innerHTML"
+        hx-indicator="#github-load-indicator">
+        <div class="loading-container">
+            <span id="github-load-indicator" class="htmx-indicator">Loading GitHub repositories...</span>
+        </div>
+    </div>
+</section>
+
 <script>
 function retryGitLabDiscovery() {
     htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab', {target: '#gitlab-repos-section', swap: 'innerHTML'});
@@ -46,6 +77,14 @@ function retryGitLabDiscovery() {
 
 function loadGitLabPage(page, pageSize) {
     htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab?page=' + page + '&page_size=' + pageSize, {target: '#gitlab-repos-section', swap: 'innerHTML'});
+}
+
+function retryGitHubDiscovery() {
+    htmx.ajax('GET', '/admin/partials/auto-discovery/github', {target: '#github-repos-section', swap: 'innerHTML'});
+}
+
+function loadGitHubPage(page, pageSize) {
+    htmx.ajax('GET', '/admin/partials/auto-discovery/github?page=' + page + '&page_size=' + pageSize, {target: '#github-repos-section', swap: 'innerHTML'});
 }
 </script>
 

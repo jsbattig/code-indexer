@@ -3301,6 +3301,19 @@ def _get_gitlab_provider():
     return GitLabProvider(token_manager=token_manager, golden_repo_manager=golden_repo_manager)
 
 
+def _get_github_provider():
+    """Create GitHub provider with required dependencies."""
+    from ..services.config_service import get_config_service
+    from ..services.repository_providers.github_provider import GitHubProvider
+
+    config_service = get_config_service()
+    server_dir = str(config_service.config_manager.server_dir)
+    token_manager = CITokenManager(server_dir_path=server_dir)
+    golden_repo_manager = _get_golden_repo_manager()
+
+    return GitHubProvider(token_manager=token_manager, golden_repo_manager=golden_repo_manager)
+
+
 def _build_gitlab_repos_response(
     request: Request,
     repositories: list = None,
@@ -3314,6 +3327,32 @@ def _build_gitlab_repos_response(
     """Build GitLab repos partial template response."""
     return templates.TemplateResponse(
         "partials/gitlab_repos.html",
+        {
+            "request": request,
+            "repositories": repositories or [],
+            "total_count": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "error_type": error_type,
+            "error_message": error_message,
+        },
+    )
+
+
+def _build_github_repos_response(
+    request: Request,
+    repositories: list = None,
+    total_count: int = 0,
+    page: int = 1,
+    page_size: int = 50,
+    total_pages: int = 0,
+    error_type: str = None,
+    error_message: str = None,
+):
+    """Build GitHub repos partial template response."""
+    return templates.TemplateResponse(
+        "partials/github_repos.html",
         {
             "request": request,
             "repositories": repositories or [],
@@ -3368,6 +3407,38 @@ async def gitlab_repos_partial(request: Request, page: int = 1, page_size: int =
     except Exception as e:
         logger.error(f"Unexpected error in GitLab discovery: {e}", extra={"correlation_id": get_correlation_id()})
         return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}")
+
+
+@web_router.get("/partials/auto-discovery/github", response_class=HTMLResponse)
+async def github_repos_partial(request: Request, page: int = 1, page_size: int = 50):
+    """HTMX partial for GitHub repository discovery."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    from ..services.repository_providers.github_provider import GitHubProviderError
+
+    try:
+        provider = _get_github_provider()
+        if not await provider.is_configured():
+            return _build_github_repos_response(
+                request, error_type="not_configured", error_message="GitHub token not configured"
+            )
+
+        result = await provider.discover_repositories(page=page, page_size=page_size)
+        return _build_github_repos_response(
+            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages
+        )
+    except GitHubProviderError as e:
+        error_msg = str(e)
+        error_type = "api_error"
+        # Check for rate limit specific error
+        if "rate limit" in error_msg.lower():
+            error_type = "rate_limit"
+        return _build_github_repos_response(request, page=page, page_size=page_size, error_type=error_type, error_message=error_msg)
+    except Exception as e:
+        logger.error(f"Unexpected error in GitHub discovery: {e}", extra={"correlation_id": get_correlation_id()})
+        return _build_github_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}")
 
 
 @web_router.get("/config", response_class=HTMLResponse)
