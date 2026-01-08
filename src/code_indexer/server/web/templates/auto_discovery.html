@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Auto-Discovery - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="auto-discovery-header">
+    <h1>Repository Auto-Discovery</h1>
+    <p class="subtitle">Discover repositories from GitLab to add as golden repos</p>
+</div>
+
+<!-- GitLab Section -->
+<section class="discovery-section">
+    <div class="section-header">
+        <h2>GitLab Repositories</h2>
+        <div class="section-actions">
+            <button
+                id="refresh-gitlab-btn"
+                class="outline"
+                hx-get="/admin/partials/auto-discovery/gitlab"
+                hx-target="#gitlab-repos-section"
+                hx-swap="innerHTML"
+                hx-indicator="#gitlab-refresh-indicator"
+            >
+                Refresh
+            </button>
+            <span id="gitlab-refresh-indicator" class="htmx-indicator">Loading...</span>
+        </div>
+    </div>
+
+    <!-- GitLab Repositories List (loaded via HTMX) -->
+    <div id="gitlab-repos-section"
+        hx-get="/admin/partials/auto-discovery/gitlab"
+        hx-trigger="load"
+        hx-swap="innerHTML"
+        hx-indicator="#gitlab-load-indicator">
+        <div class="loading-container">
+            <span id="gitlab-load-indicator" class="htmx-indicator">Loading GitLab repositories...</span>
+        </div>
+    </div>
+</section>
+
+<script>
+function retryGitLabDiscovery() {
+    htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab', {target: '#gitlab-repos-section', swap: 'innerHTML'});
+}
+
+function loadGitLabPage(page, pageSize) {
+    htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab?page=' + page + '&page_size=' + pageSize, {target: '#gitlab-repos-section', swap: 'innerHTML'});
+}
+</script>
+
+<style>
+.auto-discovery-header {
+    margin-bottom: 2rem;
+}
+
+.auto-discovery-header h1 {
+    margin-bottom: 0.5rem;
+}
+
+.auto-discovery-header .subtitle {
+    color: var(--muted-color);
+    margin: 0;
+}
+
+.discovery-section {
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.section-header h2 {
+    margin: 0;
+}
+
+.section-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.loading-container {
+    text-align: center;
+    padding: 2rem;
+}
+</style>
+{% endblock %}

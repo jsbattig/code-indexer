@@ -3283,6 +3283,93 @@ def _create_config_page_response(
     return response
 
 
+# =============================================================================
+# Auto-Discovery Routes
+# =============================================================================
+
+
+def _get_gitlab_provider():
+    """Create GitLab provider with required dependencies."""
+    from ..services.config_service import get_config_service
+    from ..services.repository_providers.gitlab_provider import GitLabProvider
+
+    config_service = get_config_service()
+    server_dir = str(config_service.config_manager.server_dir)
+    token_manager = CITokenManager(server_dir_path=server_dir)
+    golden_repo_manager = _get_golden_repo_manager()
+
+    return GitLabProvider(token_manager=token_manager, golden_repo_manager=golden_repo_manager)
+
+
+def _build_gitlab_repos_response(
+    request: Request,
+    repositories: list = None,
+    total_count: int = 0,
+    page: int = 1,
+    page_size: int = 50,
+    total_pages: int = 0,
+    error_type: str = None,
+    error_message: str = None,
+):
+    """Build GitLab repos partial template response."""
+    return templates.TemplateResponse(
+        "partials/gitlab_repos.html",
+        {
+            "request": request,
+            "repositories": repositories or [],
+            "total_count": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "error_type": error_type,
+            "error_message": error_message,
+        },
+    )
+
+
+@web_router.get("/auto-discovery", response_class=HTMLResponse)
+async def auto_discovery_page(request: Request):
+    """Auto-discovery page - discover repositories from GitLab/GitHub."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+    response = templates.TemplateResponse(
+        "auto_discovery.html",
+        {"request": request, "current_page": "auto-discovery", "show_nav": True, "csrf_token": csrf_token},
+    )
+    set_csrf_cookie(response, csrf_token)
+    return response
+
+
+@web_router.get("/partials/auto-discovery/gitlab", response_class=HTMLResponse)
+async def gitlab_repos_partial(request: Request, page: int = 1, page_size: int = 50):
+    """HTMX partial for GitLab repository discovery."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    from ..services.repository_providers.gitlab_provider import GitLabProviderError
+
+    try:
+        provider = _get_gitlab_provider()
+        if not await provider.is_configured():
+            return _build_gitlab_repos_response(
+                request, error_type="not_configured", error_message="GitLab token not configured"
+            )
+
+        result = await provider.discover_repositories(page=page, page_size=page_size)
+        return _build_gitlab_repos_response(
+            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages
+        )
+    except GitLabProviderError as e:
+        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error in GitLab discovery: {e}", extra={"correlation_id": get_correlation_id()})
+        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}")
+
+
 @web_router.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request):
     """Configuration management page - view and edit CIDX configuration."""
