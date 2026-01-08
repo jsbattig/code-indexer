@@ -146,6 +146,38 @@ class OIDCProviderConfig:
 
 
 @dataclass
+class TelemetryConfig:
+    """
+    OpenTelemetry configuration for CIDX Server (Story #695).
+
+    Controls telemetry export including traces, metrics, and logs to an
+    OpenTelemetry collector endpoint. Disabled by default to ensure
+    zero overhead on fresh installations.
+    """
+
+    # Core settings
+    enabled: bool = False
+    collector_endpoint: str = "http://localhost:4317"
+    collector_protocol: str = "grpc"  # Options: grpc, http
+    service_name: str = "cidx-server"
+
+    # Export settings
+    export_traces: bool = True
+    export_metrics: bool = True
+    export_logs: bool = False
+
+    # Machine metrics settings
+    machine_metrics_enabled: bool = True
+    machine_metrics_interval_seconds: int = 60
+
+    # Trace sampling
+    trace_sample_rate: float = 1.0  # 0.0 to 1.0
+
+    # Deployment environment (development, staging, production)
+    deployment_environment: str = "development"
+
+
+@dataclass
 class ServerConfig:
     """
     Server configuration data structure.
@@ -167,6 +199,7 @@ class ServerConfig:
     omni_search_config: Optional[OmniSearchConfig] = None
     auto_watch_config: Optional[AutoWatchConfig] = None
     oidc_provider_config: Optional[OIDCProviderConfig] = None
+    telemetry_config: Optional[TelemetryConfig] = None
 
     # Claude CLI integration settings
     anthropic_api_key: Optional[str] = None
@@ -197,6 +230,8 @@ class ServerConfig:
             self.auto_watch_config = AutoWatchConfig()
         if self.oidc_provider_config is None:
             self.oidc_provider_config = OIDCProviderConfig()
+        if self.telemetry_config is None:
+            self.telemetry_config = TelemetryConfig()
 
 
 class ServerConfigManager:
@@ -317,6 +352,14 @@ class ServerConfigManager:
                     **config_dict["oidc_provider_config"]
                 )
 
+            # Convert nested telemetry_config dict to TelemetryConfig
+            if "telemetry_config" in config_dict and isinstance(
+                config_dict["telemetry_config"], dict
+            ):
+                config_dict["telemetry_config"] = TelemetryConfig(
+                    **config_dict["telemetry_config"]
+                )
+
             return ServerConfig(**config_dict)
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse configuration file: {e}")
@@ -373,6 +416,36 @@ class ServerConfigManager:
                 logging.warning(
                     f"Invalid CIDX_SCIP_WORKSPACE_RETENTION_DAYS environment variable value '{retention_env}'. Using default {config.scip_workspace_retention_days} days"
                 )
+
+        # Telemetry environment variable overrides (Story #695)
+        # Assert telemetry_config is not None (guaranteed by __post_init__)
+        assert config.telemetry_config is not None
+        if telemetry_enabled_env := os.environ.get("CIDX_TELEMETRY_ENABLED"):
+            config.telemetry_config.enabled = telemetry_enabled_env.lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+
+        if collector_endpoint_env := os.environ.get("CIDX_OTEL_COLLECTOR_ENDPOINT"):
+            config.telemetry_config.collector_endpoint = collector_endpoint_env
+
+        if collector_protocol_env := os.environ.get("CIDX_OTEL_COLLECTOR_PROTOCOL"):
+            config.telemetry_config.collector_protocol = collector_protocol_env.lower()
+
+        if service_name_env := os.environ.get("CIDX_OTEL_SERVICE_NAME"):
+            config.telemetry_config.service_name = service_name_env
+
+        if trace_sample_rate_env := os.environ.get("CIDX_OTEL_TRACE_SAMPLE_RATE"):
+            try:
+                config.telemetry_config.trace_sample_rate = float(trace_sample_rate_env)
+            except ValueError:
+                logging.warning(
+                    f"Invalid CIDX_OTEL_TRACE_SAMPLE_RATE environment variable value '{trace_sample_rate_env}'. Using default {config.telemetry_config.trace_sample_rate}"
+                )
+
+        if deployment_env := os.environ.get("CIDX_DEPLOYMENT_ENVIRONMENT"):
+            config.telemetry_config.deployment_environment = deployment_env
 
         return config
 
@@ -445,6 +518,30 @@ class ServerConfigManager:
                     raise ValueError(
                         "OIDC username_claim is required when JIT provisioning is enabled"
                     )
+
+        # Validate telemetry configuration (Story #695)
+        if config.telemetry_config:
+            # Validate trace_sample_rate (0.0 to 1.0)
+            if not (0.0 <= config.telemetry_config.trace_sample_rate <= 1.0):
+                raise ValueError(
+                    f"trace_sample_rate must be between 0.0 and 1.0, got {config.telemetry_config.trace_sample_rate}"
+                )
+
+            # Validate collector_protocol
+            valid_protocols = {"grpc", "http"}
+            if (
+                config.telemetry_config.collector_protocol.lower()
+                not in valid_protocols
+            ):
+                raise ValueError(
+                    f"collector_protocol must be one of {valid_protocols}, got {config.telemetry_config.collector_protocol}"
+                )
+
+            # Validate machine_metrics_interval_seconds
+            if config.telemetry_config.machine_metrics_interval_seconds < 1:
+                raise ValueError(
+                    f"machine_metrics_interval_seconds must be >= 1, got {config.telemetry_config.machine_metrics_interval_seconds}"
+                )
 
     def create_server_directories(self) -> None:
         """

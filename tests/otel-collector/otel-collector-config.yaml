@@ -1,0 +1,59 @@
+# OpenTelemetry Collector Configuration for CIDX Testing
+# This configuration receives OTLP telemetry and exports to Jaeger/Prometheus
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+  # Memory limiter to prevent OOM in testing
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+exporters:
+  # Export traces to Jaeger
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+  # Export metrics to Prometheus
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: cidx
+
+  # Debug output for troubleshooting
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+
+  # Enable telemetry on the collector itself
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888

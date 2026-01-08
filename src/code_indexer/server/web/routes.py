@@ -3209,7 +3209,7 @@ async def _reload_oidc_configuration():
 def _get_current_config() -> dict:
     """Get current configuration from ConfigService (persisted to ~/.cidx-server/config.json)."""
     from ..services.config_service import get_config_service
-    from ..utils.config_manager import OIDCProviderConfig
+    from ..utils.config_manager import OIDCProviderConfig, TelemetryConfig
     from dataclasses import asdict
 
     config_service = get_config_service()
@@ -3237,6 +3237,12 @@ def _get_current_config() -> dict:
             "average_job_duration_minutes": job_manager.average_job_duration_minutes,
         }
 
+    # Ensure telemetry config has all required fields with defaults
+    telemetry_config = settings.get("telemetry")
+    if not telemetry_config:
+        # Provide defaults if telemetry config is missing
+        telemetry_config = asdict(TelemetryConfig())
+
     # Convert to template-friendly format
     return {
         "server": settings["server"],
@@ -3246,6 +3252,7 @@ def _get_current_config() -> dict:
         "password_security": settings["password_security"],
         "oidc": oidc_config,
         "job_queue": job_queue_config,
+        "telemetry": telemetry_config,
     }
 
 
@@ -3502,6 +3509,33 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                     return "Average Job Duration must be between 1 and 120 minutes"
             except (ValueError, TypeError):
                 return "Average Job Duration must be a valid number"
+
+    elif section == "telemetry":
+        # Validate trace_sample_rate (0.0 to 1.0)
+        trace_sample_rate = data.get("trace_sample_rate")
+        if trace_sample_rate is not None:
+            try:
+                rate_float = float(trace_sample_rate)
+                if rate_float < 0 or rate_float > 1:
+                    return "Trace sample rate must be between 0.0 and 1.0"
+            except (ValueError, TypeError):
+                return "Trace sample rate must be a valid number"
+
+        # Validate collector_protocol
+        collector_protocol = data.get("collector_protocol")
+        if collector_protocol is not None:
+            if collector_protocol.lower() not in ["grpc", "http"]:
+                return "Collector protocol must be 'grpc' or 'http'"
+
+        # Validate machine_metrics_interval_seconds
+        interval = data.get("machine_metrics_interval_seconds")
+        if interval is not None:
+            try:
+                interval_int = int(interval)
+                if interval_int < 1:
+                    return "Machine metrics interval must be at least 1 second"
+            except (ValueError, TypeError):
+                return "Machine metrics interval must be a valid number"
 
     return None
 
@@ -3762,6 +3796,7 @@ async def update_config_section(
         "password_security",
         "oidc",
         "job_queue",
+        "telemetry",
     ]
     if section not in valid_sections:
         return _create_config_page_response(

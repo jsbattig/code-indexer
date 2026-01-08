@@ -785,3 +785,169 @@
         </form>
     </article>
 </details>
+
+<!-- Telemetry Settings Section (Story #695) -->
+<details class="config-section" id="section-telemetry">
+    <summary>
+        <h2>Telemetry Settings</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-telemetry">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Enabled</td>
+                        <td class="config-value">{{ 'Yes' if config.telemetry.enabled else 'No' }}</td>
+                        <td class="config-note">
+                            <small class="read-only-note">Requires server restart</small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Collector Endpoint</td>
+                        <td class="config-value">{{ config.telemetry.collector_endpoint }}</td>
+                        <td class="config-note"><small>OTLP endpoint URL</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Collector Protocol</td>
+                        <td class="config-value">{{ config.telemetry.collector_protocol }}</td>
+                        <td class="config-note"><small>grpc or http</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Service Name</td>
+                        <td class="config-value">{{ config.telemetry.service_name }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Export Traces</td>
+                        <td class="config-value">{{ 'Yes' if config.telemetry.export_traces else 'No' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Export Metrics</td>
+                        <td class="config-value">{{ 'Yes' if config.telemetry.export_metrics else 'No' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Export Logs</td>
+                        <td class="config-value">{{ 'Yes' if config.telemetry.export_logs else 'No' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Machine Metrics Enabled</td>
+                        <td class="config-value">{{ 'Yes' if config.telemetry.machine_metrics_enabled else 'No' }}</td>
+                        <td class="config-note"><small>CPU, memory, disk metrics</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Machine Metrics Interval (sec)</td>
+                        <td class="config-value">{{ config.telemetry.machine_metrics_interval_seconds }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Trace Sample Rate</td>
+                        <td class="config-value">{{ config.telemetry.trace_sample_rate }}</td>
+                        <td class="config-note"><small>0.0 to 1.0 (1.0 = 100%)</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Deployment Environment</td>
+                        <td class="config-value">{{ config.telemetry.deployment_environment }}</td>
+                        <td class="config-note"><small>development, staging, production</small></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('telemetry')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-telemetry" method="post" action="/admin/config/telemetry" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.telemetry %}
+            <div class="validation-error">{{ validation_errors.telemetry }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="telemetry-enabled">
+                    Enabled
+                    <select id="telemetry-enabled" name="enabled">
+                        <option value="true" {% if config.telemetry.enabled %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.telemetry.enabled %}selected{% endif %}>No</option>
+                    </select>
+                    <small>Enable OpenTelemetry export (requires restart)</small>
+                </label>
+                <label for="telemetry-collector-endpoint">
+                    Collector Endpoint
+                    <input type="text" id="telemetry-collector-endpoint" name="collector_endpoint"
+                           value="{{ config.telemetry.collector_endpoint }}"
+                           placeholder="http://localhost:4317">
+                    <small>OTLP collector endpoint URL</small>
+                </label>
+                <label for="telemetry-collector-protocol">
+                    Collector Protocol
+                    <select id="telemetry-collector-protocol" name="collector_protocol">
+                        <option value="grpc" {% if config.telemetry.collector_protocol == 'grpc' %}selected{% endif %}>gRPC</option>
+                        <option value="http" {% if config.telemetry.collector_protocol == 'http' %}selected{% endif %}>HTTP</option>
+                    </select>
+                    <small>OTLP transport protocol</small>
+                </label>
+                <label for="telemetry-service-name">
+                    Service Name
+                    <input type="text" id="telemetry-service-name" name="service_name"
+                           value="{{ config.telemetry.service_name }}">
+                    <small>Service name in traces/metrics</small>
+                </label>
+                <label for="telemetry-export-traces">
+                    Export Traces
+                    <select id="telemetry-export-traces" name="export_traces">
+                        <option value="true" {% if config.telemetry.export_traces %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.telemetry.export_traces %}selected{% endif %}>No</option>
+                    </select>
+                </label>
+                <label for="telemetry-export-metrics">
+                    Export Metrics
+                    <select id="telemetry-export-metrics" name="export_metrics">
+                        <option value="true" {% if config.telemetry.export_metrics %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.telemetry.export_metrics %}selected{% endif %}>No</option>
+                    </select>
+                </label>
+                <label for="telemetry-export-logs">
+                    Export Logs
+                    <select id="telemetry-export-logs" name="export_logs">
+                        <option value="true" {% if config.telemetry.export_logs %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.telemetry.export_logs %}selected{% endif %}>No</option>
+                    </select>
+                </label>
+                <label for="telemetry-machine-metrics-enabled">
+                    Machine Metrics Enabled
+                    <select id="telemetry-machine-metrics-enabled" name="machine_metrics_enabled">
+                        <option value="true" {% if config.telemetry.machine_metrics_enabled %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if not config.telemetry.machine_metrics_enabled %}selected{% endif %}>No</option>
+                    </select>
+                    <small>Collect CPU, memory, disk metrics</small>
+                </label>
+                <label for="telemetry-machine-metrics-interval">
+                    Machine Metrics Interval (sec)
+                    <input type="number" id="telemetry-machine-metrics-interval" name="machine_metrics_interval_seconds"
+                           value="{{ config.telemetry.machine_metrics_interval_seconds }}" min="1">
+                </label>
+                <label for="telemetry-trace-sample-rate">
+                    Trace Sample Rate
+                    <input type="number" id="telemetry-trace-sample-rate" name="trace_sample_rate"
+                           value="{{ config.telemetry.trace_sample_rate }}" min="0" max="1" step="0.01">
+                    <small>0.0 to 1.0 (1.0 = sample all requests)</small>
+                </label>
+                <label for="telemetry-deployment-environment">
+                    Deployment Environment
+                    <select id="telemetry-deployment-environment" name="deployment_environment">
+                        <option value="development" {% if config.telemetry.deployment_environment == 'development' %}selected{% endif %}>Development</option>
+                        <option value="staging" {% if config.telemetry.deployment_environment == 'staging' %}selected{% endif %}>Staging</option>
+                        <option value="production" {% if config.telemetry.deployment_environment == 'production' %}selected{% endif %}>Production</option>
+                    </select>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('telemetry')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>

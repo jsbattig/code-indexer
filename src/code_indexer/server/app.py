@@ -1925,7 +1925,18 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI app
     """
-    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time, _server_hnsw_cache, _server_fts_cache
+    global \
+        jwt_manager, \
+        user_manager, \
+        refresh_token_manager, \
+        golden_repo_manager, \
+        background_job_manager, \
+        activated_repo_manager, \
+        repository_listing_manager, \
+        semantic_query_manager, \
+        _server_start_time, \
+        _server_hnsw_cache, \
+        _server_fts_cache
 
     # Story #526: Initialize server-side HNSW cache at bootstrap for 1800x performance
     # Import and initialize global cache instance
@@ -2157,6 +2168,103 @@ def create_app() -> FastAPI:
             # Set payload_cache to None so handlers know it's unavailable
             app.state.payload_cache = None
 
+        # Startup: Initialize TelemetryManager for OTEL (Story #695)
+        telemetry_manager = None
+        logger.info(
+            "Server startup: Initializing TelemetryManager",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        try:
+            from code_indexer.server.services.config_service import get_config_service
+            from code_indexer.server.utils.config_manager import ServerConfigManager
+
+            config_service = get_config_service()
+            server_config = config_service.get_config()
+
+            # Apply environment variable overrides (e.g., CIDX_TELEMETRY_ENABLED)
+            config_manager = ServerConfigManager()
+            server_config = config_manager.apply_env_overrides(server_config)
+
+            if (
+                server_config.telemetry_config is not None
+                and server_config.telemetry_config.enabled
+            ):
+                # Lazy import telemetry module only when enabled
+                from code_indexer.server.telemetry import get_telemetry_manager
+
+                telemetry_manager = get_telemetry_manager(
+                    server_config.telemetry_config
+                )
+                app.state.telemetry_manager = telemetry_manager
+
+                logger.info(
+                    f"TelemetryManager initialized: "
+                    f"service={server_config.telemetry_config.service_name}, "
+                    f"endpoint={server_config.telemetry_config.collector_endpoint}, "
+                    f"protocol={server_config.telemetry_config.collector_protocol}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
+                # Initialize MachineMetricsExporter for OTEL (Story #696)
+                if server_config.telemetry_config.machine_metrics_enabled:
+                    from code_indexer.server.telemetry.machine_metrics import (
+                        get_machine_metrics_exporter,
+                    )
+
+                    machine_metrics_exporter = get_machine_metrics_exporter(
+                        telemetry_manager,
+                        machine_metrics_enabled=True,
+                    )
+                    app.state.machine_metrics_exporter = machine_metrics_exporter
+
+                    logger.info(
+                        f"MachineMetricsExporter initialized: "
+                        f"{len(machine_metrics_exporter.registered_gauges)} gauges registered",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
+                else:
+                    app.state.machine_metrics_exporter = None
+                    logger.info(
+                        "MachineMetricsExporter: Machine metrics disabled in configuration",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
+
+                # Initialize FastAPI instrumentation for OTEL (Story #697)
+                if server_config.telemetry_config.export_traces:
+                    from code_indexer.server.telemetry.instrumentation import (
+                        instrument_fastapi,
+                    )
+
+                    instrumented = instrument_fastapi(app, telemetry_manager)
+                    if instrumented:
+                        logger.info(
+                            "FastAPI instrumented with OTEL tracing",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
+                    else:
+                        logger.debug(
+                            "FastAPI instrumentation skipped",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
+            else:
+                # Telemetry disabled - set to None
+                app.state.telemetry_manager = None
+                app.state.machine_metrics_exporter = None
+                logger.info(
+                    "TelemetryManager: Telemetry disabled in configuration",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to initialize TelemetryManager: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
+            app.state.telemetry_manager = None
+            app.state.machine_metrics_exporter = None
+
         # Startup: Initialize OIDC authentication if configured
         logger.info(
             "Server startup: Checking OIDC configuration",
@@ -2261,6 +2369,21 @@ def create_app() -> FastAPI:
                     extra={"correlation_id": get_correlation_id()},
                 )
 
+        # Shutdown: Stop TelemetryManager and flush pending telemetry (Story #695)
+        if telemetry_manager is not None:
+            try:
+                telemetry_manager.shutdown()
+                logger.info(
+                    "TelemetryManager stopped successfully",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error stopping TelemetryManager: {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
         # Shutdown: Clean up other resources
         logger.info(
             "Server shutdown: Cleaning up resources",
@@ -2295,6 +2418,13 @@ def create_app() -> FastAPI:
     # Add global error handler middleware
     global_error_handler = GlobalErrorHandler()
     app.add_middleware(GlobalErrorHandler)
+
+    # Add correlation ID bridge middleware for OTEL tracing (Story #697)
+    from code_indexer.server.telemetry.correlation_bridge import (
+        CorrelationBridgeMiddleware,
+    )
+
+    app.add_middleware(CorrelationBridgeMiddleware)
 
     # Add exception handlers for validation errors that FastAPI catches before middleware
     @app.exception_handler(RequestValidationError)
@@ -5607,28 +5737,30 @@ def create_app() -> FastAPI:
                 # Execute semantic search for hybrid or degraded mode
                 if search_mode_actual in ["semantic", "hybrid"]:
                     try:
-                        semantic_results_raw = semantic_query_manager.query_user_repositories(
-                            username=current_user.username,
-                            query_text=request.query_text,
-                            repository_alias=request.repository_alias,
-                            limit=request.limit,
-                            min_score=request.min_score,
-                            file_extensions=request.file_extensions,
-                            # Phase 1 parameters (Story #503)
-                            exclude_language=request.exclude_language,
-                            exclude_path=request.exclude_path,
-                            accuracy=request.accuracy,
-                            # Temporal parameters (Story #446)
-                            time_range=request.time_range,
-                            time_range_all=request.time_range_all,
-                            at_commit=request.at_commit,
-                            include_removed=request.include_removed,
-                            show_evolution=request.show_evolution,
-                            evolution_limit=request.evolution_limit,
-                            # Phase 3 temporal filtering parameters (Story #503)
-                            diff_type=request.diff_type,
-                            author=request.author,
-                            chunk_type=request.chunk_type,
+                        semantic_results_raw = (
+                            semantic_query_manager.query_user_repositories(
+                                username=current_user.username,
+                                query_text=request.query_text,
+                                repository_alias=request.repository_alias,
+                                limit=request.limit,
+                                min_score=request.min_score,
+                                file_extensions=request.file_extensions,
+                                # Phase 1 parameters (Story #503)
+                                exclude_language=request.exclude_language,
+                                exclude_path=request.exclude_path,
+                                accuracy=request.accuracy,
+                                # Temporal parameters (Story #446)
+                                time_range=request.time_range,
+                                time_range_all=request.time_range_all,
+                                at_commit=request.at_commit,
+                                include_removed=request.include_removed,
+                                show_evolution=request.show_evolution,
+                                evolution_limit=request.evolution_limit,
+                                # Phase 3 temporal filtering parameters (Story #503)
+                                diff_type=request.diff_type,
+                                author=request.author,
+                                chunk_type=request.chunk_type,
+                            )
                         )
                         semantic_results_list = [
                             QueryResultItem(**result)

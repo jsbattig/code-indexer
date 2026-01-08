@@ -80,6 +80,7 @@ class ConfigService:
         assert config.resource_config is not None
         assert config.password_security is not None
         assert config.oidc_provider_config is not None
+        assert config.telemetry_config is not None
 
         settings = {
             # Server settings
@@ -157,6 +158,20 @@ class ConfigService:
             "scip_cleanup": {
                 "scip_workspace_retention_days": config.scip_workspace_retention_days,
             },
+            # Telemetry configuration (Story #695)
+            "telemetry": {
+                "enabled": config.telemetry_config.enabled,
+                "collector_endpoint": config.telemetry_config.collector_endpoint,
+                "collector_protocol": config.telemetry_config.collector_protocol,
+                "service_name": config.telemetry_config.service_name,
+                "export_traces": config.telemetry_config.export_traces,
+                "export_metrics": config.telemetry_config.export_metrics,
+                "export_logs": config.telemetry_config.export_logs,
+                "machine_metrics_enabled": config.telemetry_config.machine_metrics_enabled,
+                "machine_metrics_interval_seconds": config.telemetry_config.machine_metrics_interval_seconds,
+                "trace_sample_rate": config.telemetry_config.trace_sample_rate,
+                "deployment_environment": config.telemetry_config.deployment_environment,
+            },
         }
 
         return settings
@@ -194,6 +209,8 @@ class ConfigService:
             self._update_oidc_setting(config, key, value)
         elif category == "scip_cleanup":
             self._update_scip_cleanup_setting(config, key, value)
+        elif category == "telemetry":
+            self._update_telemetry_setting(config, key, value)
         else:
             raise ValueError(f"Unknown category: {category}")
 
@@ -385,6 +402,37 @@ class ConfigService:
             config.scip_workspace_retention_days = int(value)
         else:
             raise ValueError(f"Unknown SCIP cleanup setting: {key}")
+
+    def _update_telemetry_setting(
+        self, config: ServerConfig, key: str, value: Any
+    ) -> None:
+        """Update a telemetry setting (Story #695)."""
+        telemetry = config.telemetry_config
+        assert telemetry is not None  # Guaranteed by ServerConfig.__post_init__
+        if key == "enabled":
+            telemetry.enabled = value in ["true", True, "True", "1"]
+        elif key == "collector_endpoint":
+            telemetry.collector_endpoint = str(value)
+        elif key == "collector_protocol":
+            telemetry.collector_protocol = str(value).lower()
+        elif key == "service_name":
+            telemetry.service_name = str(value)
+        elif key == "export_traces":
+            telemetry.export_traces = value in ["true", True, "True", "1"]
+        elif key == "export_metrics":
+            telemetry.export_metrics = value in ["true", True, "True", "1"]
+        elif key == "export_logs":
+            telemetry.export_logs = value in ["true", True, "True", "1"]
+        elif key == "machine_metrics_enabled":
+            telemetry.machine_metrics_enabled = value in ["true", True, "True", "1"]
+        elif key == "machine_metrics_interval_seconds":
+            telemetry.machine_metrics_interval_seconds = int(value)
+        elif key == "trace_sample_rate":
+            telemetry.trace_sample_rate = float(value)
+        elif key == "deployment_environment":
+            telemetry.deployment_environment = str(value)
+        else:
+            raise ValueError(f"Unknown telemetry setting: {key}")
 
     def save_all_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
         """
