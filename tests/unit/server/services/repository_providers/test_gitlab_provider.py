@@ -367,6 +367,53 @@ class TestGitLabProviderExclusion:
         assert len(result.repositories) == 0
 
 
+class TestGitLabProviderSortingOrder:
+    """Tests for GitLabProvider sorting by last activity descending."""
+
+    @pytest.mark.asyncio
+    async def test_api_request_uses_last_activity_sort_descending(self):
+        """Test that API request sorts by last_activity_at in descending order."""
+        from code_indexer.server.services.repository_providers.gitlab_provider import (
+            GitLabProvider,
+        )
+        from code_indexer.server.services.ci_token_manager import TokenData
+
+        token_manager = MagicMock()
+        token_manager.get_token.return_value = TokenData(
+            platform="gitlab",
+            token="glpat-test-token-123456789012",
+            base_url=None,
+        )
+        golden_repo_manager = MagicMock()
+        golden_repo_manager.list_golden_repos.return_value = []
+
+        provider = GitLabProvider(
+            token_manager=token_manager,
+            golden_repo_manager=golden_repo_manager,
+        )
+
+        # Track the params passed to _make_api_request
+        captured_params = {}
+
+        def capture_request(endpoint, params=None):
+            captured_params.update(params or {})
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.headers = {"x-total": "0", "x-total-pages": "0"}
+            mock_response.json.return_value = []
+            mock_response.raise_for_status = MagicMock()
+            return mock_response
+
+        with patch.object(provider, "_make_api_request", side_effect=capture_request):
+            await provider.discover_repositories(page=1, page_size=50)
+
+        # Verify sorting parameters are correct for last activity descending
+        assert captured_params.get("order_by") == "last_activity_at", \
+            f"Expected order_by='last_activity_at', got '{captured_params.get('order_by')}'"
+        assert captured_params.get("sort") == "desc", \
+            f"Expected sort='desc', got '{captured_params.get('sort')}'"
+
+
 class TestGitLabProviderErrorHandling:
     """Tests for GitLabProvider error handling."""
 

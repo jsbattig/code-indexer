@@ -464,6 +464,53 @@ class TestGitHubProviderExclusion:
         assert result.repositories[0].name == "owner/my-project"
 
 
+class TestGitHubProviderSortingOrder:
+    """Tests for GitHubProvider sorting by last push descending."""
+
+    @pytest.mark.asyncio
+    async def test_api_request_uses_pushed_sort_descending(self):
+        """Test that API request sorts by pushed (last push date) in descending order."""
+        from code_indexer.server.services.repository_providers.github_provider import (
+            GitHubProvider,
+        )
+        from code_indexer.server.services.ci_token_manager import TokenData
+
+        token_manager = MagicMock()
+        token_manager.get_token.return_value = TokenData(
+            platform="github",
+            token="ghp_test123456789012345678901234567890",
+            base_url=None,
+        )
+        golden_repo_manager = MagicMock()
+        golden_repo_manager.list_golden_repos.return_value = []
+
+        provider = GitHubProvider(
+            token_manager=token_manager,
+            golden_repo_manager=golden_repo_manager,
+        )
+
+        # Track the params passed to _make_api_request
+        captured_params = {}
+
+        def capture_request(endpoint, params=None):
+            captured_params.update(params or {})
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.headers = {}
+            mock_response.json.return_value = []
+            mock_response.raise_for_status = MagicMock()
+            return mock_response
+
+        with patch.object(provider, "_make_api_request", side_effect=capture_request):
+            await provider.discover_repositories(page=1, page_size=50)
+
+        # Verify sorting parameters are correct for last push descending
+        assert captured_params.get("sort") == "pushed", \
+            f"Expected sort='pushed', got '{captured_params.get('sort')}'"
+        assert captured_params.get("direction") == "desc", \
+            f"Expected direction='desc', got '{captured_params.get('direction')}'"
+
+
 class TestGitHubProviderErrorHandling:
     """Tests for GitHubProvider error handling."""
 

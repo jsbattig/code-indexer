@@ -230,8 +230,8 @@ class GitLabProvider(RepositoryProviderBase):
                     "membership": "true",
                     "page": page,
                     "per_page": page_size,
-                    "order_by": "name",
-                    "sort": "asc",
+                    "order_by": "last_activity_at",
+                    "sort": "desc",
                 },
             )
             response.raise_for_status()

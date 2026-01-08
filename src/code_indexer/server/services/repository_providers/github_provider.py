@@ -288,8 +288,8 @@ class GitHubProvider(RepositoryProviderBase):
                 params={
                     "page": page,
                     "per_page": effective_page_size,
-                    "sort": "full_name",
-                    "direction": "asc",
+                    "sort": "pushed",
+                    "direction": "desc",
                     "affiliation": "owner,collaborator,organization_member",
                 },
             )
