@@ -58,7 +58,7 @@ class TestDaemonTemporalIndexing(TestCase):
             shutil.rmtree(self.temp_dir)
 
     def test_perform_indexing_without_index_commits_flag(self):
-        """Test that normal indexing uses FileChunkingManager (not temporal)."""
+        """Test that normal indexing uses SmartIndexer (not temporal)."""
         from src.code_indexer.services.rpyc_daemon import CIDXDaemonService
 
         service = CIDXDaemonService()
@@ -66,23 +66,35 @@ class TestDaemonTemporalIndexing(TestCase):
         # Mock callback
         callback = MagicMock()
 
-        # Patch FileChunkingManager at import location inside method
-        with patch(
-            "src.code_indexer.services.file_chunking_manager.FileChunkingManager"
-        ) as mock_fcm:
-            mock_chunking_manager = MagicMock()
-            mock_fcm.return_value = mock_chunking_manager
+        # Patch SmartIndexer and its dependencies at import locations inside method
+        with (
+            patch(
+                "src.code_indexer.services.smart_indexer.SmartIndexer"
+            ) as mock_smart_indexer,
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+            ),
+            patch(
+                "src.code_indexer.backends.backend_factory.BackendFactory"
+            ) as mock_backend_factory,
+        ):
+            mock_indexer = MagicMock()
+            mock_smart_indexer.return_value = mock_indexer
+
+            # Setup mock backend
+            mock_backend = MagicMock()
+            mock_backend_factory.create.return_value = mock_backend
+            mock_backend.get_vector_store_client.return_value = MagicMock()
 
             # Call without index_commits flag (default behavior)
             service._perform_indexing(self.project_path, callback, force_reindex=False)
 
-            # Verify FileChunkingManager was instantiated
-            mock_fcm.assert_called_once()
+            # Verify SmartIndexer was instantiated
+            mock_smart_indexer.assert_called_once()
 
-            # Verify index_repository was called with correct args
-            mock_chunking_manager.index_repository.assert_called_once_with(
-                repo_path=str(self.project_path),
-                force_reindex=False,
+            # Verify smart_index was called with correct args
+            mock_indexer.smart_index.assert_called_once_with(
+                force_full=False,
                 progress_callback=callback,
             )
 

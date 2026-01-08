@@ -925,8 +925,8 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):  # type: ignore[misc]
                 indexer = SmartIndexer(
                     config, embedding_provider, vector_store_client, metadata_path
                 )
-                indexer.index(
-                    force_reindex=kwargs.get("force_reindex", False),
+                indexer.smart_index(
+                    force_full=kwargs.get("force_reindex", False),
                     progress_callback=callback,
                 )
         except Exception as e:
