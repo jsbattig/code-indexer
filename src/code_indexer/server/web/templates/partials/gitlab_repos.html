@@ -76,7 +76,7 @@
                 <td>
                     <input type="checkbox" class="gitlab-repo-checkbox repo-checkbox"
                            name="selected_repos"
-                           value="{{ repo.clone_url_https }}"
+                           value="{{ repo.clone_url_ssh if repo.is_private else repo.clone_url_https }}"
                            data-platform="gitlab"
                            data-name="{{ repo.name }}"
                            data-branch="{{ repo.default_branch }}"
@@ -119,8 +119,9 @@
                 <td class="actions-cell">
                     <form method="post" action="/admin/golden-repos/add" style="display: inline;">
                         <input type="hidden" name="alias" value="{{ repo.name | replace('/', '-') }}">
-                        <input type="hidden" name="repo_url" value="{{ repo.clone_url_https }}">
+                        <input type="hidden" name="repo_url" value="{{ repo.clone_url_ssh if repo.is_private else repo.clone_url_https }}">
                         <input type="hidden" name="default_branch" value="{{ repo.default_branch }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="small" title="Add as golden repository">Add</button>
                     </form>
                 </td>
