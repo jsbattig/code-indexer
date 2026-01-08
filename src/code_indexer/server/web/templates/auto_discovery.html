@@ -3,6 +3,9 @@
 {% block title %}Auto-Discovery - CIDX Admin{% endblock %}
 
 {% block content %}
+<!-- Hidden CSRF token for JavaScript access -->
+<input type="hidden" name="csrf_token" id="csrf_token" value="{{ csrf_token }}">
+
 <div class="auto-discovery-header">
     <h1>Repository Auto-Discovery</h1>
     <p class="subtitle">Discover repositories from GitLab and GitHub to add as golden repos</p>
