@@ -6,7 +6,7 @@ Defines the abstract interface that all repository discovery providers
 """
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from code_indexer.server.models.auto_discovery import RepositoryDiscoveryResult
@@ -34,7 +34,7 @@ class RepositoryProviderBase(ABC):
 
     @abstractmethod
     async def discover_repositories(
-        self, page: int = 1, page_size: int = 50
+        self, page: int = 1, page_size: int = 50, search: Optional[str] = None
     ) -> "RepositoryDiscoveryResult":
         """
         Discover repositories from the platform.
@@ -42,6 +42,8 @@ class RepositoryProviderBase(ABC):
         Args:
             page: Page number (1-indexed)
             page_size: Number of repositories per page
+            search: Optional search string to filter repositories by name,
+                   description, commit hash, or committer (case-insensitive)
 
         Returns:
             RepositoryDiscoveryResult with discovered repositories

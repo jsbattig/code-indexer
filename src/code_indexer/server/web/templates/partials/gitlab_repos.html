@@ -1,3 +1,21 @@
+<!-- Search Input -->
+<div class="discovery-search">
+    <input
+        type="text"
+        id="gitlab-search"
+        name="search"
+        placeholder="Search repositories..."
+        value="{{ search_term }}"
+        hx-get="/admin/partials/auto-discovery/gitlab?page=1"
+        hx-trigger="input changed delay:300ms"
+        hx-target="#gitlab-repos-section"
+        hx-include="this"
+    >
+    {% if search_term %}
+    <button type="button" class="outline small" onclick="clearGitLabSearch()">Clear</button>
+    {% endif %}
+</div>
+
 {% if error_type == 'not_configured' %}
 <!-- GitLab Not Configured State -->
 <article class="message-warning">
@@ -25,7 +43,12 @@
 {% elif repositories|length == 0 %}
 <!-- No Repositories Found -->
 <article class="message-info">
+    {% if search_term %}
+    <p>No repositories found matching '{{ search_term }}'.</p>
+    <p><button type="button" class="outline small" onclick="clearGitLabSearch()">Clear search</button></p>
+    {% else %}
     <p>No new repositories found. All accessible GitLab repositories may already be indexed as golden repos.</p>
+    {% endif %}
 </article>
 
 {% else %}
@@ -113,13 +136,13 @@
     </div>
     <div class="pagination-controls">
         {% if page > 1 %}
-        <button class="outline small" onclick="loadGitLabPage({{ page - 1 }}, {{ page_size }})">Previous</button>
+        <button class="outline small" onclick="loadGitLabPage({{ page - 1 }}, {{ page_size }}, '{{ search_term|default("", true)|e }}')">Previous</button>
         {% else %}
         <button class="outline small" disabled>Previous</button>
         {% endif %}
 
         {% if page < total_pages %}
-        <button class="outline small" onclick="loadGitLabPage({{ page + 1 }}, {{ page_size }})">Next</button>
+        <button class="outline small" onclick="loadGitLabPage({{ page + 1 }}, {{ page_size }}, '{{ search_term|default("", true)|e }}')">Next</button>
         {% else %}
         <button class="outline small" disabled>Next</button>
         {% endif %}
@@ -130,6 +153,18 @@
 {% endif %}
 
 <style>
+.discovery-search {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.discovery-search input[type="text"] {
+    flex: 1;
+    max-width: 400px;
+}
+
 .discovery-table {
     width: 100%;
 }
@@ -279,5 +314,18 @@ function toggleAllGitLabCheckboxes(source) {
     checkboxes.forEach(function(checkbox) {
         checkbox.checked = source.checked;
     });
+}
+
+function clearGitLabSearch() {
+    document.getElementById('gitlab-search').value = '';
+    htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab', {target: '#gitlab-repos-section', swap: 'innerHTML'});
+}
+
+function loadGitLabPage(page, pageSize, search) {
+    var url = '/admin/partials/auto-discovery/gitlab?page=' + page + '&page_size=' + pageSize;
+    if (search) {
+        url += '&search=' + encodeURIComponent(search);
+    }
+    htmx.ajax('GET', url, {target: '#gitlab-repos-section', swap: 'innerHTML'});
 }
 </script>

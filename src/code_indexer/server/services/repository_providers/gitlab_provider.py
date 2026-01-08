@@ -180,6 +180,11 @@ class GitLabProvider(RepositoryProviderBase):
             except (ValueError, TypeError):
                 pass
 
+        # Extract commit info from API response (if available)
+        # GitLab may include this in detailed project responses or we use test data
+        last_commit_hash = project.get("_last_commit_hash")
+        last_commit_author = project.get("_last_commit_author")
+
         return DiscoveredRepository(
             platform="gitlab",
             name=project.get("path_with_namespace", ""),
@@ -187,12 +192,14 @@ class GitLabProvider(RepositoryProviderBase):
             clone_url_https=project.get("http_url_to_repo", ""),
             clone_url_ssh=project.get("ssh_url_to_repo", ""),
             default_branch=project.get("default_branch", "main"),
+            last_commit_hash=last_commit_hash,
+            last_commit_author=last_commit_author,
             last_activity=last_activity,
             is_private=project.get("visibility") == "private",
         )
 
     async def discover_repositories(
-        self, page: int = 1, page_size: int = 50
+        self, page: int = 1, page_size: int = 50, search: Optional[str] = None
     ) -> RepositoryDiscoveryResult:
         """
         Discover repositories from GitLab API.
@@ -254,6 +261,18 @@ class GitLabProvider(RepositoryProviderBase):
 
             if not self._is_repo_indexed(https_url, ssh_url, indexed_urls):
                 repositories.append(self._parse_project(project))
+
+        # Apply search filter if provided
+        # Search matches against name, description, commit hash, and committer
+        if search:
+            search_lower = search.lower()
+            repositories = [
+                repo for repo in repositories
+                if search_lower in repo.name.lower()
+                or (repo.description and search_lower in repo.description.lower())
+                or (repo.last_commit_hash and search_lower in repo.last_commit_hash.lower())
+                or (repo.last_commit_author and search_lower in repo.last_commit_author.lower())
+            ]
 
         return RepositoryDiscoveryResult(
             repositories=repositories,

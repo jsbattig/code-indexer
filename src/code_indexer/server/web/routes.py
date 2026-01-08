@@ -3323,6 +3323,7 @@ def _build_gitlab_repos_response(
     total_pages: int = 0,
     error_type: str = None,
     error_message: str = None,
+    search_term: str = None,
 ):
     """Build GitLab repos partial template response."""
     return templates.TemplateResponse(
@@ -3336,6 +3337,7 @@ def _build_gitlab_repos_response(
             "total_pages": total_pages,
             "error_type": error_type,
             "error_message": error_message,
+            "search_term": search_term or "",
         },
     )
 
@@ -3349,6 +3351,7 @@ def _build_github_repos_response(
     total_pages: int = 0,
     error_type: str = None,
     error_message: str = None,
+    search_term: str = None,
 ):
     """Build GitHub repos partial template response."""
     return templates.TemplateResponse(
@@ -3362,6 +3365,7 @@ def _build_github_repos_response(
             "total_pages": total_pages,
             "error_type": error_type,
             "error_message": error_message,
+            "search_term": search_term or "",
         },
     )
 
@@ -3383,7 +3387,7 @@ async def auto_discovery_page(request: Request):
 
 
 @web_router.get("/partials/auto-discovery/gitlab", response_class=HTMLResponse)
-async def gitlab_repos_partial(request: Request, page: int = 1, page_size: int = 50):
+async def gitlab_repos_partial(request: Request, page: int = 1, page_size: int = 50, search: Optional[str] = None):
     """HTMX partial for GitLab repository discovery."""
     session = _require_admin_session(request)
     if not session:
@@ -3391,26 +3395,31 @@ async def gitlab_repos_partial(request: Request, page: int = 1, page_size: int =
 
     from ..services.repository_providers.gitlab_provider import GitLabProviderError
 
+    # Normalize search: treat empty string as None
+    search_term = search.strip() if search else None
+
     try:
         provider = _get_gitlab_provider()
         if not await provider.is_configured():
             return _build_gitlab_repos_response(
-                request, error_type="not_configured", error_message="GitLab token not configured"
+                request, error_type="not_configured", error_message="GitLab token not configured",
+                search_term=search_term
             )
 
-        result = await provider.discover_repositories(page=page, page_size=page_size)
+        result = await provider.discover_repositories(page=page, page_size=page_size, search=search_term)
         return _build_gitlab_repos_response(
-            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages
+            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages,
+            search_term=search_term
         )
     except GitLabProviderError as e:
-        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=str(e))
+        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=str(e), search_term=search_term)
     except Exception as e:
         logger.error(f"Unexpected error in GitLab discovery: {e}", extra={"correlation_id": get_correlation_id()})
-        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}")
+        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}", search_term=search_term)
 
 
 @web_router.get("/partials/auto-discovery/github", response_class=HTMLResponse)
-async def github_repos_partial(request: Request, page: int = 1, page_size: int = 50):
+async def github_repos_partial(request: Request, page: int = 1, page_size: int = 50, search: Optional[str] = None):
     """HTMX partial for GitHub repository discovery."""
     session = _require_admin_session(request)
     if not session:
@@ -3418,16 +3427,21 @@ async def github_repos_partial(request: Request, page: int = 1, page_size: int =
 
     from ..services.repository_providers.github_provider import GitHubProviderError
 
+    # Normalize search: treat empty string as None
+    search_term = search.strip() if search else None
+
     try:
         provider = _get_github_provider()
         if not await provider.is_configured():
             return _build_github_repos_response(
-                request, error_type="not_configured", error_message="GitHub token not configured"
+                request, error_type="not_configured", error_message="GitHub token not configured",
+                search_term=search_term
             )
 
-        result = await provider.discover_repositories(page=page, page_size=page_size)
+        result = await provider.discover_repositories(page=page, page_size=page_size, search=search_term)
         return _build_github_repos_response(
-            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages
+            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages,
+            search_term=search_term
         )
     except GitHubProviderError as e:
         error_msg = str(e)
@@ -3435,10 +3449,10 @@ async def github_repos_partial(request: Request, page: int = 1, page_size: int =
         # Check for rate limit specific error
         if "rate limit" in error_msg.lower():
             error_type = "rate_limit"
-        return _build_github_repos_response(request, page=page, page_size=page_size, error_type=error_type, error_message=error_msg)
+        return _build_github_repos_response(request, page=page, page_size=page_size, error_type=error_type, error_message=error_msg, search_term=search_term)
     except Exception as e:
         logger.error(f"Unexpected error in GitHub discovery: {e}", extra={"correlation_id": get_correlation_id()})
-        return _build_github_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}")
+        return _build_github_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}", search_term=search_term)
 
 
 @web_router.get("/config", response_class=HTMLResponse)
