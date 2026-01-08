@@ -41,39 +41,6 @@
         {% endif %}
     </article>
 
-    <!-- Vector Store Status -->
-    <article class="health-card">
-        <header>
-            <h3>Vector Stores</h3>
-        </header>
-        <div class="status-content">
-            {% set vs_status = health.services.get('vector_store') %}
-            {% if vs_status %}
-            <span class="status-indicator status-{{ vs_status.status.value }}"></span>
-            <span class="status-text">{{ vs_status.status.value | capitalize }}</span>
-            {% if vs_status.response_time_ms %}
-            <small class="response-time">{{ vs_status.response_time_ms }}ms</small>
-            {% endif %}
-            {% else %}
-            <span class="status-indicator status-unhealthy"></span>
-            <span class="status-text">Unknown</span>
-            {% endif %}
-        </div>
-        {% if vs_status and vs_status.metadata %}
-        <footer>
-            <small>
-                Golden: {{ vs_status.metadata.get('golden_repos', 0) }} |
-                Activated: {{ vs_status.metadata.get('activated_repos', 0) }}
-            </small>
-        </footer>
-        {% endif %}
-        {% if vs_status and vs_status.error_message %}
-        <footer>
-            <small class="error-text">{{ vs_status.error_message }}</small>
-        </footer>
-        {% endif %}
-    </article>
-
     <!-- Storage Status (Disk only) -->
     <article class="health-card">
         <header>

@@ -35,7 +35,6 @@ class RepoCounts:
 
     golden: int = 0
     activated: int = 0
-    total_files: int = 0
 
 
 @dataclass
@@ -142,11 +141,6 @@ class DashboardService:
                         response_time_ms=0,
                         error_message="Unable to check health",
                     ),
-                    "vector_store": ServiceHealthInfo(
-                        status=HealthStatus.UNHEALTHY,
-                        response_time_ms=0,
-                        error_message="Unable to check health",
-                    ),
                     "storage": ServiceHealthInfo(
                         status=HealthStatus.UNHEALTHY,
                         response_time_ms=0,
@@ -212,7 +206,6 @@ class DashboardService:
         """
         golden_count = 0
         activated_count = 0
-        total_files = 0
 
         # Get golden repos count
         try:
@@ -226,7 +219,7 @@ class DashboardService:
                 extra={"correlation_id": get_correlation_id()},
             )
 
-        # Get activated repos count and aggregate vector store file counts
+        # Get activated repos count
         try:
             activated_manager = self._get_activated_repo_manager()
             if activated_manager:
@@ -240,44 +233,6 @@ class DashboardService:
                         username
                     )
                 activated_count = len(activated_repos) if activated_repos else 0
-
-                # Story #541 AC1/AC2: Sum FilesystemVectorStore counts from all activated repos
-                # Import here to avoid circular dependency
-                from pathlib import Path
-                from code_indexer.storage.filesystem_vector_store import (
-                    FilesystemVectorStore,
-                )
-
-                # Create shared vector store instance for all repos
-                # Use manager's data directory for index storage
-                index_dir = Path(activated_manager.data_dir) / "index"
-                store = FilesystemVectorStore(base_path=index_dir)
-
-                for repo in activated_repos or []:
-                    try:
-                        # Get indexed file count from vector store for this repo
-                        # Derive collection_name from user_alias if not present (legacy repos)
-                        collection_name = repo.get("collection_name") or repo.get(
-                            "user_alias"
-                        )
-                        if not collection_name:
-                            # Both collection_name and user_alias are missing - malformed data
-                            logger.warning(
-                                f"Repo missing both collection_name and user_alias: {repo}",
-                                extra={"correlation_id": get_correlation_id()},
-                            )
-                            continue
-
-                        count = store.get_indexed_file_count_fast(collection_name)
-                        total_files += count
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to get vector store count for {repo.get('collection_name', 'unknown')}: {e}",
-                            extra={"correlation_id": get_correlation_id()},
-                        )
-                        # Continue with other repos even if one fails
-                        continue
-
         except Exception as e:
             logger.error(
                 f"Failed to get activated repos count: {e}",
@@ -287,7 +242,6 @@ class DashboardService:
         return RepoCounts(
             golden=golden_count,
             activated=activated_count,
-            total_files=total_files,
         )
 
     def _get_recent_jobs(
