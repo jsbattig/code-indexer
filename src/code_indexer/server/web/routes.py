@@ -6,6 +6,7 @@ Provides admin web interface routes for CIDX server administration.
 
 from code_indexer.server.middleware.correlation import get_correlation_id
 
+import json
 import logging
 import os
 import secrets
@@ -15,7 +16,7 @@ from urllib.parse import quote
 
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from fastapi import APIRouter, Request, Response, Form, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from ..auth.user_manager import UserRole
@@ -680,6 +681,113 @@ def _get_golden_repo_manager():
     return manager
 
 
+def generate_unique_alias(repo_name: str, golden_repo_manager) -> str:
+    """
+    Generate unique alias from repository name.
+
+    Examples:
+        "org/my-project" -> "my-project"
+        "group/subgroup/project" -> "project"
+
+    If alias exists, add suffix: "project-2", "project-3", etc.
+
+    Args:
+        repo_name: Repository name (may include path components like org/project)
+        golden_repo_manager: GoldenRepoManager instance to check for conflicts
+
+    Returns:
+        Unique alias string (lowercase, special chars replaced with dashes)
+    """
+    import re
+
+    # Extract project name (last path component)
+    base_alias = repo_name.split("/")[-1]
+
+    # Clean up: lowercase, replace special chars with dashes
+    base_alias = re.sub(r"[^a-z0-9-]", "-", base_alias.lower())
+
+    # Collapse multiple dashes into one
+    base_alias = re.sub(r"-+", "-", base_alias)
+
+    # Remove leading/trailing dashes
+    base_alias = base_alias.strip("-")
+
+    # Handle empty result
+    if not base_alias:
+        base_alias = "repo"
+
+    # Check for conflicts with existing golden repos
+    existing_repos = golden_repo_manager.list_golden_repos()
+    existing_aliases = {r["alias"] for r in existing_repos}
+
+    if base_alias not in existing_aliases:
+        return base_alias
+
+    # Add numeric suffix
+    suffix = 2
+    while f"{base_alias}-{suffix}" in existing_aliases:
+        suffix += 1
+
+    return f"{base_alias}-{suffix}"
+
+
+def _batch_create_repos(
+    repos: List[Dict[str, str]],
+    submitter_username: str,
+    golden_repo_manager,
+) -> Dict[str, Any]:
+    """
+    Create multiple golden repositories from discovered repos.
+
+    Args:
+        repos: List of repo objects with clone_url, alias, branch, platform
+        submitter_username: Username of the admin submitting the batch
+        golden_repo_manager: GoldenRepoManager instance
+
+    Returns:
+        Dict with success, results array, and summary string
+    """
+    results = []
+
+    for repo_data in repos:
+        try:
+            # Generate unique alias from repo name
+            alias = generate_unique_alias(repo_data["alias"], golden_repo_manager)
+
+            # Create golden repo
+            job_id = golden_repo_manager.add_golden_repo(
+                repo_url=repo_data["clone_url"],
+                alias=alias,
+                default_branch=repo_data.get("branch", "main"),
+                submitter_username=submitter_username,
+            )
+
+            results.append(
+                {
+                    "alias": alias,
+                    "status": "success",
+                    "job_id": job_id,
+                }
+            )
+        except Exception as e:
+            results.append(
+                {
+                    "alias": repo_data.get("alias", "unknown"),
+                    "status": "failed",
+                    "error": str(e),
+                }
+            )
+
+    success_count = len([r for r in results if r["status"] == "success"])
+    failed_count = len([r for r in results if r["status"] == "failed"])
+
+    return {
+        "success": failed_count == 0,
+        "results": results,
+        "summary": f"{success_count} succeeded, {failed_count} failed",
+    }
+
+
 def _get_golden_repos_list():
     """Get list of all golden repositories with global alias, version, and index info."""
     try:
@@ -946,6 +1054,59 @@ async def add_golden_repo(
         return _create_golden_repos_page_response(
             request, session, error_message=error_msg
         )
+
+
+@web_router.post("/golden-repos/batch-create")
+async def batch_create_golden_repos(
+    request: Request,
+    repos: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """
+    Create multiple golden repositories from discovered repos.
+
+    Body params:
+        repos: JSON array of objects with:
+            - clone_url: Repository URL
+            - alias: Generated alias (project name)
+            - branch: Default branch
+            - platform: gitlab or github
+        csrf_token: CSRF token for validation
+    """
+    session = _require_admin_session(request)
+    if not session:
+        return JSONResponse(
+            {"success": False, "error": "Authentication required"},
+            status_code=401,
+        )
+
+    # Validate CSRF token
+    if not validate_login_csrf_token(request, csrf_token):
+        return JSONResponse(
+            {"success": False, "error": "Invalid CSRF token"},
+            status_code=403,
+        )
+
+    # Parse JSON repos array
+    try:
+        repo_list = json.loads(repos)
+    except json.JSONDecodeError as e:
+        return JSONResponse(
+            {"success": False, "error": f"Invalid JSON: {e}"},
+            status_code=400,
+        )
+
+    if not isinstance(repo_list, list):
+        return JSONResponse(
+            {"success": False, "error": "repos must be a JSON array"},
+            status_code=400,
+        )
+
+    # Process batch creation
+    manager = _get_golden_repo_manager()
+    results = _batch_create_repos(repo_list, session.username, manager)
+
+    return JSONResponse(results)
 
 
 @web_router.post("/golden-repos/{alias}/delete", response_class=HTMLResponse)

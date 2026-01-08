@@ -8,6 +8,37 @@
     <p class="subtitle">Discover repositories from GitLab and GitHub to add as golden repos</p>
 </div>
 
+<!-- Selection Summary Bar -->
+<div id="selection-bar" class="selection-bar" style="display: none;">
+    <span id="selection-count">0 repositories selected</span>
+    <div class="selection-actions">
+        <button onclick="clearSelection()" class="outline small">Clear Selection</button>
+        <button onclick="showCreateDialog()" class="small" id="create-btn" disabled>
+            Create Golden Repos
+        </button>
+    </div>
+</div>
+
+<!-- Batch Create Modal -->
+<dialog id="batch-create-modal">
+    <article>
+        <header>
+            <h3>Create Golden Repositories</h3>
+            <button type="button" class="close-btn" aria-label="Close" onclick="closeBatchModal()">&times;</button>
+        </header>
+        <p>The following repositories will be added as golden repos:</p>
+        <ul id="batch-repo-list" class="batch-repo-list">
+            <!-- Populated dynamically -->
+        </ul>
+        <footer>
+            <button onclick="closeBatchModal()" class="outline">Cancel</button>
+            <button onclick="executeBatchCreate()" class="primary" id="execute-batch-btn">
+                Create <span id="batch-count">0</span> Repositories
+            </button>
+        </footer>
+    </article>
+</dialog>
+
 <!-- GitLab Section -->
 <section class="discovery-section">
     <div class="section-header">
@@ -71,6 +102,144 @@
 </section>
 
 <script>
+// Global selection state (persists across pagination/search)
+const selectedRepos = new Map();  // key: clone_url, value: {platform, name, branch}
+
+function toggleSelectAll(platform, checked) {
+    document.querySelectorAll('input[data-platform="' + platform + '"]')
+        .forEach(function(checkbox) {
+            checkbox.checked = checked;
+            updateRepoSelection(checkbox);
+        });
+    updateSelectionUI();
+}
+
+function updateRepoSelection(checkbox) {
+    var url = checkbox.value;
+    if (checkbox.checked) {
+        selectedRepos.set(url, {
+            platform: checkbox.dataset.platform,
+            name: checkbox.dataset.name,
+            branch: checkbox.dataset.branch
+        });
+    } else {
+        selectedRepos.delete(url);
+    }
+}
+
+function updateSelectionUI() {
+    var count = selectedRepos.size;
+    document.getElementById('selection-count').textContent = count + ' repositor' + (count === 1 ? 'y' : 'ies') + ' selected';
+    document.getElementById('selection-bar').style.display = count > 0 ? 'flex' : 'none';
+    document.getElementById('create-btn').disabled = count === 0;
+}
+
+// Restore selections after HTMX swap
+document.body.addEventListener('htmx:afterSettle', restoreSelections);
+
+function restoreSelections() {
+    document.querySelectorAll('input.repo-checkbox').forEach(function(checkbox) {
+        checkbox.checked = selectedRepos.has(checkbox.value);
+    });
+    updateSelectionUI();
+}
+
+function clearSelection() {
+    selectedRepos.clear();
+    document.querySelectorAll('input.repo-checkbox').forEach(function(cb) {
+        cb.checked = false;
+    });
+    document.querySelectorAll('#select-all-gitlab, #select-all-github').forEach(function(cb) {
+        cb.checked = false;
+    });
+    updateSelectionUI();
+}
+
+function showCreateDialog() {
+    var modal = document.getElementById('batch-create-modal');
+    var list = document.getElementById('batch-repo-list');
+    var countSpan = document.getElementById('batch-count');
+
+    list.innerHTML = '';
+    selectedRepos.forEach(function(data, url) {
+        var li = document.createElement('li');
+        li.textContent = data.platform.toUpperCase() + ': ' + data.name + ' (' + data.branch + ')';
+        list.appendChild(li);
+    });
+
+    countSpan.textContent = selectedRepos.size;
+    modal.showModal();
+}
+
+function closeBatchModal() {
+    document.getElementById('batch-create-modal').close();
+}
+
+async function executeBatchCreate() {
+    var repos = [];
+    selectedRepos.forEach(function(data, url) {
+        repos.push({
+            clone_url: url,
+            alias: data.name,
+            branch: data.branch,
+            platform: data.platform
+        });
+    });
+
+    var formData = new FormData();
+    formData.append('repos', JSON.stringify(repos));
+
+    // Get CSRF token from cookie or form
+    var csrfToken = getCsrfToken();
+    if (csrfToken) {
+        formData.append('csrf_token', csrfToken);
+    }
+
+    // Disable button during request
+    var executeBtn = document.getElementById('execute-batch-btn');
+    executeBtn.disabled = true;
+    executeBtn.textContent = 'Creating...';
+
+    try {
+        var response = await fetch('/admin/golden-repos/batch-create', {
+            method: 'POST',
+            body: formData
+        });
+        var result = await response.json();
+
+        closeBatchModal();
+        clearSelection();
+
+        // Show result message
+        showNotification(result.summary, result.success ? 'success' : 'warning');
+
+        // Reload discovery to update exclusions
+        htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab?page=1', {target: '#gitlab-repos-section', swap: 'innerHTML'});
+        htmx.ajax('GET', '/admin/partials/auto-discovery/github?page=1', {target: '#github-repos-section', swap: 'innerHTML'});
+    } catch (error) {
+        showNotification('Error creating repositories: ' + error.message, 'error');
+    } finally {
+        executeBtn.disabled = false;
+        executeBtn.textContent = 'Create ' + selectedRepos.size + ' Repositories';
+    }
+}
+
+function getCsrfToken() {
+    // Try to get CSRF token from a form on the page or from cookie
+    var csrfInput = document.querySelector('input[name="csrf_token"]');
+    if (csrfInput) {
+        return csrfInput.value;
+    }
+    // Try to parse from cookie
+    var match = document.cookie.match(/(?:^|; )_csrf=([^;]*)/);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+function showNotification(message, type) {
+    // Simple alert for now - can be enhanced with toast notifications
+    alert(message);
+}
+
 function retryGitLabDiscovery() {
     htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab', {target: '#gitlab-repos-section', swap: 'innerHTML'});
 }
@@ -89,6 +258,84 @@ function loadGitHubPage(page, pageSize) {
 </script>
 
 <style>
+/* Selection bar styles */
+.selection-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background-color: var(--primary-focus, #e3f2fd);
+    border: 1px solid var(--primary, #1976d2);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.selection-bar span {
+    font-weight: 500;
+    color: var(--primary, #1976d2);
+}
+
+.selection-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Batch modal styles */
+#batch-create-modal {
+    max-width: 600px;
+    width: 90%;
+}
+
+#batch-create-modal article {
+    margin: 0;
+}
+
+#batch-create-modal header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--muted-border-color);
+}
+
+#batch-create-modal header h3 {
+    margin: 0;
+}
+
+#batch-create-modal .close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    color: var(--muted-color);
+}
+
+#batch-create-modal .close-btn:hover {
+    color: var(--color);
+}
+
+.batch-repo-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+}
+
+.batch-repo-list li {
+    padding: 0.25rem 0;
+    font-size: 0.9rem;
+}
+
+#batch-create-modal footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--muted-border-color);
+}
+
 .auto-discovery-header {
     margin-bottom: 2rem;
 }

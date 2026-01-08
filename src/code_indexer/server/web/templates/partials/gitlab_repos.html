@@ -58,7 +58,7 @@
         <thead>
             <tr>
                 <th style="width: 40px;">
-                    <input type="checkbox" id="select-all-gitlab" title="Select all" onclick="toggleAllGitLabCheckboxes(this)">
+                    <input type="checkbox" id="select-all-gitlab" title="Select all" onchange="toggleSelectAll('gitlab', this.checked)">
                 </th>
                 <th style="width: 60px;">Platform</th>
                 <th>Repository Name</th>
@@ -74,11 +74,13 @@
             {% for repo in repositories %}
             <tr>
                 <td>
-                    <input type="checkbox" class="gitlab-repo-checkbox"
+                    <input type="checkbox" class="gitlab-repo-checkbox repo-checkbox"
                            name="selected_repos"
                            value="{{ repo.clone_url_https }}"
-                           data-repo-name="{{ repo.name }}"
-                           data-default-branch="{{ repo.default_branch }}">
+                           data-platform="gitlab"
+                           data-name="{{ repo.name }}"
+                           data-branch="{{ repo.default_branch }}"
+                           onchange="updateRepoSelection(this); updateSelectionUI()">
                 </td>
                 <td>
                     <span class="platform-badge gitlab">GitLab</span>
@@ -309,13 +311,6 @@
 </style>
 
 <script>
-function toggleAllGitLabCheckboxes(source) {
-    var checkboxes = document.querySelectorAll('.gitlab-repo-checkbox');
-    checkboxes.forEach(function(checkbox) {
-        checkbox.checked = source.checked;
-    });
-}
-
 function clearGitLabSearch() {
     document.getElementById('gitlab-search').value = '';
     htmx.ajax('GET', '/admin/partials/auto-discovery/gitlab', {target: '#gitlab-repos-section', swap: 'innerHTML'});

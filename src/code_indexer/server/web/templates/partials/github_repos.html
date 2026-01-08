@@ -70,7 +70,7 @@
         <thead>
             <tr>
                 <th style="width: 40px;">
-                    <input type="checkbox" id="select-all-github" title="Select all" onclick="toggleAllGitHubCheckboxes(this)">
+                    <input type="checkbox" id="select-all-github" title="Select all" onchange="toggleSelectAll('github', this.checked)">
                 </th>
                 <th style="width: 60px;">Platform</th>
                 <th>Repository Name</th>
@@ -86,11 +86,13 @@
             {% for repo in repositories %}
             <tr>
                 <td>
-                    <input type="checkbox" class="github-repo-checkbox"
+                    <input type="checkbox" class="github-repo-checkbox repo-checkbox"
                            name="selected_repos"
                            value="{{ repo.clone_url_https }}"
-                           data-repo-name="{{ repo.name }}"
-                           data-default-branch="{{ repo.default_branch }}">
+                           data-platform="github"
+                           data-name="{{ repo.name }}"
+                           data-branch="{{ repo.default_branch }}"
+                           onchange="updateRepoSelection(this); updateSelectionUI()">
                 </td>
                 <td>
                     <span class="platform-badge github">GitHub</span>
@@ -321,13 +323,6 @@
 </style>
 
 <script>
-function toggleAllGitHubCheckboxes(source) {
-    var checkboxes = document.querySelectorAll('.github-repo-checkbox');
-    checkboxes.forEach(function(checkbox) {
-        checkbox.checked = source.checked;
-    });
-}
-
 function clearGitHubSearch() {
     document.getElementById('github-search').value = '';
     htmx.ajax('GET', '/admin/partials/auto-discovery/github', {target: '#github-repos-section', swap: 'innerHTML'});
