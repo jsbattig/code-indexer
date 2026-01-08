@@ -725,6 +725,48 @@ button.danger, .button.danger {
     }
 }
 
+/* Queue Status Section */
+.queue-status-section {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: var(--pico-card-background-color);
+    border-radius: 0.5rem;
+    border: 1px solid var(--pico-muted-border-color);
+}
+
+.queue-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.queue-status-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 0.5rem;
+}
+
+.queue-status-item .status-label {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+    margin-bottom: 0.25rem;
+}
+
+.queue-status-item .status-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.queue-status-item .status-running-count {
+    color: #3b82f6;
+}
+
+.queue-status-item .status-queued-count {
+    color: #f59e0b;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     nav.admin-nav ul {

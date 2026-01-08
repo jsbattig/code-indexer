@@ -587,6 +587,68 @@
     </article>
 </details>
 
+<!-- Job Queue Settings Section -->
+<details class="config-section" id="section-job_queue">
+    <summary>
+        <h2>Job Queue Settings</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-job_queue">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Max Concurrent Jobs (System-wide)</td>
+                        <td class="config-value">{{ config.job_queue.max_total_concurrent_jobs }}</td>
+                        <td class="config-note"><small>Maximum jobs running simultaneously across all users</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Max Concurrent Jobs (Per User)</td>
+                        <td class="config-value">{{ config.job_queue.max_concurrent_jobs_per_user }}</td>
+                        <td class="config-note"><small>Maximum jobs a single user can run at once</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Average Job Duration (minutes)</td>
+                        <td class="config-value">{{ config.job_queue.average_job_duration_minutes }}</td>
+                        <td class="config-note"><small>Used for estimating wait times in queue</small></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('job_queue')">Edit</button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-job_queue" method="post" action="/admin/config/job_queue" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.job_queue %}
+            <div class="validation-error">{{ validation_errors.job_queue }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="job-queue-max-total">
+                    Max Concurrent Jobs (System-wide)
+                    <input type="number" id="job-queue-max-total" name="max_total_concurrent_jobs" value="{{ config.job_queue.max_total_concurrent_jobs }}" min="1" max="50">
+                    <small>1-50 jobs</small>
+                </label>
+                <label for="job-queue-max-per-user">
+                    Max Concurrent Jobs (Per User)
+                    <input type="number" id="job-queue-max-per-user" name="max_concurrent_jobs_per_user" value="{{ config.job_queue.max_concurrent_jobs_per_user }}" min="1" max="10">
+                    <small>1-10 jobs per user</small>
+                </label>
+                <label for="job-queue-avg-duration">
+                    Average Job Duration (minutes)
+                    <input type="number" id="job-queue-avg-duration" name="average_job_duration_minutes" value="{{ config.job_queue.average_job_duration_minutes }}" min="1" max="120">
+                    <small>Used for queue wait time estimates</small>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save</button>
+                <button type="button" class="secondary" onclick="cancelEdit('job_queue')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
+
 <details class="config-section" id="section-api-keys">
     <summary>
         <h2>CI/CD API Keys</h2>

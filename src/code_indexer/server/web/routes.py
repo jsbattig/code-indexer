@@ -1794,6 +1794,29 @@ def _get_all_jobs(
     return paginated_jobs, total_count, total_pages
 
 
+def _get_queue_status() -> dict:
+    """Get current queue status from job manager."""
+    from ..jobs.config import SyncJobConfig
+    default_limits = SyncJobConfig.get_concurrency_limits(None)
+
+    # Default values if job manager is not available
+    queue_status = {
+        "running_count": 0,
+        "queued_count": 0,
+        "max_total_concurrent_jobs": default_limits["max_total_concurrent_jobs"],
+        "max_concurrent_jobs_per_user": default_limits["max_concurrent_jobs_per_user"],
+    }
+
+    job_manager = _get_background_job_manager()
+    if job_manager:
+        queue_status["running_count"] = job_manager._count_total_running_jobs()
+        queue_status["queued_count"] = len(job_manager._job_queue)
+        queue_status["max_total_concurrent_jobs"] = job_manager.max_total_concurrent_jobs
+        queue_status["max_concurrent_jobs_per_user"] = job_manager.max_concurrent_jobs_per_user
+
+    return queue_status
+
+
 def _create_jobs_page_response(
     request: Request,
     session: SessionData,
@@ -1816,6 +1839,9 @@ def _create_jobs_page_response(
         page=page,
     )
 
+    # Get queue status
+    queue_status = _get_queue_status()
+
     response = templates.TemplateResponse(
         "jobs.html",
         {
@@ -1833,6 +1859,7 @@ def _create_jobs_page_response(
             "search": search,
             "success_message": success_message,
             "error_message": error_message,
+            "queue_status": queue_status,
         },
     )
 
@@ -1950,6 +1977,39 @@ async def cancel_job(
         return _create_jobs_page_response(
             request, session, error_message=f"Error cancelling job: {str(e)}"
         )
+
+
+@web_router.get("/api/queue-status")
+async def get_queue_status_api(request: Request):
+    """
+    Get current job queue status.
+
+    Returns JSON with:
+    - running_count: Number of currently running jobs
+    - queued_count: Number of jobs waiting in queue
+    - max_total_concurrent_jobs: System-wide concurrency limit
+    - max_concurrent_jobs_per_user: Per-user concurrency limit
+    - average_job_duration_minutes: Average job duration for wait estimates
+    """
+    session = _require_admin_session(request)
+    if not session:
+        return JSONResponse(
+            {"success": False, "error": "Authentication required"},
+            status_code=401,
+        )
+
+    queue_status = _get_queue_status()
+
+    # Add average_job_duration_minutes to the response
+    job_manager = _get_background_job_manager()
+    if job_manager:
+        queue_status["average_job_duration_minutes"] = job_manager.average_job_duration_minutes
+    else:
+        from ..jobs.config import SyncJobConfig
+        default_limits = SyncJobConfig.get_concurrency_limits(None)
+        queue_status["average_job_duration_minutes"] = default_limits["average_job_duration_minutes"]
+
+    return JSONResponse({"success": True, **queue_status})
 
 
 # Session-based query history storage (in-memory, per session)
@@ -3161,6 +3221,22 @@ def _get_current_config() -> dict:
         # Provide defaults if OIDC config is missing
         oidc_config = asdict(OIDCProviderConfig())
 
+    # Get job queue settings from job manager (or defaults from SyncJobConfig)
+    from ..jobs.config import SyncJobConfig
+    default_limits = SyncJobConfig.get_concurrency_limits(None)  # Static call for defaults
+    job_queue_config = {
+        "max_total_concurrent_jobs": default_limits["max_total_concurrent_jobs"],
+        "max_concurrent_jobs_per_user": default_limits["max_concurrent_jobs_per_user"],
+        "average_job_duration_minutes": default_limits["average_job_duration_minutes"],
+    }
+    job_manager = _get_background_job_manager()
+    if job_manager:
+        job_queue_config = {
+            "max_total_concurrent_jobs": job_manager.max_total_concurrent_jobs,
+            "max_concurrent_jobs_per_user": job_manager.max_concurrent_jobs_per_user,
+            "average_job_duration_minutes": job_manager.average_job_duration_minutes,
+        }
+
     # Convert to template-friendly format
     return {
         "server": settings["server"],
@@ -3169,6 +3245,7 @@ def _get_current_config() -> dict:
         "timeouts": settings["timeouts"],
         "password_security": settings["password_security"],
         "oidc": oidc_config,
+        "job_queue": job_queue_config,
     }
 
 
@@ -3394,6 +3471,37 @@ def _validate_config_section(section: str, data: dict) -> Optional[str]:
                 except (ValueError, TypeError):
                     field_name = field.replace("_", " ").title()
                     return f"{field_name} must be a valid number"
+
+    elif section == "job_queue":
+        # Validate max_total_concurrent_jobs (1-50)
+        max_total = data.get("max_total_concurrent_jobs")
+        if max_total is not None:
+            try:
+                max_total_int = int(max_total)
+                if max_total_int < 1 or max_total_int > 50:
+                    return "Max Concurrent Jobs (System-wide) must be between 1 and 50"
+            except (ValueError, TypeError):
+                return "Max Concurrent Jobs (System-wide) must be a valid number"
+
+        # Validate max_concurrent_jobs_per_user (1-10)
+        max_per_user = data.get("max_concurrent_jobs_per_user")
+        if max_per_user is not None:
+            try:
+                max_per_user_int = int(max_per_user)
+                if max_per_user_int < 1 or max_per_user_int > 10:
+                    return "Max Concurrent Jobs (Per User) must be between 1 and 10"
+            except (ValueError, TypeError):
+                return "Max Concurrent Jobs (Per User) must be a valid number"
+
+        # Validate average_job_duration_minutes (1-120)
+        avg_duration = data.get("average_job_duration_minutes")
+        if avg_duration is not None:
+            try:
+                avg_duration_int = int(avg_duration)
+                if avg_duration_int < 1 or avg_duration_int > 120:
+                    return "Average Job Duration must be between 1 and 120 minutes"
+            except (ValueError, TypeError):
+                return "Average Job Duration must be a valid number"
 
     return None
 
@@ -3653,6 +3761,7 @@ async def update_config_section(
         "timeouts",
         "password_security",
         "oidc",
+        "job_queue",
     ]
     if section not in valid_sections:
         return _create_config_page_response(
@@ -3672,6 +3781,49 @@ async def update_config_section(
             error_message=error,
             validation_errors={section: error},
         )
+
+    # Special handling for job_queue - updates job manager directly (runtime settings)
+    if section == "job_queue":
+        try:
+            job_manager = _get_background_job_manager()
+            if not job_manager:
+                return _create_config_page_response(
+                    request,
+                    session,
+                    error_message="Job manager not available",
+                )
+
+            # Update job manager settings
+            if "max_total_concurrent_jobs" in data:
+                job_manager.max_total_concurrent_jobs = int(data["max_total_concurrent_jobs"])
+            if "max_concurrent_jobs_per_user" in data:
+                job_manager.max_concurrent_jobs_per_user = int(data["max_concurrent_jobs_per_user"])
+            if "average_job_duration_minutes" in data:
+                job_manager.average_job_duration_minutes = int(data["average_job_duration_minutes"])
+
+            logger.info(
+                f"Updated job queue settings: max_total={job_manager.max_total_concurrent_jobs}, "
+                f"max_per_user={job_manager.max_concurrent_jobs_per_user}, "
+                f"avg_duration={job_manager.average_job_duration_minutes}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
+            return _create_config_page_response(
+                request,
+                session,
+                success_message="Job Queue configuration saved successfully",
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to update job queue settings: %s",
+                e,
+                extra={"correlation_id": get_correlation_id()},
+            )
+            return _create_config_page_response(
+                request,
+                session,
+                error_message=f"Failed to save job queue configuration: {str(e)}",
+            )
 
     # Save configuration using ConfigService
     try:

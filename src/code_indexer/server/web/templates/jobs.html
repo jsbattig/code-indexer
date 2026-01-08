@@ -21,6 +21,28 @@
     </div>
 </div>
 
+<!-- Queue Status Display -->
+<section id="queue-status-section" class="queue-status-section">
+    <div class="queue-status-grid">
+        <div class="queue-status-item">
+            <span class="status-label">Running Jobs</span>
+            <span class="status-value status-running-count">{{ queue_status.running_count }}</span>
+        </div>
+        <div class="queue-status-item">
+            <span class="status-label">Queued Jobs</span>
+            <span class="status-value status-queued-count">{{ queue_status.queued_count }}</span>
+        </div>
+        <div class="queue-status-item">
+            <span class="status-label">Max Concurrent (System)</span>
+            <span class="status-value">{{ queue_status.max_total_concurrent_jobs }}</span>
+        </div>
+        <div class="queue-status-item">
+            <span class="status-label">Max Per User</span>
+            <span class="status-value">{{ queue_status.max_concurrent_jobs_per_user }}</span>
+        </div>
+    </div>
+</section>
+
 <!-- Success/Error Messages -->
 {% if success_message %}
 <article class="message-success">
