@@ -163,6 +163,17 @@ function showCreateDialog() {
     var list = document.getElementById('batch-repo-list');
     var countSpan = document.getElementById('batch-count');
 
+    // Defensive null checks for DOM elements
+    if (!modal || !list || !countSpan) {
+        console.error('showCreateDialog: Required elements not found', {
+            modal: !!modal,
+            list: !!list,
+            countSpan: !!countSpan
+        });
+        alert('Error: Dialog elements not found. Please refresh the page (Ctrl+Shift+R).');
+        return;
+    }
+
     list.innerHTML = '';
     selectedRepos.forEach(function(data, url) {
         var li = document.createElement('li');
