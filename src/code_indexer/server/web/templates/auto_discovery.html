@@ -212,7 +212,7 @@ async function executeBatchCreate() {
     // Disable button during request
     var executeBtn = document.getElementById('execute-batch-btn');
     executeBtn.disabled = true;
-    executeBtn.textContent = 'Creating...';
+    executeBtn.innerHTML = 'Creating...';
 
     try {
         var response = await fetch('/admin/golden-repos/batch-create', {
@@ -234,7 +234,7 @@ async function executeBatchCreate() {
         showNotification('Error creating repositories: ' + error.message, 'error');
     } finally {
         executeBtn.disabled = false;
-        executeBtn.textContent = 'Create ' + selectedRepos.size + ' Repositories';
+        executeBtn.innerHTML = 'Create <span id="batch-count">' + selectedRepos.size + '</span> Repositories';
     }
 }
 
