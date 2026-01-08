@@ -229,9 +229,18 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Tools 1-2: Search
     "search_code": {
         "name": "search_code",
-        "description": """REPOSITORY SELECTION DECISION TREE:
+        "description": """MANDATORY REPOSITORY DISCOVERY - READ THIS FIRST:
+If user does NOT explicitly specify a repository, you MUST:
+1. ALWAYS search cidx-meta-global FIRST: search_code('topic', repository_alias='cidx-meta-global')
+2. This returns .md files describing what each repository contains
+3. Read the relevant .md to understand which repo handles the topic
+4. THEN search the identified repo(s) for actual code
+
+Skip discovery ONLY when user explicitly names a repository (e.g., "search in backend-global").
+
+REPOSITORY SELECTION DECISION TREE:
 1. User specified exact repo? -> Search that repo directly
-2. User mentioned topic WITHOUT repo? -> Search cidx-meta-global FIRST to discover relevant repos
+2. User mentioned topic WITHOUT repo? -> cidx-meta-global discovery (MANDATORY - see above)
 3. User wants comparison across repos? -> Use repository_alias as array + aggregation_mode='per_repo'
 4. User wants best matches anywhere? -> Use repository_alias as array + aggregation_mode='global'
 
@@ -279,11 +288,6 @@ Use cases:
 - Architecture analysis: Compare implementations across codebases
 - Impact analysis: Find all repos using a specific pattern/library
 
-CIDX-META DISCOVERY (when repo is unknown):
-1. search_code('your topic', repository_alias='cidx-meta-global') -> Finds .md files describing repos
-2. Read the relevant .md to understand which repo handles your topic
-3. Search the identified repo(s) for actual code
-
 TL;DR: Search code using pre-built indexes. Use semantic mode for conceptual queries, FTS for exact text.
 
 SEARCH MODE: 'authentication logic' (concept) -> semantic | 'def authenticate_user' (exact) -> fts | unsure -> hybrid
@@ -291,8 +295,6 @@ SEARCH MODE: 'authentication logic' (concept) -> semantic | 'def authenticate_us
 CRITICAL: Semantic search finds code by MEANING, not exact text. Results are APPROXIMATE. For exhaustive exact-text results, use FTS mode or regex_search tool.
 
 QUICK START: search_code('user authentication', repository_alias='myrepo-global', search_mode='semantic', limit=5)
-
-DISCOVERY: Run list_global_repos first to see available repositories. ALIAS FORMAT: Global repos end in '-global'.
 
 TROUBLESHOOTING: (1) 0 results? Verify alias with list_global_repos, try broader terms. (2) Temporal queries empty? Check enable_temporal via global_repo_status. (3) Slow? Start with limit=5, use path_filter.
 
