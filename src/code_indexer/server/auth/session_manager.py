@@ -8,7 +8,7 @@ Following CLAUDE.md principles: NO MOCKS - Real session management implementatio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Set, Dict, Optional
+from typing import Any, Set, Dict, Optional
 from threading import Lock
 
 
@@ -21,31 +21,53 @@ class PasswordChangeSessionManager:
     - Maintain blacklist of invalidated tokens
     - Thread-safe implementation
     - Persistent storage for session invalidation data
+
+    Supports both SQLite backend (Story #702) and JSON file storage (backward compatible).
     """
 
-    def __init__(self, session_file_path: Optional[str] = None):
+    def __init__(
+        self,
+        session_file_path: Optional[str] = None,
+        use_sqlite: bool = False,
+        db_path: Optional[str] = None,
+    ):
         """
         Initialize session manager.
 
         Args:
             session_file_path: Optional custom path for session data file
+            use_sqlite: If True, use SQLite backend instead of JSON file (Story #702)
+            db_path: Path to SQLite database file (required when use_sqlite=True)
         """
-        if session_file_path:
-            self.session_file_path = session_file_path
+        self._use_sqlite = use_sqlite
+        self._sqlite_backend: Optional[Any] = None
+
+        if use_sqlite:
+            if db_path is None:
+                raise ValueError("db_path is required when use_sqlite=True")
+            from code_indexer.server.storage.sqlite_backends import (
+                SessionsSqliteBackend,
+            )
+
+            self._sqlite_backend = SessionsSqliteBackend(db_path)
         else:
-            # Default session data location
-            server_dir = Path.home() / ".cidx-server"
-            server_dir.mkdir(exist_ok=True)
-            self.session_file_path = str(server_dir / "invalidated_sessions.json")
+            # JSON file storage (backward compatible)
+            if session_file_path:
+                self.session_file_path = session_file_path
+            else:
+                # Default session data location
+                server_dir = Path.home() / ".cidx-server"
+                server_dir.mkdir(exist_ok=True)
+                self.session_file_path = str(server_dir / "invalidated_sessions.json")
+
+            # In-memory cache of invalidated sessions
+            self._invalidated_sessions: Dict[str, Set[str]] = {}
+            self._password_change_timestamps: Dict[str, str] = {}
+
+            # Load existing session data
+            self._load_session_data()
 
         self._lock = Lock()
-
-        # In-memory cache of invalidated sessions
-        self._invalidated_sessions: Dict[str, Set[str]] = {}
-        self._password_change_timestamps: Dict[str, str] = {}
-
-        # Load existing session data
-        self._load_session_data()
 
     def _load_session_data(self) -> None:
         """Load session invalidation data from persistent storage."""
@@ -94,19 +116,20 @@ class PasswordChangeSessionManager:
         Args:
             username: Username whose sessions should be invalidated
         """
-        with self._lock:
-            # Record the timestamp when password was changed
-            self._password_change_timestamps[username] = datetime.now(
-                timezone.utc
-            ).isoformat()
-
-            # Clear any existing invalidated session tokens for this user
-            # (they're now superseded by the password change timestamp)
-            if username in self._invalidated_sessions:
-                del self._invalidated_sessions[username]
-
-            # Save the updated data
-            self._save_session_data()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            timestamp = datetime.now(timezone.utc).isoformat()
+            self._sqlite_backend.set_password_change_timestamp(username, timestamp)
+            self._sqlite_backend.clear_invalidated_sessions(username)
+        else:
+            # JSON file storage (backward compatible)
+            with self._lock:
+                self._password_change_timestamps[username] = datetime.now(
+                    timezone.utc
+                ).isoformat()
+                if username in self._invalidated_sessions:
+                    del self._invalidated_sessions[username]
+                self._save_session_data()
 
     def is_session_invalid(self, username: str, token_issued_at: datetime) -> bool:
         """
@@ -119,22 +142,27 @@ class PasswordChangeSessionManager:
         Returns:
             True if session is invalid, False otherwise
         """
-        with self._lock:
-            # Check if user has changed password after token was issued
-            if username in self._password_change_timestamps:
-                password_change_time_str = self._password_change_timestamps[username]
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            password_change_time_str = self._sqlite_backend.get_password_change_timestamp(username)
+            if password_change_time_str:
                 try:
-                    password_change_time = datetime.fromisoformat(
-                        password_change_time_str
-                    )
-
-                    # If token was issued before password change, it's invalid
+                    password_change_time = datetime.fromisoformat(password_change_time_str)
                     return token_issued_at < password_change_time
                 except ValueError:
-                    # If we can't parse the timestamp, assume token is valid
                     return False
-
             return False
+        else:
+            # JSON file storage (backward compatible)
+            with self._lock:
+                if username in self._password_change_timestamps:
+                    password_change_time_str = self._password_change_timestamps[username]
+                    try:
+                        password_change_time = datetime.fromisoformat(password_change_time_str)
+                        return token_issued_at < password_change_time
+                    except ValueError:
+                        return False
+                return False
 
     def invalidate_specific_token(self, username: str, token_id: str) -> None:
         """
@@ -144,12 +172,17 @@ class PasswordChangeSessionManager:
             username: Username who owns the token
             token_id: Unique identifier for the token
         """
-        with self._lock:
-            if username not in self._invalidated_sessions:
-                self._invalidated_sessions[username] = set()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            self._sqlite_backend.invalidate_session(username, token_id)
+        else:
+            # JSON file storage (backward compatible)
+            with self._lock:
+                if username not in self._invalidated_sessions:
+                    self._invalidated_sessions[username] = set()
 
-            self._invalidated_sessions[username].add(token_id)
-            self._save_session_data()
+                self._invalidated_sessions[username].add(token_id)
+                self._save_session_data()
 
     def is_token_invalidated(self, username: str, token_id: str) -> bool:
         """
@@ -162,11 +195,16 @@ class PasswordChangeSessionManager:
         Returns:
             True if token is invalidated, False otherwise
         """
-        with self._lock:
-            if username not in self._invalidated_sessions:
-                return False
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            return self._sqlite_backend.is_session_invalidated(username, token_id)
+        else:
+            # JSON file storage (backward compatible)
+            with self._lock:
+                if username not in self._invalidated_sessions:
+                    return False
 
-            return token_id in self._invalidated_sessions[username]
+                return token_id in self._invalidated_sessions[username]
 
     def cleanup_old_data(self, days_to_keep: int = 30) -> int:
         """

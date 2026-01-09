@@ -2015,6 +2015,62 @@ def create_app() -> FastAPI:
                 extra={"correlation_id": get_correlation_id()},
             )
 
+        # Startup: Initialize SQLite database schema and run migrations (Story #702)
+        logger.info(
+            "Server startup: Initializing SQLite database schema",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        try:
+            from code_indexer.server.storage.database_manager import DatabaseSchema
+            from code_indexer.server.storage.migration_service import MigrationService
+
+            db_path = Path(server_data_dir) / "data" / "cidx_server.db"
+            schema = DatabaseSchema(str(db_path))
+            schema.initialize_database()
+
+            logger.info(
+                f"SQLite database schema initialized: {db_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
+            # Run migration of legacy JSON files to SQLite
+            # Note: JSON files are in server_data_dir (e.g., ~/.cidx-server/users.json)
+            # not in the data subdirectory
+            migration = MigrationService(str(server_data_dir), str(db_path))
+            if migration.is_migration_needed():
+                logger.info(
+                    "Legacy JSON files found, running migration to SQLite",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                migration_results = migration.migrate_all()
+                logger.info(
+                    f"Migration complete: {migration_results}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                # Migrate golden repos metadata.json separately (Story #711)
+                # golden_repos_dir is defined earlier in startup
+                golden_repos_dir_path = Path(server_data_dir) / "data" / "golden-repos"
+                if golden_repos_dir_path.exists():
+                    gr_result = migration.migrate_golden_repos_metadata(str(golden_repos_dir_path))
+                    if not gr_result.get("skipped"):
+                        logger.info(
+                            f"Golden repos metadata migration: {gr_result}",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
+            else:
+                logger.info(
+                    "No legacy JSON files to migrate",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to initialize SQLite database or run migrations: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
+
         # Startup: Migrate legacy cidx-meta and bootstrap if needed
         logger.info(
             "Server startup: Checking cidx-meta migration and bootstrap",
@@ -2028,7 +2084,9 @@ def create_app() -> FastAPI:
             # Create GoldenRepoManager instance for migration/bootstrap
             # NOTE: GoldenRepoManager expects data_dir (e.g., ~/.cidx-server/data), NOT golden-repos path
             data_dir = Path(server_data_dir) / "data"
-            golden_repo_manager = GoldenRepoManager(str(data_dir))
+            golden_repo_manager = GoldenRepoManager(
+                str(data_dir), use_sqlite=True, db_path=str(db_path)
+            )
 
             # Phase 1: Migrate legacy cidx-meta (if it exists in old format)
             migrate_legacy_cidx_meta(golden_repo_manager, str(golden_repos_dir))
@@ -2447,7 +2505,19 @@ def create_app() -> FastAPI:
     )
     Path(server_data_dir).mkdir(parents=True, exist_ok=True)
     users_file_path = str(Path(server_data_dir) / "users.json")
-    user_manager = UserManager(users_file_path=users_file_path)
+    # Compute db_path for SQLite storage (Story #702)
+    db_path = Path(server_data_dir) / "data" / "cidx_server.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    # Initialize SQLite database schema before creating managers (Story #702)
+    from code_indexer.server.storage.database_manager import DatabaseSchema
+
+    schema = DatabaseSchema(str(db_path))
+    schema.initialize_database()
+    user_manager = UserManager(
+        users_file_path=users_file_path,
+        use_sqlite=True,
+        db_path=str(db_path),
+    )
     refresh_token_manager = RefreshTokenManager(jwt_manager=jwt_manager)
 
     # Initialize OAuth manager
@@ -2473,8 +2543,13 @@ def create_app() -> FastAPI:
 
     # Initialize managers with resource configuration
     data_dir = str(Path(server_data_dir) / "data")
+    # Story #711: Use SQLite for golden repo metadata storage
+    db_path = str(Path(server_data_dir) / "data" / "cidx_server.db")
     golden_repo_manager = GoldenRepoManager(
-        data_dir=data_dir, resource_config=server_config.resource_config
+        data_dir=data_dir,
+        resource_config=server_config.resource_config,
+        use_sqlite=True,
+        db_path=db_path,
     )
     # Initialize BackgroundJobManager with persistence enabled (Story #541 - AC4)
     jobs_storage_path = str(Path(server_data_dir) / "jobs.json")
@@ -5575,9 +5650,15 @@ def create_app() -> FastAPI:
                         activated_repo_manager.activated_repos_dir
                     ).parent
                     golden_repos_dir = data_dir / "golden-repos"
+                    # Compute db_path for SQLite storage (Story #702)
+                    sqlite_db_path = data_dir / "cidx_server.db"
 
                     if golden_repos_dir.exists():
-                        registry = GlobalRegistry(str(golden_repos_dir))
+                        registry = GlobalRegistry(
+                            str(golden_repos_dir),
+                            use_sqlite=True,
+                            db_path=str(sqlite_db_path),
+                        )
                         global_repos = registry.list_global_repos()
 
                         for global_repo in global_repos:

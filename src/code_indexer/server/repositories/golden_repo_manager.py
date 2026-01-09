@@ -96,6 +96,8 @@ class GoldenRepoManager:
         self,
         data_dir: str,
         resource_config: Optional["ServerResourceConfig"] = None,
+        use_sqlite: bool = False,
+        db_path: Optional[str] = None,
     ):
         """
         Initialize golden repository manager.
@@ -103,9 +105,11 @@ class GoldenRepoManager:
         Args:
             data_dir: Data directory path (REQUIRED - no default)
             resource_config: Resource configuration (timeouts, limits)
+            use_sqlite: Whether to use SQLite backend for metadata storage (Story #711)
+            db_path: Path to SQLite database file (required when use_sqlite=True)
 
         Raises:
-            ValueError: If data_dir is None or empty
+            ValueError: If data_dir is None or empty, or db_path missing when use_sqlite=True
         """
         if not data_dir or not data_dir.strip():
             raise ValueError("data_dir is required and cannot be None or empty")
@@ -130,8 +134,22 @@ class GoldenRepoManager:
         # Storage for golden repositories
         self.golden_repos: Dict[str, GoldenRepo] = {}
 
-        # Load existing metadata
-        self._load_metadata()
+        # SQLite backend configuration (Story #711)
+        self._use_sqlite = use_sqlite
+        self._sqlite_backend: Optional[Any] = None
+
+        if use_sqlite:
+            if db_path is None:
+                raise ValueError("db_path is required when use_sqlite=True")
+            from code_indexer.server.storage.sqlite_backends import (
+                GoldenRepoMetadataSqliteBackend,
+            )
+
+            self._sqlite_backend = GoldenRepoMetadataSqliteBackend(db_path)
+            self._load_metadata_from_sqlite()
+        else:
+            # Original JSON behavior
+            self._load_metadata()
 
     def _load_metadata(self) -> None:
         """Load golden repository metadata from file.
@@ -157,11 +175,29 @@ class GoldenRepoManager:
                 with open(self.metadata_file, "w") as f:
                     json.dump(data, f, indent=2)
 
+    def _load_metadata_from_sqlite(self) -> None:
+        """Load golden repository metadata from SQLite backend (Story #711).
+
+        Thread-safe: Uses _operation_lock to prevent concurrent access.
+        """
+        with self._operation_lock:
+            repos = self._sqlite_backend.list_repos()
+            for repo_data in repos:
+                self.golden_repos[repo_data["alias"]] = GoldenRepo(**repo_data)
+            logging.info(f"Loaded {len(self.golden_repos)} golden repos from SQLite")
+
     def _save_metadata(self) -> None:
         """Save golden repository metadata to file.
 
         Thread-safe: Uses _operation_lock to prevent concurrent access (Story #620 Priority 2A).
+
+        Note: When using SQLite backend (Story #711), saves are done per-operation
+        so this method returns early.
         """
+        if self._use_sqlite:
+            # SQLite saves are done per-operation, not bulk
+            return
+
         with self._operation_lock:
             data = {}
             for alias, repo in self.golden_repos.items():
@@ -258,7 +294,18 @@ class GoldenRepoManager:
 
                 # Store and persist
                 self.golden_repos[alias] = golden_repo
-                self._save_metadata()
+                if self._use_sqlite:
+                    self._sqlite_backend.add_repo(
+                        alias=alias,
+                        repo_url=repo_url,
+                        default_branch=default_branch,
+                        clone_path=clone_path,
+                        created_at=created_at,
+                        enable_temporal=enable_temporal,
+                        temporal_options=temporal_options,
+                    )
+                else:
+                    self._save_metadata()
 
                 # Automatic global activation (AC1 from Story #521)
                 # This is a non-blocking post-registration step (AC4)
@@ -443,17 +490,30 @@ class GoldenRepoManager:
             # Only remove from storage after cleanup is complete
             del self.golden_repos[alias]
 
-            try:
-                self._save_metadata()
-            except Exception as save_error:
-                # If metadata save fails, rollback the deletion
-                logging.error(
-                    f"Failed to save metadata after deletion, rolling back: {save_error}"
-                )
-                self.golden_repos[alias] = golden_repo  # Restore repository
-                raise GitOperationError(
-                    f"Repository deletion rollback due to metadata save failure: {save_error}"
-                )
+            if self._use_sqlite:
+                try:
+                    self._sqlite_backend.remove_repo(alias)
+                except Exception as save_error:
+                    # If SQLite delete fails, rollback the in-memory deletion
+                    logging.error(
+                        f"Failed to remove from SQLite after deletion, rolling back: {save_error}"
+                    )
+                    self.golden_repos[alias] = golden_repo  # Restore repository
+                    raise GitOperationError(
+                        f"Repository deletion rollback due to SQLite removal failure: {save_error}"
+                    )
+            else:
+                try:
+                    self._save_metadata()
+                except Exception as save_error:
+                    # If metadata save fails, rollback the deletion
+                    logging.error(
+                        f"Failed to save metadata after deletion, rolling back: {save_error}"
+                    )
+                    self.golden_repos[alias] = golden_repo  # Restore repository
+                    raise GitOperationError(
+                        f"Repository deletion rollback due to metadata save failure: {save_error}"
+                    )
 
             # ANTI-FALLBACK RULE: Fail operation when cleanup is incomplete
             # Per MESSI Rule 2: "Graceful failure over forced success"

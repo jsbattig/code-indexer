@@ -3,6 +3,8 @@ Sync Job Manager for CIDX Server repository synchronization.
 
 Manages sync job creation, retrieval, persistence, and lifecycle operations
 with thread safety, error handling, and data integrity guarantees.
+
+Supports both SQLite backend (Story #702) and JSON file storage (backward compatible).
 """
 
 import fcntl
@@ -72,6 +74,8 @@ class SyncJobManager:
         average_job_duration_minutes: int = 15,
         queue_check_interval_seconds: float = 5.0,
         resource_check_interval_seconds: float = 10.0,
+        use_sqlite: bool = False,
+        db_path: Optional[str] = None,
     ):
         """
         Initialize sync job manager with resilient persistence and concurrency control.
@@ -94,7 +98,20 @@ class SyncJobManager:
             average_job_duration_minutes: Average job duration for wait time estimates
             queue_check_interval_seconds: Queue processing check interval
             resource_check_interval_seconds: Resource monitoring check interval
+            use_sqlite: If True, use SQLite backend instead of JSON file (Story #702)
+            db_path: Path to SQLite database file (required when use_sqlite=True)
         """
+        self._use_sqlite = use_sqlite
+        self._sqlite_backend: Optional[Any] = None
+
+        if use_sqlite:
+            if db_path is None:
+                raise ValueError("db_path is required when use_sqlite=True")
+            from code_indexer.server.storage.sqlite_backends import (
+                SyncJobsSqliteBackend,
+            )
+            self._sqlite_backend = SyncJobsSqliteBackend(db_path)
+
         self._jobs: Dict[str, SyncJob] = {}
         self._lock = threading.Lock()
         self.storage_path = storage_path
@@ -423,7 +440,18 @@ class SyncJobManager:
                 self._job_queue.append(job_id)
                 self._update_queue_positions()
 
-            # Persist jobs
+            # Persist to SQLite if enabled
+            if self._use_sqlite and self._sqlite_backend is not None:
+                self._sqlite_backend.create_job(
+                    job_id=job_id,
+                    username=username,
+                    user_alias=user_alias,
+                    job_type=job_type.value if hasattr(job_type, "value") else str(job_type),
+                    status=initial_status.value if hasattr(initial_status, "value") else str(initial_status),
+                    repository_url=repository_url,
+                )
+
+            # Persist jobs (JSON file, no-op for SQLite)
             self._persist_jobs()
 
         if initial_status == JobStatus.RUNNING:
@@ -525,7 +553,17 @@ class SyncJobManager:
             # Advance queue to start next jobs
             self._advance_queue()
 
-            # Persist changes
+            # Persist to SQLite if enabled
+            if self._use_sqlite and self._sqlite_backend is not None:
+                self._sqlite_backend.update_job(
+                    job_id=job_id,
+                    status=job.status.value if hasattr(job.status, "value") else str(job.status),
+                    completed_at=completed_at.isoformat(),
+                    progress=job.progress,
+                    error_message=error_message,
+                )
+
+            # Persist changes (JSON file, no-op for SQLite)
             self._persist_jobs()
 
     def cancel_job(self, job_id: str) -> None:
@@ -576,7 +614,15 @@ class SyncJobManager:
             if old_status == JobStatus.RUNNING:
                 self._advance_queue()
 
-            # Persist changes
+            # Persist to SQLite if enabled
+            if self._use_sqlite and self._sqlite_backend is not None:
+                self._sqlite_backend.update_job(
+                    job_id=job_id,
+                    status=JobStatus.CANCELLED.value,
+                    completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                )
+
+            # Persist changes (JSON file, no-op for SQLite)
             self._persist_jobs()
 
             logging.info(f"Job {job_id} cancelled by user request")
@@ -750,6 +796,11 @@ class SyncJobManager:
         Raises:
             JobPersistenceError: If persistence fails
         """
+        # SQLite backend - jobs are persisted individually, no batch persist needed
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend persists on each operation, nothing to do here
+            return
+
         if not self.storage_path:
             return
 
@@ -850,6 +901,24 @@ class SyncJobManager:
         Includes data integrity validation, corruption recovery, and incomplete
         operation detection. Handles missing files and corrupted data gracefully.
         """
+        # SQLite backend - load all jobs from database
+        if self._use_sqlite and self._sqlite_backend is not None:
+            jobs_list = self._sqlite_backend.list_jobs()
+            for job_dict in jobs_list:
+                try:
+                    # Convert string dates back to datetime objects
+                    for field in ["created_at", "started_at", "completed_at"]:
+                        if job_dict.get(field) and isinstance(job_dict[field], str):
+                            job_dict[field] = datetime.fromisoformat(job_dict[field])
+                    job = SyncJob(**job_dict)
+                    self._jobs[job_dict["job_id"]] = job
+                except Exception as job_error:
+                    logging.warning(
+                        f"Failed to load job {job_dict.get('job_id', 'unknown')}: {job_error}"
+                    )
+            logging.info(f"Loaded {len(self._jobs)} jobs from SQLite database")
+            return
+
         if not self.storage_path:
             return
 

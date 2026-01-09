@@ -69,23 +69,46 @@ class CITokenManager:
     - Secure file permissions (0600)
     - Token format validation
     - Support for GitHub and GitLab tokens
+
+    Supports both SQLite backend (Story #702) and JSON file storage (backward compatible).
     """
 
-    def __init__(self, server_dir_path: Optional[str] = None):
+    def __init__(
+        self,
+        server_dir_path: Optional[str] = None,
+        use_sqlite: bool = False,
+        db_path: Optional[str] = None,
+    ):
         """
         Initialize the token manager.
 
         Args:
             server_dir_path: Optional path to server directory.
                            Defaults to ~/.cidx-server
+            use_sqlite: If True, use SQLite backend instead of JSON file (Story #702)
+            db_path: Path to SQLite database file (required when use_sqlite=True)
         """
+        self._use_sqlite = use_sqlite
+        self._sqlite_backend: Optional[Any] = None
+
         if server_dir_path:
             self.server_dir = Path(server_dir_path)
         else:
             self.server_dir = Path.home() / ".cidx-server"
 
-        self.token_file = self.server_dir / "ci_tokens.json"
         self._encryption_key = self._derive_encryption_key()
+
+        if use_sqlite:
+            if db_path is None:
+                raise ValueError("db_path is required when use_sqlite=True")
+            from code_indexer.server.storage.sqlite_backends import (
+                CITokensSqliteBackend,
+            )
+
+            self._sqlite_backend = CITokensSqliteBackend(db_path)
+        else:
+            # JSON file storage (backward compatible)
+            self.token_file = self.server_dir / "ci_tokens.json"
 
     def _derive_encryption_key(self) -> bytes:
         """
@@ -249,14 +272,19 @@ class CITokenManager:
         # Encrypt token
         encrypted_token = self._encrypt_token(token)
 
-        # Load existing tokens
-        tokens = self._load_tokens()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            self._sqlite_backend.save_token(platform, encrypted_token, base_url)
+        else:
+            # JSON file storage (backward compatible)
+            # Load existing tokens
+            tokens = self._load_tokens()
 
-        # Update token data
-        tokens[platform] = {"token": encrypted_token, "base_url": base_url}
+            # Update token data
+            tokens[platform] = {"token": encrypted_token, "base_url": base_url}
 
-        # Save to file with secure permissions
-        self._save_tokens(tokens)
+            # Save to file with secure permissions
+            self._save_tokens(tokens)
 
         logger.info(
             f"Saved encrypted token for platform: {platform}",
@@ -273,21 +301,35 @@ class CITokenManager:
         Returns:
             TokenData if token exists, None otherwise
         """
-        tokens = self._load_tokens()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            token_row = self._sqlite_backend.get_token(platform)
+            if token_row is None:
+                return None
+            # Decrypt token
+            decrypted_token = self._decrypt_token(token_row["encrypted_token"])
+            return TokenData(
+                platform=platform,
+                token=decrypted_token,
+                base_url=token_row.get("base_url"),
+            )
+        else:
+            # JSON file storage (backward compatible)
+            tokens = self._load_tokens()
 
-        if platform not in tokens:
-            return None
+            if platform not in tokens:
+                return None
 
-        token_data = tokens[platform]
+            token_data = tokens[platform]
 
-        # Decrypt token
-        decrypted_token = self._decrypt_token(token_data["token"])
+            # Decrypt token
+            decrypted_token = self._decrypt_token(token_data["token"])
 
-        return TokenData(
-            platform=platform,
-            token=decrypted_token,
-            base_url=token_data.get("base_url"),
-        )
+            return TokenData(
+                platform=platform,
+                token=decrypted_token,
+                base_url=token_data.get("base_url"),
+            )
 
     def delete_token(self, platform: str) -> None:
         """
@@ -296,15 +338,25 @@ class CITokenManager:
         Args:
             platform: Platform name (github or gitlab)
         """
-        tokens = self._load_tokens()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            deleted = self._sqlite_backend.delete_token(platform)
+            if deleted:
+                logger.info(
+                    f"Deleted token for platform: {platform}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+        else:
+            # JSON file storage (backward compatible)
+            tokens = self._load_tokens()
 
-        if platform in tokens:
-            del tokens[platform]
-            self._save_tokens(tokens)
-            logger.info(
-                f"Deleted token for platform: {platform}",
-                extra={"correlation_id": get_correlation_id()},
-            )
+            if platform in tokens:
+                del tokens[platform]
+                self._save_tokens(tokens)
+                logger.info(
+                    f"Deleted token for platform: {platform}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
 
     def list_tokens(self) -> Dict[str, TokenStatus]:
         """
@@ -313,20 +365,38 @@ class CITokenManager:
         Returns:
             Dictionary mapping platform names to TokenStatus objects
         """
-        tokens = self._load_tokens()
-
         # Known platforms
         platforms = ["github", "gitlab"]
 
-        result = {}
-        for platform in platforms:
-            if platform in tokens:
-                result[platform] = TokenStatus(
-                    platform=platform,
-                    configured=True,
-                    base_url=tokens[platform].get("base_url"),
-                )
-            else:
-                result[platform] = TokenStatus(platform=platform, configured=False)
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            tokens = self._sqlite_backend.list_tokens()
 
-        return result
+            result = {}
+            for platform in platforms:
+                if platform in tokens:
+                    result[platform] = TokenStatus(
+                        platform=platform,
+                        configured=True,
+                        base_url=tokens[platform].get("base_url"),
+                    )
+                else:
+                    result[platform] = TokenStatus(platform=platform, configured=False)
+
+            return result
+        else:
+            # JSON file storage (backward compatible)
+            tokens = self._load_tokens()
+
+            result = {}
+            for platform in platforms:
+                if platform in tokens:
+                    result[platform] = TokenStatus(
+                        platform=platform,
+                        configured=True,
+                        base_url=tokens[platform].get("base_url"),
+                    )
+                else:
+                    result[platform] = TokenStatus(platform=platform, configured=False)
+
+            return result

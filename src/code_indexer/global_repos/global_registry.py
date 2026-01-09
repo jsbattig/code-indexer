@@ -33,20 +33,30 @@ class GlobalRegistry:
     """
     Manages the global repository registry.
 
-    The registry tracks all globally-activated repositories with their metadata,
-    stored in a JSON file with atomic writes for corruption prevention.
+    The registry tracks all globally-activated repositories with their metadata.
+    Supports both SQLite backend (Story #702) and JSON file storage (backward compatible).
+    SQLite backend eliminates race conditions from concurrent GlobalRegistry instances.
     """
 
-    def __init__(self, golden_repos_dir: str):
+    def __init__(
+        self,
+        golden_repos_dir: str,
+        use_sqlite: bool = False,
+        db_path: Optional[str] = None,
+    ):
         """
         Initialize the global registry.
 
         Args:
             golden_repos_dir: Path to golden repos directory
+            use_sqlite: If True, use SQLite backend instead of JSON file (Story #702)
+            db_path: Path to SQLite database file (required when use_sqlite=True)
         """
         self.golden_repos_dir = Path(golden_repos_dir)
         self.aliases_dir = self.golden_repos_dir / "aliases"
         self.registry_file = self.golden_repos_dir / "global_registry.json"
+        self._use_sqlite = use_sqlite
+        self._sqlite_backend: Optional[Any] = None
 
         # Ensure directory structure exists
         self.golden_repos_dir.mkdir(parents=True, exist_ok=True)
@@ -56,9 +66,20 @@ class GlobalRegistry:
         # Using RLock (reentrant lock) to allow _save_registry() calls from within _load_registry()
         self._file_lock = threading.RLock()
 
-        # Load or initialize registry
-        self._registry_data: Dict[str, Dict[str, Any]] = {}
-        self._load_registry()
+        # Initialize storage backend
+        if use_sqlite:
+            if db_path is None:
+                raise ValueError("db_path is required when use_sqlite=True")
+            from code_indexer.server.storage.sqlite_backends import (
+                GlobalReposSqliteBackend,
+            )
+
+            self._sqlite_backend = GlobalReposSqliteBackend(db_path)
+            logger.info(f"GlobalRegistry using SQLite backend: {db_path}")
+        else:
+            # JSON file storage (backward compatible)
+            self._registry_data: Dict[str, Dict[str, Any]] = {}
+            self._load_registry()
 
     def _load_registry(self) -> None:
         """Load registry from disk or create empty if doesn't exist.
@@ -164,22 +185,35 @@ class GlobalRegistry:
                 f"Got: '{alias_name}', expected: '{repo_name}-global'"
             )
 
-        now = datetime.now(timezone.utc).isoformat()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            self._sqlite_backend.register_repo(
+                alias_name=alias_name,
+                repo_name=repo_name,
+                repo_url=repo_url,
+                index_path=index_path,
+                enable_temporal=enable_temporal,
+                temporal_options=temporal_options,
+            )
+            logger.info(f"Registered global repo (SQLite): {alias_name}")
+        else:
+            # JSON file storage (backward compatible)
+            now = datetime.now(timezone.utc).isoformat()
 
-        self._registry_data[alias_name] = {
-            "repo_name": repo_name,
-            "alias_name": alias_name,
-            "repo_url": repo_url,
-            "index_path": index_path,
-            "created_at": now,
-            "last_refresh": now,
-            # Temporal indexing settings (Story #527)
-            "enable_temporal": enable_temporal,
-            "temporal_options": temporal_options,
-        }
+            self._registry_data[alias_name] = {
+                "repo_name": repo_name,
+                "alias_name": alias_name,
+                "repo_url": repo_url,
+                "index_path": index_path,
+                "created_at": now,
+                "last_refresh": now,
+                # Temporal indexing settings (Story #527)
+                "enable_temporal": enable_temporal,
+                "temporal_options": temporal_options,
+            }
 
-        self._save_registry()
-        logger.info(f"Registered global repo: {alias_name}")
+            self._save_registry()
+            logger.info(f"Registered global repo: {alias_name}")
 
     def unregister_global_repo(self, alias_name: str) -> None:
         """
@@ -191,10 +225,16 @@ class GlobalRegistry:
         Raises:
             RuntimeError: If save fails
         """
-        if alias_name in self._registry_data:
-            del self._registry_data[alias_name]
-            self._save_registry()
-            logger.info(f"Unregistered global repo: {alias_name}")
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            self._sqlite_backend.delete_repo(alias_name)
+            logger.info(f"Unregistered global repo (SQLite): {alias_name}")
+        else:
+            # JSON file storage (backward compatible)
+            if alias_name in self._registry_data:
+                del self._registry_data[alias_name]
+                self._save_registry()
+                logger.info(f"Unregistered global repo: {alias_name}")
 
     def get_global_repo(self, alias_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -206,7 +246,12 @@ class GlobalRegistry:
         Returns:
             Repository metadata dict or None if not found
         """
-        return self._registry_data.get(alias_name)
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            return self._sqlite_backend.get_repo(alias_name)
+        else:
+            # JSON file storage (backward compatible)
+            return self._registry_data.get(alias_name)
 
     def list_global_repos(self) -> List[Dict[str, Any]]:
         """
@@ -215,7 +260,13 @@ class GlobalRegistry:
         Returns:
             List of repository metadata dicts
         """
-        return list(self._registry_data.values())
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702) - returns dict keyed by alias
+            repos_dict = self._sqlite_backend.list_repos()
+            return list(repos_dict.values())
+        else:
+            # JSON file storage (backward compatible)
+            return list(self._registry_data.values())
 
     def update_refresh_timestamp(self, alias_name: str) -> None:
         """
@@ -227,8 +278,13 @@ class GlobalRegistry:
         Raises:
             RuntimeError: If save fails
         """
-        if alias_name in self._registry_data:
-            self._registry_data[alias_name]["last_refresh"] = datetime.now(
-                timezone.utc
-            ).isoformat()
-            self._save_registry()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            self._sqlite_backend.update_last_refresh(alias_name)
+        else:
+            # JSON file storage (backward compatible)
+            if alias_name in self._registry_data:
+                self._registry_data[alias_name]["last_refresh"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
+                self._save_registry()

@@ -3,6 +3,8 @@ SSH Key Manager Service (Core Orchestrator).
 
 Provides unified interface for SSH key management, coordinating
 key generation, metadata storage, and SSH config updates.
+
+Supports both SQLite backend (Story #702) and JSON file storage (backward compatible).
 """
 
 import json
@@ -10,7 +12,7 @@ import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 import filelock
 
 from .ssh_key_generator import SSHKeyGenerator
@@ -68,6 +70,8 @@ class SSHKeyManager:
 
     Coordinates key generation, metadata storage, SSH config updates,
     and key discovery operations.
+
+    Supports both SQLite backend (Story #702) and JSON file storage (backward compatible).
     """
 
     def __init__(
@@ -75,6 +79,8 @@ class SSHKeyManager:
         ssh_dir: Optional[Path] = None,
         metadata_dir: Optional[Path] = None,
         config_path: Optional[Path] = None,
+        use_sqlite: bool = False,
+        db_path: Optional[Path] = None,
     ):
         """
         Initialize the SSH key manager.
@@ -84,7 +90,12 @@ class SSHKeyManager:
             metadata_dir: Directory for key metadata. Defaults to
                           ~/.code-indexer-server/ssh_keys/
             config_path: Path to SSH config file. Defaults to ~/.ssh/config
+            use_sqlite: If True, use SQLite backend instead of JSON files (Story #702)
+            db_path: Path to SQLite database file (required when use_sqlite=True)
         """
+        self._use_sqlite = use_sqlite
+        self._sqlite_backend: Optional[Any] = None
+
         if ssh_dir is None:
             ssh_dir = Path.home() / ".ssh"
         if metadata_dir is None:
@@ -103,6 +114,15 @@ class SSHKeyManager:
 
         # Lock file for concurrent operations
         self.lock_path = metadata_dir.parent / "ssh_keys.lock"
+
+        if use_sqlite:
+            if db_path is None:
+                raise ValueError("db_path is required when use_sqlite=True")
+            from code_indexer.server.storage.sqlite_backends import (
+                SSHKeysSqliteBackend,
+            )
+
+            self._sqlite_backend = SSHKeysSqliteBackend(str(db_path))
 
     def _get_lock(self) -> filelock.FileLock:
         """Get file lock for concurrent operation protection."""
@@ -136,6 +156,8 @@ class SSHKeyManager:
                 email=email,
             )
 
+            created_at = datetime.now().isoformat()
+
             # Create metadata
             metadata = KeyMetadata(
                 name=name,
@@ -147,12 +169,25 @@ class SSHKeyManager:
                 email=email,
                 description=description,
                 hosts=[],
-                created_at=datetime.now().isoformat(),
+                created_at=created_at,
                 is_imported=False,
             )
 
-            # Save metadata
-            self._save_metadata(metadata)
+            # Save metadata - SQLite or JSON
+            if self._use_sqlite and self._sqlite_backend is not None:
+                self._sqlite_backend.create_key(
+                    name=name,
+                    fingerprint=generated.fingerprint,
+                    key_type=key_type,
+                    private_path=str(generated.private_path),
+                    public_path=str(generated.public_path),
+                    public_key=generated.public_key,
+                    email=email,
+                    description=description,
+                    is_imported=False,
+                )
+            else:
+                self._save_metadata(metadata)
 
             return metadata
 
@@ -174,30 +209,63 @@ class SSHKeyManager:
             Updated KeyMetadata
         """
         with self._get_lock():
-            metadata = self._load_metadata(key_name)
-            if metadata is None:
-                raise KeyNotFoundError(f"Key not found: {key_name}")
+            if self._use_sqlite and self._sqlite_backend is not None:
+                # SQLite backend (Story #702)
+                key_data = self._sqlite_backend.get_key(key_name)
+                if key_data is None:
+                    raise KeyNotFoundError(f"Key not found: {key_name}")
 
-            # Check for conflicts in user section
-            if not force:
-                conflict = self.config_manager.check_host_conflict(
-                    self.config_path, hostname
-                )
-                if conflict.exists and conflict.in_user_section:
-                    raise HostConflictError(
-                        f"Host {hostname} exists in user section. "
-                        "Use force=True or remove manually."
+                # Check for conflicts in user section
+                if not force:
+                    conflict = self.config_manager.check_host_conflict(
+                        self.config_path, hostname
                     )
+                    if conflict.exists and conflict.in_user_section:
+                        raise HostConflictError(
+                            f"Host {hostname} exists in user section. "
+                            "Use force=True or remove manually."
+                        )
 
-            # Add hostname to metadata if not already present
-            if hostname not in metadata.hosts:
-                metadata.hosts.append(hostname)
-                self._save_metadata(metadata)
+                # Add hostname if not already present
+                if hostname not in key_data["hosts"]:
+                    self._sqlite_backend.assign_host(key_name, hostname)
 
-            # Update SSH config
-            self._update_ssh_config()
+                # Update SSH config
+                self._update_ssh_config()
 
-            return metadata
+                # Return updated metadata
+                updated_data = self._sqlite_backend.get_key(key_name)
+                if updated_data is None:
+                    raise KeyNotFoundError(
+                        f"Key '{key_name}' unexpectedly missing after assignment"
+                    )
+                return KeyMetadata(**updated_data)
+            else:
+                # JSON file storage (backward compatible)
+                metadata = self._load_metadata(key_name)
+                if metadata is None:
+                    raise KeyNotFoundError(f"Key not found: {key_name}")
+
+                # Check for conflicts in user section
+                if not force:
+                    conflict = self.config_manager.check_host_conflict(
+                        self.config_path, hostname
+                    )
+                    if conflict.exists and conflict.in_user_section:
+                        raise HostConflictError(
+                            f"Host {hostname} exists in user section. "
+                            "Use force=True or remove manually."
+                        )
+
+                # Add hostname to metadata if not already present
+                if hostname not in metadata.hosts:
+                    metadata.hosts.append(hostname)
+                    self._save_metadata(metadata)
+
+                # Update SSH config
+                self._update_ssh_config()
+
+                return metadata
 
     def delete_key(self, key_name: str) -> bool:
         """
@@ -210,29 +278,54 @@ class SSHKeyManager:
             True (always succeeds, idempotent operation)
         """
         with self._get_lock():
-            metadata = self._load_metadata(key_name)
+            if self._use_sqlite and self._sqlite_backend is not None:
+                # SQLite backend (Story #702)
+                key_data = self._sqlite_backend.get_key(key_name)
 
-            # Remove key files if they exist
-            if metadata:
-                private_path = Path(metadata.private_path)
-                public_path = Path(metadata.public_path)
-                if private_path.exists():
-                    private_path.unlink()
-                if public_path.exists():
-                    public_path.unlink()
+                # Remove key files if they exist
+                if key_data:
+                    private_path = Path(key_data["private_path"])
+                    public_path = Path(key_data["public_path"])
+                    if private_path.exists():
+                        private_path.unlink()
+                    if public_path.exists():
+                        public_path.unlink()
+                else:
+                    # Try standard location even without metadata
+                    default_private = self.ssh_dir / key_name
+                    default_public = self.ssh_dir / f"{key_name}.pub"
+                    if default_private.exists():
+                        default_private.unlink()
+                    if default_public.exists():
+                        default_public.unlink()
+
+                # Remove from SQLite (cascade deletes hosts)
+                self._sqlite_backend.delete_key(key_name)
             else:
-                # Try standard location even without metadata
-                default_private = self.ssh_dir / key_name
-                default_public = self.ssh_dir / f"{key_name}.pub"
-                if default_private.exists():
-                    default_private.unlink()
-                if default_public.exists():
-                    default_public.unlink()
+                # JSON file storage (backward compatible)
+                metadata = self._load_metadata(key_name)
 
-            # Remove metadata file
-            metadata_path = self.metadata_dir / f"{key_name}.json"
-            if metadata_path.exists():
-                metadata_path.unlink()
+                # Remove key files if they exist
+                if metadata:
+                    private_path = Path(metadata.private_path)
+                    public_path = Path(metadata.public_path)
+                    if private_path.exists():
+                        private_path.unlink()
+                    if public_path.exists():
+                        public_path.unlink()
+                else:
+                    # Try standard location even without metadata
+                    default_private = self.ssh_dir / key_name
+                    default_public = self.ssh_dir / f"{key_name}.pub"
+                    if default_private.exists():
+                        default_private.unlink()
+                    if default_public.exists():
+                        default_public.unlink()
+
+                # Remove metadata file
+                metadata_path = self.metadata_dir / f"{key_name}.json"
+                if metadata_path.exists():
+                    metadata_path.unlink()
 
             # Update SSH config to remove entries
             self._update_ssh_config()
@@ -246,15 +339,20 @@ class SSHKeyManager:
         Returns:
             KeyListResult with managed and unmanaged key lists
         """
-        # Get metadata-tracked keys
-        managed_keys: List[KeyMetadata] = []
-        if self.metadata_dir.exists():
-            for metadata_file in self.metadata_dir.glob("*.json"):
-                try:
-                    data = json.loads(metadata_file.read_text())
-                    managed_keys.append(KeyMetadata(**data))
-                except (json.JSONDecodeError, TypeError):
-                    continue
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            keys_data = self._sqlite_backend.list_keys()
+            managed_keys = [KeyMetadata(**key_data) for key_data in keys_data]
+        else:
+            # JSON file storage (backward compatible)
+            managed_keys = []
+            if self.metadata_dir.exists():
+                for metadata_file in self.metadata_dir.glob("*.json"):
+                    try:
+                        data = json.loads(metadata_file.read_text())
+                        managed_keys.append(KeyMetadata(**data))
+                    except (json.JSONDecodeError, TypeError):
+                        continue
 
         # Discover all keys on filesystem
         all_discovered = self.discovery_service.discover_existing_keys()
@@ -278,15 +376,32 @@ class SSHKeyManager:
         Returns:
             Public key string
         """
-        metadata = self._load_metadata(key_name)
-        if metadata is None:
-            raise KeyNotFoundError(f"Key not found: {key_name}")
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            key_data = self._sqlite_backend.get_key(key_name)
+            if key_data is None:
+                raise KeyNotFoundError(f"Key not found: {key_name}")
 
-        public_path = Path(metadata.public_path)
-        if public_path.exists():
-            return public_path.read_text().strip()
+            public_path = Path(key_data["public_path"])
+            if public_path.exists():
+                return public_path.read_text().strip()
 
-        raise PublicKeyNotFoundError(f"Public key file missing: {metadata.public_path}")
+            raise PublicKeyNotFoundError(
+                f"Public key file missing: {key_data['public_path']}"
+            )
+        else:
+            # JSON file storage (backward compatible)
+            metadata = self._load_metadata(key_name)
+            if metadata is None:
+                raise KeyNotFoundError(f"Key not found: {key_name}")
+
+            public_path = Path(metadata.public_path)
+            if public_path.exists():
+                return public_path.read_text().strip()
+
+            raise PublicKeyNotFoundError(
+                f"Public key file missing: {metadata.public_path}"
+            )
 
     def _update_ssh_config(self) -> None:
         """Update SSH config with all managed key-host mappings."""

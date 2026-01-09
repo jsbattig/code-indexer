@@ -107,10 +107,15 @@ class UserManager:
     Manages user storage, authentication, and CRUD operations.
 
     Users are stored in ~/.cidx-server/users.json with hashed passwords.
+    Supports both SQLite backend (Story #702) and JSON file storage (backward compatible).
     """
 
     def __init__(
-        self, users_file_path: Optional[str] = None, password_security_config=None
+        self,
+        users_file_path: Optional[str] = None,
+        password_security_config=None,
+        use_sqlite: bool = False,
+        db_path: Optional[str] = None,
     ):
         """
         Initialize user manager.
@@ -118,20 +123,36 @@ class UserManager:
         Args:
             users_file_path: Path to users.json file (defaults to ~/.cidx-server/users.json)
             password_security_config: PasswordSecurityConfig for password validation settings
+            use_sqlite: If True, use SQLite backend instead of JSON file (Story #702)
+            db_path: Path to SQLite database file (required when use_sqlite=True)
         """
-        if users_file_path:
-            self.users_file_path = users_file_path
-        else:
-            home_dir = Path.home()
-            server_dir = home_dir / ".cidx-server"
-            server_dir.mkdir(exist_ok=True)
-            self.users_file_path = str(server_dir / "users.json")
+        self._use_sqlite = use_sqlite
+        self._sqlite_backend: Optional[Any] = None
 
         self.password_manager = PasswordManager()
         self.password_strength_validator = PasswordStrengthValidator(
             password_security_config
         )
-        self._ensure_users_file_exists()
+
+        if use_sqlite:
+            if db_path is None:
+                raise ValueError("db_path is required when use_sqlite=True")
+            from code_indexer.server.storage.sqlite_backends import (
+                UsersSqliteBackend,
+            )
+
+            self._sqlite_backend = UsersSqliteBackend(db_path)
+        else:
+            # JSON file storage (backward compatible)
+            if users_file_path:
+                self.users_file_path = users_file_path
+            else:
+                home_dir = Path.home()
+                server_dir = home_dir / ".cidx-server"
+                server_dir.mkdir(exist_ok=True)
+                self.users_file_path = str(server_dir / "users.json")
+
+            self._ensure_users_file_exists()
 
     def _ensure_users_file_exists(self):
         """Ensure users.json file exists, create empty dict if not."""
@@ -151,21 +172,34 @@ class UserManager:
 
     def seed_initial_admin(self):
         """Create initial admin user (admin/admin) if no users exist."""
-        users_data = self._load_users()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            existing = self._sqlite_backend.get_user("admin")
+            if existing is None:
+                # Create initial admin user
+                admin_password_hash = self.password_manager.hash_password("admin")
+                self._sqlite_backend.create_user(
+                    username="admin",
+                    password_hash=admin_password_hash,
+                    role="admin",
+                )
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
 
-        if "admin" not in users_data:
-            # Create initial admin user
-            admin_password_hash = self.password_manager.hash_password("admin")
+            if "admin" not in users_data:
+                # Create initial admin user
+                admin_password_hash = self.password_manager.hash_password("admin")
 
-            users_data["admin"] = {
-                "role": "admin",
-                "password_hash": admin_password_hash,
-                "created_at": DateTimeParser.format_for_storage(
-                    datetime.now(timezone.utc)
-                ),
-            }
+                users_data["admin"] = {
+                    "role": "admin",
+                    "password_hash": admin_password_hash,
+                    "created_at": DateTimeParser.format_for_storage(
+                        datetime.now(timezone.utc)
+                    ),
+                }
 
-            self._save_users(users_data)
+                self._save_users(users_data)
 
     def create_user(self, username: str, password: str, role: UserRole) -> User:
         """
@@ -182,12 +216,7 @@ class UserManager:
         Raises:
             ValueError: If user already exists or password is too weak
         """
-        users_data = self._load_users()
-
-        if username in users_data:
-            raise ValueError(f"User already exists: {username}")
-
-        # Validate password strength
+        # Validate password strength (applies to both backends)
         is_valid, validation_result = self.password_strength_validator.validate(
             password, username
         )
@@ -201,17 +230,38 @@ class UserManager:
                     error_msg += f"- {suggestion}\n"
             raise ValueError(error_msg.strip())
 
-        # Hash password and create user
+        # Hash password
         password_hash = self.password_manager.hash_password(password)
         created_at = datetime.now(timezone.utc)
 
-        users_data[username] = {
-            "role": role.value,
-            "password_hash": password_hash,
-            "created_at": DateTimeParser.format_for_storage(created_at),
-        }
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            # Check if user exists
+            existing = self._sqlite_backend.get_user(username)
+            if existing is not None:
+                raise ValueError(f"User already exists: {username}")
 
-        self._save_users(users_data)
+            self._sqlite_backend.create_user(
+                username=username,
+                password_hash=password_hash,
+                role=role.value,
+                email=None,
+                created_at=DateTimeParser.format_for_storage(created_at),
+            )
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+
+            if username in users_data:
+                raise ValueError(f"User already exists: {username}")
+
+            users_data[username] = {
+                "role": role.value,
+                "password_hash": password_hash,
+                "created_at": DateTimeParser.format_for_storage(created_at),
+            }
+
+            self._save_users(users_data)
 
         return User(
             username=username,
@@ -231,27 +281,49 @@ class UserManager:
         Returns:
             User object if authentication successful, None otherwise
         """
-        users_data = self._load_users()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            user_data = self._sqlite_backend.get_user(username)
+            if user_data is None:
+                return None
 
-        if username not in users_data:
-            return None
+            # Verify password
+            if not self.password_manager.verify_password(
+                password, user_data["password_hash"]
+            ):
+                return None
 
-        user_data = users_data[username]
+            # Create and return User object
+            return User(
+                username=username,
+                password_hash=user_data["password_hash"],
+                role=UserRole(user_data["role"]),
+                created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                email=user_data.get("email"),
+            )
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
 
-        # Verify password
-        if not self.password_manager.verify_password(
-            password, user_data["password_hash"]
-        ):
-            return None
+            if username not in users_data:
+                return None
 
-        # Create and return User object
-        return User(
-            username=username,
-            password_hash=user_data["password_hash"],
-            role=UserRole(user_data["role"]),
-            created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
-            email=user_data.get("email"),
-        )
+            user_data = users_data[username]
+
+            # Verify password
+            if not self.password_manager.verify_password(
+                password, user_data["password_hash"]
+            ):
+                return None
+
+            # Create and return User object
+            return User(
+                username=username,
+                password_hash=user_data["password_hash"],
+                role=UserRole(user_data["role"]),
+                created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                email=user_data.get("email"),
+            )
 
     def get_user(self, username: str) -> Optional[User]:
         """
@@ -263,20 +335,35 @@ class UserManager:
         Returns:
             User object if found, None otherwise
         """
-        users_data = self._load_users()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            user_data = self._sqlite_backend.get_user(username)
+            if user_data is None:
+                return None
 
-        if username not in users_data:
-            return None
+            return User(
+                username=username,
+                password_hash=user_data["password_hash"],
+                role=UserRole(user_data["role"]),
+                created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                email=user_data.get("email"),
+            )
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
 
-        user_data = users_data[username]
+            if username not in users_data:
+                return None
 
-        return User(
-            username=username,
-            password_hash=user_data["password_hash"],
-            role=UserRole(user_data["role"]),
-            created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
-            email=user_data.get("email"),
-        )
+            user_data = users_data[username]
+
+            return User(
+                username=username,
+                password_hash=user_data["password_hash"],
+                role=UserRole(user_data["role"]),
+                created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                email=user_data.get("email"),
+            )
 
     def get_all_users(self) -> List[User]:
         """
@@ -285,44 +372,70 @@ class UserManager:
         Returns:
             List of User objects (skips malformed entries)
         """
-        users_data = self._load_users()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            users_data_list = self._sqlite_backend.list_users()
+            users = []
+            for user_data in users_data_list:
+                try:
+                    user = User(
+                        username=user_data["username"],
+                        password_hash=user_data["password_hash"],
+                        role=UserRole(user_data["role"]),
+                        created_at=DateTimeParser.parse_user_datetime(
+                            user_data["created_at"]
+                        ),
+                        email=user_data.get("email"),
+                    )
+                    users.append(user)
+                except (KeyError, ValueError) as e:
+                    import logging
 
-        users = []
-        required_fields = {"password_hash", "role", "created_at"}
-        for username, user_data in users_data.items():
-            # Skip malformed entries that are missing required fields
-            if not isinstance(user_data, dict):
-                continue
-            missing_fields = required_fields - set(user_data.keys())
-            if missing_fields:
-                # Log warning but don't crash - data corruption shouldn't break the UI
-                import logging
+                    logging.getLogger(__name__).warning(
+                        f"Skipping invalid user entry '{user_data.get('username', 'unknown')}': {e}"
+                    )
+                    continue
+            return users
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
 
-                logging.getLogger(__name__).warning(
-                    f"Skipping malformed user entry '{username}': missing {missing_fields}"
-                )
-                continue
+            users = []
+            required_fields = {"password_hash", "role", "created_at"}
+            for username, user_data in users_data.items():
+                # Skip malformed entries that are missing required fields
+                if not isinstance(user_data, dict):
+                    continue
+                missing_fields = required_fields - set(user_data.keys())
+                if missing_fields:
+                    # Log warning but don't crash - data corruption shouldn't break the UI
+                    import logging
 
-            try:
-                user = User(
-                    username=username,
-                    password_hash=user_data["password_hash"],
-                    role=UserRole(user_data["role"]),
-                    created_at=DateTimeParser.parse_user_datetime(
-                        user_data["created_at"]
-                    ),
-                    email=user_data.get("email"),
-                )
-                users.append(user)
-            except (KeyError, ValueError) as e:
-                import logging
+                    logging.getLogger(__name__).warning(
+                        f"Skipping malformed user entry '{username}': missing {missing_fields}"
+                    )
+                    continue
 
-                logging.getLogger(__name__).warning(
-                    f"Skipping invalid user entry '{username}': {e}"
-                )
-                continue
+                try:
+                    user = User(
+                        username=username,
+                        password_hash=user_data["password_hash"],
+                        role=UserRole(user_data["role"]),
+                        created_at=DateTimeParser.parse_user_datetime(
+                            user_data["created_at"]
+                        ),
+                        email=user_data.get("email"),
+                    )
+                    users.append(user)
+                except (KeyError, ValueError) as e:
+                    import logging
 
-        return users
+                    logging.getLogger(__name__).warning(
+                        f"Skipping invalid user entry '{username}': {e}"
+                    )
+                    continue
+
+            return users
 
     def delete_user(self, username: str) -> bool:
         """
@@ -334,14 +447,19 @@ class UserManager:
         Returns:
             True if user deleted, False if user not found
         """
-        users_data = self._load_users()
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            return self._sqlite_backend.delete_user(username)
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
 
-        if username not in users_data:
-            return False
+            if username not in users_data:
+                return False
 
-        del users_data[username]
-        self._save_users(users_data)
-        return True
+            del users_data[username]
+            self._save_users(users_data)
+            return True
 
     def update_user_role(self, username: str, new_role: UserRole) -> bool:
         """
@@ -354,14 +472,21 @@ class UserManager:
         Returns:
             True if updated, False if user not found
         """
-        users_data = self._load_users()
-
-        if username not in users_data:
-            return False
-
-        users_data[username]["role"] = new_role.value
-        self._save_users(users_data)
-        return True
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            existing = self._sqlite_backend.get_user(username)
+            if existing is None:
+                return False
+            self._sqlite_backend.update_user_role(username, new_role.value)
+            return True
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return False
+            users_data[username]["role"] = new_role.value
+            self._save_users(users_data)
+            return True
 
     def change_password(self, username: str, new_password: str) -> bool:
         """
@@ -377,12 +502,7 @@ class UserManager:
         Raises:
             ValueError: If password does not meet security requirements
         """
-        users_data = self._load_users()
-
-        if username not in users_data:
-            return False
-
-        # Validate password strength
+        # Validate password strength (applies to both backends)
         is_valid, validation_result = self.password_strength_validator.validate(
             new_password, username
         )
@@ -397,10 +517,21 @@ class UserManager:
             raise ValueError(error_msg.strip())
 
         new_password_hash = self.password_manager.hash_password(new_password)
-        users_data[username]["password_hash"] = new_password_hash
 
-        self._save_users(users_data)
-        return True
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            existing = self._sqlite_backend.get_user(username)
+            if existing is None:
+                return False
+            return self._sqlite_backend.update_password_hash(username, new_password_hash)
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return False
+            users_data[username]["password_hash"] = new_password_hash
+            self._save_users(users_data)
+            return True
 
     def validate_password_strength(
         self, password: str, username: Optional[str] = None, email: Optional[str] = None
@@ -447,41 +578,38 @@ class UserManager:
         Raises:
             ValueError: If username/email already exists
         """
-        users_data = self._load_users()
-
-        # Check if user exists
-        if username not in users_data:
-            return False
-
-        # Track the current username (might change)
-        current_username = username
-
-        if new_username and new_username != username:
-            # Check if new username already exists
-            if new_username in users_data:
-                raise ValueError(f"Username already exists: {new_username}")
-            # Copy user data to new username
-            users_data[new_username] = users_data[username]
-            # Delete old username
-            del users_data[username]
-            # Update current username reference
-            current_username = new_username
-
-        # Update email if provided
-        if "new_email" in kwargs:
-            new_email = kwargs["new_email"]
-            if new_email:
-                # Setting a new email - check for duplicates
-                for user, data in users_data.items():
-                    if user != current_username and data.get("email") == new_email:
-                        raise ValueError(f"Email already exists: {new_email}")
-                users_data[current_username]["email"] = new_email
-            else:
-                # Clear email (None or empty string)
-                users_data[current_username].pop("email", None)
-
-        self._save_users(users_data)
-        return True
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            existing = self._sqlite_backend.get_user(username)
+            if existing is None:
+                return False
+            new_email = kwargs.get("new_email")
+            return self._sqlite_backend.update_user(
+                username=username, new_username=new_username, email=new_email
+            )
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return False
+            current_username = username
+            if new_username and new_username != username:
+                if new_username in users_data:
+                    raise ValueError(f"Username already exists: {new_username}")
+                users_data[new_username] = users_data[username]
+                del users_data[username]
+                current_username = new_username
+            if "new_email" in kwargs:
+                new_email = kwargs["new_email"]
+                if new_email:
+                    for user, data in users_data.items():
+                        if user != current_username and data.get("email") == new_email:
+                            raise ValueError(f"Email already exists: {new_email}")
+                    users_data[current_username]["email"] = new_email
+                else:
+                    users_data[current_username].pop("email", None)
+            self._save_users(users_data)
+            return True
 
     def add_api_key(
         self,
@@ -506,25 +634,30 @@ class UserManager:
         Returns:
             True if added, False if user not found
         """
-        users_data = self._load_users()
-        if username not in users_data:
-            return False
-
-        if "api_keys" not in users_data[username]:
-            users_data[username]["api_keys"] = []
-
-        users_data[username]["api_keys"].append(
-            {
-                "key_id": key_id,
-                "name": name,
-                "hash": key_hash,
-                "key_prefix": key_prefix,
-                "created_at": created_at,
-            }
-        )
-
-        self._save_users(users_data)
-        return True
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            # Note: SQLite backend generates created_at internally for consistency
+            existing = self._sqlite_backend.get_user(username)
+            if existing is None:
+                return False
+            self._sqlite_backend.add_api_key(
+                username=username, key_id=key_id, key_hash=key_hash,
+                key_prefix=key_prefix, name=name,
+            )
+            return True
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return False
+            if "api_keys" not in users_data[username]:
+                users_data[username]["api_keys"] = []
+            users_data[username]["api_keys"].append({
+                "key_id": key_id, "name": name, "hash": key_hash,
+                "key_prefix": key_prefix, "created_at": created_at,
+            })
+            self._save_users(users_data)
+            return True
 
     def get_api_keys(self, username: str) -> List[Dict[str, Any]]:
         """
@@ -536,21 +669,30 @@ class UserManager:
         Returns:
             List of API key metadata (without hashes)
         """
-        users_data = self._load_users()
-        if username not in users_data:
-            return []
-
-        api_keys = users_data[username].get("api_keys", [])
-        # Return metadata only, not hashes
-        return [
-            {
-                "key_id": key["key_id"],
-                "name": key.get("name"),
-                "created_at": key["created_at"],
-                "key_prefix": key.get("key_prefix", "cidx_sk_****..."),
-            }
-            for key in api_keys
-        ]
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            user_data = self._sqlite_backend.get_user(username)
+            if user_data is None:
+                return []
+            api_keys = user_data.get("api_keys", [])
+            return [
+                {"key_id": key["key_id"], "name": key.get("name"),
+                 "created_at": key["created_at"],
+                 "key_prefix": key.get("key_prefix", "cidx_sk_****...")}
+                for key in api_keys
+            ]
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return []
+            api_keys = users_data[username].get("api_keys", [])
+            return [
+                {"key_id": key["key_id"], "name": key.get("name"),
+                 "created_at": key["created_at"],
+                 "key_prefix": key.get("key_prefix", "cidx_sk_****...")}
+                for key in api_keys
+            ]
 
     def delete_api_key(self, username: str, key_id: str) -> bool:
         """
@@ -563,21 +705,23 @@ class UserManager:
         Returns:
             True if deleted, False if not found
         """
-        users_data = self._load_users()
-        if username not in users_data:
-            return False
-
-        api_keys = users_data[username].get("api_keys", [])
-        original_count = len(api_keys)
-        users_data[username]["api_keys"] = [
-            k for k in api_keys if k["key_id"] != key_id
-        ]
-
-        if len(users_data[username]["api_keys"]) == original_count:
-            return False  # Key not found
-
-        self._save_users(users_data)
-        return True
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            return self._sqlite_backend.delete_api_key(username, key_id)
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return False
+            api_keys = users_data[username].get("api_keys", [])
+            original_count = len(api_keys)
+            users_data[username]["api_keys"] = [
+                k for k in api_keys if k["key_id"] != key_id
+            ]
+            if len(users_data[username]["api_keys"]) == original_count:
+                return False  # Key not found
+            self._save_users(users_data)
+            return True
 
     def validate_user_api_key(self, username: str, raw_key: str) -> Optional[User]:
         """
@@ -592,30 +736,41 @@ class UserManager:
         """
         from .api_key_manager import ApiKeyManager
 
-        users_data = self._load_users()
-        if username not in users_data:
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            user_data = self._sqlite_backend.get_user(username)
+            if user_data is None:
+                return None
+            api_keys = user_data.get("api_keys", [])
+            api_key_manager = ApiKeyManager()
+            for key_entry in api_keys:
+                stored_hash = key_entry.get("key_hash")
+                if stored_hash and api_key_manager.validate_key(raw_key, stored_hash):
+                    return User(
+                        username=username, password_hash=user_data["password_hash"],
+                        role=UserRole(user_data["role"]),
+                        created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                        email=user_data.get("email"),
+                    )
             return None
-
-        user_data = users_data[username]
-        api_keys = user_data.get("api_keys", [])
-
-        api_key_manager = ApiKeyManager()
-
-        for key_entry in api_keys:
-            stored_hash = key_entry.get("hash")
-            if stored_hash and api_key_manager.validate_key(raw_key, stored_hash):
-                # Valid key found - return user
-                return User(
-                    username=username,
-                    password_hash=user_data["password_hash"],
-                    role=UserRole(user_data["role"]),
-                    created_at=DateTimeParser.parse_user_datetime(
-                        user_data["created_at"]
-                    ),
-                    email=user_data.get("email"),
-                )
-
-        return None
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return None
+            user_data = users_data[username]
+            api_keys = user_data.get("api_keys", [])
+            api_key_manager = ApiKeyManager()
+            for key_entry in api_keys:
+                stored_hash = key_entry.get("hash")
+                if stored_hash and api_key_manager.validate_key(raw_key, stored_hash):
+                    return User(
+                        username=username, password_hash=user_data["password_hash"],
+                        role=UserRole(user_data["role"]),
+                        created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                        email=user_data.get("email"),
+                    )
+            return None
 
     def add_mcp_credential(
         self,
@@ -642,27 +797,32 @@ class UserManager:
         Returns:
             True if added, False if user not found
         """
-        users_data = self._load_users()
-        if username not in users_data:
-            return False
-
-        if "mcp_credentials" not in users_data[username]:
-            users_data[username]["mcp_credentials"] = []
-
-        users_data[username]["mcp_credentials"].append(
-            {
-                "credential_id": credential_id,
-                "client_id": client_id,
-                "client_secret_hash": client_secret_hash,
-                "client_id_prefix": client_id_prefix,
-                "name": name,
-                "created_at": created_at,
-                "last_used_at": None,
-            }
-        )
-
-        self._save_users(users_data)
-        return True
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            # Note: SQLite backend generates created_at internally for consistency
+            existing = self._sqlite_backend.get_user(username)
+            if existing is None:
+                return False
+            self._sqlite_backend.add_mcp_credential(
+                username=username, credential_id=credential_id, client_id=client_id,
+                client_secret_hash=client_secret_hash, client_id_prefix=client_id_prefix,
+                name=name,
+            )
+            return True
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return False
+            if "mcp_credentials" not in users_data[username]:
+                users_data[username]["mcp_credentials"] = []
+            users_data[username]["mcp_credentials"].append({
+                "credential_id": credential_id, "client_id": client_id,
+                "client_secret_hash": client_secret_hash, "client_id_prefix": client_id_prefix,
+                "name": name, "created_at": created_at, "last_used_at": None,
+            })
+            self._save_users(users_data)
+            return True
 
     def get_mcp_credentials(self, username: str) -> List[Dict[str, Any]]:
         """
@@ -674,11 +834,18 @@ class UserManager:
         Returns:
             List of MCP credential metadata (without hashes or secrets), sorted by created_at descending (newest first)
         """
-        users_data = self._load_users()
-        if username not in users_data:
-            return []
-
-        mcp_credentials = users_data[username].get("mcp_credentials", [])
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            user_data = self._sqlite_backend.get_user(username)
+            if user_data is None:
+                return []
+            mcp_credentials = user_data.get("mcp_credentials", [])
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return []
+            mcp_credentials = users_data[username].get("mcp_credentials", [])
 
         # Build metadata list without hashes or secrets
         credentials_metadata = [
