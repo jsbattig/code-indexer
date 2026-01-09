@@ -30,6 +30,21 @@ from ..services.ci_token_manager import CITokenManager, TokenValidationError
 logger = logging.getLogger(__name__)
 
 
+def _get_token_manager() -> CITokenManager:
+    """Create CITokenManager with SQLite backend (Story #702 migration)."""
+    from ..services.config_service import get_config_service
+
+    config_service = get_config_service()
+    server_dir = config_service.config_manager.server_dir
+    db_path = server_dir / "cidx.db"
+
+    return CITokenManager(
+        server_dir_path=str(server_dir),
+        use_sqlite=True,
+        db_path=str(db_path),
+    )
+
+
 # Get templates directory path
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -3557,7 +3572,7 @@ def _create_config_page_response(
     config_service = get_config_service()
     server_dir = str(config_service.config_manager.server_dir)
 
-    token_manager = CITokenManager(server_dir_path=server_dir)
+    token_manager = _get_token_manager()
     api_keys_status = token_manager.list_tokens()
 
     # Get token data for masking in template
@@ -3596,9 +3611,7 @@ def _get_gitlab_provider():
     from ..services.config_service import get_config_service
     from ..services.repository_providers.gitlab_provider import GitLabProvider
 
-    config_service = get_config_service()
-    server_dir = str(config_service.config_manager.server_dir)
-    token_manager = CITokenManager(server_dir_path=server_dir)
+    token_manager = _get_token_manager()
     golden_repo_manager = _get_golden_repo_manager()
 
     return GitLabProvider(token_manager=token_manager, golden_repo_manager=golden_repo_manager)
@@ -3606,12 +3619,9 @@ def _get_gitlab_provider():
 
 def _get_github_provider():
     """Create GitHub provider with required dependencies."""
-    from ..services.config_service import get_config_service
     from ..services.repository_providers.github_provider import GitHubProvider
 
-    config_service = get_config_service()
-    server_dir = str(config_service.config_manager.server_dir)
-    token_manager = CITokenManager(server_dir_path=server_dir)
+    token_manager = _get_token_manager()
     golden_repo_manager = _get_golden_repo_manager()
 
     return GitHubProvider(token_manager=token_manager, golden_repo_manager=golden_repo_manager)
@@ -3970,7 +3980,7 @@ async def config_section_partial(
     config_service = get_config_service()
     server_dir = str(config_service.config_manager.server_dir)
 
-    token_manager = CITokenManager(server_dir_path=server_dir)
+    token_manager = _get_token_manager()
     api_keys_status = token_manager.list_tokens()
     github_token_data = token_manager.get_token("github")
     gitlab_token_data = token_manager.get_token("gitlab")
@@ -4027,12 +4037,7 @@ async def save_api_key(
 
     # Save token using CITokenManager - use same server_dir as config service
     try:
-        from ..services.config_service import get_config_service
-
-        config_service = get_config_service()
-        server_dir = str(config_service.config_manager.server_dir)
-
-        token_manager = CITokenManager(server_dir_path=server_dir)
+        token_manager = _get_token_manager()
         token_manager.save_token(platform, token, base_url=api_url)
 
         platform_name = "GitHub" if platform == "github" else "GitLab"
@@ -4091,12 +4096,7 @@ async def delete_api_key(
 
     # Delete token using CITokenManager - use same server_dir as config service
     try:
-        from ..services.config_service import get_config_service
-
-        config_service = get_config_service()
-        server_dir = str(config_service.config_manager.server_dir)
-
-        token_manager = CITokenManager(server_dir_path=server_dir)
+        token_manager = _get_token_manager()
         token_manager.delete_token(platform)
 
         platform_name = "GitHub" if platform == "github" else "GitLab"
