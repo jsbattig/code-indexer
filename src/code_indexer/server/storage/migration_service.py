@@ -213,8 +213,39 @@ class MigrationService:
                     logger.debug(f"Migrated user: {username}")
                 except sqlite3.IntegrityError:
                     # User already exists (e.g., from seed_initial_admin)
+                    # UPDATE the password_hash from migrated data - critical for preserving real passwords
+                    migrated_password_hash = user_data.get("password_hash", "")
+                    if migrated_password_hash:
+                        backend.update_password_hash(username, migrated_password_hash)
+                        logger.info(f"Updated existing user password_hash from migration: {username}")
+                    # Also migrate API keys and MCP credentials for existing users
+                    api_keys = user_data.get("api_keys", [])
+                    for key in api_keys:
+                        try:
+                            backend.add_api_key(
+                                username=username,
+                                key_id=key.get("key_id", ""),
+                                key_hash=key.get("hash", ""),
+                                key_prefix=key.get("key_prefix", ""),
+                                name=key.get("name"),
+                            )
+                        except sqlite3.IntegrityError:
+                            logger.debug(f"API key already exists, skipping: {key.get('key_id', '')}")
+                    mcp_creds = user_data.get("mcp_credentials", [])
+                    for cred in mcp_creds:
+                        try:
+                            backend.add_mcp_credential(
+                                username=username,
+                                credential_id=cred.get("credential_id", ""),
+                                client_id=cred.get("client_id", ""),
+                                client_secret_hash=cred.get("client_secret_hash", ""),
+                                client_id_prefix=cred.get("client_id_prefix", ""),
+                                name=cred.get("name"),
+                            )
+                        except sqlite3.IntegrityError:
+                            logger.debug(f"MCP credential already exists, skipping: {cred.get('credential_id', '')}")
                     already_exists += 1
-                    logger.debug(f"User already exists, skipping: {username}")
+                    logger.debug(f"User already exists, updated from migration: {username}")
                 except Exception as e:
                     logger.error(f"Failed to migrate user {username}: {e}")
                     errors += 1
@@ -316,9 +347,11 @@ class MigrationService:
         try:
             for platform, token_data in tokens_data.items():
                 try:
+                    # Support both "token" (legacy JSON format) and "encrypted_token" keys
+                    encrypted_token = token_data.get("token") or token_data.get("encrypted_token", "")
                     backend.save_token(
                         platform=platform,
-                        encrypted_token=token_data.get("encrypted_token", ""),
+                        encrypted_token=encrypted_token,
                         base_url=token_data.get("base_url"),
                     )
                     migrated += 1
