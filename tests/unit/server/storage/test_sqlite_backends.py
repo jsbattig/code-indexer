@@ -467,6 +467,253 @@ class TestUsersSqliteBackend:
         conn.close()
 
 
+class TestUsersSqliteBackendOIDCMethods:
+    """Tests for UsersSqliteBackend OIDC-related methods (Story #702 SSO fix)."""
+
+    def test_get_user_by_email_returns_user_when_exists(self, tmp_path: Path) -> None:
+        """
+        Given a database with a user that has an email
+        When get_user_by_email() is called with that email
+        Then it returns the user data.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(
+            username="emailuser",
+            password_hash="hash123",
+            role="normal_user",
+            email="test@example.com",
+        )
+
+        result = backend.get_user_by_email("test@example.com")
+
+        assert result is not None
+        assert result["username"] == "emailuser"
+        assert result["email"] == "test@example.com"
+        assert result["role"] == "normal_user"
+
+    def test_get_user_by_email_case_insensitive(self, tmp_path: Path) -> None:
+        """
+        Given a database with a user that has an email
+        When get_user_by_email() is called with different case
+        Then it returns the user data (case-insensitive).
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(
+            username="caseuser",
+            password_hash="hash",
+            role="admin",
+            email="Test@Example.COM",
+        )
+
+        # Search with lowercase
+        result = backend.get_user_by_email("test@example.com")
+
+        assert result is not None
+        assert result["username"] == "caseuser"
+
+    def test_get_user_by_email_returns_none_when_not_found(self, tmp_path: Path) -> None:
+        """
+        Given a database without a user with the specified email
+        When get_user_by_email() is called
+        Then it returns None.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(
+            username="otheruser",
+            password_hash="hash",
+            role="user",
+            email="other@example.com",
+        )
+
+        result = backend.get_user_by_email("nonexistent@example.com")
+
+        assert result is None
+
+    def test_get_user_by_email_strips_whitespace(self, tmp_path: Path) -> None:
+        """
+        Given a database with a user that has an email
+        When get_user_by_email() is called with leading/trailing whitespace
+        Then it returns the user data (whitespace trimmed).
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(
+            username="trimuser",
+            password_hash="hash",
+            role="normal_user",
+            email="trim@example.com",
+        )
+
+        # Search with whitespace
+        result = backend.get_user_by_email("  trim@example.com  ")
+
+        assert result is not None
+        assert result["username"] == "trimuser"
+
+    def test_get_user_by_email_includes_api_keys_and_mcp_credentials(self, tmp_path: Path) -> None:
+        """
+        Given a user with api_keys and mcp_credentials
+        When get_user_by_email() is called
+        Then it returns user with all related data.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(
+            username="fulluser",
+            password_hash="hash",
+            role="admin",
+            email="full@example.com",
+        )
+        backend.add_api_key(
+            username="fulluser",
+            key_id="key1",
+            key_hash="keyhash",
+            key_prefix="cidx_",
+            name="My API Key",
+        )
+        backend.add_mcp_credential(
+            username="fulluser",
+            credential_id="cred1",
+            client_id="client123",
+            client_secret_hash="secrethash",
+            client_id_prefix="mcp_",
+            name="My MCP Credential",
+        )
+
+        result = backend.get_user_by_email("full@example.com")
+
+        assert result is not None
+        assert len(result["api_keys"]) == 1
+        assert result["api_keys"][0]["key_id"] == "key1"
+        assert len(result["mcp_credentials"]) == 1
+        assert result["mcp_credentials"][0]["credential_id"] == "cred1"
+
+    def test_set_oidc_identity_updates_user(self, tmp_path: Path) -> None:
+        """
+        Given a database with an existing user
+        When set_oidc_identity() is called
+        Then the user's oidc_identity is updated.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(
+            username="oidcuser",
+            password_hash="hash",
+            role="normal_user",
+            email="oidc@example.com",
+        )
+
+        identity = {
+            "subject": "oidc-12345",
+            "email": "oidc@example.com",
+            "linked_at": "2025-01-15T10:30:00Z",
+            "last_login": "2025-01-15T10:30:00Z",
+        }
+        result = backend.set_oidc_identity("oidcuser", identity)
+
+        assert result is True
+
+        # Verify identity was stored
+        user = backend.get_user("oidcuser")
+        assert user is not None
+        assert user["oidc_identity"] is not None
+        assert user["oidc_identity"]["subject"] == "oidc-12345"
+        assert user["oidc_identity"]["email"] == "oidc@example.com"
+
+    def test_set_oidc_identity_returns_false_for_nonexistent_user(self, tmp_path: Path) -> None:
+        """
+        Given a database without the specified user
+        When set_oidc_identity() is called
+        Then it returns False.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+
+        identity = {"subject": "oidc-12345"}
+        result = backend.set_oidc_identity("nonexistent", identity)
+
+        assert result is False
+
+    def test_set_oidc_identity_overwrites_existing_identity(self, tmp_path: Path) -> None:
+        """
+        Given a user with existing oidc_identity
+        When set_oidc_identity() is called with new identity
+        Then the identity is overwritten.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(
+            username="overwriteuser",
+            password_hash="hash",
+            role="normal_user",
+        )
+
+        # Set initial identity
+        identity1 = {"subject": "old-subject", "email": "old@example.com"}
+        backend.set_oidc_identity("overwriteuser", identity1)
+
+        # Overwrite with new identity
+        identity2 = {"subject": "new-subject", "email": "new@example.com"}
+        backend.set_oidc_identity("overwriteuser", identity2)
+
+        # Verify new identity
+        user = backend.get_user("overwriteuser")
+        assert user is not None
+        assert user["oidc_identity"]["subject"] == "new-subject"
+        assert user["oidc_identity"]["email"] == "new@example.com"
+
+
 class TestSyncJobsSqliteBackend:
     """Tests for SyncJobsSqliteBackend with JSON blob columns."""
 

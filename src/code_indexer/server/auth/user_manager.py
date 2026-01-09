@@ -978,6 +978,20 @@ class UserManager:
         Returns:
             User object if found, None otherwise
         """
+        # Story #702 SSO fix: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            user_data = self._sqlite_backend.get_user_by_email(email)
+            if user_data is None:
+                return None
+            return User(
+                username=user_data["username"],
+                password_hash=user_data["password_hash"],
+                role=UserRole(user_data["role"]),
+                created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                email=user_data.get("email"),
+            )
+
+        # JSON file storage (backward compatible)
         users_data = self._load_users()
         email_lower = email.lower().strip()
 
@@ -1006,6 +1020,11 @@ class UserManager:
         Returns:
             True if successful, False if user not found
         """
+        # Story #702 SSO fix: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            return self._sqlite_backend.set_oidc_identity(username, identity)
+
+        # JSON file storage (backward compatible)
         users_data = self._load_users()
 
         if username not in users_data:

@@ -446,6 +446,64 @@ class UsersSqliteBackend:
             return cursor.rowcount > 0
         return self._conn_manager.execute_atomic(operation)
 
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """
+        Get user by email address (case-insensitive).
+
+        Story #702 SSO fix: This method was missing from SQLite backend,
+        causing AttributeError when SSO login tried to look up users by email.
+
+        Args:
+            email: Email address to search for (case-insensitive, whitespace trimmed)
+
+        Returns:
+            User data dictionary with api_keys and mcp_credentials, or None if not found.
+        """
+        conn = self._conn_manager.get_connection()
+        cursor = conn.execute(
+            """SELECT username, password_hash, role, email, created_at, oidc_identity
+               FROM users WHERE LOWER(email) = LOWER(?)""",
+            (email.strip(),),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        username = row[0]
+        return {
+            "username": username,
+            "password_hash": row[1],
+            "role": row[2],
+            "email": row[3],
+            "created_at": row[4],
+            "oidc_identity": json.loads(row[5]) if row[5] else None,
+            "api_keys": self._get_api_keys(conn, username),
+            "mcp_credentials": self._get_mcp_credentials(conn, username),
+        }
+
+    def set_oidc_identity(self, username: str, identity: Dict[str, Any]) -> bool:
+        """
+        Set OIDC identity for a user.
+
+        Story #702 SSO fix: This method was missing from SQLite backend,
+        causing AttributeError when SSO login tried to store OIDC identity.
+
+        Args:
+            username: Username of the user
+            identity: OIDC identity data (subject, email, linked_at, last_login)
+
+        Returns:
+            True if user was updated, False if user not found.
+        """
+        def operation(conn):
+            cursor = conn.execute(
+                """UPDATE users SET oidc_identity = ? WHERE username = ?""",
+                (json.dumps(identity), username),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
     def close(self) -> None:
         """Close database connections."""
         self._conn_manager.close_all()
