@@ -13,8 +13,6 @@ Key Features:
 - Security-compliant error messages
 """
 
-from code_indexer.server.middleware.correlation import get_correlation_id
-
 import logging
 import traceback
 from typing import Dict, Any, Optional, Union, Callable, TypeVar, cast
@@ -361,18 +359,16 @@ class GlobalErrorHandler(BaseHTTPMiddleware):
             log_message = " | ".join(log_parts)
 
             # Log at appropriate level
+            # Use the correlation_id parameter (not get_correlation_id() from context)
+            # to ensure the ID shown in the error response matches the logged ID
             if error_type in ["ValidationError", "HTTPException"]:
-                logger.warning(
-                    log_message, extra={"correlation_id": get_correlation_id()}
-                )
+                logger.warning(log_message, extra={"correlation_id": correlation_id})
             else:
-                logger.error(
-                    log_message, extra={"correlation_id": get_correlation_id()}
-                )
+                logger.error(log_message, extra={"correlation_id": correlation_id})
 
         except Exception as log_error:
             # Fallback logging if there's an error in the logging process
             logger.error(
                 f"Error logging failed [ID: {correlation_id}]: {log_error}",
-                extra={"correlation_id": get_correlation_id()},
+                extra={"correlation_id": correlation_id},
             )
