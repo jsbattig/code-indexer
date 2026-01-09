@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Optional, Dict, Union
 
 from .alias_manager import AliasManager
-from .global_registry import GlobalRegistry
 
 
 logger = logging.getLogger(__name__)
@@ -37,12 +36,17 @@ class GlobalActivator:
         Args:
             golden_repos_dir: Path to golden repos directory
         """
+        # Lazy import to avoid circular dependency (Story #713)
+        from code_indexer.server.utils.registry_factory import (
+            get_server_global_registry,
+        )
+
         self.golden_repos_dir = Path(golden_repos_dir)
 
         # Initialize components
         aliases_dir = self.golden_repos_dir / "aliases"
         self.alias_manager = AliasManager(str(aliases_dir))
-        self.registry = GlobalRegistry(str(self.golden_repos_dir))
+        self.registry = get_server_global_registry(str(self.golden_repos_dir))
 
     def activate_golden_repo(
         self,

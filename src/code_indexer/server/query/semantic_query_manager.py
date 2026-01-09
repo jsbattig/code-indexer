@@ -423,14 +423,16 @@ class SemanticQueryManager:
         # ALSO get global repos from GlobalRegistry
         global_repos_list = []
         try:
-            from code_indexer.global_repos.global_registry import GlobalRegistry
+            from code_indexer.server.utils.registry_factory import (
+                get_server_global_registry,
+            )
 
             # Get golden repos dir from activated_repo_manager's data_dir
             data_dir = Path(self.activated_repo_manager.activated_repos_dir).parent
             golden_repos_dir = data_dir / "golden-repos"
 
             if golden_repos_dir.exists():
-                registry = GlobalRegistry(str(golden_repos_dir))
+                registry = get_server_global_registry(str(golden_repos_dir))
                 global_repos = registry.list_global_repos()
 
                 # Format global repos to match user_repos structure

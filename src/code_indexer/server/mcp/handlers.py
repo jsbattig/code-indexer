@@ -20,7 +20,7 @@ import pathspec
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from code_indexer.server.auth.user_manager import User, UserRole
-from code_indexer.global_repos.global_registry import GlobalRegistry
+from code_indexer.server.utils.registry_factory import get_server_global_registry
 from code_indexer.server import app as app_module
 from code_indexer.server.services.ssh_key_manager import (
     SSHKeyManager,
@@ -532,7 +532,7 @@ def _get_available_repos() -> List[str]:
     """Get list of available global repository aliases for suggestions."""
     try:
         golden_repos_dir = _get_golden_repos_dir()
-        registry = GlobalRegistry(golden_repos_dir)
+        registry = get_server_global_registry(golden_repos_dir)
         return [r["alias_name"] for r in registry.list_global_repos()]
     except Exception:
         return []
@@ -604,7 +604,7 @@ def _get_temporal_status(repo_aliases: List[str]) -> Dict[str, Any]:
     """
     try:
         golden_repos_dir = _get_golden_repos_dir()
-        registry = GlobalRegistry(golden_repos_dir)
+        registry = get_server_global_registry(golden_repos_dir)
         all_repos = {r["alias_name"]: r for r in registry.list_global_repos()}
 
         temporal_repos = []
@@ -677,7 +677,7 @@ def _expand_wildcard_patterns(patterns: List[str]) -> List[str]:
 
     # Get available repos
     try:
-        registry = GlobalRegistry(golden_repos_dir)
+        registry = get_server_global_registry(golden_repos_dir)
         available_repos = [r["alias_name"] for r in registry.list_global_repos()]
     except Exception as e:
         logger.warning(
@@ -869,7 +869,7 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             golden_repos_dir = _get_golden_repos_dir()
 
             # Look up global repo in GlobalRegistry to get actual path
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos = registry.list_global_repos()
 
             # Find the matching global repo
@@ -1096,7 +1096,7 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
         global_repos = []
         try:
             golden_repos_dir = _get_golden_repos_dir()
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos_data = registry.list_global_repos()
 
             # Normalize global repos schema to match activated repos
@@ -1189,7 +1189,7 @@ async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str,
         # Check if this is a global repository (ends with -global suffix)
         if user_alias and user_alias.endswith("-global"):
             golden_repos_dir = _get_golden_repos_dir()
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos = registry.list_global_repos()
 
             repo_entry = next(
@@ -1420,7 +1420,7 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             # Look up global repo in GlobalRegistry to get actual path
             golden_repos_dir = _get_golden_repos_dir()
 
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos = registry.list_global_repos()
 
             # Find the matching global repo
@@ -1552,7 +1552,7 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
             # Look up global repo in GlobalRegistry to get actual path
             golden_repos_dir = _get_golden_repos_dir()
 
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos = registry.list_global_repos()
 
             # Find the matching global repo
@@ -1658,7 +1658,7 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             # Look up global repo in GlobalRegistry to get actual path
             golden_repos_dir = _get_golden_repos_dir()
 
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos = registry.list_global_repos()
 
             # Find the matching global repo
@@ -1791,7 +1791,7 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             # Look up global repo in GlobalRegistry to get actual path
             golden_repos_dir = _get_golden_repos_dir()
 
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos = registry.list_global_repos()
 
             # Find the matching global repo
@@ -2036,7 +2036,7 @@ async def get_repository_statistics(
         # Check if this is a global repository (ends with -global suffix)
         if repository_alias and repository_alias.endswith("-global"):
             golden_repos_dir = _get_golden_repos_dir()
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos = registry.list_global_repos()
 
             repo_entry = next(
@@ -2158,7 +2158,7 @@ async def get_all_repositories_status(
         # Get global repos status (same pattern as list_repositories handler)
         try:
             golden_repos_dir = _get_golden_repos_dir()
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             global_repos_data = registry.list_global_repos()
 
             for repo in global_repos_data:
@@ -3301,7 +3301,7 @@ def _resolve_repo_path(repo_identifier: str, golden_repos_dir: str) -> Optional[
             return str(repo_path)
 
     # Look up in global registry
-    registry = GlobalRegistry(golden_repos_dir)
+    registry = get_server_global_registry(golden_repos_dir)
     repo_entry = registry.get_global_repo(repo_identifier)
 
     if not repo_entry:

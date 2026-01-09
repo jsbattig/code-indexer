@@ -12,9 +12,6 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-from .global_registry import GlobalRegistry
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -42,14 +39,19 @@ class GlobalRepoOperations:
         Args:
             golden_repos_dir: Path to golden repos directory
         """
+        # Lazy import to avoid circular dependency (Story #713)
+        from code_indexer.server.utils.registry_factory import (
+            get_server_global_registry,
+        )
+
         self.golden_repos_dir = Path(golden_repos_dir)
         self.config_file = self.golden_repos_dir / "global_config.json"
 
         # Ensure directory structure exists
         self.golden_repos_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize GlobalRegistry for accessing repo data
-        self.registry = GlobalRegistry(str(self.golden_repos_dir))
+        # Initialize GlobalRegistry for accessing repo data (Story #713 - SQLite backend)
+        self.registry = get_server_global_registry(str(self.golden_repos_dir))
 
     def list_repos(self, filters: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """

@@ -821,9 +821,11 @@ def _get_golden_repos_list():
 
         # Get global registry to check global activation status
         try:
-            from code_indexer.global_repos.global_registry import GlobalRegistry
+            from code_indexer.server.utils.registry_factory import (
+                get_server_global_registry,
+            )
 
-            registry = GlobalRegistry(str(golden_repos_dir))
+            registry = get_server_global_registry(str(golden_repos_dir))
             global_repos = {r["repo_name"]: r for r in registry.list_global_repos()}
         except Exception as e:
             logger.warning(
@@ -2087,9 +2089,11 @@ def _get_all_activated_repos_for_query() -> list:
         )
         golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
 
-        from code_indexer.global_repos.global_registry import GlobalRegistry
+        from code_indexer.server.utils.registry_factory import (
+            get_server_global_registry,
+        )
 
-        registry = GlobalRegistry(str(golden_repos_dir))
+        registry = get_server_global_registry(str(golden_repos_dir))
         global_repos = registry.list_global_repos()
 
         for global_repo in global_repos:
@@ -2340,8 +2344,8 @@ async def query_submit(
                 if not repo_path and target_repo.get("is_global"):
                     try:
                         import os
-                        from code_indexer.global_repos.global_registry import (
-                            GlobalRegistry,
+                        from code_indexer.server.utils.registry_factory import (
+                            get_server_global_registry,
                         )
 
                         server_data_dir = os.environ.get(
@@ -2351,7 +2355,7 @@ async def query_submit(
                         golden_repos_dir = (
                             Path(server_data_dir) / "data" / "golden-repos"
                         )
-                        registry = GlobalRegistry(str(golden_repos_dir))
+                        registry = get_server_global_registry(str(golden_repos_dir))
                         global_repo_meta = registry.get_global_repo(user_alias)
                         if global_repo_meta:
                             repo_path = global_repo_meta.get("index_path")
@@ -2738,7 +2742,9 @@ def _execute_scip_query(
     # For global repos, resolve path from GlobalRegistry
     if not repo_path and target_repo.get("is_global"):
         try:
-            from code_indexer.global_repos.global_registry import GlobalRegistry
+            from code_indexer.server.utils.registry_factory import (
+                get_server_global_registry,
+            )
             import os
 
             server_data_dir = os.environ.get(
@@ -2746,7 +2752,7 @@ def _execute_scip_query(
                 os.path.expanduser("~/.cidx-server"),
             )
             golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
-            registry = GlobalRegistry(str(golden_repos_dir))
+            registry = get_server_global_registry(str(golden_repos_dir))
             global_repo_meta = registry.get_global_repo(user_alias)
             if global_repo_meta:
                 repo_path = global_repo_meta.get("index_path")

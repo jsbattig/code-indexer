@@ -380,14 +380,16 @@ class DashboardService:
         if username == "_global":
             # Global repos use GlobalRegistry to get index_path
             import os
-            from code_indexer.global_repos.global_registry import GlobalRegistry
+            from code_indexer.server.utils.registry_factory import (
+                get_server_global_registry,
+            )
 
             server_data_dir = os.environ.get(
                 "CIDX_SERVER_DATA_DIR",
                 os.path.expanduser("~/.cidx-server"),
             )
             golden_repos_dir = f"{server_data_dir}/data/golden-repos"
-            registry = GlobalRegistry(golden_repos_dir)
+            registry = get_server_global_registry(golden_repos_dir)
             repo_info = registry.get_global_repo(repo_alias)
 
             if not repo_info:
