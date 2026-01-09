@@ -1809,10 +1809,18 @@ def _get_queue_status() -> dict:
 
     job_manager = _get_background_job_manager()
     if job_manager:
-        queue_status["running_count"] = job_manager._count_total_running_jobs()
-        queue_status["queued_count"] = len(job_manager._job_queue)
-        queue_status["max_total_concurrent_jobs"] = job_manager.max_total_concurrent_jobs
-        queue_status["max_concurrent_jobs_per_user"] = job_manager.max_concurrent_jobs_per_user
+        queue_status["running_count"] = job_manager.get_active_job_count()
+        queue_status["queued_count"] = job_manager.get_pending_job_count()
+        # Use resource_config for limits (BackgroundJobManager doesn't have these as direct attributes)
+        if hasattr(job_manager, "resource_config") and job_manager.resource_config:
+            queue_status["max_total_concurrent_jobs"] = getattr(
+                job_manager.resource_config, "max_total_concurrent_jobs",
+                default_limits["max_total_concurrent_jobs"]
+            )
+            queue_status["max_concurrent_jobs_per_user"] = getattr(
+                job_manager.resource_config, "max_concurrent_jobs_per_user",
+                default_limits["max_concurrent_jobs_per_user"]
+            )
 
     return queue_status
 
@@ -2001,13 +2009,10 @@ async def get_queue_status_api(request: Request):
     queue_status = _get_queue_status()
 
     # Add average_job_duration_minutes to the response
-    job_manager = _get_background_job_manager()
-    if job_manager:
-        queue_status["average_job_duration_minutes"] = job_manager.average_job_duration_minutes
-    else:
-        from ..jobs.config import SyncJobConfig
-        default_limits = SyncJobConfig.get_concurrency_limits(None)
-        queue_status["average_job_duration_minutes"] = default_limits["average_job_duration_minutes"]
+    # BackgroundJobManager doesn't have this attribute, use SyncJobConfig defaults
+    from ..jobs.config import SyncJobConfig
+    default_limits = SyncJobConfig.get_concurrency_limits(None)
+    queue_status["average_job_duration_minutes"] = default_limits["average_job_duration_minutes"]
 
     return JSONResponse({"success": True, **queue_status})
 
@@ -3221,7 +3226,9 @@ def _get_current_config() -> dict:
         # Provide defaults if OIDC config is missing
         oidc_config = asdict(OIDCProviderConfig())
 
-    # Get job queue settings from job manager (or defaults from SyncJobConfig)
+    # Get job queue settings from SyncJobConfig defaults
+    # Note: BackgroundJobManager doesn't have these attributes directly, they're managed
+    # via SyncJobConfig for the sync job system. For display purposes, use defaults.
     from ..jobs.config import SyncJobConfig
     default_limits = SyncJobConfig.get_concurrency_limits(None)  # Static call for defaults
     job_queue_config = {
@@ -3229,13 +3236,6 @@ def _get_current_config() -> dict:
         "max_concurrent_jobs_per_user": default_limits["max_concurrent_jobs_per_user"],
         "average_job_duration_minutes": default_limits["average_job_duration_minutes"],
     }
-    job_manager = _get_background_job_manager()
-    if job_manager:
-        job_queue_config = {
-            "max_total_concurrent_jobs": job_manager.max_total_concurrent_jobs,
-            "max_concurrent_jobs_per_user": job_manager.max_concurrent_jobs_per_user,
-            "average_job_duration_minutes": job_manager.average_job_duration_minutes,
-        }
 
     # Ensure telemetry config has all required fields with defaults
     telemetry_config = settings.get("telemetry")
@@ -3817,48 +3817,20 @@ async def update_config_section(
             validation_errors={section: error},
         )
 
-    # Special handling for job_queue - updates job manager directly (runtime settings)
+    # Special handling for job_queue - these are currently read-only defaults from SyncJobConfig
+    # Note: BackgroundJobManager doesn't have these attributes. The job queue settings are managed
+    # via SyncJobConfig which returns hardcoded defaults. Dynamic updates would require
+    # extending SyncJobConfig with persistence support.
     if section == "job_queue":
-        try:
-            job_manager = _get_background_job_manager()
-            if not job_manager:
-                return _create_config_page_response(
-                    request,
-                    session,
-                    error_message="Job manager not available",
-                )
-
-            # Update job manager settings
-            if "max_total_concurrent_jobs" in data:
-                job_manager.max_total_concurrent_jobs = int(data["max_total_concurrent_jobs"])
-            if "max_concurrent_jobs_per_user" in data:
-                job_manager.max_concurrent_jobs_per_user = int(data["max_concurrent_jobs_per_user"])
-            if "average_job_duration_minutes" in data:
-                job_manager.average_job_duration_minutes = int(data["average_job_duration_minutes"])
-
-            logger.info(
-                f"Updated job queue settings: max_total={job_manager.max_total_concurrent_jobs}, "
-                f"max_per_user={job_manager.max_concurrent_jobs_per_user}, "
-                f"avg_duration={job_manager.average_job_duration_minutes}",
-                extra={"correlation_id": get_correlation_id()},
-            )
-
-            return _create_config_page_response(
-                request,
-                session,
-                success_message="Job Queue configuration saved successfully",
-            )
-        except Exception as e:
-            logger.error(
-                "Failed to update job queue settings: %s",
-                e,
-                extra={"correlation_id": get_correlation_id()},
-            )
-            return _create_config_page_response(
-                request,
-                session,
-                error_message=f"Failed to save job queue configuration: {str(e)}",
-            )
+        logger.warning(
+            "Job queue configuration save attempted but settings are read-only defaults from SyncJobConfig.",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        return _create_config_page_response(
+            request,
+            session,
+            success_message="Job Queue settings are read-only defaults (dynamic configuration not currently supported)",
+        )
 
     # Save configuration using ConfigService
     try:
