@@ -714,6 +714,259 @@ class TestUsersSqliteBackendOIDCMethods:
         assert user["oidc_identity"]["email"] == "new@example.com"
 
 
+class TestUsersSqliteBackendMCPAndOIDCMethods:
+    """Tests for UsersSqliteBackend MCP credential and OIDC methods (Story #702 SQLite migration)."""
+
+    def test_delete_mcp_credential_removes_credential(self, tmp_path: Path) -> None:
+        """
+        Given a user with MCP credentials in SQLite
+        When delete_mcp_credential() is called
+        Then the specified credential is removed.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(username="mcpuser", password_hash="hash", role="normal_user")
+        backend.add_mcp_credential(
+            username="mcpuser",
+            credential_id="cred-to-delete",
+            client_id="mcp_abc123",
+            client_secret_hash="secrethash",
+            client_id_prefix="mcp_",
+            name="Test Credential",
+        )
+        backend.add_mcp_credential(
+            username="mcpuser",
+            credential_id="cred-to-keep",
+            client_id="mcp_def456",
+            client_secret_hash="secrethash2",
+            client_id_prefix="mcp_",
+            name="Keep Credential",
+        )
+
+        # Delete one credential
+        result = backend.delete_mcp_credential("mcpuser", "cred-to-delete")
+
+        assert result is True
+
+        # Verify only one credential remains
+        user = backend.get_user("mcpuser")
+        assert user is not None
+        assert len(user["mcp_credentials"]) == 1
+        assert user["mcp_credentials"][0]["credential_id"] == "cred-to-keep"
+
+    def test_delete_mcp_credential_returns_false_for_nonexistent(self, tmp_path: Path) -> None:
+        """
+        Given a user without the specified credential
+        When delete_mcp_credential() is called
+        Then it returns False.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(username="nocred", password_hash="hash", role="normal_user")
+
+        result = backend.delete_mcp_credential("nocred", "nonexistent-cred")
+
+        assert result is False
+
+    def test_update_mcp_credential_last_used_updates_timestamp(self, tmp_path: Path) -> None:
+        """
+        Given a user with MCP credentials in SQLite
+        When update_mcp_credential_last_used() is called
+        Then the last_used_at timestamp is updated.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(username="lastused", password_hash="hash", role="normal_user")
+        backend.add_mcp_credential(
+            username="lastused",
+            credential_id="cred-update",
+            client_id="mcp_abc123",
+            client_secret_hash="secrethash",
+            client_id_prefix="mcp_",
+        )
+
+        # Initially last_used_at should be None
+        user = backend.get_user("lastused")
+        assert user is not None
+        initial_last_used = user["mcp_credentials"][0]["last_used_at"]
+        assert initial_last_used is None
+
+        # Update last_used_at
+        result = backend.update_mcp_credential_last_used("lastused", "cred-update")
+
+        assert result is True
+
+        # Verify timestamp was updated
+        user = backend.get_user("lastused")
+        assert user is not None
+        assert user["mcp_credentials"][0]["last_used_at"] is not None
+
+    def test_update_mcp_credential_last_used_returns_false_for_nonexistent(self, tmp_path: Path) -> None:
+        """
+        Given a user without the specified credential
+        When update_mcp_credential_last_used() is called
+        Then it returns False.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(username="nouser", password_hash="hash", role="normal_user")
+
+        result = backend.update_mcp_credential_last_used("nouser", "nonexistent-cred")
+
+        assert result is False
+
+    def test_list_all_mcp_credentials_returns_all_credentials(self, tmp_path: Path) -> None:
+        """
+        Given multiple users with MCP credentials
+        When list_all_mcp_credentials() is called
+        Then it returns all credentials across all users.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(username="user1", password_hash="hash", role="normal_user")
+        backend.create_user(username="user2", password_hash="hash", role="admin")
+        backend.add_mcp_credential(
+            username="user1",
+            credential_id="cred1",
+            client_id="mcp_user1",
+            client_secret_hash="hash1",
+            client_id_prefix="mcp_",
+            name="User1 Cred",
+        )
+        backend.add_mcp_credential(
+            username="user2",
+            credential_id="cred2",
+            client_id="mcp_user2",
+            client_secret_hash="hash2",
+            client_id_prefix="mcp_",
+            name="User2 Cred",
+        )
+
+        credentials = backend.list_all_mcp_credentials()
+
+        assert len(credentials) == 2
+        usernames = [c["username"] for c in credentials]
+        assert "user1" in usernames
+        assert "user2" in usernames
+
+    def test_list_all_mcp_credentials_pagination(self, tmp_path: Path) -> None:
+        """
+        Given multiple MCP credentials
+        When list_all_mcp_credentials() is called with limit and offset
+        Then it returns paginated results.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(username="pager", password_hash="hash", role="normal_user")
+        for i in range(5):
+            backend.add_mcp_credential(
+                username="pager",
+                credential_id=f"cred{i}",
+                client_id=f"mcp_cred{i}",
+                client_secret_hash=f"hash{i}",
+                client_id_prefix="mcp_",
+            )
+
+        # Get first page
+        page1 = backend.list_all_mcp_credentials(limit=2, offset=0)
+        assert len(page1) == 2
+
+        # Get second page
+        page2 = backend.list_all_mcp_credentials(limit=2, offset=2)
+        assert len(page2) == 2
+
+        # Get last page
+        page3 = backend.list_all_mcp_credentials(limit=2, offset=4)
+        assert len(page3) == 1
+
+    def test_remove_oidc_identity_removes_identity(self, tmp_path: Path) -> None:
+        """
+        Given a user with OIDC identity in SQLite
+        When remove_oidc_identity() is called
+        Then the OIDC identity is removed (set to NULL).
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+        backend.create_user(username="oidcremove", password_hash="hash", role="normal_user")
+        backend.set_oidc_identity("oidcremove", {"subject": "oidc-123", "email": "oidc@example.com"})
+
+        # Verify identity exists
+        user = backend.get_user("oidcremove")
+        assert user is not None
+        assert user["oidc_identity"] is not None
+
+        # Remove identity
+        result = backend.remove_oidc_identity("oidcremove")
+
+        assert result is True
+
+        # Verify identity is removed
+        user = backend.get_user("oidcremove")
+        assert user is not None
+        assert user["oidc_identity"] is None
+
+    def test_remove_oidc_identity_returns_false_for_nonexistent_user(self, tmp_path: Path) -> None:
+        """
+        Given a database without the specified user
+        When remove_oidc_identity() is called
+        Then it returns False.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import UsersSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = UsersSqliteBackend(str(db_path))
+
+        result = backend.remove_oidc_identity("nonexistent")
+
+        assert result is False
+
+
 class TestSyncJobsSqliteBackend:
     """Tests for SyncJobsSqliteBackend with JSON blob columns."""
 
@@ -1223,6 +1476,66 @@ class TestSessionsSqliteBackend:
         assert backend.is_session_invalidated("user1", "tok-2") is False
         # user2's session should remain
         assert backend.is_session_invalidated("user2", "tok-3") is True
+
+    def test_cleanup_old_data_removes_old_entries(self, tmp_path: Path) -> None:
+        """
+        Given a database with old session data
+        When cleanup_old_data() is called
+        Then old entries are removed (Story #702 SQLite migration).
+        """
+        from datetime import datetime, timedelta, timezone
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import SessionsSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = SessionsSqliteBackend(str(db_path))
+
+        # Insert old timestamp (60 days ago)
+        old_time = datetime.now(timezone.utc) - timedelta(days=60)
+        backend.set_password_change_timestamp("old_user", old_time.isoformat())
+
+        # Insert recent timestamp (5 days ago)
+        recent_time = datetime.now(timezone.utc) - timedelta(days=5)
+        backend.set_password_change_timestamp("recent_user", recent_time.isoformat())
+
+        # Cleanup entries older than 30 days
+        count = backend.cleanup_old_data(days_to_keep=30)
+
+        # old_user should be cleaned up
+        assert count == 1
+        assert backend.get_password_change_timestamp("old_user") is None
+        # recent_user should remain
+        assert backend.get_password_change_timestamp("recent_user") is not None
+
+    def test_cleanup_old_data_returns_zero_when_nothing_to_clean(self, tmp_path: Path) -> None:
+        """
+        Given a database with only recent session data
+        When cleanup_old_data() is called
+        Then it returns 0.
+        """
+        from datetime import datetime, timezone
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.sqlite_backends import SessionsSqliteBackend
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        backend = SessionsSqliteBackend(str(db_path))
+
+        # Insert recent timestamp
+        backend.set_password_change_timestamp(
+            "recent_user", datetime.now(timezone.utc).isoformat()
+        )
+
+        # Cleanup - nothing should be removed
+        count = backend.cleanup_old_data(days_to_keep=30)
+
+        assert count == 0
+        assert backend.get_password_change_timestamp("recent_user") is not None
 
 
 class TestSSHKeysSqliteBackend:

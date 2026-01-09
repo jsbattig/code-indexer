@@ -9,7 +9,7 @@ eliminating race conditions from concurrent GlobalRegistry instances.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .database_manager import DatabaseConnectionManager
@@ -504,6 +504,119 @@ class UsersSqliteBackend:
 
         return self._conn_manager.execute_atomic(operation)
 
+    def delete_mcp_credential(self, username: str, credential_id: str) -> bool:
+        """
+        Delete an MCP credential for a user.
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when deleting MCP credentials in SQLite mode.
+
+        Args:
+            username: Username of the credential owner
+            credential_id: ID of the credential to delete
+
+        Returns:
+            True if credential was deleted, False if not found.
+        """
+
+        def operation(conn):
+            cursor = conn.execute(
+                "DELETE FROM user_mcp_credentials WHERE username = ? AND credential_id = ?",
+                (username, credential_id),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
+    def update_mcp_credential_last_used(
+        self, username: str, credential_id: str
+    ) -> bool:
+        """
+        Update last_used_at timestamp for an MCP credential.
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when updating MCP credential timestamps in SQLite mode.
+
+        Args:
+            username: Username of the credential owner
+            credential_id: ID of the credential to update
+
+        Returns:
+            True if credential was updated, False if not found.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        def operation(conn):
+            cursor = conn.execute(
+                """UPDATE user_mcp_credentials SET last_used_at = ?
+                   WHERE username = ? AND credential_id = ?""",
+                (now, username, credential_id),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
+    def list_all_mcp_credentials(
+        self, limit: int = 100, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        List MCP credentials across all users with pagination.
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when listing all MCP credentials in SQLite mode.
+
+        Args:
+            limit: Maximum number of credentials to return
+            offset: Number of credentials to skip
+
+        Returns:
+            List of credential metadata with username information.
+        """
+        conn = self._conn_manager.get_connection()
+        cursor = conn.execute(
+            """SELECT username, credential_id, client_id, client_id_prefix,
+                      name, created_at, last_used_at
+               FROM user_mcp_credentials
+               ORDER BY username, credential_id
+               LIMIT ? OFFSET ?""",
+            (limit, offset),
+        )
+        return [
+            {
+                "username": r[0],
+                "credential_id": r[1],
+                "client_id": r[2],
+                "client_id_prefix": r[3],
+                "name": r[4],
+                "created_at": r[5],
+                "last_used_at": r[6],
+            }
+            for r in cursor.fetchall()
+        ]
+
+    def remove_oidc_identity(self, username: str) -> bool:
+        """
+        Remove OIDC identity from a user (unlink SSO).
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when unlinking SSO accounts in SQLite mode.
+
+        Args:
+            username: Username to remove OIDC identity from
+
+        Returns:
+            True if user was updated, False if user not found.
+        """
+
+        def operation(conn):
+            cursor = conn.execute(
+                "UPDATE users SET oidc_identity = NULL WHERE username = ?",
+                (username,),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
     def close(self) -> None:
         """Close database connections."""
         self._conn_manager.close_all()
@@ -727,6 +840,49 @@ class SessionsSqliteBackend:
         )
         row = cursor.fetchone()
         return row[0] if row else None
+
+    def cleanup_old_data(self, days_to_keep: int = 30) -> int:
+        """
+        Clean up old session invalidation data.
+
+        Story #702 SQLite migration: Added to support cleanup_old_data in
+        PasswordChangeSessionManager SQLite mode.
+
+        Args:
+            days_to_keep: Number of days of data to keep
+
+        Returns:
+            Number of user records cleaned up
+        """
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+        cutoff_iso = cutoff_time.isoformat()
+
+        def operation(conn):
+            # Get usernames to clean up based on password change timestamp
+            cursor = conn.execute(
+                "SELECT username FROM password_change_timestamps WHERE changed_at < ?",
+                (cutoff_iso,),
+            )
+            users_to_remove = [row[0] for row in cursor.fetchall()]
+
+            if not users_to_remove:
+                return 0
+
+            # Delete password change timestamps
+            for username in users_to_remove:
+                conn.execute(
+                    "DELETE FROM password_change_timestamps WHERE username = ?",
+                    (username,),
+                )
+                # Also delete invalidated sessions for these users
+                conn.execute(
+                    "DELETE FROM invalidated_sessions WHERE username = ?",
+                    (username,),
+                )
+
+            return len(users_to_remove)
+
+        return self._conn_manager.execute_atomic(operation)
 
     def close(self) -> None:
         """Close database connections."""

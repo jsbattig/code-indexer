@@ -824,6 +824,35 @@ class UserManager:
             self._save_users(users_data)
             return True
 
+    def get_mcp_credentials_with_secrets(self, username: str) -> List[Dict[str, Any]]:
+        """
+        Get list of MCP credentials for user INCLUDING hashes.
+
+        WARNING: This method returns sensitive data (client_secret_hash).
+        Only use for internal credential verification, never expose to API.
+
+        Story #702 SQLite migration: Added to allow MCPCredentialManager
+        to verify credentials without calling internal _load_users().
+
+        Args:
+            username: Username
+
+        Returns:
+            List of full MCP credentials including client_secret_hash
+        """
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # SQLite backend (Story #702)
+            user_data = self._sqlite_backend.get_user(username)
+            if user_data is None:
+                return []
+            return user_data.get("mcp_credentials", [])
+        else:
+            # JSON file storage (backward compatible)
+            users_data = self._load_users()
+            if username not in users_data:
+                return []
+            return users_data[username].get("mcp_credentials", [])
+
     def get_mcp_credentials(self, username: str) -> List[Dict[str, Any]]:
         """
         Get list of MCP credentials for user (without hashes).
@@ -876,6 +905,11 @@ class UserManager:
         Returns:
             True if deleted, False if not found
         """
+        # Story #702 SQLite migration: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            return self._sqlite_backend.delete_mcp_credential(username, credential_id)
+
+        # JSON file storage (backward compatible)
         users_data = self._load_users()
         if username not in users_data:
             return False
@@ -905,6 +939,13 @@ class UserManager:
         Returns:
             True if updated, False if not found
         """
+        # Story #702 SQLite migration: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            return self._sqlite_backend.update_mcp_credential_last_used(
+                username, credential_id
+            )
+
+        # JSON file storage (backward compatible)
         users_data = self._load_users()
         if username not in users_data:
             return False
@@ -931,6 +972,11 @@ class UserManager:
         Returns:
             List of credential metadata with username information
         """
+        # Story #702 SQLite migration: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            return self._sqlite_backend.list_all_mcp_credentials(limit, offset)
+
+        # JSON file storage (backward compatible)
         all_credentials = []
         users_data = self._load_users()
 
@@ -1043,6 +1089,11 @@ class UserManager:
         Returns:
             True if removed, False if user not found
         """
+        # Story #702 SQLite migration: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            return self._sqlite_backend.remove_oidc_identity(username)
+
+        # JSON file storage (backward compatible)
         users_data = self._load_users()
 
         if username not in users_data:
@@ -1072,6 +1123,40 @@ class UserManager:
         """
         import secrets
 
+        # Story #702 SQLite migration: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            # Check if user already exists
+            existing_user = self._sqlite_backend.get_user(username)
+            if existing_user is not None:
+                raise ValueError(f"User already exists: {username}")
+
+            # Generate random password that user will never know (for password_hash field)
+            random_password = secrets.token_urlsafe(32)
+            password_hash = self.password_manager.hash_password(random_password)
+            created_at = datetime.now(timezone.utc)
+
+            # Create user via SQLite backend
+            self._sqlite_backend.create_user(
+                username=username,
+                password_hash=password_hash,
+                role=role.value if hasattr(role, "value") else role,
+                email=email,
+                created_at=DateTimeParser.format_for_storage(created_at),
+            )
+
+            # Set OIDC identity
+            if oidc_identity:
+                self._sqlite_backend.set_oidc_identity(username, oidc_identity)
+
+            return User(
+                username=username,
+                password_hash=password_hash,
+                role=role if isinstance(role, UserRole) else UserRole(role),
+                created_at=created_at,
+                email=email,
+            )
+
+        # JSON file storage (backward compatible)
         users_data = self._load_users()
 
         if username in users_data:

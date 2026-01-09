@@ -3229,9 +3229,9 @@ def create_app() -> FastAPI:
             )
 
             # Get the created_at timestamp from the stored key
-            users_data = user_manager._load_users()
-            user_data = users_data[current_user.username]
-            api_keys = user_data.get("api_keys", [])
+            # Story #702 SQLite migration: Use public get_api_keys() API
+            # instead of internal _load_users() to support SQLite mode.
+            api_keys = user_manager.get_api_keys(current_user.username)
             created_at = None
             for key in api_keys:
                 if key["key_id"] == key_id:

@@ -122,15 +122,15 @@ class MCPCredentialManager:
         if not self.user_manager:
             return None
 
-        # Search all users
+        # Search all users using public API
+        # Story #702 SQLite migration: Use get_mcp_credentials_with_secrets
+        # instead of internal _load_users() to support SQLite mode.
         users = self.user_manager.get_all_users()
         for user in users:
-            users_data = self.user_manager._load_users()
-            user_data = users_data.get(user.username)
-            if not user_data:
-                continue
-
-            mcp_credentials = user_data.get("mcp_credentials", [])
+            # Use public API that works with both JSON and SQLite backends
+            mcp_credentials = self.user_manager.get_mcp_credentials_with_secrets(
+                user.username
+            )
             for cred in mcp_credentials:
                 if cred.get("client_id") == client_id:
                     return (user.username, cred)
