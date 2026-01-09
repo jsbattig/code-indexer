@@ -19,40 +19,40 @@ Usage:
     manager.shutdown()
 """
 
-from src.code_indexer.server.telemetry.manager import (
+from code_indexer.server.telemetry.manager import (
     TelemetryManager,
     get_telemetry_manager,
     reset_telemetry_manager,
 )
-from src.code_indexer.server.telemetry.machine_metrics import (
+from code_indexer.server.telemetry.machine_metrics import (
     MachineMetricsExporter,
     get_machine_metrics_exporter,
     reset_machine_metrics_exporter,
 )
-from src.code_indexer.server.telemetry.instrumentation import (
+from code_indexer.server.telemetry.instrumentation import (
     instrument_fastapi,
     uninstrument_fastapi,
     DEFAULT_EXCLUDED_URLS,
     reset_instrumentation_state,
 )
-from src.code_indexer.server.telemetry.correlation_bridge import (
+from code_indexer.server.telemetry.correlation_bridge import (
     CorrelationBridgeMiddleware,
     get_current_correlation_id,
     set_current_correlation_id,
     CORRELATION_ID_HEADER,
     CORRELATION_ID_ATTRIBUTE,
 )
-from src.code_indexer.server.telemetry.metrics_instrumentation import (
+from code_indexer.server.telemetry.metrics_instrumentation import (
     ApplicationMetrics,
     get_application_metrics,
     reset_application_metrics,
 )
-from src.code_indexer.server.telemetry.job_metrics import (
+from code_indexer.server.telemetry.job_metrics import (
     JobMetrics,
     get_job_metrics,
     reset_job_metrics,
 )
-from src.code_indexer.server.telemetry.spans import (
+from code_indexer.server.telemetry.spans import (
     traced,
     create_span,
     get_tracer,
@@ -60,7 +60,7 @@ from src.code_indexer.server.telemetry.spans import (
     add_span_event,
     reset_spans_state,
 )
-from src.code_indexer.server.telemetry.log_handler import (
+from code_indexer.server.telemetry.log_handler import (
     OTELLogHandler,
     OTELLogFormatter,
     get_trace_context,
