@@ -16,6 +16,22 @@ from .key_to_remote_tester import KeyToRemoteTester
 from .remote_discovery_service import RemoteDiscoveryService
 
 
+def _create_default_ssh_key_manager() -> SSHKeyManager:
+    """Create SSHKeyManager with SQLite backend (Story #702 migration)."""
+    from .config_service import get_config_service
+
+    config_service = get_config_service()
+    server_dir = config_service.config_manager.server_dir
+    db_path = server_dir / "data" / "cidx_server.db"
+    metadata_dir = server_dir / "data" / "ssh_keys"
+
+    return SSHKeyManager(
+        metadata_dir=metadata_dir,
+        use_sqlite=True,
+        db_path=db_path,
+    )
+
+
 class CommitterResolutionService:
     """
     Service for resolving git committer email based on SSH key authentication.
@@ -44,7 +60,7 @@ class CommitterResolutionService:
         self.logger = logging.getLogger(__name__)
 
         # Initialize dependencies with defaults if not provided
-        self.ssh_key_manager = ssh_key_manager or SSHKeyManager()
+        self.ssh_key_manager = ssh_key_manager or _create_default_ssh_key_manager()
         self.key_to_remote_tester = key_to_remote_tester or KeyToRemoteTester()
         self.remote_discovery_service = (
             remote_discovery_service or RemoteDiscoveryService()

@@ -99,25 +99,31 @@ _ssh_key_manager: Optional[SSHKeyManager] = None
 
 
 def get_ssh_key_manager() -> SSHKeyManager:
-    """Get or create the SSH key manager instance."""
+    """Get or create the SSH key manager instance with SQLite backend (Story #702)."""
     global _ssh_key_manager
     if _ssh_key_manager is None:
         # Allow override via environment variables for testing
         ssh_dir = os.environ.get("CIDX_SSH_DIR")
         metadata_dir_env = os.environ.get("CIDX_SSH_METADATA_DIR")
-        server_data_dir = os.environ.get(
-            "CIDX_SERVER_DATA_DIR", str(Path.home() / ".code-indexer-server")
-        )
+
+        # Get server directory from config service
+        from ..services.config_service import get_config_service
+
+        config_service = get_config_service()
+        server_dir = config_service.config_manager.server_dir
+        db_path = server_dir / "data" / "cidx_server.db"
 
         # Use server data dir for metadata if not explicitly overridden
         if metadata_dir_env:
             metadata_dir = Path(metadata_dir_env)
         else:
-            metadata_dir = Path(server_data_dir) / "ssh_keys"
+            metadata_dir = server_dir / "data" / "ssh_keys"
 
         _ssh_key_manager = SSHKeyManager(
             ssh_dir=Path(ssh_dir) if ssh_dir else None,
             metadata_dir=metadata_dir,
+            use_sqlite=True,
+            db_path=db_path,
         )
     return _ssh_key_manager
 

@@ -36,12 +36,29 @@ def _get_token_manager() -> CITokenManager:
 
     config_service = get_config_service()
     server_dir = config_service.config_manager.server_dir
-    db_path = server_dir / "cidx.db"
+    db_path = server_dir / "data" / "cidx_server.db"
 
     return CITokenManager(
         server_dir_path=str(server_dir),
         use_sqlite=True,
         db_path=str(db_path),
+    )
+
+
+def _get_ssh_key_manager():
+    """Create SSHKeyManager with SQLite backend (Story #702 migration)."""
+    from ..services.config_service import get_config_service
+    from ..services.ssh_key_manager import SSHKeyManager
+
+    config_service = get_config_service()
+    server_dir = config_service.config_manager.server_dir
+    db_path = server_dir / "data" / "cidx_server.db"
+    metadata_dir = server_dir / "data" / "ssh_keys"
+
+    return SSHKeyManager(
+        metadata_dir=metadata_dir,
+        use_sqlite=True,
+        db_path=db_path,
     )
 
 
@@ -4628,9 +4645,7 @@ async def ssh_keys_page(request: Request):
     managed_keys = []
     unmanaged_keys = []
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
-
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         key_list = manager.list_keys()
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
@@ -4675,9 +4690,7 @@ def _create_ssh_keys_page_response(
     managed_keys = []
     unmanaged_keys = []
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
-
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         key_list = manager.list_keys()
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
@@ -4730,13 +4743,12 @@ async def create_ssh_key(
         )
 
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
         from ..services.ssh_key_generator import (
             InvalidKeyNameError,
             KeyAlreadyExistsError,
         )
 
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         manager.create_key(
             name=key_name,
             key_type=key_type,
@@ -4785,9 +4797,7 @@ async def delete_ssh_key(
         )
 
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
-
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         manager.delete_key(key_name)
 
         return _create_ssh_keys_page_response(
@@ -4824,9 +4834,9 @@ async def assign_host_to_key(
         )
 
     try:
-        from ..services.ssh_key_manager import SSHKeyManager, HostConflictError
+        from ..services.ssh_key_manager import HostConflictError
 
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         manager.assign_key_to_host(key_name, hostname)
 
         return _create_ssh_keys_page_response(

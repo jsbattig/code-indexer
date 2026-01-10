@@ -4004,10 +4004,21 @@ _ssh_key_manager: SSHKeyManager = None
 
 
 def get_ssh_key_manager() -> SSHKeyManager:
-    """Get or create the SSH key manager instance."""
+    """Get or create the SSH key manager instance with SQLite backend (Story #702)."""
     global _ssh_key_manager
     if _ssh_key_manager is None:
-        _ssh_key_manager = SSHKeyManager()
+        from ..services.config_service import get_config_service
+
+        config_service = get_config_service()
+        server_dir = config_service.config_manager.server_dir
+        db_path = server_dir / "data" / "cidx_server.db"
+        metadata_dir = server_dir / "data" / "ssh_keys"
+
+        _ssh_key_manager = SSHKeyManager(
+            metadata_dir=metadata_dir,
+            use_sqlite=True,
+            db_path=db_path,
+        )
     return _ssh_key_manager
 
 

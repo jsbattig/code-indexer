@@ -582,7 +582,16 @@ class TokenAuthenticator:
             from .ci_token_manager import CITokenManager
 
             server_dir = Path.home() / ".cidx-server"
-            token_manager = CITokenManager(server_dir_path=str(server_dir))
+            db_path = server_dir / "data" / "cidx_server.db"
+
+            # Ensure database directory exists before opening SQLite
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+
+            token_manager = CITokenManager(
+                server_dir_path=str(server_dir),
+                use_sqlite=True,
+                db_path=str(db_path),
+            )
             token_data = token_manager.get_token(platform)
 
             if token_data:

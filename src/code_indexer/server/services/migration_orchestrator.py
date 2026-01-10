@@ -58,16 +58,21 @@ class MigrationOrchestrator:
             cidx_config_path: Path to CIDX server config.
             skip_key_testing: If True, skip SSH authentication testing.
         """
+        # Get server directory from config service for consistent paths
+        from .config_service import get_config_service
+
+        config_service = get_config_service()
+        server_dir = config_service.config_manager.server_dir
+        db_path = server_dir / "data" / "cidx_server.db"
+
         if ssh_dir is None:
             ssh_dir = Path.home() / ".ssh"
         if metadata_dir is None:
-            metadata_dir = Path.home() / ".code-indexer-server" / "ssh_keys"
+            metadata_dir = server_dir / "data" / "ssh_keys"
         if migration_metadata_path is None:
-            migration_metadata_path = (
-                Path.home() / ".code-indexer-server" / "ssh_migration.json"
-            )
+            migration_metadata_path = server_dir / "ssh_migration.json"
         if cidx_config_path is None:
-            cidx_config_path = Path.home() / ".code-indexer-server" / "config.json"
+            cidx_config_path = server_dir / "config.json"
 
         self.ssh_dir = ssh_dir
         self.metadata_dir = metadata_dir
@@ -84,6 +89,8 @@ class MigrationOrchestrator:
         self.key_manager = SSHKeyManager(
             ssh_dir=ssh_dir,
             metadata_dir=metadata_dir,
+            use_sqlite=True,
+            db_path=db_path,
         )
 
     def should_run_migration(self) -> bool:
