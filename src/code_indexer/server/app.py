@@ -2639,10 +2639,11 @@ def create_app() -> FastAPI:
         use_sqlite=True,
         db_path=db_path,
     )
-    # Initialize BackgroundJobManager with persistence enabled (Story #541 - AC4)
-    jobs_storage_path = str(Path(server_data_dir) / "jobs.json")
+    # Initialize BackgroundJobManager with SQLite persistence (Bug fix: Jobs not showing in Dashboard)
     background_job_manager = BackgroundJobManager(
-        storage_path=jobs_storage_path, resource_config=server_config.resource_config
+        resource_config=server_config.resource_config,
+        use_sqlite=True,
+        db_path=db_path,
     )
     # Inject BackgroundJobManager into GoldenRepoManager for async operations
     golden_repo_manager.background_job_manager = background_job_manager
@@ -3317,9 +3318,9 @@ def create_app() -> FastAPI:
             )
 
             # Get the created_at timestamp from the stored key
-            users_data = user_manager._load_users()
-            user_data = users_data[current_user.username]
-            api_keys = user_data.get("api_keys", [])
+            # Story #702 SQLite migration: Use public get_api_keys() API
+            # instead of internal _load_users() to support SQLite mode.
+            api_keys = user_manager.get_api_keys(current_user.username)
             created_at = None
             for key in api_keys:
                 if key["key_id"] == key_id:

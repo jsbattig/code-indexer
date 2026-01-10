@@ -36,12 +36,29 @@ def _get_token_manager() -> CITokenManager:
 
     config_service = get_config_service()
     server_dir = config_service.config_manager.server_dir
-    db_path = server_dir / "cidx.db"
+    db_path = server_dir / "data" / "cidx_server.db"
 
     return CITokenManager(
         server_dir_path=str(server_dir),
         use_sqlite=True,
         db_path=str(db_path),
+    )
+
+
+def _get_ssh_key_manager():
+    """Create SSHKeyManager with SQLite backend (Story #702 migration)."""
+    from ..services.config_service import get_config_service
+    from ..services.ssh_key_manager import SSHKeyManager
+
+    config_service = get_config_service()
+    server_dir = config_service.config_manager.server_dir
+    db_path = server_dir / "data" / "cidx_server.db"
+    metadata_dir = server_dir / "data" / "ssh_keys"
+
+    return SSHKeyManager(
+        metadata_dir=metadata_dir,
+        use_sqlite=True,
+        db_path=db_path,
     )
 
 
@@ -821,9 +838,11 @@ def _get_golden_repos_list():
 
         # Get global registry to check global activation status
         try:
-            from code_indexer.global_repos.global_registry import GlobalRegistry
+            from code_indexer.server.utils.registry_factory import (
+                get_server_global_registry,
+            )
 
-            registry = GlobalRegistry(str(golden_repos_dir))
+            registry = get_server_global_registry(str(golden_repos_dir))
             global_repos = {r["repo_name"]: r for r in registry.list_global_repos()}
         except Exception as e:
             logger.warning(
@@ -2087,9 +2106,11 @@ def _get_all_activated_repos_for_query() -> list:
         )
         golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
 
-        from code_indexer.global_repos.global_registry import GlobalRegistry
+        from code_indexer.server.utils.registry_factory import (
+            get_server_global_registry,
+        )
 
-        registry = GlobalRegistry(str(golden_repos_dir))
+        registry = get_server_global_registry(str(golden_repos_dir))
         global_repos = registry.list_global_repos()
 
         for global_repo in global_repos:
@@ -2340,8 +2361,8 @@ async def query_submit(
                 if not repo_path and target_repo.get("is_global"):
                     try:
                         import os
-                        from code_indexer.global_repos.global_registry import (
-                            GlobalRegistry,
+                        from code_indexer.server.utils.registry_factory import (
+                            get_server_global_registry,
                         )
 
                         server_data_dir = os.environ.get(
@@ -2351,7 +2372,7 @@ async def query_submit(
                         golden_repos_dir = (
                             Path(server_data_dir) / "data" / "golden-repos"
                         )
-                        registry = GlobalRegistry(str(golden_repos_dir))
+                        registry = get_server_global_registry(str(golden_repos_dir))
                         global_repo_meta = registry.get_global_repo(user_alias)
                         if global_repo_meta:
                             repo_path = global_repo_meta.get("index_path")
@@ -2738,7 +2759,9 @@ def _execute_scip_query(
     # For global repos, resolve path from GlobalRegistry
     if not repo_path and target_repo.get("is_global"):
         try:
-            from code_indexer.global_repos.global_registry import GlobalRegistry
+            from code_indexer.server.utils.registry_factory import (
+                get_server_global_registry,
+            )
             import os
 
             server_data_dir = os.environ.get(
@@ -2746,7 +2769,7 @@ def _execute_scip_query(
                 os.path.expanduser("~/.cidx-server"),
             )
             golden_repos_dir = Path(server_data_dir) / "data" / "golden-repos"
-            registry = GlobalRegistry(str(golden_repos_dir))
+            registry = get_server_global_registry(str(golden_repos_dir))
             global_repo_meta = registry.get_global_repo(user_alias)
             if global_repo_meta:
                 repo_path = global_repo_meta.get("index_path")
@@ -4622,9 +4645,7 @@ async def ssh_keys_page(request: Request):
     managed_keys = []
     unmanaged_keys = []
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
-
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         key_list = manager.list_keys()
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
@@ -4669,9 +4690,7 @@ def _create_ssh_keys_page_response(
     managed_keys = []
     unmanaged_keys = []
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
-
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         key_list = manager.list_keys()
         managed_keys = key_list.managed
         unmanaged_keys = key_list.unmanaged
@@ -4724,13 +4743,12 @@ async def create_ssh_key(
         )
 
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
         from ..services.ssh_key_generator import (
             InvalidKeyNameError,
             KeyAlreadyExistsError,
         )
 
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         manager.create_key(
             name=key_name,
             key_type=key_type,
@@ -4779,9 +4797,7 @@ async def delete_ssh_key(
         )
 
     try:
-        from ..services.ssh_key_manager import SSHKeyManager
-
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         manager.delete_key(key_name)
 
         return _create_ssh_keys_page_response(
@@ -4818,9 +4834,9 @@ async def assign_host_to_key(
         )
 
     try:
-        from ..services.ssh_key_manager import SSHKeyManager, HostConflictError
+        from ..services.ssh_key_manager import HostConflictError
 
-        manager = SSHKeyManager()
+        manager = _get_ssh_key_manager()
         manager.assign_key_to_host(key_name, hostname)
 
         return _create_ssh_keys_page_response(

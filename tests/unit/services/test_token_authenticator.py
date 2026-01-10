@@ -13,6 +13,7 @@ import pytest
 
 from src.code_indexer.server.services.ci_token_manager import CITokenManager
 from src.code_indexer.server.services.git_state_manager import TokenAuthenticator
+from src.code_indexer.server.storage.database_manager import DatabaseSchema
 
 
 class TestTokenAuthenticatorResolveToken:
@@ -33,6 +34,16 @@ class TestTokenAuthenticatorResolveToken:
             server_dir = temp_server_dir.parent / ".cidx-server"
             server_dir.mkdir(parents=True, exist_ok=True)
 
+            # Clean up any existing database for test isolation
+            db_path = server_dir / "data" / "cidx_server.db"
+            if db_path.exists():
+                db_path.unlink()
+
+            # Set up fresh SQLite database for Story #702 migration
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            schema = DatabaseSchema(str(db_path))
+            schema.initialize_database()
+
             # Clean up any existing token file for test isolation
             token_file = server_dir / "ci_tokens.json"
             if token_file.exists():
@@ -47,13 +58,18 @@ class TestTokenAuthenticatorResolveToken:
         This test proves the BUG: Current implementation returns encrypted gibberish
         instead of decrypted token when reading from file storage.
         """
-        # Arrange: Save encrypted GitHub token using CITokenManager
+        # Arrange: Save encrypted GitHub token using CITokenManager with SQLite
         platform = "github"
         plaintext_token = (
             "ghp_1234567890abcdefghijklmnopqrstuvwxyz"  # 40 total (36 after prefix)
         )
 
-        token_manager = CITokenManager(server_dir_path=str(mock_home))
+        db_path = mock_home / "data" / "cidx_server.db"
+        token_manager = CITokenManager(
+            server_dir_path=str(mock_home),
+            use_sqlite=True,
+            db_path=str(db_path),
+        )
         token_manager.save_token(platform, plaintext_token)
 
         # Act: Resolve token using TokenAuthenticator
@@ -83,8 +99,13 @@ class TestTokenAuthenticatorResolveToken:
             "ghp_0987654321zyxwvutsrqponmlkjihgfedcba"  # 40 total (36 after prefix)
         )
 
-        # Save encrypted token to file
-        token_manager = CITokenManager(server_dir_path=str(mock_home))
+        # Save encrypted token to SQLite
+        db_path = mock_home / "data" / "cidx_server.db"
+        token_manager = CITokenManager(
+            server_dir_path=str(mock_home),
+            use_sqlite=True,
+            db_path=str(db_path),
+        )
         token_manager.save_token(platform, file_token)
 
         # Set environment variable
@@ -102,11 +123,16 @@ class TestTokenAuthenticatorResolveToken:
         """
         Test GitLab token resolution from encrypted file storage.
         """
-        # Arrange: Save encrypted GitLab token
+        # Arrange: Save encrypted GitLab token using SQLite
         platform = "gitlab"
         plaintext_token = "glpat-abcdefghijklmnopqrst"
 
-        token_manager = CITokenManager(server_dir_path=str(mock_home))
+        db_path = mock_home / "data" / "cidx_server.db"
+        token_manager = CITokenManager(
+            server_dir_path=str(mock_home),
+            use_sqlite=True,
+            db_path=str(db_path),
+        )
         token_manager.save_token(platform, plaintext_token)
 
         # Act: Resolve token

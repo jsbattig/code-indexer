@@ -216,6 +216,11 @@ class PasswordChangeSessionManager:
         Returns:
             Number of user records cleaned up
         """
+        # Story #702 SQLite migration: Add SQLite backend support
+        if self._use_sqlite and self._sqlite_backend is not None:
+            return self._sqlite_backend.cleanup_old_data(days_to_keep)
+
+        # JSON file storage (backward compatible)
         with self._lock:
             cutoff_time = datetime.now(timezone.utc).timestamp() - (
                 days_to_keep * 24 * 3600

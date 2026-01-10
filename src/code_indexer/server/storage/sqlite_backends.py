@@ -9,7 +9,7 @@ eliminating race conditions from concurrent GlobalRegistry instances.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .database_manager import DatabaseConnectionManager
@@ -446,6 +446,177 @@ class UsersSqliteBackend:
             return cursor.rowcount > 0
         return self._conn_manager.execute_atomic(operation)
 
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """
+        Get user by email address (case-insensitive).
+
+        Story #702 SSO fix: This method was missing from SQLite backend,
+        causing AttributeError when SSO login tried to look up users by email.
+
+        Args:
+            email: Email address to search for (case-insensitive, whitespace trimmed)
+
+        Returns:
+            User data dictionary with api_keys and mcp_credentials, or None if not found.
+        """
+        conn = self._conn_manager.get_connection()
+        cursor = conn.execute(
+            """SELECT username, password_hash, role, email, created_at, oidc_identity
+               FROM users WHERE LOWER(email) = LOWER(?)""",
+            (email.strip(),),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        username = row[0]
+        return {
+            "username": username,
+            "password_hash": row[1],
+            "role": row[2],
+            "email": row[3],
+            "created_at": row[4],
+            "oidc_identity": json.loads(row[5]) if row[5] else None,
+            "api_keys": self._get_api_keys(conn, username),
+            "mcp_credentials": self._get_mcp_credentials(conn, username),
+        }
+
+    def set_oidc_identity(self, username: str, identity: Dict[str, Any]) -> bool:
+        """
+        Set OIDC identity for a user.
+
+        Story #702 SSO fix: This method was missing from SQLite backend,
+        causing AttributeError when SSO login tried to store OIDC identity.
+
+        Args:
+            username: Username of the user
+            identity: OIDC identity data (subject, email, linked_at, last_login)
+
+        Returns:
+            True if user was updated, False if user not found.
+        """
+        def operation(conn):
+            cursor = conn.execute(
+                """UPDATE users SET oidc_identity = ? WHERE username = ?""",
+                (json.dumps(identity), username),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
+    def delete_mcp_credential(self, username: str, credential_id: str) -> bool:
+        """
+        Delete an MCP credential for a user.
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when deleting MCP credentials in SQLite mode.
+
+        Args:
+            username: Username of the credential owner
+            credential_id: ID of the credential to delete
+
+        Returns:
+            True if credential was deleted, False if not found.
+        """
+
+        def operation(conn):
+            cursor = conn.execute(
+                "DELETE FROM user_mcp_credentials WHERE username = ? AND credential_id = ?",
+                (username, credential_id),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
+    def update_mcp_credential_last_used(
+        self, username: str, credential_id: str
+    ) -> bool:
+        """
+        Update last_used_at timestamp for an MCP credential.
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when updating MCP credential timestamps in SQLite mode.
+
+        Args:
+            username: Username of the credential owner
+            credential_id: ID of the credential to update
+
+        Returns:
+            True if credential was updated, False if not found.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        def operation(conn):
+            cursor = conn.execute(
+                """UPDATE user_mcp_credentials SET last_used_at = ?
+                   WHERE username = ? AND credential_id = ?""",
+                (now, username, credential_id),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
+    def list_all_mcp_credentials(
+        self, limit: int = 100, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        List MCP credentials across all users with pagination.
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when listing all MCP credentials in SQLite mode.
+
+        Args:
+            limit: Maximum number of credentials to return
+            offset: Number of credentials to skip
+
+        Returns:
+            List of credential metadata with username information.
+        """
+        conn = self._conn_manager.get_connection()
+        cursor = conn.execute(
+            """SELECT username, credential_id, client_id, client_id_prefix,
+                      name, created_at, last_used_at
+               FROM user_mcp_credentials
+               ORDER BY username, credential_id
+               LIMIT ? OFFSET ?""",
+            (limit, offset),
+        )
+        return [
+            {
+                "username": r[0],
+                "credential_id": r[1],
+                "client_id": r[2],
+                "client_id_prefix": r[3],
+                "name": r[4],
+                "created_at": r[5],
+                "last_used_at": r[6],
+            }
+            for r in cursor.fetchall()
+        ]
+
+    def remove_oidc_identity(self, username: str) -> bool:
+        """
+        Remove OIDC identity from a user (unlink SSO).
+
+        Story #702 SQLite migration: This method was missing, causing
+        AttributeError when unlinking SSO accounts in SQLite mode.
+
+        Args:
+            username: Username to remove OIDC identity from
+
+        Returns:
+            True if user was updated, False if user not found.
+        """
+
+        def operation(conn):
+            cursor = conn.execute(
+                "UPDATE users SET oidc_identity = NULL WHERE username = ?",
+                (username,),
+            )
+            return cursor.rowcount > 0
+
+        return self._conn_manager.execute_atomic(operation)
+
     def close(self) -> None:
         """Close database connections."""
         self._conn_manager.close_all()
@@ -669,6 +840,49 @@ class SessionsSqliteBackend:
         )
         row = cursor.fetchone()
         return row[0] if row else None
+
+    def cleanup_old_data(self, days_to_keep: int = 30) -> int:
+        """
+        Clean up old session invalidation data.
+
+        Story #702 SQLite migration: Added to support cleanup_old_data in
+        PasswordChangeSessionManager SQLite mode.
+
+        Args:
+            days_to_keep: Number of days of data to keep
+
+        Returns:
+            Number of user records cleaned up
+        """
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+        cutoff_iso = cutoff_time.isoformat()
+
+        def operation(conn):
+            # Get usernames to clean up based on password change timestamp
+            cursor = conn.execute(
+                "SELECT username FROM password_change_timestamps WHERE changed_at < ?",
+                (cutoff_iso,),
+            )
+            users_to_remove = [row[0] for row in cursor.fetchall()]
+
+            if not users_to_remove:
+                return 0
+
+            # Delete password change timestamps
+            for username in users_to_remove:
+                conn.execute(
+                    "DELETE FROM password_change_timestamps WHERE username = ?",
+                    (username,),
+                )
+                # Also delete invalidated sessions for these users
+                conn.execute(
+                    "DELETE FROM invalidated_sessions WHERE username = ?",
+                    (username,),
+                )
+
+            return len(users_to_remove)
+
+        return self._conn_manager.execute_atomic(operation)
 
     def close(self) -> None:
         """Close database connections."""
@@ -935,6 +1149,265 @@ class GoldenRepoMetadataSqliteBackend:
             (alias,),
         )
         return cursor.fetchone() is not None
+
+    def close(self) -> None:
+        """Close database connections."""
+        self._conn_manager.close_all()
+
+
+class BackgroundJobsSqliteBackend:
+    """
+    SQLite backend for background job management.
+
+    Bug fix: BackgroundJobManager SQLite migration - Jobs not showing in Dashboard.
+    Replaces JSON file storage with atomic SQLite operations.
+    Complex nested data (result, claude_actions, extended_error, etc.) stored as JSON blobs.
+    """
+
+    def __init__(self, db_path: str) -> None:
+        """Initialize the backend."""
+        self._conn_manager = DatabaseConnectionManager(db_path)
+
+    def save_job(
+        self,
+        job_id: str,
+        operation_type: str,
+        status: str,
+        created_at: str,
+        username: str,
+        progress: int,
+        started_at: Optional[str] = None,
+        completed_at: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+        is_admin: bool = False,
+        cancelled: bool = False,
+        repo_alias: Optional[str] = None,
+        resolution_attempts: int = 0,
+        claude_actions: Optional[List[str]] = None,
+        failure_reason: Optional[str] = None,
+        extended_error: Optional[Dict[str, Any]] = None,
+        language_resolution_status: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> None:
+        """Save a new background job."""
+        def operation(conn):
+            conn.execute(
+                """INSERT INTO background_jobs
+                   (job_id, operation_type, status, created_at, started_at, completed_at,
+                    result, error, progress, username, is_admin, cancelled, repo_alias,
+                    resolution_attempts, claude_actions, failure_reason, extended_error,
+                    language_resolution_status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    job_id,
+                    operation_type,
+                    status,
+                    created_at,
+                    started_at,
+                    completed_at,
+                    json.dumps(result) if result else None,
+                    error,
+                    progress,
+                    username,
+                    1 if is_admin else 0,
+                    1 if cancelled else 0,
+                    repo_alias,
+                    resolution_attempts,
+                    json.dumps(claude_actions) if claude_actions else None,
+                    failure_reason,
+                    json.dumps(extended_error) if extended_error else None,
+                    json.dumps(language_resolution_status) if language_resolution_status else None,
+                ),
+            )
+            return None
+
+        self._conn_manager.execute_atomic(operation)
+        logger.debug(f"Saved background job: {job_id}")
+
+    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get job details by job ID."""
+        conn = self._conn_manager.get_connection()
+        cursor = conn.execute(
+            """SELECT job_id, operation_type, status, created_at, started_at, completed_at,
+                      result, error, progress, username, is_admin, cancelled, repo_alias,
+                      resolution_attempts, claude_actions, failure_reason, extended_error,
+                      language_resolution_status
+               FROM background_jobs WHERE job_id = ?""",
+            (job_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_dict(row)
+
+    def _row_to_dict(self, row) -> Dict[str, Any]:
+        """Convert a database row to job dictionary."""
+        return {
+            "job_id": row[0],
+            "operation_type": row[1],
+            "status": row[2],
+            "created_at": row[3],
+            "started_at": row[4],
+            "completed_at": row[5],
+            "result": json.loads(row[6]) if row[6] else None,
+            "error": row[7],
+            "progress": row[8],
+            "username": row[9],
+            "is_admin": bool(row[10]),
+            "cancelled": bool(row[11]),
+            "repo_alias": row[12],
+            "resolution_attempts": row[13],
+            "claude_actions": json.loads(row[14]) if row[14] else None,
+            "failure_reason": row[15],
+            "extended_error": json.loads(row[16]) if row[16] else None,
+            "language_resolution_status": json.loads(row[17]) if row[17] else None,
+        }
+
+    def update_job(self, job_id: str, **kwargs) -> None:
+        """Update job fields. Accepts any field from the background_jobs table."""
+        json_fields = {
+            "result", "claude_actions", "extended_error", "language_resolution_status"
+        }
+        bool_fields = {"is_admin", "cancelled"}
+        updates, params = [], []
+
+        for key, value in kwargs.items():
+            if value is not None:
+                updates.append(f"{key} = ?")
+                if key in json_fields:
+                    params.append(json.dumps(value))
+                elif key in bool_fields:
+                    params.append(1 if value else 0)
+                else:
+                    params.append(value)
+            elif key in json_fields:
+                # Allow setting JSON fields to NULL
+                updates.append(f"{key} = ?")
+                params.append(None)
+
+        if not updates:
+            return
+
+        params.append(job_id)
+
+        def operation(conn):
+            conn.execute(
+                f"UPDATE background_jobs SET {', '.join(updates)} WHERE job_id = ?",
+                params,
+            )
+            return None
+
+        self._conn_manager.execute_atomic(operation)
+
+    def list_jobs(
+        self,
+        username: Optional[str] = None,
+        status: Optional[str] = None,
+        operation_type: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List background jobs with optional filtering and pagination."""
+        conn = self._conn_manager.get_connection()
+
+        query = """SELECT job_id, operation_type, status, created_at, started_at, completed_at,
+                          result, error, progress, username, is_admin, cancelled, repo_alias,
+                          resolution_attempts, claude_actions, failure_reason, extended_error,
+                          language_resolution_status
+                   FROM background_jobs"""
+
+        conditions = []
+        params: List[Any] = []
+
+        if username:
+            conditions.append("username = ?")
+            params.append(username)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if operation_type:
+            conditions.append("operation_type = ?")
+            params.append(operation_type)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        cursor = conn.execute(query, params)
+        return [self._row_to_dict(row) for row in cursor.fetchall()]
+
+    def delete_job(self, job_id: str) -> bool:
+        """Delete a job by ID."""
+        def operation(conn):
+            cursor = conn.execute(
+                "DELETE FROM background_jobs WHERE job_id = ?", (job_id,)
+            )
+            return cursor.rowcount > 0
+
+        deleted = self._conn_manager.execute_atomic(operation)
+        if deleted:
+            logger.debug(f"Deleted background job: {job_id}")
+        return deleted
+
+    def cleanup_old_jobs(self, max_age_hours: int = 24) -> int:
+        """Clean up old completed/failed/cancelled jobs."""
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        cutoff_iso = cutoff_time.isoformat()
+
+        def operation(conn):
+            cursor = conn.execute(
+                """DELETE FROM background_jobs
+                   WHERE status IN ('completed', 'failed', 'cancelled')
+                   AND completed_at IS NOT NULL
+                   AND completed_at < ?""",
+                (cutoff_iso,),
+            )
+            return cursor.rowcount
+
+        count = self._conn_manager.execute_atomic(operation)
+        if count > 0:
+            logger.info(f"Cleaned up {count} old background jobs")
+        return count
+
+    def count_jobs_by_status(self) -> Dict[str, int]:
+        """Get count of jobs grouped by status."""
+        conn = self._conn_manager.get_connection()
+        cursor = conn.execute(
+            "SELECT status, COUNT(*) FROM background_jobs GROUP BY status"
+        )
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
+    def get_job_stats(self, time_filter: str = "24h") -> Dict[str, int]:
+        """Get job statistics filtered by time period."""
+        now = datetime.now(timezone.utc)
+
+        if time_filter == "24h":
+            cutoff = now - timedelta(hours=24)
+        elif time_filter == "7d":
+            cutoff = now - timedelta(days=7)
+        elif time_filter == "30d":
+            cutoff = now - timedelta(days=30)
+        else:
+            cutoff = now - timedelta(hours=24)
+
+        cutoff_iso = cutoff.isoformat()
+
+        conn = self._conn_manager.get_connection()
+        cursor = conn.execute(
+            """SELECT status, COUNT(*) FROM background_jobs
+               WHERE completed_at IS NOT NULL AND completed_at >= ?
+               GROUP BY status""",
+            (cutoff_iso,),
+        )
+
+        stats = {"completed": 0, "failed": 0}
+        for row in cursor.fetchall():
+            if row[0] in stats:
+                stats[row[0]] = row[1]
+
+        return stats
 
     def close(self) -> None:
         """Close database connections."""

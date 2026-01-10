@@ -22,6 +22,7 @@ from .sqlite_backends import (
     SessionsSqliteBackend,
     SSHKeysSqliteBackend,
     GoldenRepoMetadataSqliteBackend,
+    BackgroundJobsSqliteBackend,
 )
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,78 @@ class MigrationService:
             "skipped": False,
         }
 
+    def migrate_background_jobs(self) -> Dict[str, Any]:
+        """Migrate jobs.json to SQLite background_jobs table."""
+        source_file = Path(self.source_dir) / "jobs.json"
+        if not source_file.exists():
+            logger.info("No jobs.json found, skipping background jobs migration")
+            return {"migrated": 0, "errors": 0, "skipped": True}
+
+        try:
+            with open(source_file, "r") as f:
+                jobs_data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to read jobs.json: {e}")
+            return {"migrated": 0, "errors": 1, "skipped": False}
+
+        # Filter out internal keys prefixed with underscore
+        job_records = {k: v for k, v in jobs_data.items() if not k.startswith("_")}
+        backend = BackgroundJobsSqliteBackend(self.db_path)
+        migrated, already_exists, errors = 0, 0, 0
+
+        try:
+            for job_id, job_data in job_records.items():
+                try:
+                    backend.save_job(
+                        job_id=job_id,
+                        operation_type=job_data.get("operation_type", ""),
+                        status=job_data.get("status", ""),
+                        created_at=job_data.get("created_at", ""),
+                        started_at=job_data.get("started_at"),
+                        completed_at=job_data.get("completed_at"),
+                        result=job_data.get("result"),
+                        error=job_data.get("error"),
+                        progress=job_data.get("progress", 0),
+                        username=job_data.get("username", ""),
+                        is_admin=job_data.get("is_admin", False),
+                        cancelled=job_data.get("cancelled", False),
+                        repo_alias=job_data.get("repo_alias"),
+                        resolution_attempts=job_data.get("resolution_attempts", 0),
+                        claude_actions=job_data.get("claude_actions"),
+                        failure_reason=job_data.get("failure_reason"),
+                        extended_error=job_data.get("extended_error"),
+                        language_resolution_status=job_data.get(
+                            "language_resolution_status"
+                        ),
+                    )
+                    migrated += 1
+                    logger.debug(f"Migrated background job: {job_id}")
+                except sqlite3.IntegrityError:
+                    already_exists += 1
+                    logger.debug(f"Background job already exists, skipping: {job_id}")
+                except Exception as e:
+                    logger.error(f"Failed to migrate background job {job_id}: {e}")
+                    errors += 1
+        finally:
+            backend.close()
+
+        logger.info(
+            f"Background jobs migration: {migrated} migrated, "
+            f"{already_exists} already existed, {errors} errors"
+        )
+        if errors == 0 and (migrated > 0 or already_exists > 0):
+            try:
+                os.rename(str(source_file), str(source_file) + ".migrated")
+                logger.info(f"Renamed {source_file} to {source_file}.migrated")
+            except OSError as e:
+                logger.warning(f"Failed to rename {source_file}: {e}")
+        return {
+            "migrated": migrated,
+            "already_exists": already_exists,
+            "errors": errors,
+            "skipped": False,
+        }
+
     def migrate_ci_tokens(self) -> Dict[str, Any]:
         """Migrate ci_tokens.json to SQLite ci_tokens table."""
         source_file = Path(self.source_dir) / "ci_tokens.json"
@@ -577,6 +650,9 @@ class MigrationService:
 
         results["global_repos"] = self.migrate_global_repos()
         results["users"] = self.migrate_users()
+        # background_jobs must run BEFORE sync_jobs because jobs.json contains
+        # BackgroundJobManager jobs (operation_type field), not SyncJobManager jobs
+        results["background_jobs"] = self.migrate_background_jobs()
         results["sync_jobs"] = self.migrate_sync_jobs()
         results["ci_tokens"] = self.migrate_ci_tokens()
         results["sessions"] = self.migrate_sessions()

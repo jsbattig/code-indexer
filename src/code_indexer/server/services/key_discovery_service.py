@@ -4,6 +4,7 @@ Key Discovery Service.
 Discovers existing SSH keys and parses config file mappings.
 """
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -44,6 +45,33 @@ class KeyDiscoveryService:
             ssh_dir = Path.home() / ".ssh"
         self.ssh_dir = ssh_dir
 
+    def _compute_fingerprint(self, public_key_path: Path) -> Optional[str]:
+        """
+        Compute fingerprint of an SSH public key using ssh-keygen.
+
+        Args:
+            public_key_path: Path to the public key file
+
+        Returns:
+            Fingerprint string (e.g., "SHA256:xxxx...") or None if computation fails
+        """
+        try:
+            result = subprocess.run(
+                ["ssh-keygen", "-lf", str(public_key_path)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout:
+                # Output format: "256 SHA256:xxxx... user@host (ED25519)"
+                # Extract the SHA256:xxxx... part (second field)
+                parts = result.stdout.strip().split()
+                if len(parts) >= 2:
+                    return parts[1]
+            return None
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+            return None
+
     def discover_existing_keys(self) -> List[KeyInfo]:
         """
         Discover existing SSH key pairs in the SSH directory.
@@ -73,11 +101,13 @@ class KeyDiscoveryService:
             # Check if corresponding .pub file exists
             pub_path = file_path.parent / f"{file_path.name}.pub"
             if pub_path.exists():
+                fingerprint = self._compute_fingerprint(pub_path)
                 discovered_keys.append(
                     KeyInfo(
                         name=file_path.name,
                         private_path=file_path,
                         public_path=pub_path,
+                        fingerprint=fingerprint,
                         is_cidx_managed=False,
                     )
                 )

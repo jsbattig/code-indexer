@@ -1,6 +1,8 @@
 """Unit tests for KeyDiscoveryService."""
 
+import subprocess
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 from code_indexer.server.services.key_discovery_service import (
     KeyDiscoveryService,
@@ -123,3 +125,73 @@ Host gitlab.com
 
         assert work_key_path in mappings
         assert "gitlab.com" in mappings[work_key_path]
+
+
+class TestKeyDiscoveryServiceFingerprint:
+    """Tests for fingerprint computation in discover_existing_keys()."""
+
+    def test_discover_keys_computes_fingerprint(self, tmp_path):
+        """Should compute fingerprint for discovered keys."""
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+
+        # Create a key pair
+        (ssh_dir / "id_ed25519").write_text("PRIVATE KEY CONTENT")
+        (ssh_dir / "id_ed25519.pub").write_text("ssh-ed25519 AAAA... test@example.com")
+
+        service = KeyDiscoveryService(ssh_dir=ssh_dir)
+
+        # Mock _compute_fingerprint to return a known fingerprint
+        with patch.object(
+            service, "_compute_fingerprint", return_value="SHA256:abcdef123456"
+        ) as mock_compute:
+            keys = service.discover_existing_keys()
+
+            # Verify _compute_fingerprint was called with the public key path
+            mock_compute.assert_called_once()
+            call_args = mock_compute.call_args
+            assert call_args[0][0] == ssh_dir / "id_ed25519.pub"
+
+            assert len(keys) == 1
+            assert keys[0].fingerprint == "SHA256:abcdef123456"
+
+    def test_discover_keys_handles_fingerprint_failure_gracefully(self, tmp_path):
+        """Should leave fingerprint as None if computation fails."""
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+
+        # Create a key pair
+        (ssh_dir / "id_rsa").write_text("PRIVATE KEY CONTENT")
+        (ssh_dir / "id_rsa.pub").write_text("ssh-rsa AAAA... test@example.com")
+
+        service = KeyDiscoveryService(ssh_dir=ssh_dir)
+
+        # Mock _compute_fingerprint to return None (failure case)
+        with patch.object(service, "_compute_fingerprint", return_value=None):
+            keys = service.discover_existing_keys()
+
+        assert len(keys) == 1
+        assert keys[0].fingerprint is None
+
+    def test_compute_fingerprint_parses_ssh_keygen_output(self, tmp_path):
+        """Should correctly parse fingerprint from ssh-keygen output."""
+        import code_indexer.server.services.key_discovery_service as kds_module
+
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+
+        # Create a valid public key file
+        pub_key_path = ssh_dir / "id_ed25519.pub"
+        pub_key_path.write_text("ssh-ed25519 AAAA...")
+
+        service = KeyDiscoveryService(ssh_dir=ssh_dir)
+
+        # Mock subprocess.run at the module level where it's imported
+        mock_result = MagicMock()
+        mock_result.stdout = "3072 SHA256:xyzPQR789abc user@host (RSA)\n"
+        mock_result.returncode = 0
+
+        with patch.object(kds_module.subprocess, "run", return_value=mock_result):
+            fingerprint = service._compute_fingerprint(pub_key_path)
+
+        assert fingerprint == "SHA256:xyzPQR789abc"

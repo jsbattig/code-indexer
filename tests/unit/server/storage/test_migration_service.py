@@ -336,6 +336,337 @@ class TestMigrationStatus:
         assert service.is_migration_needed() is False
 
 
+class TestBackgroundJobsMigration:
+    """Tests for migrating jobs.json to SQLite background_jobs table."""
+
+    def test_migrate_background_jobs_transfers_all_jobs(self, tmp_path: Path) -> None:
+        """
+        Given a jobs.json with multiple background jobs
+        When migrate_background_jobs() is called
+        Then all jobs are transferred to SQLite background_jobs table.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.migration_service import MigrationService
+        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
+
+        # Setup source JSON
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        jobs_file = source_dir / "jobs.json"
+        jobs_data = {
+            "job-001": {
+                "job_id": "job-001",
+                "operation_type": "add_golden_repo",
+                "status": "completed",
+                "created_at": "2024-01-01T00:00:00+00:00",
+                "started_at": "2024-01-01T00:00:01+00:00",
+                "completed_at": "2024-01-01T00:00:30+00:00",
+                "result": {"success": True, "alias": "test-repo"},
+                "error": None,
+                "progress": 100,
+                "username": "admin",
+                "is_admin": True,
+                "cancelled": False,
+                "repo_alias": "test-repo",
+                "resolution_attempts": 0,
+                "claude_actions": None,
+                "failure_reason": None,
+                "extended_error": None,
+                "language_resolution_status": None,
+            },
+            "job-002": {
+                "job_id": "job-002",
+                "operation_type": "remove_golden_repo",
+                "status": "failed",
+                "created_at": "2024-01-02T00:00:00+00:00",
+                "started_at": "2024-01-02T00:00:01+00:00",
+                "completed_at": "2024-01-02T00:01:00+00:00",
+                "result": None,
+                "error": "Repository not found",
+                "progress": 50,
+                "username": "user1",
+                "is_admin": False,
+                "cancelled": False,
+                "repo_alias": "missing-repo",
+                "resolution_attempts": 2,
+                "claude_actions": ["action1", "action2"],
+                "failure_reason": "Not found",
+                "extended_error": {"code": 404, "details": "No such repo"},
+                "language_resolution_status": {"python": {"status": "resolved"}},
+            },
+        }
+        jobs_file.write_text(json.dumps(jobs_data, indent=2))
+
+        # Setup target database
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        # Migrate
+        service = MigrationService(str(source_dir), str(db_path))
+        result = service.migrate_background_jobs()
+
+        # Verify counts
+        assert result["migrated"] == 2
+        assert result["errors"] == 0
+        assert result["skipped"] is False
+
+        # Verify data in SQLite
+        backend = BackgroundJobsSqliteBackend(str(db_path))
+        job1 = backend.get_job("job-001")
+        job2 = backend.get_job("job-002")
+        backend.close()
+
+        assert job1 is not None
+        assert job1["operation_type"] == "add_golden_repo"
+        assert job1["status"] == "completed"
+        assert job1["result"] == {"success": True, "alias": "test-repo"}
+        assert job1["is_admin"] is True
+        assert job1["progress"] == 100
+
+        assert job2 is not None
+        assert job2["operation_type"] == "remove_golden_repo"
+        assert job2["error"] == "Repository not found"
+        assert job2["claude_actions"] == ["action1", "action2"]
+        assert job2["extended_error"] == {"code": 404, "details": "No such repo"}
+        assert job2["language_resolution_status"] == {"python": {"status": "resolved"}}
+
+    def test_migrate_background_jobs_skips_missing_file(self, tmp_path: Path) -> None:
+        """
+        Given no jobs.json exists
+        When migrate_background_jobs() is called
+        Then it returns with zero migrations and skipped=True.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.migration_service import MigrationService
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        # No jobs.json created
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        service = MigrationService(str(source_dir), str(db_path))
+        result = service.migrate_background_jobs()
+
+        assert result["migrated"] == 0
+        assert result["errors"] == 0
+        assert result["skipped"] is True
+
+    def test_migrate_background_jobs_handles_invalid_json(self, tmp_path: Path) -> None:
+        """
+        Given a jobs.json with invalid JSON content
+        When migrate_background_jobs() is called
+        Then it returns with errors and skipped=False.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.migration_service import MigrationService
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        jobs_file = source_dir / "jobs.json"
+        jobs_file.write_text("{ invalid json }")
+
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        service = MigrationService(str(source_dir), str(db_path))
+        result = service.migrate_background_jobs()
+
+        assert result["migrated"] == 0
+        assert result["errors"] == 1
+        assert result["skipped"] is False
+
+    def test_migrate_background_jobs_idempotent(self, tmp_path: Path) -> None:
+        """
+        Given a migration has already been run
+        When migrate_background_jobs() is called again with same data
+        Then it succeeds without duplicating data.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.migration_service import MigrationService
+        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
+
+        # Setup source JSON
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        jobs_file = source_dir / "jobs.json"
+        jobs_data = {
+            "job-idempotent": {
+                "job_id": "job-idempotent",
+                "operation_type": "add_golden_repo",
+                "status": "completed",
+                "created_at": "2024-01-01T00:00:00+00:00",
+                "started_at": "2024-01-01T00:00:01+00:00",
+                "completed_at": "2024-01-01T00:00:30+00:00",
+                "result": None,
+                "error": None,
+                "progress": 100,
+                "username": "admin",
+                "is_admin": True,
+                "cancelled": False,
+                "repo_alias": None,
+                "resolution_attempts": 0,
+                "claude_actions": None,
+                "failure_reason": None,
+                "extended_error": None,
+                "language_resolution_status": None,
+            },
+        }
+        jobs_file.write_text(json.dumps(jobs_data, indent=2))
+
+        # Setup target database
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        # Run first migration
+        service = MigrationService(str(source_dir), str(db_path))
+        result1 = service.migrate_background_jobs()
+
+        # First run should migrate and rename file
+        assert result1["migrated"] == 1
+        assert result1["errors"] == 0
+
+        # Recreate the file to simulate re-running migration (e.g., from backup restore)
+        jobs_file.write_text(json.dumps(jobs_data, indent=2))
+
+        # Run second migration
+        result2 = service.migrate_background_jobs()
+
+        # Second run should report already exists due to IntegrityError
+        assert result2["already_exists"] == 1
+        assert result2["migrated"] == 0
+        assert result2["errors"] == 0
+
+        # Should still have exactly 1 job (not duplicated)
+        backend = BackgroundJobsSqliteBackend(str(db_path))
+        job = backend.get_job("job-idempotent")
+        all_jobs = backend.list_jobs()
+        backend.close()
+
+        assert job is not None
+        assert len(all_jobs) == 1
+
+    def test_migrate_background_jobs_renames_file_on_success(
+        self, tmp_path: Path
+    ) -> None:
+        """
+        Given a successful migration
+        When migrate_background_jobs() completes
+        Then jobs.json is renamed to jobs.json.migrated.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.migration_service import MigrationService
+
+        # Setup source JSON
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        jobs_file = source_dir / "jobs.json"
+        jobs_data = {
+            "job-rename-test": {
+                "job_id": "job-rename-test",
+                "operation_type": "add_golden_repo",
+                "status": "completed",
+                "created_at": "2024-01-01T00:00:00+00:00",
+                "started_at": None,
+                "completed_at": None,
+                "result": None,
+                "error": None,
+                "progress": 0,
+                "username": "admin",
+                "is_admin": False,
+                "cancelled": False,
+                "repo_alias": None,
+                "resolution_attempts": 0,
+                "claude_actions": None,
+                "failure_reason": None,
+                "extended_error": None,
+                "language_resolution_status": None,
+            },
+        }
+        jobs_file.write_text(json.dumps(jobs_data, indent=2))
+
+        # Setup target database
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        # Migrate
+        service = MigrationService(str(source_dir), str(db_path))
+        service.migrate_background_jobs()
+
+        # Verify file was renamed
+        assert not jobs_file.exists()
+        assert (source_dir / "jobs.json.migrated").exists()
+
+    def test_migrate_background_jobs_skips_underscore_prefixed_keys(
+        self, tmp_path: Path
+    ) -> None:
+        """
+        Given jobs.json contains internal keys prefixed with underscore
+        When migrate_background_jobs() is called
+        Then those keys are skipped and not migrated.
+        """
+        from code_indexer.server.storage.database_manager import DatabaseSchema
+        from code_indexer.server.storage.migration_service import MigrationService
+        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
+
+        # Setup source JSON with underscore-prefixed internal keys
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        jobs_file = source_dir / "jobs.json"
+        jobs_data = {
+            "_metadata": {"version": "1.0"},
+            "_last_cleanup": "2024-01-01",
+            "job-real": {
+                "job_id": "job-real",
+                "operation_type": "add_golden_repo",
+                "status": "completed",
+                "created_at": "2024-01-01T00:00:00+00:00",
+                "started_at": None,
+                "completed_at": None,
+                "result": None,
+                "error": None,
+                "progress": 0,
+                "username": "admin",
+                "is_admin": False,
+                "cancelled": False,
+                "repo_alias": None,
+                "resolution_attempts": 0,
+                "claude_actions": None,
+                "failure_reason": None,
+                "extended_error": None,
+                "language_resolution_status": None,
+            },
+        }
+        jobs_file.write_text(json.dumps(jobs_data, indent=2))
+
+        # Setup target database
+        db_path = tmp_path / "test.db"
+        schema = DatabaseSchema(str(db_path))
+        schema.initialize_database()
+
+        # Migrate
+        service = MigrationService(str(source_dir), str(db_path))
+        result = service.migrate_background_jobs()
+
+        # Should only migrate the real job, not _metadata or _last_cleanup
+        assert result["migrated"] == 1
+        assert result["errors"] == 0
+
+        # Verify only real job exists
+        backend = BackgroundJobsSqliteBackend(str(db_path))
+        all_jobs = backend.list_jobs()
+        backend.close()
+
+        assert len(all_jobs) == 1
+        assert all_jobs[0]["job_id"] == "job-real"
+
+
 class TestMigrateAll:
     """Tests for the migrate_all() orchestration method."""
 

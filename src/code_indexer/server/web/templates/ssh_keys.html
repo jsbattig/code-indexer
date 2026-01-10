@@ -91,34 +91,6 @@
     </article>
 </section>
 
-<!-- Migration Status Section -->
-{% if migration_result %}
-<article>
-    <header>
-        <h2>Migration Status</h2>
-    </header>
-    {% if migration_result.skipped %}
-    <p><mark>Migration already completed</mark></p>
-    {% else %}
-    <p>
-        <strong>{{ migration_result.keys_discovered }}</strong> keys discovered,
-        <strong>{{ migration_result.keys_imported }}</strong> imported,
-        <strong>{{ migration_result.mappings_imported }}</strong> existing mappings imported
-    </p>
-    {% if migration_result.failed_hosts %}
-    <details>
-        <summary>Failed Hosts ({{ migration_result.failed_hosts|length }})</summary>
-        <ul>
-            {% for key_name, hostname, reason in migration_result.failed_hosts %}
-            <li>{{ key_name }} -> {{ hostname }}: {{ reason }}</li>
-            {% endfor %}
-        </ul>
-    </details>
-    {% endif %}
-    {% endif %}
-</article>
-{% endif %}
-
 <!-- Managed Keys Section -->
 <article>
     <header>

@@ -19,6 +19,7 @@ from dataclasses import dataclass, asdict
 
 if TYPE_CHECKING:
     from code_indexer.server.utils.config_manager import ServerResourceConfig
+    from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
 
 
 class JobStatus(str, Enum):
@@ -72,12 +73,16 @@ class BackgroundJobManager:
         self,
         storage_path: Optional[str] = None,
         resource_config: Optional["ServerResourceConfig"] = None,
+        use_sqlite: bool = False,
+        db_path: Optional[str] = None,
     ):
         """Initialize enhanced background job manager.
 
         Args:
-            storage_path: Path for persistent job storage (optional)
+            storage_path: Path for persistent job storage (JSON file, optional)
             resource_config: Resource configuration (limits, timeouts)
+            use_sqlite: Whether to use SQLite backend instead of JSON file
+            db_path: Path to SQLite database file (required if use_sqlite=True)
         """
         self.jobs: Dict[str, BackgroundJob] = {}
         self._lock = threading.Lock()
@@ -87,6 +92,18 @@ class BackgroundJobManager:
 
         # Persistence settings
         self.storage_path = storage_path
+        self.use_sqlite = use_sqlite
+        self.db_path = db_path
+        self._sqlite_backend: Optional["BackgroundJobsSqliteBackend"] = None
+
+        # Initialize SQLite backend if enabled
+        if self.use_sqlite and self.db_path:
+            from code_indexer.server.storage.sqlite_backends import (
+                BackgroundJobsSqliteBackend,
+            )
+
+            self._sqlite_backend = BackgroundJobsSqliteBackend(self.db_path)
+            logging.info("BackgroundJobManager using SQLite backend")
 
         # Resource configuration (import here to avoid circular dependency)
         if resource_config is None:
@@ -95,9 +112,8 @@ class BackgroundJobManager:
             resource_config = ServerResourceConfig()
         self.resource_config = resource_config
 
-        # Load persisted jobs if storage path provided
-        if self.storage_path:
-            self._load_jobs()
+        # Load persisted jobs
+        self._load_jobs()
 
         # Background job manager initialized silently
 
@@ -642,10 +658,16 @@ class BackgroundJobManager:
 
     def _persist_jobs(self) -> None:
         """
-        Persist jobs to storage file.
+        Persist jobs to storage (SQLite or JSON file).
 
         Note: This method should be called within a lock.
         """
+        # Use SQLite backend if enabled
+        if self._sqlite_backend:
+            self._persist_jobs_sqlite()
+            return
+
+        # Fall back to JSON file storage
         if not self.storage_path:
             return
 
@@ -678,10 +700,74 @@ class BackgroundJobManager:
             logging.error(f"Failed to persist jobs: {e}")
             # TODO: Consider implementing retry logic for failed persistence attempts
 
+    def _persist_jobs_sqlite(self) -> None:
+        """
+        Persist all in-memory jobs to SQLite.
+
+        Note: This method should be called within a lock.
+        """
+        if not self._sqlite_backend:
+            return
+
+        try:
+            for job_id, job in self.jobs.items():
+                # Check if job exists in database
+                existing = self._sqlite_backend.get_job(job_id)
+                if existing:
+                    # Update existing job
+                    self._sqlite_backend.update_job(
+                        job_id=job_id,
+                        status=job.status.value,
+                        started_at=job.started_at.isoformat() if job.started_at else None,
+                        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                        result=job.result,
+                        error=job.error,
+                        progress=job.progress,
+                        cancelled=job.cancelled,
+                        resolution_attempts=job.resolution_attempts,
+                        claude_actions=job.claude_actions,
+                        failure_reason=job.failure_reason,
+                        extended_error=job.extended_error,
+                        language_resolution_status=job.language_resolution_status,
+                    )
+                else:
+                    # Insert new job
+                    self._sqlite_backend.save_job(
+                        job_id=job_id,
+                        operation_type=job.operation_type,
+                        status=job.status.value,
+                        created_at=job.created_at.isoformat(),
+                        started_at=job.started_at.isoformat() if job.started_at else None,
+                        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                        result=job.result,
+                        error=job.error,
+                        progress=job.progress,
+                        username=job.username,
+                        is_admin=job.is_admin,
+                        cancelled=job.cancelled,
+                        repo_alias=job.repo_alias,
+                        resolution_attempts=job.resolution_attempts,
+                        claude_actions=job.claude_actions,
+                        failure_reason=job.failure_reason,
+                        extended_error=job.extended_error,
+                        language_resolution_status=job.language_resolution_status,
+                    )
+        except Exception as e:
+            logging.error(f"Failed to persist jobs to SQLite: {e}")
+
+    # Maximum number of jobs to load from SQLite into memory at startup
+    MAX_JOBS_TO_LOAD = 10000
+
     def _load_jobs(self) -> None:
         """
-        Load jobs from storage file.
+        Load jobs from storage (SQLite or JSON file).
         """
+        # Use SQLite backend if enabled
+        if self._sqlite_backend:
+            self._load_jobs_sqlite()
+            return
+
+        # Fall back to JSON file storage
         if not self.storage_path:
             return
 
@@ -710,6 +796,34 @@ class BackgroundJobManager:
 
         except Exception as e:
             logging.error(f"Failed to load jobs from storage: {e}")
+
+    def _load_jobs_sqlite(self) -> None:
+        """
+        Load jobs from SQLite database into memory.
+        """
+        if not self._sqlite_backend:
+            return
+
+        try:
+            stored_jobs = self._sqlite_backend.list_jobs(limit=self.MAX_JOBS_TO_LOAD)
+
+            for job_dict in stored_jobs:
+                # Convert ISO strings back to datetime objects
+                for field in ["created_at", "started_at", "completed_at"]:
+                    if job_dict.get(field) is not None:
+                        job_dict[field] = datetime.fromisoformat(job_dict[field])
+
+                # Convert string status back to enum
+                job_dict["status"] = JobStatus(job_dict["status"])
+
+                # Create job object
+                job = BackgroundJob(**job_dict)
+                self.jobs[job_dict["job_id"]] = job
+
+            logging.info(f"Loaded {len(stored_jobs)} jobs from SQLite")
+
+        except Exception as e:
+            logging.error(f"Failed to load jobs from SQLite: {e}")
 
     def _calculate_cutoff(self, time_filter: str) -> datetime:
         """

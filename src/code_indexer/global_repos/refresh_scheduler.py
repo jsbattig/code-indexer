@@ -15,7 +15,6 @@ from typing import Optional, Union, TYPE_CHECKING, cast
 
 from code_indexer.config import ConfigManager
 from .alias_manager import AliasManager
-from .global_registry import GlobalRegistry
 from .git_pull_updater import GitPullUpdater
 from .query_tracker import QueryTracker
 from .cleanup_manager import CleanupManager
@@ -53,6 +52,11 @@ class RefreshScheduler:
             cleanup_manager: Cleanup manager for old index removal
             resource_config: Optional resource configuration for timeouts (server mode)
         """
+        # Lazy import to avoid circular dependency (Story #713)
+        from code_indexer.server.utils.registry_factory import (
+            get_server_global_registry,
+        )
+
         self.golden_repos_dir = Path(golden_repos_dir)
         self.config_source = config_source
         self.query_tracker = query_tracker
@@ -61,7 +65,7 @@ class RefreshScheduler:
 
         # Initialize managers
         self.alias_manager = AliasManager(str(self.golden_repos_dir / "aliases"))
-        self.registry = GlobalRegistry(str(self.golden_repos_dir))
+        self.registry = get_server_global_registry(str(self.golden_repos_dir))
 
         # Thread management
         self._running = False

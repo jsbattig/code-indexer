@@ -169,6 +169,30 @@ class DatabaseSchema:
         )
     """
 
+    # Background Jobs table (Bug fix: BackgroundJobManager SQLite migration)
+    CREATE_BACKGROUND_JOBS_TABLE = """
+        CREATE TABLE IF NOT EXISTS background_jobs (
+            job_id TEXT PRIMARY KEY NOT NULL,
+            operation_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            result TEXT,
+            error TEXT,
+            progress INTEGER NOT NULL DEFAULT 0,
+            username TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            cancelled INTEGER NOT NULL DEFAULT 0,
+            repo_alias TEXT,
+            resolution_attempts INTEGER NOT NULL DEFAULT 0,
+            claude_actions TEXT,
+            failure_reason TEXT,
+            extended_error TEXT,
+            language_resolution_status TEXT
+        )
+    """
+
     def __init__(self, db_path: Optional[str] = None) -> None:
         """
         Initialize DatabaseSchema.
@@ -224,6 +248,7 @@ class DatabaseSchema:
             conn.execute(self.CREATE_SSH_KEYS_TABLE)
             conn.execute(self.CREATE_SSH_KEY_HOSTS_TABLE)
             conn.execute(self.CREATE_GOLDEN_REPOS_METADATA_TABLE)
+            conn.execute(self.CREATE_BACKGROUND_JOBS_TABLE)
 
             conn.commit()
             logger.info(f"Database initialized at {db_path}")

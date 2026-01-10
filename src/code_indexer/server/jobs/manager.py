@@ -2311,7 +2311,7 @@ class SyncJobManager:
 
 def create_sync_job_manager(server_dir_path: Optional[str] = None) -> SyncJobManager:
     """
-    Create a properly configured SyncJobManager.
+    Create a properly configured SyncJobManager with SQLite backend (Story #702).
 
     Factory function that creates a SyncJobManager with appropriate
     storage configuration based on CIDX server settings.
@@ -2328,4 +2328,13 @@ def create_sync_job_manager(server_dir_path: Optional[str] = None) -> SyncJobMan
     storage_path = config.get_jobs_storage_path()
     concurrency_config = config.get_concurrency_limits()
 
-    return SyncJobManager(storage_path=storage_path, **concurrency_config)
+    # Calculate database path for SQLite backend
+    server_dir = Path(server_dir_path or "~/.cidx-server").expanduser()
+    db_path = str(server_dir / "data" / "cidx_server.db")
+
+    return SyncJobManager(
+        storage_path=storage_path,
+        use_sqlite=True,
+        db_path=db_path,
+        **concurrency_config,
+    )
