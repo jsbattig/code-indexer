@@ -80,6 +80,12 @@ from .routers.files import router as files_router
 from .routers.git import router as git_router
 from .routers.indexing import router as indexing_router
 from .routers.cache import router as cache_router
+from .routers.groups import (
+    router as groups_router,
+    users_router,
+    audit_router,
+    set_group_manager,
+)
 from .routes.multi_query_routes import router as multi_query_router
 from .routes.scip_multi_routes import router as scip_multi_router
 from .models.branch_models import BranchListResponse
@@ -2051,7 +2057,9 @@ def create_app() -> FastAPI:
                 # golden_repos_dir is defined earlier in startup
                 golden_repos_dir_path = Path(server_data_dir) / "data" / "golden-repos"
                 if golden_repos_dir_path.exists():
-                    gr_result = migration.migrate_golden_repos_metadata(str(golden_repos_dir_path))
+                    gr_result = migration.migrate_golden_repos_metadata(
+                        str(golden_repos_dir_path)
+                    )
                     if not gr_result.get("skipped"):
                         logger.info(
                             f"Golden repos metadata migration: {gr_result}",
@@ -2146,6 +2154,78 @@ def create_app() -> FastAPI:
                 extra={"correlation_id": get_correlation_id()},
             )
             app.state.ssh_migration_result = None
+
+        # Startup: Initialize GroupAccessManager for group-based access control
+        logger.info(
+            "Server startup: Initializing GroupAccessManager",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        try:
+            from code_indexer.server.services.group_access_manager import (
+                GroupAccessManager,
+            )
+
+            groups_db_path = Path(server_data_dir) / "groups.db"
+            group_manager = GroupAccessManager(groups_db_path)
+            set_group_manager(group_manager)
+            app.state.group_manager = group_manager
+
+            logger.info(
+                f"GroupAccessManager initialized: {groups_db_path}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
+            # Inject GroupAccessManager into GoldenRepoManager for auto-assignment (Story #706)
+            if (
+                hasattr(app.state, "golden_repo_manager")
+                and app.state.golden_repo_manager
+            ):
+                app.state.golden_repo_manager.group_access_manager = group_manager
+                logger.info(
+                    "GroupAccessManager injected into GoldenRepoManager for repo access auto-assignment",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
+                # Seed existing golden repos to admins/powerusers groups (migration for upgrades)
+                # This is idempotent - auto_assign_golden_repo uses INSERT OR IGNORE
+                try:
+                    from code_indexer.server.services.group_access_manager import (
+                        seed_existing_golden_repos,
+                    )
+
+                    seeded_count = seed_existing_golden_repos(
+                        app.state.golden_repo_manager, group_manager
+                    )
+                    if seeded_count > 0:
+                        logger.info(
+                            f"Seeded {seeded_count} existing golden repos to admins/powerusers groups",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
+                except Exception as seed_error:
+                    logger.warning(
+                        f"Failed to seed existing golden repos: {seed_error}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
+
+            # Initialize AccessFilteringService for query-time access filtering (Story #707)
+            from code_indexer.server.services.access_filtering_service import (
+                AccessFilteringService,
+            )
+
+            access_filtering_service = AccessFilteringService(group_manager)
+            app.state.access_filtering_service = access_filtering_service
+            logger.info(
+                "AccessFilteringService initialized for query-time access filtering",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to initialize GroupAccessManager: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
 
         # Startup: Initialize and start global repos background services
         logger.info(
@@ -2368,6 +2448,14 @@ def create_app() -> FastAPI:
                 oidc_routes.oidc_manager = oidc_manager
                 oidc_routes.state_manager = state_manager
                 oidc_routes.server_config = config
+
+                # Inject GroupAccessManager into OIDCManager for SSO provisioning (Story #708)
+                if hasattr(app.state, "group_manager") and app.state.group_manager:
+                    oidc_manager.group_manager = app.state.group_manager
+                    logger.info(
+                        "GroupAccessManager injected into OIDCManager for SSO auto-provisioning",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
                 logger.info(
                     "OIDC configured (will initialize on first login)",
@@ -5871,13 +5959,27 @@ def create_app() -> FastAPI:
                 # Calculate execution time
                 execution_time_ms = int((time.time() - start_time) * 1000)
 
-                # Apply payload truncation for consistency with MCP handlers
-                # Convert FTS results to dicts and apply truncation
-                fts_dicts = [r.model_dump() for r in fts_results]
-                truncated_fts = await _apply_rest_fts_truncation(fts_dicts)
+                # Apply access filtering based on user's group membership (Story #707)
+                if (
+                    hasattr(app.state, "access_filtering_service")
+                    and app.state.access_filtering_service
+                ):
+                    fts_dicts = [r.model_dump() for r in fts_results]
+                    fts_dicts = app.state.access_filtering_service.filter_query_results(
+                        fts_dicts, current_user.username
+                    )
+                    semantic_dicts = [r.model_dump() for r in semantic_results_list]
+                    semantic_dicts = (
+                        app.state.access_filtering_service.filter_query_results(
+                            semantic_dicts, current_user.username
+                        )
+                    )
+                else:
+                    fts_dicts = [r.model_dump() for r in fts_results]
+                    semantic_dicts = [r.model_dump() for r in semantic_results_list]
 
-                # Convert semantic results to dicts and apply truncation
-                semantic_dicts = [r.model_dump() for r in semantic_results_list]
+                # Apply payload truncation for consistency with MCP handlers
+                truncated_fts = await _apply_rest_fts_truncation(fts_dicts)
                 truncated_semantic = await _apply_rest_semantic_truncation(
                     semantic_dicts
                 )
@@ -5927,6 +6029,18 @@ def create_app() -> FastAPI:
                 author=request.author,
                 chunk_type=request.chunk_type,
             )
+
+            # Apply access filtering based on user's group membership (Story #707)
+            if (
+                hasattr(app.state, "access_filtering_service")
+                and app.state.access_filtering_service
+            ):
+                results["results"] = (
+                    app.state.access_filtering_service.filter_query_results(
+                        results["results"], current_user.username
+                    )
+                )
+                results["total_results"] = len(results["results"])
 
             # Apply payload truncation for consistency with MCP handlers
             truncated_results = await _apply_rest_semantic_truncation(
@@ -6915,6 +7029,24 @@ def create_app() -> FastAPI:
                 status_filter=repo_status,
             )
 
+            # Apply access filtering based on user's group membership (Story #707 AC4)
+            filtered_repos = result["repositories"]
+            if (
+                hasattr(app.state, "access_filtering_service")
+                and app.state.access_filtering_service
+            ):
+                repo_aliases = [repo["alias"] for repo in filtered_repos]
+                accessible_aliases = (
+                    app.state.access_filtering_service.filter_repo_listing(
+                        repo_aliases, current_user.username
+                    )
+                )
+                filtered_repos = [
+                    repo
+                    for repo in filtered_repos
+                    if repo["alias"] in accessible_aliases
+                ]
+
             # Convert to response model
             repositories = [
                 RepositoryInfo(
@@ -6923,12 +7055,12 @@ def create_app() -> FastAPI:
                     default_branch=repo["default_branch"],
                     created_at=repo["created_at"],
                 )
-                for repo in result["repositories"]
+                for repo in filtered_repos
             ]
 
             return AvailableRepositoryListResponse(
                 repositories=repositories,
-                total=result["total"],
+                total=len(repositories),
             )
 
         except RepositoryListingError as e:
@@ -7358,6 +7490,9 @@ def create_app() -> FastAPI:
     app.include_router(cache_router)
     app.include_router(multi_query_router)
     app.include_router(scip_multi_router)
+    app.include_router(groups_router)
+    app.include_router(users_router)
+    app.include_router(audit_router)
 
     # Mount Web Admin UI routes and static files
     from fastapi.staticfiles import StaticFiles

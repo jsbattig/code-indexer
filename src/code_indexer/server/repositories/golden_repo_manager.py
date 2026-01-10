@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from code_indexer.server.repositories.activated_repo_manager import (
         ActivatedRepoManager,
     )
+    from code_indexer.server.services.group_access_manager import GroupAccessManager
 
 from pydantic import BaseModel
 
@@ -91,6 +92,7 @@ class GoldenRepoManager:
     # Dynamically injected by app.py at runtime
     background_job_manager: "BackgroundJobManager"
     activated_repo_manager: "ActivatedRepoManager"
+    group_access_manager: Optional["GroupAccessManager"] = None
 
     def __init__(
         self,
@@ -353,6 +355,21 @@ class GoldenRepoManager:
                         f"Golden repository added but meta description not created."
                     )
 
+                # Lifecycle hook: Auto-assign to admins/powerusers groups (Story #706)
+                try:
+                    if self.group_access_manager is not None:
+                        from code_indexer.server.services.group_access_hooks import (
+                            on_repo_added as group_access_on_repo_added,
+                        )
+
+                        group_access_on_repo_added(alias, self.group_access_manager)
+                except Exception as hook_error:
+                    # Log error but don't fail the golden repo registration
+                    logging.error(
+                        f"Group access hook failed for '{alias}': {hook_error}. "
+                        f"Golden repository added but may not be accessible to expected groups."
+                    )
+
                 return {
                     "success": True,
                     "alias": alias,
@@ -552,6 +569,21 @@ class GoldenRepoManager:
                     logging.error(
                         f"Meta description hook failed for '{alias}': {hook_error}. "
                         f"Golden repository removed but meta description not deleted."
+                    )
+
+                # Lifecycle hook: Revoke group access (Story #706)
+                try:
+                    if self.group_access_manager is not None:
+                        from code_indexer.server.services.group_access_hooks import (
+                            on_repo_removed as group_access_on_repo_removed,
+                        )
+
+                        group_access_on_repo_removed(alias, self.group_access_manager)
+                except Exception as hook_error:
+                    # Log error but don't fail removal - the repo is already removed
+                    logging.error(
+                        f"Group access hook failed for '{alias}': {hook_error}. "
+                        f"Golden repository removed but access records may remain."
                     )
 
                 # Mark golden repo as deleted

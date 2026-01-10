@@ -60,6 +60,53 @@ class OIDCManager:
         """Check if OIDC is enabled in configuration."""
         return self.config.enabled
 
+    def _ensure_group_membership(self, username: str) -> None:
+        """Ensure user has group membership via SSO provisioning hook.
+
+        Story #708: SSO Auto-Provisioning with Default Group Assignment
+        - AC1: New SSO users assigned to "users" group
+        - AC3: Existing users' membership is NOT changed
+        - AC6: Errors are logged but do not block authentication
+
+        Args:
+            username: The user's username to provision
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Check if group_manager is available (injected via app.py)
+        if not hasattr(self, "group_manager") or self.group_manager is None:
+            logger.warning(
+                f"Group manager not available, skipping SSO provisioning for {username}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+            return
+
+        try:
+            from code_indexer.server.services.sso_provisioning_hook import (
+                ensure_user_group_membership,
+            )
+
+            result = ensure_user_group_membership(username, self.group_manager)
+            if result:
+                logger.debug(
+                    f"SSO provisioning completed for user {username}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+            else:
+                logger.warning(
+                    f"SSO provisioning returned False for user {username}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+        except Exception as e:
+            # AC6: Errors are logged but do not block authentication
+            logger.error(
+                f"SSO provisioning failed for user {username}: {e}. "
+                f"User will have fallback cidx-meta-only access.",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
     def create_jwt_session(self, user):
         return self.jwt_manager.create_token(
             {
@@ -143,6 +190,8 @@ class OIDCManager:
                         f"Returning existing user: {username}",
                         extra={"correlation_id": get_correlation_id()},
                     )
+                    # Story #708: Ensure group membership on every SSO login
+                    self._ensure_group_membership(existing_user.username)
                     return existing_user
                 else:
                     # Stale OIDC link (defensive check - should be cleaned up on user deletion)
@@ -169,6 +218,8 @@ class OIDCManager:
                         subject=user_info.subject,
                         email=user_info.email,
                     )
+                    # Story #708: Ensure group membership on every SSO login
+                    self._ensure_group_membership(existing_user.username)
                     return existing_user
 
         # Create new user via JIT provisioning if enabled
@@ -228,5 +279,8 @@ class OIDCManager:
                 subject=user_info.subject,
                 email=user_info.email,
             )
+
+            # Story #708: Ensure group membership for new JIT-provisioned user
+            self._ensure_group_membership(new_user.username)
 
             return new_user
