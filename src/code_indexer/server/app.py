@@ -2551,10 +2551,11 @@ def create_app() -> FastAPI:
         use_sqlite=True,
         db_path=db_path,
     )
-    # Initialize BackgroundJobManager with persistence enabled (Story #541 - AC4)
-    jobs_storage_path = str(Path(server_data_dir) / "jobs.json")
+    # Initialize BackgroundJobManager with SQLite persistence (Bug fix: Jobs not showing in Dashboard)
     background_job_manager = BackgroundJobManager(
-        storage_path=jobs_storage_path, resource_config=server_config.resource_config
+        resource_config=server_config.resource_config,
+        use_sqlite=True,
+        db_path=db_path,
     )
     # Inject BackgroundJobManager into GoldenRepoManager for async operations
     golden_repo_manager.background_job_manager = background_job_manager
