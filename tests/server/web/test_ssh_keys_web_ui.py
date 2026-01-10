@@ -19,8 +19,8 @@ class TestSSHKeysWebUI:
         )
         assert template_path.exists(), f"Template not found at {template_path}"
 
-    def test_ssh_keys_template_contains_migration_status(self):
-        """Template should contain migration status display elements."""
+    def test_ssh_keys_template_no_migration_status_section(self):
+        """Template should NOT contain migration status section (removed as useless)."""
         template_path = (
             Path(__file__).parent.parent.parent.parent
             / "src"
@@ -33,11 +33,13 @@ class TestSSHKeysWebUI:
 
         content = template_path.read_text()
 
-        # Should have migration summary section
-        assert "migration" in content.lower()
+        # Migration status section should be removed
+        assert "migration_result" not in content
+        assert "Migration Status" not in content
 
-        # Should have key listing
+        # Should still have key listing
         assert "key" in content.lower()
+        assert "managed" in content.lower()
 
     def test_ssh_keys_template_has_copy_button(self):
         """Template should have copy public key functionality."""
