@@ -650,8 +650,10 @@ class MigrationService:
 
         results["global_repos"] = self.migrate_global_repos()
         results["users"] = self.migrate_users()
-        results["sync_jobs"] = self.migrate_sync_jobs()
+        # background_jobs must run BEFORE sync_jobs because jobs.json contains
+        # BackgroundJobManager jobs (operation_type field), not SyncJobManager jobs
         results["background_jobs"] = self.migrate_background_jobs()
+        results["sync_jobs"] = self.migrate_sync_jobs()
         results["ci_tokens"] = self.migrate_ci_tokens()
         results["sessions"] = self.migrate_sessions()
         results["ssh_keys"] = self.migrate_ssh_keys()
