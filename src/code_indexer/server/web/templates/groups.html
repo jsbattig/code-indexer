@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+
+{% block title %}Groups - CIDX Admin{% endblock %}
+
+{% block content %}
+<div class="groups-header">
+    <h1>Group Management</h1>
+</div>
+
+<!-- Success/Error Messages -->
+{% if success_message %}
+<article class="message-success">
+    <p>{{ success_message }}</p>
+</article>
+{% endif %}
+
+{% if error_message %}
+<article class="message-error">
+    <p>{{ error_message }}</p>
+</article>
+{% endif %}
+
+<!-- Tab Navigation -->
+<nav class="tabs">
+    <ul>
+        <li>
+            <a href="#"
+               id="tab-groups"
+               class="tab-link {% if active_tab == 'groups' %}active{% endif %}"
+               onclick="switchTab('groups'); return false;"
+               aria-current="{% if active_tab == 'groups' %}page{% endif %}">
+                Groups
+            </a>
+        </li>
+        <li>
+            <a href="#"
+               id="tab-users"
+               class="tab-link {% if active_tab == 'users' %}active{% endif %}"
+               onclick="switchTab('users'); return false;"
+               aria-current="{% if active_tab == 'users' %}page{% endif %}">
+                User Assignments
+            </a>
+        </li>
+        <li>
+            <a href="#"
+               id="tab-audit"
+               class="tab-link {% if active_tab == 'audit' %}active{% endif %}"
+               onclick="switchTab('audit'); return false;"
+               aria-current="{% if active_tab == 'audit' %}page{% endif %}">
+                Audit Logs
+            </a>
+        </li>
+        <li>
+            <a href="#"
+               id="tab-repos"
+               class="tab-link {% if active_tab == 'repos' %}active{% endif %}"
+               onclick="switchTab('repos'); return false;"
+               aria-current="{% if active_tab == 'repos' %}page{% endif %}">
+                Repository Access
+            </a>
+        </li>
+    </ul>
+</nav>
+
+<!-- Groups Tab Content -->
+<section id="content-groups" class="tab-content {% if active_tab != 'groups' %}hidden{% endif %}">
+    <div class="tab-header">
+        <h2>Groups</h2>
+        <div class="tab-actions">
+            <button
+                id="create-group-btn"
+                class="primary"
+                onclick="toggleCreateGroupForm()"
+            >
+                Create Group
+            </button>
+            <button
+                class="outline"
+                hx-get="/admin/partials/groups-list"
+                hx-target="#groups-list-section"
+                hx-swap="innerHTML"
+                hx-indicator="#groups-refresh-indicator"
+            >
+                Refresh
+            </button>
+            <span id="groups-refresh-indicator" class="htmx-indicator">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Create Group Form (hidden by default) -->
+    <section id="create-group-form" class="form-section" style="display: none;">
+        <article>
+            <header>
+                <h2>Create New Group</h2>
+            </header>
+            <form method="post" action="/admin/groups/create">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                <label for="new_group_name">Group Name</label>
+                <input
+                    type="text"
+                    id="new_group_name"
+                    name="name"
+                    placeholder="Enter group name"
+                    required
+                    autocomplete="off"
+                >
+
+                <label for="new_group_description">Description</label>
+                <textarea
+                    id="new_group_description"
+                    name="description"
+                    placeholder="Enter group description"
+                    required
+                ></textarea>
+
+                <div class="form-actions">
+                    <button type="submit" class="primary">Create Group</button>
+                    <button type="button" class="secondary" onclick="toggleCreateGroupForm()">Cancel</button>
+                </div>
+            </form>
+        </article>
+    </section>
+
+    <!-- Groups List Section -->
+    <section id="groups-list-section">
+        {% include "partials/groups_list.html" %}
+    </section>
+</section>
+
+<!-- User Assignments Tab Content -->
+<section id="content-users" class="tab-content {% if active_tab != 'users' %}hidden{% endif %}">
+    <div class="tab-header">
+        <h2>User Group Assignments</h2>
+        <div class="tab-actions">
+            <button
+                class="outline"
+                hx-get="/admin/partials/groups-users-list"
+                hx-target="#groups-users-section"
+                hx-swap="innerHTML"
+                hx-indicator="#users-refresh-indicator"
+            >
+                Refresh
+            </button>
+            <span id="users-refresh-indicator" class="htmx-indicator">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Users List Section -->
+    <section id="groups-users-section">
+        {% include "partials/groups_users_list.html" %}
+    </section>
+</section>
+
+<!-- Audit Logs Tab Content -->
+<section id="content-audit" class="tab-content {% if active_tab != 'audit' %}hidden{% endif %}">
+    <div class="tab-header">
+        <h2>Audit Logs</h2>
+        <div class="tab-actions">
+            <button
+                class="outline"
+                hx-get="/admin/partials/groups-audit-logs"
+                hx-target="#audit-logs-section"
+                hx-swap="innerHTML"
+                hx-indicator="#audit-refresh-indicator"
+            >
+                Refresh
+            </button>
+            <span id="audit-refresh-indicator" class="htmx-indicator">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Audit Filter Form -->
+    <section class="filter-section">
+        <form id="audit-filter-form" onsubmit="filterAuditLogs(); return false;">
+            <div class="filter-row">
+                <div class="filter-field">
+                    <label for="audit_date_from">From Date</label>
+                    <input type="date" id="audit_date_from" name="date_from">
+                </div>
+                <div class="filter-field">
+                    <label for="audit_date_to">To Date</label>
+                    <input type="date" id="audit_date_to" name="date_to">
+                </div>
+                <div class="filter-field">
+                    <label for="audit_action_type">Action Type</label>
+                    <select id="audit_action_type" name="action_type">
+                        <option value="">All Actions</option>
+                        <option value="user_group_change">User Group Change</option>
+                        <option value="repo_access_grant">Repo Access Grant</option>
+                        <option value="repo_access_revoke">Repo Access Revoke</option>
+                        <option value="group_create">Group Create</option>
+                        <option value="group_update">Group Update</option>
+                        <option value="group_delete">Group Delete</option>
+                    </select>
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="primary small">Apply Filter</button>
+                    <button type="button" class="secondary small" onclick="clearAuditFilters()">Clear</button>
+                </div>
+            </div>
+        </form>
+    </section>
+
+    <!-- Audit Logs Section -->
+    <section id="audit-logs-section">
+        {% include "partials/groups_audit_logs.html" %}
+    </section>
+</section>
+
+<!-- Repository Access Tab Content -->
+<section id="content-repos" class="tab-content {% if active_tab != 'repos' %}hidden{% endif %}">
+    <div class="tab-header">
+        <h2>Repository Access by Group</h2>
+        <div class="tab-actions">
+            <button
+                class="outline"
+                hx-get="/admin/partials/groups-repo-access"
+                hx-target="#repo-access-section"
+                hx-swap="innerHTML"
+                hx-indicator="#repos-refresh-indicator"
+            >
+                Refresh
+            </button>
+            <span id="repos-refresh-indicator" class="htmx-indicator">Loading...</span>
+        </div>
+    </div>
+
+    <p class="help-text">
+        Configure which repositories each group can access.
+        <strong>cidx-meta</strong> is always accessible to all groups and cannot be revoked.
+        <strong>admins</strong> group always has access to all repositories.
+    </p>
+
+    <!-- Repository Access Section -->
+    <section id="repo-access-section">
+        {% include "partials/groups_repo_access.html" %}
+    </section>
+</section>
+
+<style>
+.groups-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.tabs {
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.tabs ul {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    gap: 0;
+}
+
+.tabs li {
+    margin-bottom: -1px;
+}
+
+.tab-link {
+    display: block;
+    padding: 0.75rem 1.5rem;
+    text-decoration: none;
+    color: var(--pico-muted-color);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 0.25rem 0.25rem 0 0;
+    background: transparent;
+}
+
+.tab-link:hover {
+    color: var(--pico-primary);
+    background: var(--pico-card-background-color);
+}
+
+.tab-link.active {
+    color: var(--pico-primary);
+    background: var(--pico-card-background-color);
+    border-color: var(--pico-muted-border-color);
+}
+
+.tab-content {
+    padding-top: 1rem;
+}
+
+.tab-content.hidden {
+    display: none;
+}
+
+.tab-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.tab-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.filter-section {
+    background: var(--pico-card-background-color);
+    padding: 1rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.filter-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.filter-field {
+    flex: 1;
+    min-width: 150px;
+}
+
+.filter-field label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.filter-field input,
+.filter-field select {
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 0;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 0.5rem;
+    padding-bottom: 0.25rem;
+}
+
+.form-section {
+    margin-bottom: 1rem;
+}
+
+.form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.message-success {
+    background-color: #1a472a;
+    border: 1px solid #2d7a45;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.message-error {
+    background-color: #4a1a1a;
+    border: 1px solid #7a2d2d;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.htmx-indicator {
+    display: none;
+}
+
+.htmx-request .htmx-indicator {
+    display: inline;
+}
+
+button.small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.help-text {
+    color: var(--pico-muted-color);
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: var(--pico-card-background-color);
+    border-radius: 0.25rem;
+    border-left: 3px solid var(--pico-primary);
+}
+</style>
+
+<script>
+function switchTab(tabName) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(function(content) {
+        content.classList.add('hidden');
+    });
+
+    // Remove active class from all tab links
+    document.querySelectorAll('.tab-link').forEach(function(link) {
+        link.classList.remove('active');
+        link.removeAttribute('aria-current');
+    });
+
+    // Show selected tab content
+    document.getElementById('content-' + tabName).classList.remove('hidden');
+
+    // Add active class to selected tab link
+    var activeLink = document.getElementById('tab-' + tabName);
+    activeLink.classList.add('active');
+    activeLink.setAttribute('aria-current', 'page');
+}
+
+function toggleCreateGroupForm() {
+    var form = document.getElementById('create-group-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleEditGroupForm(groupId) {
+    var form = document.getElementById('edit-form-' + groupId);
+    if (form) {
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+function confirmDeleteGroup(groupId, groupName) {
+    if (confirm('Are you sure you want to delete group "' + groupName + '"? This action cannot be undone.')) {
+        document.getElementById('delete-form-' + groupId).submit();
+    }
+}
+
+function filterAuditLogs() {
+    var dateFrom = document.getElementById('audit_date_from').value;
+    var dateTo = document.getElementById('audit_date_to').value;
+    var actionType = document.getElementById('audit_action_type').value;
+
+    var params = new URLSearchParams();
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (actionType) params.append('action_type', actionType);
+
+    var url = '/admin/partials/groups-audit-logs';
+    if (params.toString()) {
+        url += '?' + params.toString();
+    }
+
+    htmx.ajax('GET', url, {target: '#audit-logs-section', swap: 'innerHTML'});
+}
+
+function clearAuditFilters() {
+    document.getElementById('audit_date_from').value = '';
+    document.getElementById('audit_date_to').value = '';
+    document.getElementById('audit_action_type').value = '';
+
+    htmx.ajax('GET', '/admin/partials/groups-audit-logs', {target: '#audit-logs-section', swap: 'innerHTML'});
+}
+</script>
+{% endblock %}

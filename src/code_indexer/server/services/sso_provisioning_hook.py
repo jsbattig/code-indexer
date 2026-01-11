@@ -103,7 +103,7 @@ class SSOProvisioningHook:
             )
 
             # AC7 (Story #710): Log to audit trail for administrative actions
-            self.group_manager._log_audit(
+            self.group_manager.log_audit(
                 admin_id=SSO_PROVISIONING_ASSIGNED_BY,
                 action_type="user_assign",
                 target_type="user",

@@ -17,11 +17,11 @@ All endpoints require JWT authentication and support:
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, Any
 
 from ..auth.dependencies import get_current_user
 from ..auth.user_manager import User
-from ..multi.scip_models import SCIPMultiRequest, SCIPMultiResponse, SCIPResult
+from ..multi.scip_models import SCIPMultiRequest, SCIPMultiResponse
 from ..multi.scip_multi_service import SCIPMultiService
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ async def _apply_multi_scip_truncation(
     from ..mcp.handlers import _apply_scip_payload_truncation
 
     # Convert response to dict for modification
-    response_dict = response.model_dump()
+    response_dict: Dict[str, Any] = response.model_dump()
 
     # Apply truncation to each repository's results
     for repo_id, results_list in response_dict["results"].items():
@@ -80,7 +80,7 @@ async def _apply_multi_scip_truncation(
 async def multi_repository_definition(
     request: SCIPMultiRequest,
     user: User = Depends(get_current_user),
-) -> SCIPMultiResponse:
+) -> Dict[str, Any]:
     """
     Find symbol definition across multiple repositories (AC1: Multi-Repository Definition Lookup).
 
@@ -194,7 +194,7 @@ async def multi_repository_definition(
 async def multi_repository_references(
     request: SCIPMultiRequest,
     user: User = Depends(get_current_user),
-) -> SCIPMultiResponse:
+) -> Dict[str, Any]:
     """
     Find symbol references across multiple repositories (AC2: Multi-Repository Reference Lookup).
 
@@ -270,7 +270,7 @@ async def multi_repository_references(
 async def multi_repository_dependencies(
     request: SCIPMultiRequest,
     user: User = Depends(get_current_user),
-) -> SCIPMultiResponse:
+) -> Dict[str, Any]:
     """
     Analyze symbol dependencies across multiple repositories (AC3: Multi-Repository Dependency Analysis).
 
@@ -346,7 +346,7 @@ async def multi_repository_dependencies(
 async def multi_repository_dependents(
     request: SCIPMultiRequest,
     user: User = Depends(get_current_user),
-) -> SCIPMultiResponse:
+) -> Dict[str, Any]:
     """
     Analyze symbol dependents across multiple repositories (AC4: Multi-Repository Dependents Analysis).
 
@@ -422,7 +422,7 @@ async def multi_repository_dependents(
 async def multi_repository_callchain(
     request: SCIPMultiRequest,
     user: User = Depends(get_current_user),
-) -> SCIPMultiResponse:
+) -> Dict[str, Any]:
     """
     Trace call chains across multiple repositories (AC5: Per-Repository Call Chain Tracing).
 
@@ -481,7 +481,8 @@ async def multi_repository_callchain(
             f"in {response.metadata.execution_time_ms}ms"
         )
 
-        return response
+        # Story #685: Apply SCIP payload truncation to context fields
+        return await _apply_multi_scip_truncation(response)
 
     except ValueError as e:
         # Validation error from service

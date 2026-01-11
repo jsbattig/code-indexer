@@ -461,6 +461,34 @@ async def create_user(
 
     try:
         user_manager.create_user(new_username, new_password, role_enum)
+
+        # Auto-assign new user to appropriate group based on role
+        try:
+            from ..services.constants import DEFAULT_GROUP_ADMINS, DEFAULT_GROUP_USERS
+
+            group_manager = _get_group_manager()
+            if role_enum == UserRole.ADMIN:
+                target_group = group_manager.get_group_by_name(DEFAULT_GROUP_ADMINS)
+            else:
+                target_group = group_manager.get_group_by_name(DEFAULT_GROUP_USERS)
+
+            if target_group:
+                group_manager.assign_user_to_group(
+                    new_username, target_group.id, session.username
+                )
+                group_manager.log_audit(
+                    admin_id=session.username,
+                    action_type="user_group_assign",
+                    target_type="user",
+                    target_id=new_username,
+                    details=f"Auto-assigned to '{target_group.name}' group on creation",
+                )
+                logger.info(
+                    f"Auto-assigned new user '{new_username}' to '{target_group.name}' group"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to auto-assign user '{new_username}' to group: {e}")
+
         return _create_users_page_response(
             request,
             session,
@@ -698,6 +726,670 @@ async def users_list_partial(request: Request):
 
     set_csrf_cookie(response, csrf_token)
     return response
+
+
+# ==============================================================================
+# Groups Management Routes (Story #710: Admin User and Group Management Interface)
+# ==============================================================================
+
+
+def _format_datetime_display(
+    iso_string: Optional[str], fmt: str = "%Y-%m-%d %H:%M"
+) -> str:
+    """Format ISO datetime string for display."""
+    if not iso_string:
+        return "N/A"
+    try:
+        from datetime import datetime
+
+        dt = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
+        return dt.strftime(fmt)
+    except (ValueError, AttributeError):
+        return iso_string
+
+
+def _get_group_manager():
+    """Get GroupAccessManager from app state."""
+    from code_indexer.server import app as app_module
+
+    manager = getattr(app_module.app.state, "group_manager", None)
+    if manager is None:
+        raise RuntimeError(
+            "group_manager not initialized. "
+            "Server must set app.state.group_manager during startup."
+        )
+    return manager
+
+
+def _get_groups_data() -> List[Dict[str, Any]]:
+    """Get all groups with user and repo counts."""
+    group_manager = _get_group_manager()
+    groups = group_manager.get_all_groups()
+
+    groups_data = []
+    for group in groups:
+        user_count = group_manager.get_user_count_in_group(group.id)
+        repos = group_manager.get_group_repos(group.id)
+        # cidx-meta is always included, so subtract 1 for actual repo count
+        repo_count = len(repos) - 1 if repos else 0
+
+        groups_data.append(
+            {
+                "id": group.id,
+                "name": group.name,
+                "description": group.description,
+                "is_default": group.is_default,
+                "user_count": user_count,
+                "repo_count": repo_count,
+                "created_at": _format_datetime_display(
+                    group.created_at.isoformat() if group.created_at else None
+                ),
+            }
+        )
+
+    return groups_data
+
+
+def _create_groups_page_response(
+    request: Request,
+    session: SessionData,
+    active_tab: str = "groups",
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> HTMLResponse:
+    """Create groups page response with all necessary context."""
+    csrf_token = generate_csrf_token()
+    group_manager = _get_group_manager()
+
+    # Get groups data with counts
+    groups_data = _get_groups_data()
+
+    # Get users with their group assignments
+    # First get all users from user manager
+    all_system_users = _get_users_list()
+    assigned_users, _ = group_manager.get_all_users_with_groups()
+
+    # Create a map of assigned users by user_id
+    assigned_map = {u["user_id"]: u for u in assigned_users}
+
+    # Merge: all system users with their group info (or None if unassigned)
+    users_with_groups = []
+    for user in all_system_users:
+        username = user.username
+        if username in assigned_map:
+            user_data = assigned_map[username]
+            user_data["assigned_at"] = _format_datetime_display(
+                user_data.get("assigned_at")
+            )
+            users_with_groups.append(user_data)
+        else:
+            # Unassigned user
+            users_with_groups.append(
+                {
+                    "user_id": username,
+                    "group_id": None,
+                    "group_name": None,
+                    "assigned_at": None,
+                    "assigned_by": None,
+                }
+            )
+
+    # Get all groups for the dropdown
+    all_groups = [
+        {"id": g.id, "name": g.name, "is_default": g.is_default}
+        for g in group_manager.get_all_groups()
+    ]
+
+    # Get audit logs (limited to 100 most recent)
+    audit_logs, total_count = group_manager.get_audit_logs(limit=100)
+    for log in audit_logs:
+        log["timestamp"] = _format_datetime_display(
+            log.get("timestamp"), "%Y-%m-%d %H:%M:%S"
+        )
+
+    # Get golden repos for repo access tab
+    golden_repos = []
+    repo_access_map: Dict[int, List[str]] = {}
+    try:
+        golden_repo_manager = _get_golden_repo_manager()
+        all_repos_data = golden_repo_manager.list_golden_repos()
+        # list_golden_repos returns List[Dict] with 'alias' key
+        golden_repos = [
+            {"name": repo["alias"]}
+            for repo in sorted(all_repos_data, key=lambda x: x["alias"])
+        ]
+
+        # Build repo access map: group_id -> list of repo names
+        for group in group_manager.get_all_groups():
+            repos_for_group = group_manager.get_group_repos(group.id)
+            # Filter out cidx-meta as it's always accessible
+            repo_access_map[group.id] = [r for r in repos_for_group if r != "cidx-meta"]
+    except RuntimeError as e:
+        # GoldenRepoManager not initialized during startup
+        logger.debug("Golden repo manager not available for repo access tab: %s", e)
+
+    response = templates.TemplateResponse(
+        "groups.html",
+        {
+            "request": request,
+            "username": session.username,
+            "current_page": "groups",
+            "show_nav": True,
+            "active_tab": active_tab,
+            "csrf_token": csrf_token,
+            "groups": groups_data,
+            "users_with_groups": users_with_groups,
+            "all_groups": all_groups,
+            "audit_logs": audit_logs,
+            "total_count": total_count,
+            "golden_repos": golden_repos,
+            "repo_access_map": repo_access_map,
+            "success_message": success_message,
+            "error_message": error_message,
+        },
+    )
+
+    set_csrf_cookie(response, csrf_token, path="/")
+    return response
+
+
+@web_router.get("/groups", response_class=HTMLResponse)
+async def groups_page(request: Request):
+    """Groups management page - list all groups with CRUD operations."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    return _create_groups_page_response(request, session)
+
+
+@web_router.post("/groups/create", response_class=HTMLResponse)
+async def create_group(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Create a new custom group."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_groups_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    try:
+        group_manager = _get_group_manager()
+        group = group_manager.create_group(name.strip(), description.strip())
+
+        group_manager.log_audit(
+            admin_id=session.username,
+            action_type="group_create",
+            target_type="group",
+            target_id=str(group.id),
+            details=json.dumps({"name": group.name, "description": group.description}),
+        )
+
+        return _create_groups_page_response(
+            request, session, success_message=f"Group '{name}' created successfully"
+        )
+    except ValueError as e:
+        return _create_groups_page_response(request, session, error_message=str(e))
+
+
+@web_router.post("/groups/{group_id}/update", response_class=HTMLResponse)
+async def update_group(
+    request: Request,
+    group_id: int,
+    name: str = Form(...),
+    description: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Update a custom group's name and/or description."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_groups_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    try:
+        group_manager = _get_group_manager()
+        old_group = group_manager.get_group(group_id)
+        if not old_group:
+            return _create_groups_page_response(
+                request, session, error_message=f"Group {group_id} not found"
+            )
+
+        updated_group = group_manager.update_group(
+            group_id, name=name.strip(), description=description.strip()
+        )
+
+        if updated_group:
+            group_manager.log_audit(
+                admin_id=session.username,
+                action_type="group_update",
+                target_type="group",
+                target_id=str(group_id),
+                details=json.dumps(
+                    {
+                        "old_name": old_group.name,
+                        "new_name": name,
+                        "old_description": old_group.description,
+                        "new_description": description,
+                    }
+                ),
+            )
+            return _create_groups_page_response(
+                request, session, success_message=f"Group '{name}' updated successfully"
+            )
+        else:
+            return _create_groups_page_response(
+                request, session, error_message=f"Group {group_id} not found"
+            )
+    except ValueError as e:
+        return _create_groups_page_response(request, session, error_message=str(e))
+
+
+@web_router.post("/groups/{group_id}/delete", response_class=HTMLResponse)
+async def delete_group(
+    request: Request,
+    group_id: int,
+    csrf_token: Optional[str] = Form(None),
+):
+    """Delete a custom group."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_groups_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
+
+    try:
+        group_manager = _get_group_manager()
+        group = group_manager.get_group(group_id)
+        if not group:
+            return _create_groups_page_response(
+                request, session, error_message=f"Group {group_id} not found"
+            )
+
+        group_name = group.name
+        deleted = group_manager.delete_group(group_id)
+
+        if deleted:
+            group_manager.log_audit(
+                admin_id=session.username,
+                action_type="group_delete",
+                target_type="group",
+                target_id=str(group_id),
+                details=json.dumps({"name": group_name}),
+            )
+            return _create_groups_page_response(
+                request,
+                session,
+                success_message=f"Group '{group_name}' deleted successfully",
+            )
+        else:
+            return _create_groups_page_response(
+                request, session, error_message=f"Failed to delete group {group_id}"
+            )
+    except Exception as e:
+        return _create_groups_page_response(request, session, error_message=str(e))
+
+
+@web_router.post("/groups/users/{user_id:path}/assign", response_class=HTMLResponse)
+async def assign_user_to_group(
+    request: Request,
+    user_id: str,
+    group_id: int = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Assign a user to a different group."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_groups_page_response(
+            request, session, active_tab="users", error_message="Invalid CSRF token"
+        )
+
+    try:
+        group_manager = _get_group_manager()
+        old_group = group_manager.get_user_group(user_id)
+        old_group_name = old_group.name if old_group else "None"
+
+        new_group = group_manager.get_group(group_id)
+        if not new_group:
+            return _create_groups_page_response(
+                request,
+                session,
+                active_tab="users",
+                error_message=f"Group {group_id} not found",
+            )
+
+        group_manager.assign_user_to_group(user_id, group_id, session.username)
+
+        group_manager.log_audit(
+            admin_id=session.username,
+            action_type="user_group_change",
+            target_type="user",
+            target_id=user_id,
+            details=json.dumps(
+                {
+                    "old_group": old_group_name,
+                    "new_group": new_group.name,
+                }
+            ),
+        )
+
+        return _create_groups_page_response(
+            request,
+            session,
+            active_tab="users",
+            success_message=f"User '{user_id}' assigned to group '{new_group.name}'",
+        )
+    except Exception as e:
+        return _create_groups_page_response(
+            request, session, active_tab="users", error_message=str(e)
+        )
+
+
+@web_router.get("/partials/groups-list", response_class=HTMLResponse)
+async def groups_list_partial(request: Request):
+    """Partial refresh endpoint for groups list section."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+    groups_data = _get_groups_data()
+
+    response = templates.TemplateResponse(
+        "partials/groups_list.html",
+        {"request": request, "csrf_token": csrf_token, "groups": groups_data},
+    )
+    set_csrf_cookie(response, csrf_token)
+    return response
+
+
+@web_router.get("/partials/groups-users-list", response_class=HTMLResponse)
+async def groups_users_list_partial(request: Request):
+    """Partial refresh endpoint for users group assignments section."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+    group_manager = _get_group_manager()
+
+    # Get all users from user manager
+    all_system_users = _get_users_list()
+    assigned_users, _ = group_manager.get_all_users_with_groups()
+
+    # Create a map of assigned users by user_id
+    assigned_map = {u["user_id"]: u for u in assigned_users}
+
+    # Merge: all system users with their group info (or None if unassigned)
+    users_with_groups = []
+    for user in all_system_users:
+        username = user.username
+        if username in assigned_map:
+            user_data = assigned_map[username]
+            user_data["assigned_at"] = _format_datetime_display(
+                user_data.get("assigned_at")
+            )
+            users_with_groups.append(user_data)
+        else:
+            # Unassigned user
+            users_with_groups.append(
+                {
+                    "user_id": username,
+                    "group_id": None,
+                    "group_name": None,
+                    "assigned_at": None,
+                    "assigned_by": None,
+                }
+            )
+
+    all_groups = [
+        {"id": g.id, "name": g.name, "is_default": g.is_default}
+        for g in group_manager.get_all_groups()
+    ]
+
+    response = templates.TemplateResponse(
+        "partials/groups_users_list.html",
+        {
+            "request": request,
+            "csrf_token": csrf_token,
+            "users_with_groups": users_with_groups,
+            "all_groups": all_groups,
+        },
+    )
+    set_csrf_cookie(response, csrf_token)
+    return response
+
+
+@web_router.get("/partials/groups-audit-logs", response_class=HTMLResponse)
+async def groups_audit_logs_partial(
+    request: Request,
+    action_type: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """Partial refresh endpoint for audit logs section with filtering."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    group_manager = _get_group_manager()
+    audit_logs, total_count = group_manager.get_audit_logs(
+        action_type=action_type or None,
+        date_from=date_from or None,
+        date_to=date_to or None,
+        limit=100,
+    )
+
+    for log in audit_logs:
+        log["timestamp"] = _format_datetime_display(
+            log.get("timestamp"), "%Y-%m-%d %H:%M:%S"
+        )
+
+    return templates.TemplateResponse(
+        "partials/groups_audit_logs.html",
+        {"request": request, "audit_logs": audit_logs, "total_count": total_count},
+    )
+
+
+@web_router.get("/partials/groups-repo-access", response_class=HTMLResponse)
+async def groups_repo_access_partial(request: Request):
+    """Partial refresh endpoint for repository access section."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+    group_manager = _get_group_manager()
+
+    # Get all groups
+    all_groups = [
+        {"id": g.id, "name": g.name, "is_default": g.is_default}
+        for g in group_manager.get_all_groups()
+    ]
+
+    # Get golden repos
+    golden_repos = []
+    repo_access_map: Dict[int, List[str]] = {}
+    try:
+        golden_repo_manager = _get_golden_repo_manager()
+        all_repos_data = golden_repo_manager.list_golden_repos()
+        # list_golden_repos returns List[Dict] with 'alias' key
+        golden_repos = [
+            {"name": repo["alias"]}
+            for repo in sorted(all_repos_data, key=lambda x: x["alias"])
+        ]
+
+        # Build repo access map
+        for group in group_manager.get_all_groups():
+            repos_for_group = group_manager.get_group_repos(group.id)
+            repo_access_map[group.id] = [r for r in repos_for_group if r != "cidx-meta"]
+    except RuntimeError as e:
+        logger.debug("Golden repo manager not available: %s", e)
+
+    response = templates.TemplateResponse(
+        "partials/groups_repo_access.html",
+        {
+            "request": request,
+            "csrf_token": csrf_token,
+            "all_groups": all_groups,
+            "golden_repos": golden_repos,
+            "repo_access_map": repo_access_map,
+        },
+    )
+    set_csrf_cookie(response, csrf_token)
+    return response
+
+
+@web_router.post("/groups/repo-access/grant", response_class=HTMLResponse)
+async def grant_repo_access(
+    request: Request,
+    repo_name: str = Form(...),
+    group_id: int = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Grant repository access to a group."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    # Validate CSRF
+    cookie_token = get_csrf_token_from_cookie(request)
+    if not cookie_token or cookie_token != csrf_token:
+        return _create_groups_page_response(
+            request, session, active_tab="repos", error_message="Invalid CSRF token"
+        )
+
+    group_manager = _get_group_manager()
+
+    try:
+        group = group_manager.get_group(group_id)
+        if not group:
+            return _create_groups_page_response(
+                request, session, active_tab="repos", error_message="Group not found"
+            )
+
+        success = group_manager.grant_repo_access(
+            repo_name=repo_name,
+            group_id=group_id,
+            granted_by=session.username,
+        )
+
+        if success:
+            # Log audit
+            group_manager.log_audit(
+                admin_id=session.username,
+                action_type="repo_access_grant",
+                target_type="repo",
+                target_id=repo_name,
+                details=f"Granted access to group '{group.name}'",
+            )
+            return _create_groups_page_response(
+                request,
+                session,
+                active_tab="repos",
+                success_message=f"Granted '{repo_name}' access to '{group.name}'",
+            )
+        else:
+            return _create_groups_page_response(
+                request,
+                session,
+                active_tab="repos",
+                success_message=f"'{group.name}' already has access to '{repo_name}'",
+            )
+    except Exception as e:
+        logger.error("Failed to grant repo access: %s", e)
+        return _create_groups_page_response(
+            request, session, active_tab="repos", error_message=str(e)
+        )
+
+
+@web_router.post("/groups/repo-access/revoke", response_class=HTMLResponse)
+async def revoke_repo_access(
+    request: Request,
+    repo_name: str = Form(...),
+    group_id: int = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    """Revoke repository access from a group."""
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    # Validate CSRF
+    cookie_token = get_csrf_token_from_cookie(request)
+    if not cookie_token or cookie_token != csrf_token:
+        return _create_groups_page_response(
+            request, session, active_tab="repos", error_message="Invalid CSRF token"
+        )
+
+    group_manager = _get_group_manager()
+
+    try:
+        group = group_manager.get_group(group_id)
+        if not group:
+            return _create_groups_page_response(
+                request, session, active_tab="repos", error_message="Group not found"
+            )
+
+        from code_indexer.server.services.group_access_manager import (
+            CidxMetaCannotBeRevokedError,
+        )
+
+        success = group_manager.revoke_repo_access(
+            repo_name=repo_name,
+            group_id=group_id,
+        )
+
+        if success:
+            # Log audit
+            group_manager.log_audit(
+                admin_id=session.username,
+                action_type="repo_access_revoke",
+                target_type="repo",
+                target_id=repo_name,
+                details=f"Revoked access from group '{group.name}'",
+            )
+            return _create_groups_page_response(
+                request,
+                session,
+                active_tab="repos",
+                success_message=f"Revoked '{repo_name}' access from '{group.name}'",
+            )
+        else:
+            return _create_groups_page_response(
+                request,
+                session,
+                active_tab="repos",
+                success_message=f"'{group.name}' did not have access to '{repo_name}'",
+            )
+    except CidxMetaCannotBeRevokedError:
+        return _create_groups_page_response(
+            request,
+            session,
+            active_tab="repos",
+            error_message="cidx-meta access cannot be revoked",
+        )
+    except Exception as e:
+        logger.error("Failed to revoke repo access: %s", e)
+        return _create_groups_page_response(
+            request, session, active_tab="repos", error_message=str(e)
+        )
 
 
 def _get_golden_repo_manager():
@@ -1831,14 +2523,13 @@ def _get_all_jobs(
 def _get_queue_status() -> dict:
     """Get current queue status from job manager."""
     from ..jobs.config import SyncJobConfig
-    default_limits = SyncJobConfig.get_concurrency_limits(None)
 
     # Default values if job manager is not available
     queue_status = {
         "running_count": 0,
         "queued_count": 0,
-        "max_total_concurrent_jobs": default_limits["max_total_concurrent_jobs"],
-        "max_concurrent_jobs_per_user": default_limits["max_concurrent_jobs_per_user"],
+        "max_total_concurrent_jobs": SyncJobConfig.DEFAULT_MAX_TOTAL_CONCURRENT_JOBS,
+        "max_concurrent_jobs_per_user": SyncJobConfig.DEFAULT_MAX_CONCURRENT_JOBS_PER_USER,
     }
 
     job_manager = _get_background_job_manager()
@@ -1848,12 +2539,14 @@ def _get_queue_status() -> dict:
         # Use resource_config for limits (BackgroundJobManager doesn't have these as direct attributes)
         if hasattr(job_manager, "resource_config") and job_manager.resource_config:
             queue_status["max_total_concurrent_jobs"] = getattr(
-                job_manager.resource_config, "max_total_concurrent_jobs",
-                default_limits["max_total_concurrent_jobs"]
+                job_manager.resource_config,
+                "max_total_concurrent_jobs",
+                SyncJobConfig.DEFAULT_MAX_TOTAL_CONCURRENT_JOBS,
             )
             queue_status["max_concurrent_jobs_per_user"] = getattr(
-                job_manager.resource_config, "max_concurrent_jobs_per_user",
-                default_limits["max_concurrent_jobs_per_user"]
+                job_manager.resource_config,
+                "max_concurrent_jobs_per_user",
+                SyncJobConfig.DEFAULT_MAX_CONCURRENT_JOBS_PER_USER,
             )
 
     return queue_status
@@ -2045,8 +2738,10 @@ async def get_queue_status_api(request: Request):
     # Add average_job_duration_minutes to the response
     # BackgroundJobManager doesn't have this attribute, use SyncJobConfig defaults
     from ..jobs.config import SyncJobConfig
-    default_limits = SyncJobConfig.get_concurrency_limits(None)
-    queue_status["average_job_duration_minutes"] = default_limits["average_job_duration_minutes"]
+
+    queue_status["average_job_duration_minutes"] = (
+        SyncJobConfig.DEFAULT_AVERAGE_JOB_DURATION_MINUTES
+    )
 
     return JSONResponse({"success": True, **queue_status})
 
@@ -3204,7 +3899,8 @@ async def _reload_oidc_configuration():
     config = config_service.get_config()
 
     # Only reload if OIDC is enabled
-    if not config.oidc_provider_config.enabled:
+    oidc_config = config.oidc_provider_config
+    if oidc_config is None or not oidc_config.enabled:
         logger.info(
             "OIDC is disabled, skipping reload",
             extra={"correlation_id": get_correlation_id()},
@@ -3219,13 +3915,13 @@ async def _reload_oidc_configuration():
     from .. import app as app_module
 
     logger.info(
-        f"Creating new OIDC manager with config: email_claim={config.oidc_provider_config.email_claim}, username_claim={config.oidc_provider_config.username_claim}",
+        f"Creating new OIDC manager with config: email_claim={oidc_config.email_claim}, username_claim={oidc_config.username_claim}",
         extra={"correlation_id": get_correlation_id()},
     )
 
     state_manager = StateManager()
     oidc_manager = OIDCManager(
-        config=config.oidc_provider_config,
+        config=oidc_config,
         user_manager=app_module.user_manager,
         jwt_manager=app_module.jwt_manager,
     )
@@ -3237,10 +3933,9 @@ async def _reload_oidc_configuration():
     # Replace the old managers with new ones
     oidc_routes.oidc_manager = oidc_manager
     oidc_routes.state_manager = state_manager
-    oidc_routes.server_config = config
 
     logger.info(
-        f"OIDC configuration reloaded for provider: {config.oidc_provider_config.provider_name} (will initialize on next login)",
+        f"OIDC configuration reloaded for provider: {oidc_config.provider_name} (will initialize on next login)",
         extra={"correlation_id": get_correlation_id()},
     )
     logger.info(
@@ -3268,11 +3963,11 @@ def _get_current_config() -> dict:
     # Note: BackgroundJobManager doesn't have these attributes directly, they're managed
     # via SyncJobConfig for the sync job system. For display purposes, use defaults.
     from ..jobs.config import SyncJobConfig
-    default_limits = SyncJobConfig.get_concurrency_limits(None)  # Static call for defaults
+
     job_queue_config = {
-        "max_total_concurrent_jobs": default_limits["max_total_concurrent_jobs"],
-        "max_concurrent_jobs_per_user": default_limits["max_concurrent_jobs_per_user"],
-        "average_job_duration_minutes": default_limits["average_job_duration_minutes"],
+        "max_total_concurrent_jobs": SyncJobConfig.DEFAULT_MAX_TOTAL_CONCURRENT_JOBS,
+        "max_concurrent_jobs_per_user": SyncJobConfig.DEFAULT_MAX_CONCURRENT_JOBS_PER_USER,
+        "average_job_duration_minutes": SyncJobConfig.DEFAULT_AVERAGE_JOB_DURATION_MINUTES,
     }
 
     # Ensure telemetry config has all required fields with defaults
@@ -3589,12 +4284,7 @@ def _create_config_page_response(
     csrf_token = generate_csrf_token()
     config = _get_current_config()
 
-    # Load API keys status - use same server_dir as config service
-    from ..services.config_service import get_config_service
-
-    config_service = get_config_service()
-    server_dir = str(config_service.config_manager.server_dir)
-
+    # Load API keys status
     token_manager = _get_token_manager()
     api_keys_status = token_manager.list_tokens()
 
@@ -3631,13 +4321,14 @@ def _create_config_page_response(
 
 def _get_gitlab_provider():
     """Create GitLab provider with required dependencies."""
-    from ..services.config_service import get_config_service
     from ..services.repository_providers.gitlab_provider import GitLabProvider
 
     token_manager = _get_token_manager()
     golden_repo_manager = _get_golden_repo_manager()
 
-    return GitLabProvider(token_manager=token_manager, golden_repo_manager=golden_repo_manager)
+    return GitLabProvider(
+        token_manager=token_manager, golden_repo_manager=golden_repo_manager
+    )
 
 
 def _get_github_provider():
@@ -3647,19 +4338,21 @@ def _get_github_provider():
     token_manager = _get_token_manager()
     golden_repo_manager = _get_golden_repo_manager()
 
-    return GitHubProvider(token_manager=token_manager, golden_repo_manager=golden_repo_manager)
+    return GitHubProvider(
+        token_manager=token_manager, golden_repo_manager=golden_repo_manager
+    )
 
 
 def _build_gitlab_repos_response(
     request: Request,
-    repositories: list = None,
+    repositories: Optional[list] = None,
     total_count: int = 0,
     page: int = 1,
     page_size: int = 50,
     total_pages: int = 0,
-    error_type: str = None,
-    error_message: str = None,
-    search_term: str = None,
+    error_type: Optional[str] = None,
+    error_message: Optional[str] = None,
+    search_term: Optional[str] = None,
 ):
     """Build GitLab repos partial template response."""
     return templates.TemplateResponse(
@@ -3680,14 +4373,14 @@ def _build_gitlab_repos_response(
 
 def _build_github_repos_response(
     request: Request,
-    repositories: list = None,
+    repositories: Optional[list] = None,
     total_count: int = 0,
     page: int = 1,
     page_size: int = 50,
     total_pages: int = 0,
-    error_type: str = None,
-    error_message: str = None,
-    search_term: str = None,
+    error_type: Optional[str] = None,
+    error_message: Optional[str] = None,
+    search_term: Optional[str] = None,
 ):
     """Build GitHub repos partial template response."""
     return templates.TemplateResponse(
@@ -3716,14 +4409,21 @@ async def auto_discovery_page(request: Request):
     csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
     response = templates.TemplateResponse(
         "auto_discovery.html",
-        {"request": request, "current_page": "auto-discovery", "show_nav": True, "csrf_token": csrf_token},
+        {
+            "request": request,
+            "current_page": "auto-discovery",
+            "show_nav": True,
+            "csrf_token": csrf_token,
+        },
     )
     set_csrf_cookie(response, csrf_token)
     return response
 
 
 @web_router.get("/partials/auto-discovery/gitlab", response_class=HTMLResponse)
-async def gitlab_repos_partial(request: Request, page: int = 1, page_size: int = 50, search: Optional[str] = None):
+async def gitlab_repos_partial(
+    request: Request, page: int = 1, page_size: int = 50, search: Optional[str] = None
+):
     """HTMX partial for GitLab repository discovery."""
     session = _require_admin_session(request)
     if not session:
@@ -3738,24 +4438,52 @@ async def gitlab_repos_partial(request: Request, page: int = 1, page_size: int =
         provider = _get_gitlab_provider()
         if not await provider.is_configured():
             return _build_gitlab_repos_response(
-                request, error_type="not_configured", error_message="GitLab token not configured",
-                search_term=search_term
+                request,
+                error_type="not_configured",
+                error_message="GitLab token not configured",
+                search_term=search_term,
             )
 
-        result = await provider.discover_repositories(page=page, page_size=page_size, search=search_term)
+        result = await provider.discover_repositories(
+            page=page, page_size=page_size, search=search_term
+        )
         return _build_gitlab_repos_response(
-            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages,
-            search_term=search_term
+            request,
+            result.repositories,
+            result.total_count,
+            result.page,
+            result.page_size,
+            result.total_pages,
+            search_term=search_term,
         )
     except GitLabProviderError as e:
-        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=str(e), search_term=search_term)
+        return _build_gitlab_repos_response(
+            request,
+            page=page,
+            page_size=page_size,
+            error_type="api_error",
+            error_message=str(e),
+            search_term=search_term,
+        )
     except Exception as e:
-        logger.error(f"Unexpected error in GitLab discovery: {e}", extra={"correlation_id": get_correlation_id()})
-        return _build_gitlab_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}", search_term=search_term)
+        logger.error(
+            f"Unexpected error in GitLab discovery: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        return _build_gitlab_repos_response(
+            request,
+            page=page,
+            page_size=page_size,
+            error_type="api_error",
+            error_message=f"Unexpected error: {e}",
+            search_term=search_term,
+        )
 
 
 @web_router.get("/partials/auto-discovery/github", response_class=HTMLResponse)
-async def github_repos_partial(request: Request, page: int = 1, page_size: int = 50, search: Optional[str] = None):
+async def github_repos_partial(
+    request: Request, page: int = 1, page_size: int = 50, search: Optional[str] = None
+):
     """HTMX partial for GitHub repository discovery."""
     session = _require_admin_session(request)
     if not session:
@@ -3770,14 +4498,23 @@ async def github_repos_partial(request: Request, page: int = 1, page_size: int =
         provider = _get_github_provider()
         if not await provider.is_configured():
             return _build_github_repos_response(
-                request, error_type="not_configured", error_message="GitHub token not configured",
-                search_term=search_term
+                request,
+                error_type="not_configured",
+                error_message="GitHub token not configured",
+                search_term=search_term,
             )
 
-        result = await provider.discover_repositories(page=page, page_size=page_size, search=search_term)
+        result = await provider.discover_repositories(
+            page=page, page_size=page_size, search=search_term
+        )
         return _build_github_repos_response(
-            request, result.repositories, result.total_count, result.page, result.page_size, result.total_pages,
-            search_term=search_term
+            request,
+            result.repositories,
+            result.total_count,
+            result.page,
+            result.page_size,
+            result.total_pages,
+            search_term=search_term,
         )
     except GitHubProviderError as e:
         error_msg = str(e)
@@ -3785,10 +4522,27 @@ async def github_repos_partial(request: Request, page: int = 1, page_size: int =
         # Check for rate limit specific error
         if "rate limit" in error_msg.lower():
             error_type = "rate_limit"
-        return _build_github_repos_response(request, page=page, page_size=page_size, error_type=error_type, error_message=error_msg, search_term=search_term)
+        return _build_github_repos_response(
+            request,
+            page=page,
+            page_size=page_size,
+            error_type=error_type,
+            error_message=error_msg,
+            search_term=search_term,
+        )
     except Exception as e:
-        logger.error(f"Unexpected error in GitHub discovery: {e}", extra={"correlation_id": get_correlation_id()})
-        return _build_github_repos_response(request, page=page, page_size=page_size, error_type="api_error", error_message=f"Unexpected error: {e}", search_term=search_term)
+        logger.error(
+            f"Unexpected error in GitHub discovery: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        return _build_github_repos_response(
+            request,
+            page=page,
+            page_size=page_size,
+            error_type="api_error",
+            error_message=f"Unexpected error: {e}",
+            search_term=search_term,
+        )
 
 
 @web_router.get("/config", response_class=HTMLResponse)
@@ -3997,12 +4751,7 @@ async def config_section_partial(
         csrf_token = generate_csrf_token()
     config = _get_current_config()
 
-    # Load API keys status - use same server_dir as config service
-    from ..services.config_service import get_config_service
-
-    config_service = get_config_service()
-    server_dir = str(config_service.config_manager.server_dir)
-
+    # Load API keys status
     token_manager = _get_token_manager()
     api_keys_status = token_manager.list_tokens()
     github_token_data = token_manager.get_token("github")
@@ -5328,7 +6077,15 @@ async def unified_login_sso(
         callback_url = f"{issuer_url.rstrip('/')}/auth/sso/callback"
     else:
         callback_url = str(request.base_url).rstrip("/") + "/auth/sso/callback"
-    oidc_auth_url = oidc_routes.oidc_manager.provider.get_authorization_url(
+    oidc_manager = oidc_routes.oidc_manager
+    assert (
+        oidc_manager is not None
+    ), "oidc_manager must be initialized when SSO login is invoked"
+    provider = oidc_manager.provider
+    assert (
+        provider is not None
+    ), "oidc provider must be initialized when SSO login is invoked"
+    oidc_auth_url = provider.get_authorization_url(
         state=state_token, redirect_uri=callback_url, code_challenge=code_challenge
     )
 

@@ -145,6 +145,79 @@ class MigrationService:
             "skipped": False,
         }
 
+    def migrate_global_repos_from_path(self, source_path: str) -> Dict[str, Any]:
+        """
+        Migrate global_registry.json from a specific path to SQLite.
+
+        This method allows migrating from locations other than the default
+        source_dir, such as the golden-repos subdirectory.
+
+        Args:
+            source_path: Full path to the global_registry.json file.
+
+        Returns:
+            Migration result with counts.
+        """
+        source_file = Path(source_path)
+
+        if not source_file.exists():
+            logger.info(f"No global_registry.json found at {source_path}, skipping")
+            return {"migrated": 0, "errors": 0, "skipped": True}
+
+        try:
+            with open(source_file, "r") as f:
+                registry_data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to read global_registry.json from {source_path}: {e}")
+            return {"migrated": 0, "errors": 1, "skipped": False}
+
+        backend = GlobalReposSqliteBackend(self.db_path)
+        migrated = 0
+        already_exists = 0
+        errors = 0
+
+        try:
+            for alias_name, repo_data in registry_data.items():
+                try:
+                    backend.register_repo(
+                        alias_name=alias_name,
+                        repo_name=repo_data.get("repo_name", ""),
+                        repo_url=repo_data.get("repo_url"),
+                        index_path=repo_data.get("index_path", ""),
+                        enable_temporal=repo_data.get("enable_temporal", False),
+                        temporal_options=repo_data.get("temporal_options"),
+                    )
+                    migrated += 1
+                    logger.debug(f"Migrated repo from golden-repos: {alias_name}")
+                except sqlite3.IntegrityError:
+                    already_exists += 1
+                    logger.debug(f"Repo already exists, skipping: {alias_name}")
+                except Exception as e:
+                    logger.error(f"Failed to migrate repo {alias_name}: {e}")
+                    errors += 1
+        finally:
+            backend.close()
+
+        logger.info(
+            f"Global repos migration from {source_path}: {migrated} migrated, "
+            f"{already_exists} already existed, {errors} errors"
+        )
+
+        # Rename JSON file to .migrated after successful migration
+        if errors == 0 and (migrated > 0 or already_exists > 0):
+            try:
+                os.rename(str(source_file), str(source_file) + ".migrated")
+                logger.info(f"Renamed {source_file} to {source_file}.migrated")
+            except OSError as e:
+                logger.warning(f"Failed to rename {source_file}: {e}")
+
+        return {
+            "migrated": migrated,
+            "already_exists": already_exists,
+            "errors": errors,
+            "skipped": False,
+        }
+
     def migrate_users(self) -> Dict[str, Any]:
         """
         Migrate users.json to SQLite with normalized tables.
@@ -218,7 +291,9 @@ class MigrationService:
                     migrated_password_hash = user_data.get("password_hash", "")
                     if migrated_password_hash:
                         backend.update_password_hash(username, migrated_password_hash)
-                        logger.info(f"Updated existing user password_hash from migration: {username}")
+                        logger.info(
+                            f"Updated existing user password_hash from migration: {username}"
+                        )
                     # Also migrate API keys and MCP credentials for existing users
                     api_keys = user_data.get("api_keys", [])
                     for key in api_keys:
@@ -231,7 +306,9 @@ class MigrationService:
                                 name=key.get("name"),
                             )
                         except sqlite3.IntegrityError:
-                            logger.debug(f"API key already exists, skipping: {key.get('key_id', '')}")
+                            logger.debug(
+                                f"API key already exists, skipping: {key.get('key_id', '')}"
+                            )
                     mcp_creds = user_data.get("mcp_credentials", [])
                     for cred in mcp_creds:
                         try:
@@ -244,9 +321,13 @@ class MigrationService:
                                 name=cred.get("name"),
                             )
                         except sqlite3.IntegrityError:
-                            logger.debug(f"MCP credential already exists, skipping: {cred.get('credential_id', '')}")
+                            logger.debug(
+                                f"MCP credential already exists, skipping: {cred.get('credential_id', '')}"
+                            )
                     already_exists += 1
-                    logger.debug(f"User already exists, updated from migration: {username}")
+                    logger.debug(
+                        f"User already exists, updated from migration: {username}"
+                    )
                 except Exception as e:
                     logger.error(f"Failed to migrate user {username}: {e}")
                     errors += 1
@@ -296,7 +377,8 @@ class MigrationService:
             for job_id, job_data in job_records.items():
                 try:
                     backend.create_job(
-                        job_id=job_id, username=job_data.get("username", ""),
+                        job_id=job_id,
+                        username=job_data.get("username", ""),
                         user_alias=job_data.get("user_alias", ""),
                         job_type=job_data.get("job_type", ""),
                         status=job_data.get("status", ""),
@@ -421,7 +503,9 @@ class MigrationService:
             for platform, token_data in tokens_data.items():
                 try:
                     # Support both "token" (legacy JSON format) and "encrypted_token" keys
-                    encrypted_token = token_data.get("token") or token_data.get("encrypted_token", "")
+                    encrypted_token = token_data.get("token") or token_data.get(
+                        "encrypted_token", ""
+                    )
                     backend.save_token(
                         platform=platform,
                         encrypted_token=encrypted_token,
@@ -472,16 +556,24 @@ class MigrationService:
 
         try:
             for username, session_list in sessions_data.items():
-                tokens = session_list if isinstance(session_list, list) else list(session_list.keys())
+                tokens = (
+                    session_list
+                    if isinstance(session_list, list)
+                    else list(session_list.keys())
+                )
                 for token_id in tokens:
                     try:
                         backend.invalidate_session(username=username, token_id=token_id)
                         migrated += 1
                     except sqlite3.IntegrityError:
                         already_exists += 1
-                        logger.debug(f"Session already invalidated, skipping: {username}/{token_id}")
+                        logger.debug(
+                            f"Session already invalidated, skipping: {username}/{token_id}"
+                        )
                     except Exception as e:
-                        logger.error(f"Failed to migrate session {username}/{token_id}: {e}")
+                        logger.error(
+                            f"Failed to migrate session {username}/{token_id}: {e}"
+                        )
                         errors += 1
         finally:
             backend.close()
@@ -524,12 +616,14 @@ class MigrationService:
                         key_data = json.load(f)
                     key_name = key_data.get("name", json_file.stem)
                     backend.create_key(
-                        name=key_name, fingerprint=key_data.get("fingerprint", ""),
+                        name=key_name,
+                        fingerprint=key_data.get("fingerprint", ""),
                         key_type=key_data.get("key_type", ""),
                         private_path=key_data.get("private_path", ""),
                         public_path=key_data.get("public_path", ""),
                         public_key=key_data.get("public_key"),
-                        email=key_data.get("email"), description=key_data.get("description"),
+                        email=key_data.get("email"),
+                        description=key_data.get("description"),
                         is_imported=key_data.get("is_imported", False),
                     )
                     for hostname in key_data.get("hosts", []):
@@ -564,9 +658,7 @@ class MigrationService:
             "skipped": False,
         }
 
-    def migrate_golden_repos_metadata(
-        self, golden_repos_dir: str
-    ) -> Dict[str, Any]:
+    def migrate_golden_repos_metadata(self, golden_repos_dir: str) -> Dict[str, Any]:
         """
         Migrate golden-repos/metadata.json to SQLite golden_repos_metadata table.
 

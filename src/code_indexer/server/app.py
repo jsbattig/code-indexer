@@ -2065,6 +2065,22 @@ def create_app() -> FastAPI:
                             f"Golden repos metadata migration: {gr_result}",
                             extra={"correlation_id": get_correlation_id()},
                         )
+
+                    # Also migrate global_registry.json from golden-repos subdirectory
+                    # This file contains globally activated repos and may be in
+                    # golden-repos/ instead of the main data directory
+                    global_registry_path = (
+                        golden_repos_dir_path / "global_registry.json"
+                    )
+                    if global_registry_path.exists():
+                        gr_global_result = migration.migrate_global_repos_from_path(
+                            str(global_registry_path)
+                        )
+                        if not gr_global_result.get("skipped"):
+                            logger.info(
+                                f"Global repos migration from golden-repos: {gr_global_result}",
+                                extra={"correlation_id": get_correlation_id()},
+                            )
             else:
                 logger.info(
                     "No legacy JSON files to migrate",
@@ -2191,6 +2207,7 @@ def create_app() -> FastAPI:
                 try:
                     from code_indexer.server.services.group_access_manager import (
                         seed_existing_golden_repos,
+                        seed_admin_users,
                     )
 
                     seeded_count = seed_existing_golden_repos(
@@ -2201,9 +2218,20 @@ def create_app() -> FastAPI:
                             f"Seeded {seeded_count} existing golden repos to admins/powerusers groups",
                             extra={"correlation_id": get_correlation_id()},
                         )
+
+                    # Seed admin users to admins group (migration for upgrades)
+                    # This is idempotent - only assigns users not already in a group
+                    admin_seeded = seed_admin_users(
+                        dependencies.user_manager, group_manager
+                    )
+                    if admin_seeded > 0:
+                        logger.info(
+                            f"Seeded {admin_seeded} admin users to admins group",
+                            extra={"correlation_id": get_correlation_id()},
+                        )
                 except Exception as seed_error:
                     logger.warning(
-                        f"Failed to seed existing golden repos: {seed_error}",
+                        f"Failed to seed existing golden repos or admin users: {seed_error}",
                         extra={"correlation_id": get_correlation_id()},
                     )
 
@@ -2631,19 +2659,19 @@ def create_app() -> FastAPI:
 
     # Initialize managers with resource configuration
     data_dir = str(Path(server_data_dir) / "data")
-    # Story #711: Use SQLite for golden repo metadata storage
-    db_path = str(Path(server_data_dir) / "data" / "cidx_server.db")
+    # Story #711: Use SQLite for golden repo metadata storage (db_path already defined above as Path)
+    db_path_str = str(db_path)
     golden_repo_manager = GoldenRepoManager(
         data_dir=data_dir,
         resource_config=server_config.resource_config,
         use_sqlite=True,
-        db_path=db_path,
+        db_path=db_path_str,
     )
     # Initialize BackgroundJobManager with SQLite persistence (Bug fix: Jobs not showing in Dashboard)
     background_job_manager = BackgroundJobManager(
         resource_config=server_config.resource_config,
         use_sqlite=True,
-        db_path=db_path,
+        db_path=db_path_str,
     )
     # Inject BackgroundJobManager into GoldenRepoManager for async operations
     golden_repo_manager.background_job_manager = background_job_manager
@@ -3009,7 +3037,7 @@ def create_app() -> FastAPI:
                     user_manager.create_user(
                         registration_data.username,
                         registration_data.password,
-                        "normal_user",  # Default role for new registrations
+                        UserRole.NORMAL_USER,  # Default role for new registrations
                     )
 
                     response = auth_error_handler.create_registration_response(
@@ -5440,9 +5468,8 @@ def create_app() -> FastAPI:
 
             def sync_job_wrapper():
                 # Create webhook callback if webhook URL provided
-                webhook_callback = create_webhook_callback(
-                    sync_options.get("progress_webhook")
-                )
+                webhook_url: Optional[str] = sync_options.get("progress_webhook")  # type: ignore[assignment]
+                webhook_callback = create_webhook_callback(webhook_url)
 
                 return _execute_repository_sync(
                     repo_id=cleaned_repo_id,

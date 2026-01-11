@@ -183,6 +183,9 @@ class GoldenRepoManager:
         Thread-safe: Uses _operation_lock to prevent concurrent access.
         """
         with self._operation_lock:
+            if self._sqlite_backend is None:
+                logging.warning("SQLite backend not initialized, cannot load metadata")
+                return
             repos = self._sqlite_backend.list_repos()
             for repo_data in repos:
                 self.golden_repos[repo_data["alias"]] = GoldenRepo(**repo_data)
@@ -296,7 +299,7 @@ class GoldenRepoManager:
 
                 # Store and persist
                 self.golden_repos[alias] = golden_repo
-                if self._use_sqlite:
+                if self._use_sqlite and self._sqlite_backend is not None:
                     self._sqlite_backend.add_repo(
                         alias=alias,
                         repo_url=repo_url,
@@ -507,7 +510,7 @@ class GoldenRepoManager:
             # Only remove from storage after cleanup is complete
             del self.golden_repos[alias]
 
-            if self._use_sqlite:
+            if self._use_sqlite and self._sqlite_backend is not None:
                 try:
                     self._sqlite_backend.remove_repo(alias)
                 except Exception as save_error:

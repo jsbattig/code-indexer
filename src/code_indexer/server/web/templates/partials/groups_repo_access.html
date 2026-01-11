@@ -1,0 +1,156 @@
+<table class="repo-access-table">
+    <thead>
+        <tr>
+            <th>Repository</th>
+            {% for group in all_groups %}
+            <th class="group-column">{{ group.name }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% if golden_repos %}
+        {% for repo in golden_repos %}
+        <tr>
+            <td class="repo-name">
+                {{ repo.name }}
+                {% if repo.name == 'cidx-meta' %}
+                <span class="badge badge-info">Always Accessible</span>
+                {% endif %}
+            </td>
+            {% for group in all_groups %}
+            <td class="access-cell">
+                {% if repo.name == 'cidx-meta' %}
+                <!-- cidx-meta is always accessible -->
+                <span class="access-granted" title="Always accessible to all groups">Yes</span>
+                {% elif group.name == 'admins' %}
+                <!-- admins always have access -->
+                <span class="access-granted" title="Admins have full access">Yes</span>
+                {% else %}
+                {% set has_access = repo.name in repo_access_map.get(group.id, []) %}
+                {% if has_access %}
+                <form method="post" action="/admin/groups/repo-access/revoke" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="repo_name" value="{{ repo.name }}">
+                    <input type="hidden" name="group_id" value="{{ group.id }}">
+                    <button type="submit" class="access-btn access-granted" title="Click to revoke access">
+                        Yes
+                    </button>
+                </form>
+                {% else %}
+                <form method="post" action="/admin/groups/repo-access/grant" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="repo_name" value="{{ repo.name }}">
+                    <input type="hidden" name="group_id" value="{{ group.id }}">
+                    <button type="submit" class="access-btn access-denied" title="Click to grant access">
+                        No
+                    </button>
+                </form>
+                {% endif %}
+                {% endif %}
+            </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="{{ all_groups|length + 1 }}" class="no-data">
+                No golden repositories found. Add repositories from the Repos page first.
+            </td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+<style>
+.repo-access-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.repo-access-table th,
+.repo-access-table td {
+    padding: 0.75rem 0.5rem;
+    text-align: center;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.repo-access-table th:first-child,
+.repo-access-table td:first-child {
+    text-align: left;
+}
+
+.repo-name {
+    font-weight: 500;
+}
+
+.group-column {
+    min-width: 100px;
+}
+
+.access-cell {
+    text-align: center;
+}
+
+.access-granted {
+    color: #2d7a45;
+    font-weight: 600;
+}
+
+.access-denied {
+    color: #7a2d2d;
+    font-weight: 600;
+}
+
+.access-btn {
+    background: none;
+    border: 1px solid transparent;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+    border-radius: 0.25rem;
+    font-weight: 600;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.access-btn.access-granted {
+    color: #2d7a45;
+}
+
+.access-btn.access-granted:hover {
+    background-color: rgba(45, 122, 69, 0.1);
+    border-color: #2d7a45;
+}
+
+.access-btn.access-denied {
+    color: #7a2d2d;
+}
+
+.access-btn.access-denied:hover {
+    background-color: rgba(122, 45, 45, 0.1);
+    border-color: #7a2d2d;
+}
+
+.inline-form {
+    display: inline;
+    margin: 0;
+    padding: 0;
+}
+
+.badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.2rem;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+.badge-info {
+    background-color: #1a3a4a;
+    color: #7ac5e8;
+}
+
+.no-data {
+    text-align: center;
+    color: var(--pico-muted-color);
+    padding: 2rem;
+}
+</style>

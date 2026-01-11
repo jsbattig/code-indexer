@@ -281,7 +281,8 @@ class SCIPMultiService:
             results = []
             for chain in call_chains:
                 # Create a single QueryResult representing the chain
-                chain_str = " -> ".join(step.symbol for step in chain.path)
+                # chain.path is List[str] - symbol names in execution order
+                chain_str = " -> ".join(chain.path)
                 results.append(
                     QueryResult(
                         symbol=chain_str,

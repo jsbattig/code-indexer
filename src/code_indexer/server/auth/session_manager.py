@@ -144,10 +144,14 @@ class PasswordChangeSessionManager:
         """
         if self._use_sqlite and self._sqlite_backend is not None:
             # SQLite backend (Story #702)
-            password_change_time_str = self._sqlite_backend.get_password_change_timestamp(username)
+            password_change_time_str = (
+                self._sqlite_backend.get_password_change_timestamp(username)
+            )
             if password_change_time_str:
                 try:
-                    password_change_time = datetime.fromisoformat(password_change_time_str)
+                    password_change_time = datetime.fromisoformat(
+                        password_change_time_str
+                    )
                     return token_issued_at < password_change_time
                 except ValueError:
                     return False
@@ -156,9 +160,13 @@ class PasswordChangeSessionManager:
             # JSON file storage (backward compatible)
             with self._lock:
                 if username in self._password_change_timestamps:
-                    password_change_time_str = self._password_change_timestamps[username]
+                    password_change_time_str = self._password_change_timestamps[
+                        username
+                    ]
                     try:
-                        password_change_time = datetime.fromisoformat(password_change_time_str)
+                        password_change_time = datetime.fromisoformat(
+                            password_change_time_str
+                        )
                         return token_issued_at < password_change_time
                     except ValueError:
                         return False
@@ -197,7 +205,10 @@ class PasswordChangeSessionManager:
         """
         if self._use_sqlite and self._sqlite_backend is not None:
             # SQLite backend (Story #702)
-            return self._sqlite_backend.is_session_invalidated(username, token_id)
+            result: bool = self._sqlite_backend.is_session_invalidated(
+                username, token_id
+            )
+            return result
         else:
             # JSON file storage (backward compatible)
             with self._lock:
@@ -218,7 +229,8 @@ class PasswordChangeSessionManager:
         """
         # Story #702 SQLite migration: Add SQLite backend support
         if self._use_sqlite and self._sqlite_backend is not None:
-            return self._sqlite_backend.cleanup_old_data(days_to_keep)
+            cleanup_count: int = self._sqlite_backend.cleanup_old_data(days_to_keep)
+            return cleanup_count
 
         # JSON file storage (backward compatible)
         with self._lock:

@@ -449,7 +449,8 @@ class UserManager:
         """
         if self._use_sqlite and self._sqlite_backend is not None:
             # SQLite backend (Story #702)
-            return self._sqlite_backend.delete_user(username)
+            result: bool = self._sqlite_backend.delete_user(username)
+            return result
         else:
             # JSON file storage (backward compatible)
             users_data = self._load_users()
@@ -523,7 +524,10 @@ class UserManager:
             existing = self._sqlite_backend.get_user(username)
             if existing is None:
                 return False
-            return self._sqlite_backend.update_password_hash(username, new_password_hash)
+            result: bool = self._sqlite_backend.update_password_hash(
+                username, new_password_hash
+            )
+            return result
         else:
             # JSON file storage (backward compatible)
             users_data = self._load_users()
@@ -584,9 +588,10 @@ class UserManager:
             if existing is None:
                 return False
             new_email = kwargs.get("new_email")
-            return self._sqlite_backend.update_user(
+            result: bool = self._sqlite_backend.update_user(
                 username=username, new_username=new_username, email=new_email
             )
+            return result
         else:
             # JSON file storage (backward compatible)
             users_data = self._load_users()
@@ -641,8 +646,11 @@ class UserManager:
             if existing is None:
                 return False
             self._sqlite_backend.add_api_key(
-                username=username, key_id=key_id, key_hash=key_hash,
-                key_prefix=key_prefix, name=name,
+                username=username,
+                key_id=key_id,
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                name=name,
             )
             return True
         else:
@@ -652,10 +660,15 @@ class UserManager:
                 return False
             if "api_keys" not in users_data[username]:
                 users_data[username]["api_keys"] = []
-            users_data[username]["api_keys"].append({
-                "key_id": key_id, "name": name, "hash": key_hash,
-                "key_prefix": key_prefix, "created_at": created_at,
-            })
+            users_data[username]["api_keys"].append(
+                {
+                    "key_id": key_id,
+                    "name": name,
+                    "hash": key_hash,
+                    "key_prefix": key_prefix,
+                    "created_at": created_at,
+                }
+            )
             self._save_users(users_data)
             return True
 
@@ -676,9 +689,12 @@ class UserManager:
                 return []
             api_keys = user_data.get("api_keys", [])
             return [
-                {"key_id": key["key_id"], "name": key.get("name"),
-                 "created_at": key["created_at"],
-                 "key_prefix": key.get("key_prefix", "cidx_sk_****...")}
+                {
+                    "key_id": key["key_id"],
+                    "name": key.get("name"),
+                    "created_at": key["created_at"],
+                    "key_prefix": key.get("key_prefix", "cidx_sk_****..."),
+                }
                 for key in api_keys
             ]
         else:
@@ -688,9 +704,12 @@ class UserManager:
                 return []
             api_keys = users_data[username].get("api_keys", [])
             return [
-                {"key_id": key["key_id"], "name": key.get("name"),
-                 "created_at": key["created_at"],
-                 "key_prefix": key.get("key_prefix", "cidx_sk_****...")}
+                {
+                    "key_id": key["key_id"],
+                    "name": key.get("name"),
+                    "created_at": key["created_at"],
+                    "key_prefix": key.get("key_prefix", "cidx_sk_****..."),
+                }
                 for key in api_keys
             ]
 
@@ -707,7 +726,8 @@ class UserManager:
         """
         if self._use_sqlite and self._sqlite_backend is not None:
             # SQLite backend (Story #702)
-            return self._sqlite_backend.delete_api_key(username, key_id)
+            result: bool = self._sqlite_backend.delete_api_key(username, key_id)
+            return result
         else:
             # JSON file storage (backward compatible)
             users_data = self._load_users()
@@ -747,9 +767,12 @@ class UserManager:
                 stored_hash = key_entry.get("key_hash")
                 if stored_hash and api_key_manager.validate_key(raw_key, stored_hash):
                     return User(
-                        username=username, password_hash=user_data["password_hash"],
+                        username=username,
+                        password_hash=user_data["password_hash"],
                         role=UserRole(user_data["role"]),
-                        created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                        created_at=DateTimeParser.parse_user_datetime(
+                            user_data["created_at"]
+                        ),
                         email=user_data.get("email"),
                     )
             return None
@@ -765,9 +788,12 @@ class UserManager:
                 stored_hash = key_entry.get("hash")
                 if stored_hash and api_key_manager.validate_key(raw_key, stored_hash):
                     return User(
-                        username=username, password_hash=user_data["password_hash"],
+                        username=username,
+                        password_hash=user_data["password_hash"],
                         role=UserRole(user_data["role"]),
-                        created_at=DateTimeParser.parse_user_datetime(user_data["created_at"]),
+                        created_at=DateTimeParser.parse_user_datetime(
+                            user_data["created_at"]
+                        ),
                         email=user_data.get("email"),
                     )
             return None
@@ -804,8 +830,11 @@ class UserManager:
             if existing is None:
                 return False
             self._sqlite_backend.add_mcp_credential(
-                username=username, credential_id=credential_id, client_id=client_id,
-                client_secret_hash=client_secret_hash, client_id_prefix=client_id_prefix,
+                username=username,
+                credential_id=credential_id,
+                client_id=client_id,
+                client_secret_hash=client_secret_hash,
+                client_id_prefix=client_id_prefix,
                 name=name,
             )
             return True
@@ -816,11 +845,17 @@ class UserManager:
                 return False
             if "mcp_credentials" not in users_data[username]:
                 users_data[username]["mcp_credentials"] = []
-            users_data[username]["mcp_credentials"].append({
-                "credential_id": credential_id, "client_id": client_id,
-                "client_secret_hash": client_secret_hash, "client_id_prefix": client_id_prefix,
-                "name": name, "created_at": created_at, "last_used_at": None,
-            })
+            users_data[username]["mcp_credentials"].append(
+                {
+                    "credential_id": credential_id,
+                    "client_id": client_id,
+                    "client_secret_hash": client_secret_hash,
+                    "client_id_prefix": client_id_prefix,
+                    "name": name,
+                    "created_at": created_at,
+                    "last_used_at": None,
+                }
+            )
             self._save_users(users_data)
             return True
 
@@ -845,13 +880,17 @@ class UserManager:
             user_data = self._sqlite_backend.get_user(username)
             if user_data is None:
                 return []
-            return user_data.get("mcp_credentials", [])
+            result: List[Dict[str, Any]] = user_data.get("mcp_credentials", [])
+            return result
         else:
             # JSON file storage (backward compatible)
             users_data = self._load_users()
             if username not in users_data:
                 return []
-            return users_data[username].get("mcp_credentials", [])
+            result_json: List[Dict[str, Any]] = users_data[username].get(
+                "mcp_credentials", []
+            )
+            return result_json
 
     def get_mcp_credentials(self, username: str) -> List[Dict[str, Any]]:
         """
@@ -907,7 +946,10 @@ class UserManager:
         """
         # Story #702 SQLite migration: Add SQLite backend support
         if self._use_sqlite and self._sqlite_backend is not None:
-            return self._sqlite_backend.delete_mcp_credential(username, credential_id)
+            result: bool = self._sqlite_backend.delete_mcp_credential(
+                username, credential_id
+            )
+            return result
 
         # JSON file storage (backward compatible)
         users_data = self._load_users()
@@ -941,9 +983,10 @@ class UserManager:
         """
         # Story #702 SQLite migration: Add SQLite backend support
         if self._use_sqlite and self._sqlite_backend is not None:
-            return self._sqlite_backend.update_mcp_credential_last_used(
+            result: bool = self._sqlite_backend.update_mcp_credential_last_used(
                 username, credential_id
             )
+            return result
 
         # JSON file storage (backward compatible)
         users_data = self._load_users()
@@ -974,10 +1017,13 @@ class UserManager:
         """
         # Story #702 SQLite migration: Add SQLite backend support
         if self._use_sqlite and self._sqlite_backend is not None:
-            return self._sqlite_backend.list_all_mcp_credentials(limit, offset)
+            result: List[Dict[str, Any]] = (
+                self._sqlite_backend.list_all_mcp_credentials(limit, offset)
+            )
+            return result
 
         # JSON file storage (backward compatible)
-        all_credentials = []
+        all_credentials: List[Dict[str, Any]] = []
         users_data = self._load_users()
 
         # Sort users by username for consistent pagination
@@ -1068,7 +1114,8 @@ class UserManager:
         """
         # Story #702 SSO fix: Add SQLite backend support
         if self._use_sqlite and self._sqlite_backend is not None:
-            return self._sqlite_backend.set_oidc_identity(username, identity)
+            result: bool = self._sqlite_backend.set_oidc_identity(username, identity)
+            return result
 
         # JSON file storage (backward compatible)
         users_data = self._load_users()
@@ -1091,7 +1138,8 @@ class UserManager:
         """
         # Story #702 SQLite migration: Add SQLite backend support
         if self._use_sqlite and self._sqlite_backend is not None:
-            return self._sqlite_backend.remove_oidc_identity(username)
+            result: bool = self._sqlite_backend.remove_oidc_identity(username)
+            return result
 
         # JSON file storage (backward compatible)
         users_data = self._load_users()

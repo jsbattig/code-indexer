@@ -12,7 +12,7 @@ import os
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Callable, Dict, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -299,7 +299,8 @@ class DatabaseConnectionManager:
             with self._lock:
                 self._connections[thread_id] = conn
 
-        return self._local.connection
+        connection: sqlite3.Connection = self._local.connection
+        return connection
 
     def execute_atomic(self, operation: Callable[[sqlite3.Connection], T]) -> T:
         """

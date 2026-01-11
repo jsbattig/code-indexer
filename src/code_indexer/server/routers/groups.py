@@ -248,7 +248,7 @@ async def create_group(
             description=request.description,
         )
         # AC7: Log group creation
-        group_manager._log_audit(
+        group_manager.log_audit(
             admin_id=current_user.username,
             action_type="group_create",
             target_type="group",
@@ -335,7 +335,7 @@ async def update_group(
                 detail=f"Group with ID {group_id} not found",
             )
         # AC7: Log group update
-        group_manager._log_audit(
+        group_manager.log_audit(
             admin_id=current_user.username,
             action_type="group_update",
             target_type="group",
@@ -421,7 +421,7 @@ async def delete_group(
                 detail=f"Group with ID {group_id} not found",
             )
         # AC7: Log group deletion
-        group_manager._log_audit(
+        group_manager.log_audit(
             admin_id=current_user.username,
             action_type="group_delete",
             target_type="group",
@@ -497,7 +497,7 @@ async def add_repo_to_group(
 
     # AC7: Log repo access grant for each newly added repo
     for repo_name in added_repos:
-        group_manager._log_audit(
+        group_manager.log_audit(
             admin_id=current_user.username,
             action_type="repo_access_grant",
             target_type="repo",
@@ -615,7 +615,7 @@ async def bulk_remove_repos_from_group(
 
     # AC7: Log repo access revoke for each removed repo
     for repo_name in removed_repos:
-        group_manager._log_audit(
+        group_manager.log_audit(
             admin_id=current_user.username,
             action_type="repo_access_revoke",
             target_type="repo",
@@ -727,7 +727,7 @@ async def move_user_to_group(
     )
 
     # AC7: Log user group change
-    group_manager._log_audit(
+    group_manager.log_audit(
         admin_id=current_user.username,
         action_type="user_group_change",
         target_type="user",

@@ -970,7 +970,7 @@ class GroupAccessManager:
     # Audit Logging Methods (Story #710: AC7)
     # =========================================================================
 
-    def _log_audit(
+    def log_audit(
         self,
         admin_id: str,
         action_type: str,
@@ -1100,6 +1100,98 @@ class GroupAccessManager:
             return logs, total
         finally:
             conn.close()
+
+
+def seed_users_to_groups(
+    user_manager: Any, group_manager: "GroupAccessManager"
+) -> tuple[int, int]:
+    """
+    Seed existing users to appropriate groups based on their role.
+
+    - Admin users → admins group
+    - All other users → users group
+
+    This function should be called during server startup after GroupAccessManager
+    is initialized. It ensures that existing users (from before the
+    group-based security model upgrade) are properly assigned to groups.
+
+    This function is IDEMPOTENT - safe to run on every server startup because
+    it checks for existing membership before assigning.
+
+    Args:
+        user_manager: The UserManager instance with existing users
+        group_manager: The GroupAccessManager instance to assign users to
+
+    Returns:
+        tuple[int, int]: (admin_count, regular_count) - Number of users assigned
+    """
+    admin_count = 0
+    regular_count = 0
+
+    try:
+        # Get the groups
+        admins_group = group_manager.get_group_by_name(DEFAULT_GROUP_ADMINS)
+        users_group = group_manager.get_group_by_name(DEFAULT_GROUP_USERS)
+
+        if not admins_group:
+            logger.warning("Cannot seed users: admins group not found")
+            return 0, 0
+        if not users_group:
+            logger.warning("Cannot seed users: users group not found")
+            return 0, 0
+
+        # Get all users
+        all_users = user_manager.get_all_users()
+
+        for user in all_users:
+            # Check if already assigned to any group
+            existing_group = group_manager.get_user_group(user.username)
+            if existing_group is not None:
+                # User already has a group assignment, skip
+                continue
+
+            # Determine target group based on role
+            is_admin = hasattr(user, "role") and str(user.role.value) == "admin"
+            target_group = admins_group if is_admin else users_group
+            assigned_by = (
+                "system:admin-migration" if is_admin else "system:user-migration"
+            )
+
+            try:
+                group_manager.assign_user_to_group(
+                    user_id=user.username,
+                    group_id=target_group.id,
+                    assigned_by=assigned_by,
+                )
+                if is_admin:
+                    admin_count += 1
+                    logger.debug(
+                        f"Auto-assigned admin user '{user.username}' to admins group"
+                    )
+                else:
+                    regular_count += 1
+                    logger.debug(f"Auto-assigned user '{user.username}' to users group")
+            except Exception as assign_error:
+                logger.warning(
+                    f"Failed to assign user '{user.username}' to {target_group.name} group: {assign_error}"
+                )
+
+        if admin_count > 0 or regular_count > 0:
+            logger.info(
+                f"Seeded users to groups: {admin_count} admins, {regular_count} regular users"
+            )
+
+    except Exception as e:
+        logger.warning(f"Failed to seed users to groups: {e}")
+
+    return admin_count, regular_count
+
+
+# Backward compatibility alias
+def seed_admin_users(user_manager: Any, group_manager: "GroupAccessManager") -> int:
+    """Backward compatibility wrapper for seed_users_to_groups."""
+    admin_count, regular_count = seed_users_to_groups(user_manager, group_manager)
+    return admin_count + regular_count
 
 
 def seed_existing_golden_repos(

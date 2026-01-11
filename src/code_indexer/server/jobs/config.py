@@ -19,6 +19,11 @@ class SyncJobConfig:
     proper storage paths for sync job persistence.
     """
 
+    # Default concurrency and job configuration constants
+    DEFAULT_MAX_CONCURRENT_JOBS_PER_USER = 3
+    DEFAULT_MAX_TOTAL_CONCURRENT_JOBS = 10
+    DEFAULT_AVERAGE_JOB_DURATION_MINUTES = 15
+
     def __init__(self, server_dir_path: Optional[str] = None):
         """
         Initialize sync job configuration.

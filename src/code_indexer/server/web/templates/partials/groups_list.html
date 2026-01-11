@@ -1,0 +1,138 @@
+<table class="groups-table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Type</th>
+            <th>Users</th>
+            <th>Repos</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if groups %}
+        {% for group in groups %}
+        <tr>
+            <td>{{ group.id }}</td>
+            <td>{{ group.name }}</td>
+            <td>{{ group.description }}</td>
+            <td>{% if group.is_default %}Default{% else %}Custom{% endif %}</td>
+            <td>{{ group.user_count }}</td>
+            <td>{{ group.repo_count }}</td>
+            <td class="actions-cell">
+                {% if not group.is_default %}
+                <button class="outline small" onclick="toggleEditGroupForm('{{ group.id }}')">Edit</button>
+                {% if group.user_count == 0 %}
+                <button class="outline small danger" onclick="confirmDeleteGroup('{{ group.id }}', '{{ group.name }}')">Delete</button>
+                {% else %}
+                <button class="outline small" disabled title="Cannot delete group with active users">Delete</button>
+                {% endif %}
+                {% else %}
+                <span class="text-muted">Protected</span>
+                {% endif %}
+            </td>
+        </tr>
+
+        <!-- Edit Group Form (hidden) -->
+        {% if not group.is_default %}
+        <tr id="edit-form-{{ group.id }}" class="form-row" style="display: none;">
+            <td colspan="7">
+                <article class="inline-form">
+                    <form method="post" action="/admin/groups/{{ group.id }}/update">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <div class="form-inline">
+                            <label>Name:</label>
+                            <input type="text" name="name" value="{{ group.name }}" required>
+
+                            <label>Description:</label>
+                            <input type="text" name="description" value="{{ group.description }}" required>
+
+                            <button type="submit" class="primary small">Update</button>
+                            <button type="button" class="secondary small" onclick="toggleEditGroupForm('{{ group.id }}')">Cancel</button>
+                        </div>
+                    </form>
+                </article>
+            </td>
+        </tr>
+
+        <!-- Delete Form (hidden) -->
+        <form id="delete-form-{{ group.id }}" method="post" action="/admin/groups/{{ group.id }}/delete" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        </form>
+        {% endif %}
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="7" class="no-data">No groups found.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+<style>
+.groups-table {
+    width: 100%;
+}
+
+.groups-table th,
+.groups-table td {
+    text-align: left;
+    padding: 0.5rem;
+}
+
+.actions-cell {
+    white-space: nowrap;
+}
+
+.actions-cell button {
+    margin-right: 0.25rem;
+}
+
+.text-muted {
+    color: var(--pico-muted-color);
+    font-style: italic;
+}
+
+.no-data {
+    text-align: center;
+    color: var(--pico-muted-color);
+    padding: 2rem;
+}
+
+.form-row {
+    background-color: var(--pico-card-background-color);
+}
+
+.inline-form {
+    padding: 1rem;
+    margin: 0;
+}
+
+.form-inline {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.form-inline label {
+    margin-bottom: 0;
+}
+
+.form-inline input {
+    flex: 1;
+    min-width: 150px;
+    margin-bottom: 0;
+}
+
+button.small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+button.danger {
+    --pico-primary: #dc3545;
+    --pico-primary-hover: #c82333;
+}
+</style>

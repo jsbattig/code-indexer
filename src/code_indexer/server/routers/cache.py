@@ -9,7 +9,6 @@ Provides GET /cache/{handle} endpoint for retrieving cached content with paginat
 import logging
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from code_indexer.server.cache.payload_cache import CacheNotFoundError
 

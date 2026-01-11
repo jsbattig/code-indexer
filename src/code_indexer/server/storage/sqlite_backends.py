@@ -160,7 +160,7 @@ class GlobalReposSqliteBackend:
             )
             return cursor.rowcount > 0
 
-        deleted = self._conn_manager.execute_atomic(operation)
+        deleted: bool = self._conn_manager.execute_atomic(operation)
         if deleted:
             logger.info(f"Deleted repo: {alias_name}")
         return deleted
@@ -184,7 +184,7 @@ class GlobalReposSqliteBackend:
             )
             return cursor.rowcount > 0
 
-        updated = self._conn_manager.execute_atomic(operation)
+        updated: bool = self._conn_manager.execute_atomic(operation)
         if updated:
             logger.debug(f"Updated last_refresh for repo: {alias_name}")
         return updated
@@ -260,8 +260,13 @@ class UsersSqliteBackend:
             (username,),
         )
         return [
-            {"key_id": r[0], "key_hash": r[1], "key_prefix": r[2],
-             "name": r[3], "created_at": r[4]}
+            {
+                "key_id": r[0],
+                "key_hash": r[1],
+                "key_prefix": r[2],
+                "name": r[3],
+                "created_at": r[4],
+            }
             for r in cursor.fetchall()
         ]
 
@@ -274,9 +279,15 @@ class UsersSqliteBackend:
             (username,),
         )
         return [
-            {"credential_id": r[0], "client_id": r[1], "client_secret_hash": r[2],
-             "client_id_prefix": r[3], "name": r[4], "created_at": r[5],
-             "last_used_at": r[6]}
+            {
+                "credential_id": r[0],
+                "client_id": r[1],
+                "client_secret_hash": r[2],
+                "client_id_prefix": r[3],
+                "name": r[4],
+                "created_at": r[5],
+                "last_used_at": r[6],
+            }
             for r in cursor.fetchall()
         ]
 
@@ -320,8 +331,15 @@ class UsersSqliteBackend:
                    (credential_id, username, client_id, client_secret_hash,
                     client_id_prefix, name, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (credential_id, username, client_id, client_secret_hash,
-                 client_id_prefix, name, now),
+                (
+                    credential_id,
+                    username,
+                    client_id,
+                    client_secret_hash,
+                    client_id_prefix,
+                    name,
+                    now,
+                ),
             )
             return None
 
@@ -337,16 +355,18 @@ class UsersSqliteBackend:
         results = []
         for row in cursor.fetchall():
             username = row[0]
-            results.append({
-                "username": username,
-                "password_hash": row[1],
-                "role": row[2],
-                "email": row[3],
-                "created_at": row[4],
-                "oidc_identity": json.loads(row[5]) if row[5] else None,
-                "api_keys": self._get_api_keys(conn, username),
-                "mcp_credentials": self._get_mcp_credentials(conn, username),
-            })
+            results.append(
+                {
+                    "username": username,
+                    "password_hash": row[1],
+                    "role": row[2],
+                    "email": row[3],
+                    "created_at": row[4],
+                    "oidc_identity": json.loads(row[5]) if row[5] else None,
+                    "api_keys": self._get_api_keys(conn, username),
+                    "mcp_credentials": self._get_mcp_credentials(conn, username),
+                }
+            )
         return results
 
     def update_user(
@@ -400,51 +420,59 @@ class UsersSqliteBackend:
 
     def delete_user(self, username: str) -> bool:
         """Delete user and all related records (cascade)."""
+
         def operation(conn):
             conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.execute("DELETE FROM users WHERE username = ?", (username,))
             return cursor.rowcount > 0
 
-        deleted = self._conn_manager.execute_atomic(operation)
+        deleted: bool = self._conn_manager.execute_atomic(operation)
         if deleted:
             logger.info(f"Deleted user: {username}")
         return deleted
 
     def update_user_role(self, username: str, role: str) -> bool:
         """Update user's role."""
+
         def operation(conn):
             cursor = conn.execute(
                 "UPDATE users SET role = ? WHERE username = ?",
                 (role, username),
             )
             return cursor.rowcount > 0
-        updated = self._conn_manager.execute_atomic(operation)
+
+        updated: bool = self._conn_manager.execute_atomic(operation)
         if updated:
             logger.info(f"Updated role for user: {username}")
         return updated
 
     def update_password_hash(self, username: str, password_hash: str) -> bool:
         """Update user's password hash."""
+
         def operation(conn):
             cursor = conn.execute(
                 "UPDATE users SET password_hash = ? WHERE username = ?",
                 (password_hash, username),
             )
             return cursor.rowcount > 0
-        updated = self._conn_manager.execute_atomic(operation)
+
+        updated: bool = self._conn_manager.execute_atomic(operation)
         if updated:
             logger.info(f"Updated password for user: {username}")
         return updated
 
     def delete_api_key(self, username: str, key_id: str) -> bool:
         """Delete an API key for a user."""
+
         def operation(conn):
             cursor = conn.execute(
                 "DELETE FROM user_api_keys WHERE username = ? AND key_id = ?",
                 (username, key_id),
             )
             return cursor.rowcount > 0
-        return self._conn_manager.execute_atomic(operation)
+
+        result: bool = self._conn_manager.execute_atomic(operation)
+        return result
 
     def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """
@@ -495,6 +523,7 @@ class UsersSqliteBackend:
         Returns:
             True if user was updated, False if user not found.
         """
+
         def operation(conn):
             cursor = conn.execute(
                 """UPDATE users SET oidc_identity = ? WHERE username = ?""",
@@ -502,7 +531,8 @@ class UsersSqliteBackend:
             )
             return cursor.rowcount > 0
 
-        return self._conn_manager.execute_atomic(operation)
+        result: bool = self._conn_manager.execute_atomic(operation)
+        return result
 
     def delete_mcp_credential(self, username: str, credential_id: str) -> bool:
         """
@@ -526,7 +556,8 @@ class UsersSqliteBackend:
             )
             return cursor.rowcount > 0
 
-        return self._conn_manager.execute_atomic(operation)
+        result: bool = self._conn_manager.execute_atomic(operation)
+        return result
 
     def update_mcp_credential_last_used(
         self, username: str, credential_id: str
@@ -554,7 +585,8 @@ class UsersSqliteBackend:
             )
             return cursor.rowcount > 0
 
-        return self._conn_manager.execute_atomic(operation)
+        result: bool = self._conn_manager.execute_atomic(operation)
+        return result
 
     def list_all_mcp_credentials(
         self, limit: int = 100, offset: int = 0
@@ -615,7 +647,8 @@ class UsersSqliteBackend:
             )
             return cursor.rowcount > 0
 
-        return self._conn_manager.execute_atomic(operation)
+        result: bool = self._conn_manager.execute_atomic(operation)
+        return result
 
     def close(self) -> None:
         """Close database connections."""
@@ -651,7 +684,16 @@ class SyncJobsSqliteBackend:
                 """INSERT INTO sync_jobs
                    (job_id, username, user_alias, job_type, status, created_at, repository_url, progress)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (job_id, username, user_alias, job_type, status, now, repository_url, 0),
+                (
+                    job_id,
+                    username,
+                    user_alias,
+                    job_type,
+                    status,
+                    now,
+                    repository_url,
+                    0,
+                ),
             )
             return None
 
@@ -677,10 +719,17 @@ class SyncJobsSqliteBackend:
     def _row_to_dict(self, row) -> Dict[str, Any]:
         """Convert a database row to job dictionary."""
         return {
-            "job_id": row[0], "username": row[1], "user_alias": row[2],
-            "job_type": row[3], "status": row[4], "created_at": row[5],
-            "started_at": row[6], "completed_at": row[7], "repository_url": row[8],
-            "progress": row[9], "error_message": row[10],
+            "job_id": row[0],
+            "username": row[1],
+            "user_alias": row[2],
+            "job_type": row[3],
+            "status": row[4],
+            "created_at": row[5],
+            "started_at": row[6],
+            "completed_at": row[7],
+            "repository_url": row[8],
+            "progress": row[9],
+            "error_message": row[10],
             "phases": json.loads(row[11]) if row[11] else None,
             "phase_weights": json.loads(row[12]) if row[12] else None,
             "current_phase": row[13],
@@ -691,7 +740,13 @@ class SyncJobsSqliteBackend:
 
     def update_job(self, job_id: str, **kwargs) -> None:
         """Update job fields. Accepts: status, progress, error_message, phases, etc."""
-        json_fields = {"phases", "phase_weights", "progress_history", "recovery_checkpoint", "analytics_data"}
+        json_fields = {
+            "phases",
+            "phase_weights",
+            "progress_history",
+            "recovery_checkpoint",
+            "analytics_data",
+        }
         updates, params = [], []
         for key, value in kwargs.items():
             if value is not None:
@@ -702,8 +757,11 @@ class SyncJobsSqliteBackend:
         params.append(job_id)
 
         def operation(conn):
-            conn.execute(f"UPDATE sync_jobs SET {', '.join(updates)} WHERE job_id = ?", params)
+            conn.execute(
+                f"UPDATE sync_jobs SET {', '.join(updates)} WHERE job_id = ?", params
+            )
             return None
+
         self._conn_manager.execute_atomic(operation)
 
     def list_jobs(self) -> list:
@@ -719,10 +777,12 @@ class SyncJobsSqliteBackend:
 
     def delete_job(self, job_id: str) -> bool:
         """Delete a job by ID."""
+
         def operation(conn):
             cursor = conn.execute("DELETE FROM sync_jobs WHERE job_id = ?", (job_id,))
             return cursor.rowcount > 0
-        deleted = self._conn_manager.execute_atomic(operation)
+
+        deleted: bool = self._conn_manager.execute_atomic(operation)
         if deleted:
             logger.info(f"Deleted sync job: {job_id}")
         return deleted
@@ -739,14 +799,18 @@ class CITokensSqliteBackend:
         """Initialize the backend."""
         self._conn_manager = DatabaseConnectionManager(db_path)
 
-    def save_token(self, platform: str, encrypted_token: str, base_url: Optional[str] = None) -> None:
+    def save_token(
+        self, platform: str, encrypted_token: str, base_url: Optional[str] = None
+    ) -> None:
         """Save or update a CI token."""
+
         def operation(conn):
             conn.execute(
                 "INSERT OR REPLACE INTO ci_tokens (platform, encrypted_token, base_url) VALUES (?, ?, ?)",
                 (platform, encrypted_token, base_url),
             )
             return None
+
         self._conn_manager.execute_atomic(operation)
         logger.info(f"Saved CI token for platform: {platform}")
 
@@ -764,10 +828,14 @@ class CITokensSqliteBackend:
 
     def delete_token(self, platform: str) -> bool:
         """Delete token for a platform."""
+
         def operation(conn):
-            cursor = conn.execute("DELETE FROM ci_tokens WHERE platform = ?", (platform,))
+            cursor = conn.execute(
+                "DELETE FROM ci_tokens WHERE platform = ?", (platform,)
+            )
             return cursor.rowcount > 0
-        deleted = self._conn_manager.execute_atomic(operation)
+
+        deleted: bool = self._conn_manager.execute_atomic(operation)
         if deleted:
             logger.info(f"Deleted CI token for platform: {platform}")
         return deleted
@@ -775,10 +843,16 @@ class CITokensSqliteBackend:
     def list_tokens(self) -> Dict[str, Dict[str, Any]]:
         """List all tokens keyed by platform."""
         conn = self._conn_manager.get_connection()
-        cursor = conn.execute("SELECT platform, encrypted_token, base_url FROM ci_tokens")
+        cursor = conn.execute(
+            "SELECT platform, encrypted_token, base_url FROM ci_tokens"
+        )
         result = {}
         for row in cursor.fetchall():
-            result[row[0]] = {"platform": row[0], "encrypted_token": row[1], "base_url": row[2]}
+            result[row[0]] = {
+                "platform": row[0],
+                "encrypted_token": row[1],
+                "base_url": row[2],
+            }
         return result
 
     def close(self) -> None:
@@ -803,6 +877,7 @@ class SessionsSqliteBackend:
                 (username, token_id, now),
             )
             return None
+
         self._conn_manager.execute_atomic(operation)
 
     def is_session_invalidated(self, username: str, token_id: str) -> bool:
@@ -816,19 +891,25 @@ class SessionsSqliteBackend:
 
     def clear_invalidated_sessions(self, username: str) -> None:
         """Clear all invalidated sessions for a user."""
+
         def operation(conn):
-            conn.execute("DELETE FROM invalidated_sessions WHERE username = ?", (username,))
+            conn.execute(
+                "DELETE FROM invalidated_sessions WHERE username = ?", (username,)
+            )
             return None
+
         self._conn_manager.execute_atomic(operation)
 
     def set_password_change_timestamp(self, username: str, changed_at: str) -> None:
         """Set password change timestamp for a user."""
+
         def operation(conn):
             conn.execute(
                 "INSERT OR REPLACE INTO password_change_timestamps (username, changed_at) VALUES (?, ?)",
                 (username, changed_at),
             )
             return None
+
         self._conn_manager.execute_atomic(operation)
 
     def get_password_change_timestamp(self, username: str) -> Optional[str]:
@@ -882,7 +963,8 @@ class SessionsSqliteBackend:
 
             return len(users_to_remove)
 
-        return self._conn_manager.execute_atomic(operation)
+        count: int = self._conn_manager.execute_atomic(operation)
+        return count
 
     def close(self) -> None:
         """Close database connections."""
@@ -897,9 +979,16 @@ class SSHKeysSqliteBackend:
         self._conn_manager = DatabaseConnectionManager(db_path)
 
     def create_key(
-        self, name: str, fingerprint: str, key_type: str, private_path: str, public_path: str,
-        public_key: Optional[str] = None, email: Optional[str] = None,
-        description: Optional[str] = None, is_imported: bool = False,
+        self,
+        name: str,
+        fingerprint: str,
+        key_type: str,
+        private_path: str,
+        public_path: str,
+        public_key: Optional[str] = None,
+        email: Optional[str] = None,
+        description: Optional[str] = None,
+        is_imported: bool = False,
     ) -> None:
         """Create a new SSH key record."""
         now = datetime.now(timezone.utc).isoformat()
@@ -908,9 +997,21 @@ class SSHKeysSqliteBackend:
             conn.execute(
                 """INSERT INTO ssh_keys (name, fingerprint, key_type, private_path, public_path,
                    public_key, email, description, created_at, is_imported) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (name, fingerprint, key_type, private_path, public_path, public_key, email, description, now, is_imported),
+                (
+                    name,
+                    fingerprint,
+                    key_type,
+                    private_path,
+                    public_path,
+                    public_key,
+                    email,
+                    description,
+                    now,
+                    is_imported,
+                ),
             )
             return None
+
         self._conn_manager.execute_atomic(operation)
         logger.info(f"Created SSH key: {name}")
 
@@ -927,37 +1028,60 @@ class SSHKeysSqliteBackend:
             return None
         hosts = self._get_hosts_for_key(conn, name)
         return {
-            "name": row[0], "fingerprint": row[1], "key_type": row[2], "private_path": row[3],
-            "public_path": row[4], "public_key": row[5], "email": row[6], "description": row[7],
-            "created_at": row[8], "imported_at": row[9], "is_imported": bool(row[10]), "hosts": hosts,
+            "name": row[0],
+            "fingerprint": row[1],
+            "key_type": row[2],
+            "private_path": row[3],
+            "public_path": row[4],
+            "public_key": row[5],
+            "email": row[6],
+            "description": row[7],
+            "created_at": row[8],
+            "imported_at": row[9],
+            "is_imported": bool(row[10]),
+            "hosts": hosts,
         }
 
     def _get_hosts_for_key(self, conn: Any, key_name: str) -> list:
         """Get hosts for a key from junction table."""
-        cursor = conn.execute("SELECT hostname FROM ssh_key_hosts WHERE key_name = ?", (key_name,))
+        cursor = conn.execute(
+            "SELECT hostname FROM ssh_key_hosts WHERE key_name = ?", (key_name,)
+        )
         return [row[0] for row in cursor.fetchall()]
 
     def assign_host(self, key_name: str, hostname: str) -> None:
         """Assign a host to a key."""
+
         def operation(conn):
-            conn.execute("INSERT OR IGNORE INTO ssh_key_hosts (key_name, hostname) VALUES (?, ?)", (key_name, hostname))
+            conn.execute(
+                "INSERT OR IGNORE INTO ssh_key_hosts (key_name, hostname) VALUES (?, ?)",
+                (key_name, hostname),
+            )
             return None
+
         self._conn_manager.execute_atomic(operation)
 
     def remove_host(self, key_name: str, hostname: str) -> None:
         """Remove a host from a key."""
+
         def operation(conn):
-            conn.execute("DELETE FROM ssh_key_hosts WHERE key_name = ? AND hostname = ?", (key_name, hostname))
+            conn.execute(
+                "DELETE FROM ssh_key_hosts WHERE key_name = ? AND hostname = ?",
+                (key_name, hostname),
+            )
             return None
+
         self._conn_manager.execute_atomic(operation)
 
     def delete_key(self, name: str) -> bool:
         """Delete an SSH key (cascades to hosts)."""
+
         def operation(conn):
             conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.execute("DELETE FROM ssh_keys WHERE name = ?", (name,))
             return cursor.rowcount > 0
-        deleted = self._conn_manager.execute_atomic(operation)
+
+        deleted: bool = self._conn_manager.execute_atomic(operation)
         if deleted:
             logger.info(f"Deleted SSH key: {name}")
         return deleted
@@ -973,11 +1097,22 @@ class SSHKeysSqliteBackend:
         for row in cursor.fetchall():
             key_name = row[0]
             hosts = self._get_hosts_for_key(conn, key_name)
-            results.append({
-                "name": key_name, "fingerprint": row[1], "key_type": row[2], "private_path": row[3],
-                "public_path": row[4], "public_key": row[5], "email": row[6], "description": row[7],
-                "created_at": row[8], "imported_at": row[9], "is_imported": bool(row[10]), "hosts": hosts,
-            })
+            results.append(
+                {
+                    "name": key_name,
+                    "fingerprint": row[1],
+                    "key_type": row[2],
+                    "private_path": row[3],
+                    "public_path": row[4],
+                    "public_key": row[5],
+                    "email": row[6],
+                    "description": row[7],
+                    "created_at": row[8],
+                    "imported_at": row[9],
+                    "is_imported": bool(row[10]),
+                    "hosts": hosts,
+                }
+            )
         return results
 
     def close(self) -> None:
@@ -1098,15 +1233,17 @@ class GoldenRepoMetadataSqliteBackend:
 
         result = []
         for row in cursor.fetchall():
-            result.append({
-                "alias": row[0],
-                "repo_url": row[1],
-                "default_branch": row[2],
-                "clone_path": row[3],
-                "created_at": row[4],
-                "enable_temporal": bool(row[5]),
-                "temporal_options": json.loads(row[6]) if row[6] else None,
-            })
+            result.append(
+                {
+                    "alias": row[0],
+                    "repo_url": row[1],
+                    "default_branch": row[2],
+                    "clone_path": row[3],
+                    "created_at": row[4],
+                    "enable_temporal": bool(row[5]),
+                    "temporal_options": json.loads(row[6]) if row[6] else None,
+                }
+            )
 
         return result
 
@@ -1128,7 +1265,7 @@ class GoldenRepoMetadataSqliteBackend:
             )
             return cursor.rowcount > 0
 
-        deleted = self._conn_manager.execute_atomic(operation)
+        deleted: bool = self._conn_manager.execute_atomic(operation)
         if deleted:
             logger.info(f"Removed golden repo: {alias}")
         return deleted
@@ -1190,6 +1327,7 @@ class BackgroundJobsSqliteBackend:
         language_resolution_status: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         """Save a new background job."""
+
         def operation(conn):
             conn.execute(
                 """INSERT INTO background_jobs
@@ -1216,7 +1354,9 @@ class BackgroundJobsSqliteBackend:
                     json.dumps(claude_actions) if claude_actions else None,
                     failure_reason,
                     json.dumps(extended_error) if extended_error else None,
-                    json.dumps(language_resolution_status) if language_resolution_status else None,
+                    json.dumps(language_resolution_status)
+                    if language_resolution_status
+                    else None,
                 ),
             )
             return None
@@ -1266,10 +1406,14 @@ class BackgroundJobsSqliteBackend:
     def update_job(self, job_id: str, **kwargs) -> None:
         """Update job fields. Accepts any field from the background_jobs table."""
         json_fields = {
-            "result", "claude_actions", "extended_error", "language_resolution_status"
+            "result",
+            "claude_actions",
+            "extended_error",
+            "language_resolution_status",
         }
         bool_fields = {"is_admin", "cancelled"}
-        updates, params = [], []
+        updates: List[str] = []
+        params: List[Any] = []
 
         for key, value in kwargs.items():
             if value is not None:
@@ -1340,13 +1484,14 @@ class BackgroundJobsSqliteBackend:
 
     def delete_job(self, job_id: str) -> bool:
         """Delete a job by ID."""
+
         def operation(conn):
             cursor = conn.execute(
                 "DELETE FROM background_jobs WHERE job_id = ?", (job_id,)
             )
             return cursor.rowcount > 0
 
-        deleted = self._conn_manager.execute_atomic(operation)
+        deleted: bool = self._conn_manager.execute_atomic(operation)
         if deleted:
             logger.debug(f"Deleted background job: {job_id}")
         return deleted
@@ -1366,7 +1511,7 @@ class BackgroundJobsSqliteBackend:
             )
             return cursor.rowcount
 
-        count = self._conn_manager.execute_atomic(operation)
+        count: int = self._conn_manager.execute_atomic(operation)
         if count > 0:
             logger.info(f"Cleaned up {count} old background jobs")
         return count

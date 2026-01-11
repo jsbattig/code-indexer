@@ -1,0 +1,133 @@
+<table class="users-groups-table">
+    <thead>
+        <tr>
+            <th>User ID</th>
+            <th>Current Group</th>
+            <th>Assigned At</th>
+            <th>Assigned By</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if users_with_groups %}
+        {% for user in users_with_groups %}
+        {% set safe_user_id = user.user_id | replace(' ', '_') | replace('@', '_') | replace("'", '_') %}
+        <tr{% if not user.group_name %} class="unassigned-user"{% endif %}>
+            <td>{{ user.user_id }}</td>
+            <td>
+                {% if user.group_name %}
+                {{ user.group_name }}
+                {% else %}
+                <span class="not-assigned">Not Assigned</span>
+                {% endif %}
+            </td>
+            <td>{{ user.assigned_at or '-' }}</td>
+            <td>{{ user.assigned_by or '-' }}</td>
+            <td class="actions-cell">
+                <button class="{% if user.group_name %}outline{% else %}primary{% endif %} small" data-user-id="{{ safe_user_id }}" onclick="toggleUserGroupForm(this.dataset.userId)">
+                    {% if user.group_name %}Change Group{% else %}Assign Group{% endif %}
+                </button>
+            </td>
+        </tr>
+
+        <!-- Change Group Form (hidden) -->
+        <tr id="user-group-form-{{ safe_user_id }}" class="form-row" style="display: none;">
+            <td colspan="5">
+                <article class="inline-form">
+                    <form method="post" action="/admin/groups/users/{{ user.user_id | urlencode }}/assign">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <div class="form-inline">
+                            <label>New Group:</label>
+                            <select name="group_id" required>
+                                {% for group in all_groups %}
+                                <option value="{{ group.id }}" {% if group.id == user.group_id %}selected{% endif %}>
+                                    {{ group.name }}{% if group.is_default %} (Default){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+
+                            <button type="submit" class="primary small">Assign</button>
+                            <button type="button" class="secondary small" data-user-id="{{ safe_user_id }}" onclick="toggleUserGroupForm(this.dataset.userId)">Cancel</button>
+                        </div>
+                    </form>
+                </article>
+            </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="5" class="no-data">No users with group assignments found.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+<style>
+.users-groups-table {
+    width: 100%;
+}
+
+.users-groups-table th,
+.users-groups-table td {
+    text-align: left;
+    padding: 0.5rem;
+}
+
+.actions-cell {
+    white-space: nowrap;
+}
+
+.no-data {
+    text-align: center;
+    color: var(--pico-muted-color);
+    padding: 2rem;
+}
+
+.form-row {
+    background-color: var(--pico-card-background-color);
+}
+
+.inline-form {
+    padding: 1rem;
+    margin: 0;
+}
+
+.form-inline {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.form-inline label {
+    margin-bottom: 0;
+}
+
+.form-inline select {
+    min-width: 200px;
+    margin-bottom: 0;
+}
+
+button.small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.unassigned-user {
+    background-color: rgba(122, 45, 45, 0.1);
+}
+
+.not-assigned {
+    color: #e74c3c;
+    font-style: italic;
+}
+</style>
+
+<script>
+function toggleUserGroupForm(safeUserId) {
+    var form = document.getElementById('user-group-form-' + safeUserId);
+    if (form) {
+        form.style.display = form.style.display === 'none' ? 'table-row' : 'none';
+    }
+}
+</script>
