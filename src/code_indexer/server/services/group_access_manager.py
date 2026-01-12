@@ -767,7 +767,7 @@ class GroupAccessManager:
                 """
                 SELECT repo_name FROM repo_group_access
                 WHERE group_id = ?
-                ORDER BY repo_name
+                ORDER BY repo_name COLLATE NOCASE
             """,
                 (group_id,),
             )
@@ -804,7 +804,7 @@ class GroupAccessManager:
                 SELECT g.* FROM groups g
                 JOIN repo_group_access rga ON g.id = rga.group_id
                 WHERE rga.repo_name = ?
-                ORDER BY g.name
+                ORDER BY g.name COLLATE NOCASE
             """,
                 (repo_name,),
             )
