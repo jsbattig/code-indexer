@@ -2508,8 +2508,8 @@ def _get_all_jobs(
             or (j.get("user_alias") and search_lower in j["user_alias"].lower())
         ]
 
-    # Sort by created_at (newest first)
-    all_jobs.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    # Sort by started_at (most recently started first), fall back to created_at
+    all_jobs.sort(key=lambda x: x.get("started_at") or x.get("created_at") or "", reverse=True)
 
     # Pagination
     total_count = len(all_jobs)
@@ -4810,6 +4810,8 @@ async def save_api_key(
     # Save token using CITokenManager - use same server_dir as config service
     try:
         token_manager = _get_token_manager()
+        # Strip whitespace from token before validation (Issue #716 Bug 2a)
+        token = token.strip()
         token_manager.save_token(platform, token, base_url=api_url)
 
         platform_name = "GitHub" if platform == "github" else "GitLab"

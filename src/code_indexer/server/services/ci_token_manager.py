@@ -306,8 +306,17 @@ class CITokenManager:
             token_row = self._sqlite_backend.get_token(platform)
             if token_row is None:
                 return None
-            # Decrypt token
-            decrypted_token = self._decrypt_token(token_row["encrypted_token"])
+            # Decrypt token with graceful error handling (Issue #716 Bug 3)
+            try:
+                decrypted_token = self._decrypt_token(token_row["encrypted_token"])
+            except Exception as e:
+                logger.warning(
+                    f"Failed to decrypt {platform} token, treating as unconfigured: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                # Delete the corrupted token from storage
+                self._sqlite_backend.delete_token(platform)
+                return None
             return TokenData(
                 platform=platform,
                 token=decrypted_token,
@@ -322,8 +331,18 @@ class CITokenManager:
 
             token_data = tokens[platform]
 
-            # Decrypt token
-            decrypted_token = self._decrypt_token(token_data["token"])
+            # Decrypt token with graceful error handling (Issue #716 Bug 3)
+            try:
+                decrypted_token = self._decrypt_token(token_data["token"])
+            except Exception as e:
+                logger.warning(
+                    f"Failed to decrypt {platform} token, treating as unconfigured: {e}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+                # Delete the corrupted token from storage
+                del tokens[platform]
+                self._save_tokens(tokens)
+                return None
 
             return TokenData(
                 platform=platform,

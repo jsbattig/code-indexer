@@ -68,7 +68,7 @@
                 <span class="progress-na">-</span>
                 {% endif %}
             </td>
-            <td>{{ job.started_at[:16] if job.started_at else (job.created_at[:16] if job.created_at else 'N/A') }}</td>
+            <td>{{ job.started_at[:19] if job.started_at else (job.created_at[:19] if job.created_at else 'N/A') }}</td>
             <td>
                 {% if job.duration_seconds is defined and job.duration_seconds is not none %}
                 {{ (job.duration_seconds // 60)|int }}m {{ (job.duration_seconds % 60)|int }}s
