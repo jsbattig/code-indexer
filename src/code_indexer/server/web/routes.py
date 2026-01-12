@@ -856,7 +856,7 @@ def _create_groups_page_response(
         # list_golden_repos returns List[Dict] with 'alias' key
         golden_repos = [
             {"name": repo["alias"]}
-            for repo in sorted(all_repos_data, key=lambda x: x["alias"])
+            for repo in sorted(all_repos_data, key=lambda x: x["alias"].lower())
         ]
 
         # Build repo access map: group_id -> list of repo names
@@ -1232,7 +1232,7 @@ async def groups_repo_access_partial(request: Request):
         # list_golden_repos returns List[Dict] with 'alias' key
         golden_repos = [
             {"name": repo["alias"]}
-            for repo in sorted(all_repos_data, key=lambda x: x["alias"])
+            for repo in sorted(all_repos_data, key=lambda x: x["alias"].lower())
         ]
 
         # Build repo access map
