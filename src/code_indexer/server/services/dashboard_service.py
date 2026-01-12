@@ -273,8 +273,11 @@ class DashboardService:
                 repo_name = "Unknown"
                 result = job.get("result", {}) or {}
                 if isinstance(result, dict):
-                    repo_name = result.get("alias") or result.get(
-                        "repository", "Unknown"
+                    # Check alias (golden repos), user_alias (activated repos), repository
+                    repo_name = (
+                        result.get("alias")
+                        or result.get("user_alias")
+                        or result.get("repository", "Unknown")
                     )
 
                 recent.append(
