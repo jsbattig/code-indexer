@@ -13,6 +13,10 @@ from code_indexer.server.middleware.correlation import get_correlation_id
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from code_indexer.server.repositories.background_jobs import BackgroundJobManager
 
 from ...global_repos.query_tracker import QueryTracker
 from ...global_repos.cleanup_manager import CleanupManager
@@ -35,12 +39,17 @@ class GlobalReposLifecycleManager:
     Ensures proper initialization order and graceful shutdown.
     """
 
-    def __init__(self, golden_repos_dir: str):
+    def __init__(
+        self,
+        golden_repos_dir: str,
+        background_job_manager: Optional["BackgroundJobManager"] = None,
+    ):
         """
         Initialize the lifecycle manager.
 
         Args:
             golden_repos_dir: Path to golden repos directory
+            background_job_manager: Optional job manager for dashboard visibility (server mode)
         """
         self.golden_repos_dir = Path(golden_repos_dir)
 
@@ -65,6 +74,7 @@ class GlobalReposLifecycleManager:
             config_source=self.global_ops,
             query_tracker=self.query_tracker,
             cleanup_manager=self.cleanup_manager,
+            background_job_manager=background_job_manager,
         )
 
         # Track running state

@@ -2267,7 +2267,8 @@ def create_app() -> FastAPI:
             )
 
             global_lifecycle_manager = GlobalReposLifecycleManager(
-                str(golden_repos_dir)
+                str(golden_repos_dir),
+                background_job_manager=background_job_manager,
             )
             global_lifecycle_manager.start()
 

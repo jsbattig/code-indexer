@@ -11,7 +11,7 @@ import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union, TYPE_CHECKING, cast
+from typing import Any, Dict, Optional, Union, TYPE_CHECKING, cast
 
 from code_indexer.config import ConfigManager
 from .alias_manager import AliasManager
@@ -22,6 +22,7 @@ from .shared_operations import GlobalRepoOperations
 
 if TYPE_CHECKING:
     from code_indexer.server.utils.config_manager import ServerResourceConfig
+    from code_indexer.server.repositories.background_jobs import BackgroundJobManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class RefreshScheduler:
         query_tracker: QueryTracker,
         cleanup_manager: CleanupManager,
         resource_config: Optional["ServerResourceConfig"] = None,
+        background_job_manager: Optional["BackgroundJobManager"] = None,
     ):
         """
         Initialize the refresh scheduler.
@@ -51,6 +53,7 @@ class RefreshScheduler:
             query_tracker: Query tracker for reference counting
             cleanup_manager: Cleanup manager for old index removal
             resource_config: Optional resource configuration for timeouts (server mode)
+            background_job_manager: Optional job manager for dashboard visibility (server mode)
         """
         # Lazy import to avoid circular dependency (Story #713)
         from code_indexer.server.utils.registry_factory import (
@@ -62,6 +65,7 @@ class RefreshScheduler:
         self.query_tracker = query_tracker
         self.cleanup_manager = cleanup_manager
         self.resource_config = resource_config
+        self.background_job_manager = background_job_manager
 
         # Initialize managers
         self.alias_manager = AliasManager(str(self.golden_repos_dir / "aliases"))
@@ -175,7 +179,7 @@ class RefreshScheduler:
                     alias_name = repo.get("alias_name")
                     if alias_name:
                         try:
-                            self.refresh_repo(alias_name)
+                            self._submit_refresh_job(alias_name)
                         except Exception as e:
                             logger.error(
                                 f"Refresh failed for {alias_name}: {e}", exc_info=True
@@ -191,9 +195,48 @@ class RefreshScheduler:
 
         logger.debug("Refresh scheduler loop exited")
 
+    def _submit_refresh_job(self, alias_name: str) -> Optional[str]:
+        """
+        Submit a refresh job to BackgroundJobManager.
+
+        If no BackgroundJobManager is configured (CLI mode), falls back to
+        direct execution via _execute_refresh().
+
+        Args:
+            alias_name: Global alias name (e.g., "my-repo-global")
+
+        Returns:
+            Job ID if submitted to BackgroundJobManager, None if executed directly
+        """
+        if not self.background_job_manager:
+            # Fallback to direct execution if no job manager (CLI mode)
+            self._execute_refresh(alias_name)
+            return None
+
+        job_id: str = self.background_job_manager.submit_job(
+            operation_type="global_repo_refresh",
+            func=lambda: self._execute_refresh(alias_name),
+            submitter_username="system",
+            is_admin=True,
+            repo_alias=alias_name,
+        )
+        logger.info(f"Submitted refresh job {job_id} for {alias_name}")
+        return job_id
+
     def refresh_repo(self, alias_name: str) -> None:
         """
-        Refresh a single global repository.
+        Public API for manual refresh (backwards compatibility).
+
+        Delegates to _execute_refresh() for the actual work.
+
+        Args:
+            alias_name: Global alias name (e.g., "my-repo-global")
+        """
+        self._execute_refresh(alias_name)
+
+    def _execute_refresh(self, alias_name: str) -> Dict[str, Any]:
+        """
+        Execute refresh for a repository (called by BackgroundJobManager).
 
         Orchestrates the complete refresh cycle:
         1. Git pull (via updater)
@@ -208,8 +251,8 @@ class RefreshScheduler:
         Args:
             alias_name: Global alias name (e.g., "my-repo-global")
 
-        Raises:
-            Exception: If refresh fails (logged, not propagated by scheduler loop)
+        Returns:
+            Dict with success status and details for BackgroundJobManager tracking
         """
         # Acquire per-repo lock to serialize concurrent refresh attempts
         repo_lock = self._get_repo_lock(alias_name)
@@ -222,7 +265,11 @@ class RefreshScheduler:
                 current_target = self.alias_manager.read_alias(alias_name)
                 if not current_target:
                     logger.warning(f"Alias {alias_name} not found, skipping refresh")
-                    return
+                    return {
+                        "success": True,
+                        "alias": alias_name,
+                        "message": "Alias not found, skipped",
+                    }
 
                 # Get repo info from registry
                 repo_info = self.registry.get_global_repo(alias_name)
@@ -230,7 +277,11 @@ class RefreshScheduler:
                     logger.warning(
                         f"Repo {alias_name} not in registry, skipping refresh"
                     )
-                    return
+                    return {
+                        "success": True,
+                        "alias": alias_name,
+                        "message": "Repo not in registry, skipped",
+                    }
 
                 # Get golden repo path from alias (registry path becomes stale after refresh)
                 golden_repo_path = current_target
@@ -241,7 +292,11 @@ class RefreshScheduler:
                     logger.info(
                         f"Skipping refresh for local repo: {alias_name} ({repo_url})"
                     )
-                    return
+                    return {
+                        "success": True,
+                        "alias": alias_name,
+                        "message": "Local repo, skipped",
+                    }
 
                 # Create updater for this repo
                 updater = GitPullUpdater(golden_repo_path)
@@ -253,7 +308,11 @@ class RefreshScheduler:
                     logger.info(
                         f"No changes detected for {alias_name}, skipping refresh"
                     )
-                    return
+                    return {
+                        "success": True,
+                        "alias": alias_name,
+                        "message": "No changes detected",
+                    }
 
                 # Pull latest changes
                 logger.info(f"Pulling latest changes for {alias_name}")
@@ -280,10 +339,21 @@ class RefreshScheduler:
                 self.registry.update_refresh_timestamp(alias_name)
 
                 logger.info(f"Refresh complete for {alias_name}")
+                return {
+                    "success": True,
+                    "alias": alias_name,
+                    "message": "Refresh complete",
+                }
 
             except Exception as e:
                 logger.error(f"Refresh failed for {alias_name}: {e}", exc_info=True)
-                # Don't re-raise - scheduler loop should continue
+                # Return failure result instead of raising
+                return {
+                    "success": False,
+                    "alias": alias_name,
+                    "message": f"Refresh failed: {e}",
+                    "error": str(e),
+                }
 
     def _create_new_index(self, alias_name: str, source_path: str) -> str:
         """
