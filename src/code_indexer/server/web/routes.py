@@ -5925,10 +5925,26 @@ async def unified_login_submit(
     """
     # CSRF validation - validate token against signed cookie
     if not validate_login_csrf_token(request, csrf_token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF token missing or invalid",
+        # CSRF validation failed - auto-recover by redirecting with fresh token
+        # Bug #714: Instead of showing 403, redirect to login page for better UX
+        logger.info(
+            "CSRF validation failed, auto-recovering with fresh token",
+            extra={"correlation_id": get_correlation_id()},
         )
+
+        # Create redirect response to login page with session_expired message
+        redirect_url = "/login?info=session_expired"
+        redirect_response = RedirectResponse(
+            url=redirect_url,
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+        # Clear old CSRF cookie and set fresh one
+        redirect_response.delete_cookie(CSRF_COOKIE_NAME, path="/")
+        new_csrf_token = generate_csrf_token()
+        set_csrf_cookie(redirect_response, new_csrf_token, path="/")
+
+        return redirect_response
 
     # Get user manager from dependencies
     user_manager = dependencies.user_manager

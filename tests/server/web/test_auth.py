@@ -490,49 +490,60 @@ class TestAdminOnlyAccess:
 class TestCSRFProtection:
     """Tests for CSRF protection (AC7)."""
 
-    def test_login_missing_csrf_rejected(
+    def test_login_missing_csrf_auto_recovery(
         self, web_client: TestClient, admin_user: dict
     ):
         """
-        AC7: Forms submitted without valid CSRF token are rejected with 403.
+        AC7: Forms submitted without CSRF token trigger auto-recovery.
 
         Given I submit a form without a valid CSRF token
         When the server processes the request
-        Then the request is rejected with 403 Forbidden
+        Then I am redirected to login with session_expired info (Bug #714 improvement)
         """
         # Submit login without CSRF token
         response = web_client.post(
-            "/admin/login",
+            "/login",
             data={
                 "username": admin_user["username"],
                 "password": admin_user["password"],
                 # No csrf_token
             },
+            follow_redirects=False,
         )
 
-        assert (
-            response.status_code == 403
-        ), f"Expected 403 Forbidden without CSRF token, got {response.status_code}"
+        # Bug #714: Auto-recovery redirects instead of 403
+        assert response.status_code == 303, (
+            f"Expected 303 redirect for CSRF auto-recovery, got {response.status_code}"
+        )
+        location = response.headers.get("location", "")
+        assert "/login" in location and "info=session_expired" in location
 
-    def test_login_invalid_csrf_rejected(
+    def test_login_invalid_csrf_auto_recovery(
         self, web_client: TestClient, admin_user: dict
     ):
         """
-        AC7: Forms submitted with invalid CSRF token are rejected with 403.
+        AC7: Forms submitted with invalid CSRF token trigger auto-recovery.
+
+        Bug #714: Invalid CSRF tokens now trigger auto-recovery redirect
+        instead of 403 error for better UX.
         """
         # Submit login with invalid CSRF token
         response = web_client.post(
-            "/admin/login",
+            "/login",
             data={
                 "username": admin_user["username"],
                 "password": admin_user["password"],
                 "csrf_token": "invalid_token_12345",
             },
+            follow_redirects=False,
         )
 
-        assert (
-            response.status_code == 403
-        ), f"Expected 403 Forbidden with invalid CSRF token, got {response.status_code}"
+        # Bug #714: Auto-recovery redirects instead of 403
+        assert response.status_code == 303, (
+            f"Expected 303 redirect for CSRF auto-recovery, got {response.status_code}"
+        )
+        location = response.headers.get("location", "")
+        assert "/login" in location and "info=session_expired" in location
 
     def test_form_contains_csrf_token(self, web_client: TestClient):
         """
@@ -542,10 +553,107 @@ class TestCSRFProtection:
         When I inspect the form HTML
         Then it contains a hidden CSRF token field
         """
-        response = web_client.get("/admin/login")
+        # Use unified /login endpoint instead of deprecated /admin/login
+        response = web_client.get("/login")
 
         assert response.status_code == 200
         assert (
             'name="csrf_token"' in response.text
         ), "Form should contain csrf_token field"
         assert 'type="hidden"' in response.text, "CSRF token should be a hidden field"
+
+    def test_login_csrf_failure_auto_recovers(
+        self, web_client: TestClient, admin_user: dict
+    ):
+        """
+        Bug #714: CSRF validation failure redirects instead of 403.
+
+        Given I submit the login form with an invalid CSRF token
+        When the server processes the request
+        Then I am redirected to /login with info=session_expired
+        And NOT given a 403 error
+        """
+        # Submit login with invalid CSRF token
+        response = web_client.post(
+            "/login",
+            data={
+                "username": admin_user["username"],
+                "password": admin_user["password"],
+                "csrf_token": "invalid_token_12345",
+            },
+            follow_redirects=False,
+        )
+
+        # Should redirect to login page, NOT return 403
+        assert response.status_code == 303, (
+            f"Expected 303 redirect for CSRF failure auto-recovery, "
+            f"got {response.status_code}"
+        )
+        location = response.headers.get("location", "")
+        assert "/login" in location, (
+            f"Expected redirect to /login, got {location}"
+        )
+        assert "info=session_expired" in location, (
+            f"Expected info=session_expired in redirect URL, got {location}"
+        )
+
+    def test_login_csrf_failure_sets_fresh_cookie(
+        self, web_client: TestClient, admin_user: dict
+    ):
+        """
+        Bug #714: CSRF failure response includes fresh CSRF cookie.
+
+        Given I submit the login form with an invalid CSRF token
+        When the server processes the request
+        Then the response includes a fresh CSRF cookie
+        """
+        # Submit login with invalid CSRF token
+        response = web_client.post(
+            "/login",
+            data={
+                "username": admin_user["username"],
+                "password": admin_user["password"],
+                "csrf_token": "invalid_token_12345",
+            },
+            follow_redirects=False,
+        )
+
+        # Should have new CSRF cookie set
+        assert "_csrf" in response.cookies, (
+            "CSRF failure response should include fresh CSRF cookie"
+        )
+
+    def test_login_missing_csrf_auto_recovers(
+        self, web_client: TestClient, admin_user: dict
+    ):
+        """
+        Bug #714: Missing CSRF token redirects instead of 403.
+
+        Given I submit the login form without a CSRF token
+        When the server processes the request
+        Then I am redirected to /login with info=session_expired
+        And NOT given a 403 error
+        """
+        # Submit login without CSRF token
+        response = web_client.post(
+            "/login",
+            data={
+                "username": admin_user["username"],
+                "password": admin_user["password"],
+                # No csrf_token
+            },
+            follow_redirects=False,
+        )
+
+        # Should redirect to login page, NOT return 403
+        assert response.status_code == 303, (
+            f"Expected 303 redirect for missing CSRF auto-recovery, "
+            f"got {response.status_code}"
+        )
+        location = response.headers.get("location", "")
+        assert "/login" in location, (
+            f"Expected redirect to /login, got {location}"
+        )
+        assert "info=session_expired" in location, (
+            f"Expected info=session_expired in redirect URL, got {location}"
+        )
