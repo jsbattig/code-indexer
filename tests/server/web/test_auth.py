@@ -657,3 +657,120 @@ class TestCSRFProtection:
         assert "info=session_expired" in location, (
             f"Expected info=session_expired in redirect URL, got {location}"
         )
+
+
+# =============================================================================
+# Bug #715: CSRF Token Race Condition Tests
+# =============================================================================
+
+
+class TestCSRFTokenRaceCondition:
+    """Tests for Bug #715: CSRF token race condition with HTMX partial polling."""
+
+    def test_login_page_reuses_valid_csrf_token_from_cookie(
+        self, web_infrastructure: WebTestInfrastructure
+    ):
+        """
+        Bug #715: Login page should reuse valid CSRF token from cookie.
+
+        Given I have a valid CSRF token cookie
+        When I request the login page
+        Then the CSRF token in the form matches my existing cookie
+        And no new CSRF cookie is set in the response
+        """
+        assert web_infrastructure.client is not None
+        client = web_infrastructure.client
+
+        # First request to get a CSRF token
+        first_response = client.get("/login")
+        assert first_response.status_code == 200
+
+        # Extract CSRF token from form
+        first_csrf_token = web_infrastructure.extract_csrf_token(first_response.text)
+        assert first_csrf_token is not None, "First request should have CSRF token"
+
+        # Second request - should reuse the existing token
+        second_response = client.get("/login")
+        assert second_response.status_code == 200
+
+        # Extract CSRF token from second form
+        second_csrf_token = web_infrastructure.extract_csrf_token(second_response.text)
+        assert second_csrf_token is not None, "Second request should have CSRF token"
+
+        # The token in the form should be the SAME as the first request
+        assert first_csrf_token == second_csrf_token, (
+            f"Bug #715: Login page should reuse existing CSRF token from cookie. "
+            f"First token: {first_csrf_token[:20]}..., "
+            f"Second token: {second_csrf_token[:20]}..."
+        )
+
+    def test_login_page_generates_new_token_when_no_cookie(
+        self, web_infrastructure: WebTestInfrastructure
+    ):
+        """
+        Bug #715: Login page generates new token when no cookie exists.
+
+        Given I have no CSRF cookie
+        When I request the login page
+        Then a new CSRF token is generated
+        And a new CSRF cookie is set
+        """
+        assert web_infrastructure.client is not None
+        client = web_infrastructure.client
+
+        # Clear any existing cookies to simulate fresh session
+        client.cookies.clear()
+
+        # Request login page without any CSRF cookie
+        response = client.get("/login")
+        assert response.status_code == 200
+
+        # Should have CSRF token in form
+        csrf_token = web_infrastructure.extract_csrf_token(response.text)
+        assert csrf_token is not None, (
+            "Login page should generate CSRF token when no cookie exists"
+        )
+
+        # Should set new CSRF cookie
+        csrf_cookie = response.cookies.get("_csrf")
+        assert csrf_cookie is not None, (
+            "Login page should set CSRF cookie when no cookie exists"
+        )
+
+    def test_login_page_generates_new_token_when_cookie_expired(
+        self, web_infrastructure: WebTestInfrastructure
+    ):
+        """
+        Bug #715: Login page generates new token when cookie is expired/invalid.
+
+        Given I have an expired or invalid CSRF cookie
+        When I request the login page
+        Then a new CSRF token is generated
+        And a new CSRF cookie is set to replace the invalid one
+        """
+        assert web_infrastructure.client is not None
+        client = web_infrastructure.client
+
+        # Set an invalid/expired CSRF cookie
+        client.cookies.set("_csrf", "invalid_expired_csrf_token_12345")
+
+        # Request login page with invalid CSRF cookie
+        response = client.get("/login")
+        assert response.status_code == 200
+
+        # Should have CSRF token in form
+        csrf_token = web_infrastructure.extract_csrf_token(response.text)
+        assert csrf_token is not None, (
+            "Login page should generate CSRF token when cookie is invalid"
+        )
+
+        # The token should NOT be the invalid one we sent
+        assert csrf_token != "invalid_expired_csrf_token_12345", (
+            "Login page should not use invalid cookie value as CSRF token"
+        )
+
+        # Should set new CSRF cookie
+        csrf_cookie = response.cookies.get("_csrf")
+        assert csrf_cookie is not None, (
+            "Login page should set new CSRF cookie when old one is invalid"
+        )

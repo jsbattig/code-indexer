@@ -5865,8 +5865,16 @@ async def unified_login_page(
         error: Optional error message to display
         info: Optional info message to display
     """
-    # Generate CSRF token for the form
-    csrf_token = generate_csrf_token()
+    # Bug #715: Try to reuse existing valid CSRF token from cookie
+    # This prevents race conditions when HTMX polling refreshes the login page
+    # while user is filling out the form
+    existing_csrf_token = get_csrf_token_from_cookie(request)
+    if existing_csrf_token:
+        csrf_token = existing_csrf_token
+        need_new_cookie = False
+    else:
+        csrf_token = generate_csrf_token()
+        need_new_cookie = True
 
     # Check if there's an expired session
     session_manager = get_session_manager()
@@ -5893,8 +5901,10 @@ async def unified_login_page(
         },
     )
 
-    # Set CSRF token in signed cookie for validation on POST
-    set_csrf_cookie(response, csrf_token, path="/")
+    # Bug #715: Only set CSRF cookie if we generated a new token
+    # This prevents overwriting valid cookies during HTMX polling
+    if need_new_cookie:
+        set_csrf_cookie(response, csrf_token, path="/")
 
     return response
 
