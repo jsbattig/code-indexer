@@ -65,6 +65,8 @@ def _get_ssh_key_manager():
 # Get templates directory path
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+# Add enumerate to Jinja2 globals for honeycomb template (Story #712 AC1)
+templates.env.globals["enumerate"] = enumerate
 
 # Create router
 web_router = APIRouter()
@@ -253,6 +255,12 @@ async def dashboard(request: Request):
         session.username, session.role
     )
 
+    # Story #712 AC1-AC4: Get database health for honeycomb visualization
+    from ..services.database_health_service import DatabaseHealthService
+
+    db_health_service = DatabaseHealthService()
+    database_health = db_health_service.get_all_database_health()
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -261,6 +269,7 @@ async def dashboard(request: Request):
             "current_page": "dashboard",
             "show_nav": True,
             "health": dashboard_data.health,
+            "database_health": database_health,
             "job_counts": dashboard_data.job_counts,
             "repo_counts": dashboard_data.repo_counts,
             "recent_jobs": dashboard_data.recent_jobs,
@@ -274,6 +283,7 @@ async def dashboard_health_partial(request: Request):
     Partial refresh endpoint for dashboard health section.
 
     Returns HTML fragment for htmx partial updates.
+    Story #712 AC1-AC4: Includes database health honeycomb data.
     """
     session = _require_admin_session(request)
     if not session:
@@ -282,11 +292,18 @@ async def dashboard_health_partial(request: Request):
     dashboard_service = _get_dashboard_service()
     health_data = dashboard_service.get_health_partial()
 
+    # Story #712 AC1-AC4: Get database health for honeycomb visualization
+    from ..services.database_health_service import DatabaseHealthService
+
+    db_health_service = DatabaseHealthService()
+    database_health = db_health_service.get_all_database_health()
+
     return templates.TemplateResponse(
         "partials/dashboard_health.html",
         {
             "request": request,
             "health": health_data,
+            "database_health": database_health,
         },
     )
 
@@ -314,8 +331,12 @@ async def dashboard_stats_partial(
         return _create_login_redirect(request)
 
     dashboard_service = _get_dashboard_service()
+    # Story #712 AC6: Pass user_role to prevent activated repos count flash
     stats_data = dashboard_service.get_stats_partial(
-        session.username, time_filter=time_filter, recent_filter=recent_filter
+        session.username,
+        time_filter=time_filter,
+        recent_filter=recent_filter,
+        user_role=session.role,
     )
 
     return templates.TemplateResponse(

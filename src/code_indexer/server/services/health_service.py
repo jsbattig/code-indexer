@@ -236,9 +236,13 @@ class HealthCheckService:
         # This returns the average CPU usage since the last call (or 0.0 on first call)
         cpu_percent = psutil.cpu_percent(interval=None)
 
-        # Get disk space
+        # Get disk space (AC5: Complete disk metrics with used/free and percentages)
         disk_usage = psutil.disk_usage("/")
         free_space_gb = disk_usage.free / (1024**3)
+        used_space_gb = disk_usage.used / (1024**3)
+        # psutil provides percent as used percentage
+        disk_used_percent = disk_usage.percent
+        disk_free_percent = 100.0 - disk_used_percent
 
         # Calculate disk I/O rates (KB/s) from counter diffs
         disk_counters = psutil.disk_io_counters()
@@ -298,6 +302,9 @@ class HealthCheckService:
             cpu_usage_percent=cpu_percent,
             active_jobs=active_jobs,
             disk_free_space_gb=free_space_gb,
+            disk_used_space_gb=used_space_gb,
+            disk_free_percent=disk_free_percent,
+            disk_used_percent=disk_used_percent,
             disk_read_kb_s=disk_read_kb_s,
             disk_write_kb_s=disk_write_kb_s,
             net_rx_kb_s=net_rx_kb_s,

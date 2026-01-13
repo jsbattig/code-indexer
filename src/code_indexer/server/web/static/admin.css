@@ -767,6 +767,132 @@ button.danger, .button.danger {
     color: #f59e0b;
 }
 
+/* ==========================================================================
+   Story #712 AC1-AC4: Database Health Honeycomb Styles
+   ========================================================================== */
+
+.database-health-card {
+    min-width: 280px;
+}
+
+.honeycomb-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem;
+}
+
+.honeycomb-svg {
+    width: 100%;
+    max-width: 280px;
+    height: auto;
+}
+
+/* AC4: Responsive sizing - honeycomb auto-adjusts to fit within card */
+.honeycomb-svg polygon.hexagon {
+    stroke: var(--pico-card-border-color);
+    stroke-width: 1;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+/* AC1: Color coding - green=healthy, yellow=warning, red=error */
+.hexagon.hex-healthy {
+    fill: #22c55e;
+}
+
+.hexagon.hex-warning {
+    fill: #eab308;
+}
+
+.hexagon.hex-error {
+    fill: #ef4444;
+}
+
+/* AC2/AC3: Hover effect for tooltips (title attribute provides native tooltip) */
+.honeycomb-svg polygon.hexagon:hover {
+    stroke-width: 2;
+    stroke: var(--pico-primary);
+    filter: brightness(1.1);
+}
+
+.hex-label {
+    fill: #fff;
+    font-size: 7px;
+    font-weight: 600;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* Honeycomb legend */
+.honeycomb-legend {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--pico-muted-color);
+}
+
+.legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.legend-dot.healthy {
+    background-color: #22c55e;
+}
+
+.legend-dot.warning {
+    background-color: #eab308;
+}
+
+.legend-dot.error {
+    background-color: #ef4444;
+}
+
+/* ==========================================================================
+   Story #712 AC5: Disk Metrics Complete Display
+   ========================================================================== */
+
+.disk-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0;
+    font-size: 0.85rem;
+}
+
+.disk-metric {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.disk-metric .disk-value {
+    font-weight: 500;
+}
+
+.disk-metric .disk-percent {
+    color: var(--pico-muted-color);
+}
+
+.disk-metric.free .disk-value {
+    color: #22c55e;
+}
+
+.disk-metric.used .disk-value {
+    color: #f59e0b;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     nav.admin-nav ul {
@@ -790,5 +916,15 @@ button.danger, .button.danger {
     .health-grid,
     .stats-grid {
         grid-template-columns: 1fr 1fr;
+    }
+
+    /* Honeycomb responsive */
+    .honeycomb-svg {
+        max-width: 240px;
+    }
+
+    .honeycomb-legend {
+        flex-wrap: wrap;
+        gap: 0.5rem;
     }
 }

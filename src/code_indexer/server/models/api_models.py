@@ -55,6 +55,15 @@ class SystemHealthInfo(BaseModel):
     cpu_usage_percent: float = Field(..., description="CPU usage as percentage")
     active_jobs: int = Field(..., description="Number of active background jobs")
     disk_free_space_gb: float = Field(..., description="Free disk space in GB")
+    disk_used_space_gb: float = Field(
+        default=0.0, description="Used disk space in GB (Story #712 AC5)"
+    )
+    disk_free_percent: float = Field(
+        default=0.0, description="Free disk space as percentage (Story #712 AC5)"
+    )
+    disk_used_percent: float = Field(
+        default=0.0, description="Used disk space as percentage (Story #712 AC5)"
+    )
     disk_read_kb_s: float = Field(
         default=0.0, description="Disk read speed in KB/s (interval-averaged)"
     )

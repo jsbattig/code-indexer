@@ -98,7 +98,11 @@ class DashboardService:
         return self._get_health_data()
 
     def get_stats_partial(
-        self, username: str, time_filter: str = "24h", recent_filter: str = "30d"
+        self,
+        username: str,
+        time_filter: str = "24h",
+        recent_filter: str = "30d",
+        user_role: str = "user",
     ) -> Dict[str, Any]:
         """
         Get statistics data for partial refresh.
@@ -107,13 +111,14 @@ class DashboardService:
             username: Current user's username
             time_filter: Time filter for job stats ("24h", "7d", "30d")
             recent_filter: Time filter for recent activity ("24h", "7d", "30d")
+            user_role: User role ('admin' or 'user') - AC6 fix to prevent count flash
 
         Returns:
             Dictionary containing job and repo counts
         """
         return {
             "job_counts": self._get_job_counts(username, time_filter),
-            "repo_counts": self._get_repo_counts(username),
+            "repo_counts": self._get_repo_counts(username, user_role),
             "recent_jobs": self._get_recent_jobs(username, recent_filter),
         }
 

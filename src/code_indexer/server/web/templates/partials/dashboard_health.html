@@ -16,32 +16,48 @@
         </footer>
     </article>
 
-    <!-- Database Status -->
-    <article class="health-card">
+    <!-- Database Health Honeycomb (Story #712 AC1-AC4) -->
+    <article class="health-card database-health-card">
         <header>
-            <h3>Database</h3>
+            <h3>Database Health</h3>
         </header>
-        <div class="status-content">
-            {% set db_status = health.services.get('database') %}
-            {% if db_status %}
-            <span class="status-indicator status-{{ db_status.status.value }}"></span>
-            <span class="status-text">{{ db_status.status.value | capitalize }}</span>
-            {% if db_status.response_time_ms %}
-            <small class="response-time">{{ db_status.response_time_ms }}ms</small>
-            {% endif %}
+        <div class="honeycomb-container">
+            {% if database_health %}
+            <svg class="honeycomb-svg" viewBox="0 0 280 160" preserveAspectRatio="xMidYMid meet">
+                <!-- Honeycomb layout: 2 rows of 4 hexagons -->
+                {% for i, db in enumerate(database_health) %}
+                {% set row = i // 4 %}
+                {% set col = i % 4 %}
+                {% set x = 35 + col * 55 %}
+                {% set y = 40 + row * 65 %}
+                {% set status_class = 'healthy' if db.status.value == 'healthy' else ('warning' if db.status.value == 'warning' else 'error') %}
+                <g class="hexagon-group" transform="translate({{ x }}, {{ y }})">
+                    <polygon class="hexagon hex-{{ status_class }}"
+                             points="25,0 50,15 50,45 25,60 0,45 0,15"
+                             data-tooltip="{{ db.get_tooltip() }}">
+                        <title>{{ db.get_tooltip() }}</title>
+                    </polygon>
+                    <text class="hex-label" x="25" y="35" text-anchor="middle">
+                        {{ db.display_name[:6] }}
+                    </text>
+                </g>
+                {% endfor %}
+            </svg>
+            <div class="honeycomb-legend">
+                <span class="legend-item"><span class="legend-dot healthy"></span>Healthy</span>
+                <span class="legend-item"><span class="legend-dot warning"></span>Warning</span>
+                <span class="legend-item"><span class="legend-dot error"></span>Error</span>
+            </div>
             {% else %}
-            <span class="status-indicator status-unhealthy"></span>
-            <span class="status-text">Unknown</span>
+            <div class="status-content">
+                <span class="status-indicator status-unhealthy"></span>
+                <span class="status-text">Unable to check databases</span>
+            </div>
             {% endif %}
         </div>
-        {% if db_status and db_status.error_message %}
-        <footer>
-            <small class="error-text">{{ db_status.error_message }}</small>
-        </footer>
-        {% endif %}
     </article>
 
-    <!-- Storage Status (Disk only) -->
+    <!-- Storage Status (Story #712 AC5: Complete disk metrics) -->
     <article class="health-card">
         <header>
             <h3>Disk Storage</h3>
@@ -57,9 +73,16 @@
             {% endif %}
         </div>
         {% if health.system %}
-        <footer>
-            <small>{{ "%.1f"|format(health.system.disk_free_space_gb) if health.system.disk_free_space_gb else 'N/A' }}GB free</small>
-        </footer>
+        <div class="disk-metrics">
+            <div class="disk-metric free">
+                <span class="disk-value">{{ "%.1f"|format(health.system.disk_free_space_gb) }} GB free</span>
+                <span class="disk-percent">({{ "%.1f"|format(health.system.disk_free_percent) }}%)</span>
+            </div>
+            <div class="disk-metric used">
+                <span class="disk-value">{{ "%.1f"|format(health.system.disk_used_space_gb) }} GB used</span>
+                <span class="disk-percent">({{ "%.1f"|format(health.system.disk_used_percent) }}%)</span>
+            </div>
+        </div>
         {% endif %}
     </article>
 
