@@ -46,28 +46,32 @@ class DatabaseHealthResult:
     display_name: str
     status: DatabaseHealthStatus
     checks: Dict[str, CheckResult]
+    db_path: str = ""  # Full path to database file
 
     def get_tooltip(self) -> str:
         """
         Get tooltip text for honeycomb hover.
 
-        AC2: Healthy databases show only display name.
-        AC3: Unhealthy databases show display name AND failed condition.
+        Always shows display name and path.
+        Unhealthy databases also show the failed condition.
         """
+        # Always include path in tooltip
+        base_tooltip = f"{self.display_name}\n{self.db_path}"
+
         if self.status == DatabaseHealthStatus.HEALTHY:
-            return self.display_name
+            return base_tooltip
 
         # Find first failed check to include in tooltip
         for check_name, result in self.checks.items():
             if not result.passed:
                 check_display = check_name.replace("_", " ").title()
                 error_info = result.error_message or "failed"
-                return f"{self.display_name} - {check_display}: {error_info}"
+                return f"{base_tooltip}\n{check_display}: {error_info}"
 
-        return self.display_name
+        return base_tooltip
 
 
-# Database file to display name mapping
+# Database file to display name mapping (central server databases only)
 DATABASE_DISPLAY_NAMES: Dict[str, str] = {
     "cidx_server.db": "Main Server",
     "oauth.db": "OAuth",
@@ -75,7 +79,7 @@ DATABASE_DISPLAY_NAMES: Dict[str, str] = {
     "logs.db": "Logs",
     "search_config.db": "Search Config",
     "file_content_limits.db": "File Limits",
-    "scip_audit.db": "SCIP Audit",
+    "groups.db": "Groups",
     "payload_cache.db": "Payload Cache",
 }
 
@@ -117,10 +121,15 @@ class DatabaseHealthService:
         results = []
 
         for file_name, display_name in DATABASE_DISPLAY_NAMES.items():
-            # Main server DB is in data/ subdirectory
+            # Determine correct path based on database location
             if file_name == "cidx_server.db":
+                # Main server DB is in data/ subdirectory
                 db_path = self.server_dir / "data" / file_name
+            elif file_name == "payload_cache.db":
+                # Payload cache is in golden-repos cache directory
+                db_path = self.server_dir / "data" / "golden-repos" / ".cache" / file_name
             else:
+                # All other databases are in server root
                 db_path = self.server_dir / file_name
 
             result = self.check_database_health(str(db_path), display_name)
@@ -183,6 +192,7 @@ class DatabaseHealthService:
             display_name=display_name,
             status=status,
             checks=checks,
+            db_path=db_path,
         )
 
     @staticmethod

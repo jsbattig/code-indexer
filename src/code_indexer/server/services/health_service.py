@@ -19,6 +19,7 @@ from ..models.api_models import (
     ServiceHealthInfo,
     SystemHealthInfo,
     HealthStatus,
+    VolumeInfo,
 )
 from ...config import ConfigManager
 
@@ -297,6 +298,9 @@ class HealthCheckService:
         # Get active job count
         active_jobs = self._get_active_jobs_count()
 
+        # Get all mounted volumes
+        volumes = self._get_mounted_volumes()
+
         return SystemHealthInfo(
             memory_usage_percent=memory_percent,
             cpu_usage_percent=cpu_percent,
@@ -309,6 +313,7 @@ class HealthCheckService:
             disk_write_kb_s=disk_write_kb_s,
             net_rx_kb_s=net_rx_kb_s,
             net_tx_kb_s=net_tx_kb_s,
+            volumes=volumes,
         )
 
     def _calculate_overall_status(
@@ -347,6 +352,110 @@ class HealthCheckService:
 
         # All services healthy and system resources good
         return HealthStatus.HEALTHY
+
+    def _get_mounted_volumes(self) -> list:
+        """
+        Get all mounted non-removable volumes.
+
+        Filters out:
+        - Virtual filesystems (tmpfs, devtmpfs, proc, sysfs, etc.)
+        - Removable media (typically detected by mount options)
+        - Network filesystems (nfs, cifs, smbfs)
+        - Snap/loop mounts
+
+        Returns:
+            List of VolumeInfo for each real mounted volume
+        """
+        volumes = []
+
+        # Filesystem types to exclude (virtual, network, removable)
+        excluded_fstypes = {
+            "tmpfs",
+            "devtmpfs",
+            "proc",
+            "sysfs",
+            "devpts",
+            "securityfs",
+            "cgroup",
+            "cgroup2",
+            "pstore",
+            "debugfs",
+            "hugetlbfs",
+            "mqueue",
+            "fusectl",
+            "configfs",
+            "binfmt_misc",
+            "autofs",
+            "tracefs",
+            "nfs",
+            "nfs4",
+            "cifs",
+            "smbfs",
+            "squashfs",  # Snap packages
+            "overlay",  # Docker overlays
+            "fuse.snapfuse",
+        }
+
+        # Mount point prefixes to exclude
+        excluded_prefixes = (
+            "/snap/",
+            "/sys/",
+            "/proc/",
+            "/dev/",
+            "/run/",
+        )
+
+        try:
+            partitions = psutil.disk_partitions(all=False)
+
+            for partition in partitions:
+                # Skip excluded filesystem types
+                if partition.fstype.lower() in excluded_fstypes:
+                    continue
+
+                # Skip excluded mount point prefixes
+                if partition.mountpoint.startswith(excluded_prefixes):
+                    continue
+
+                # Skip loop devices (snap packages, ISO mounts)
+                if partition.device.startswith("/dev/loop"):
+                    continue
+
+                try:
+                    usage = psutil.disk_usage(partition.mountpoint)
+                    total_gb = usage.total / (1024**3)
+                    used_gb = usage.used / (1024**3)
+                    free_gb = usage.free / (1024**3)
+                    used_percent = usage.percent
+                    free_percent = 100.0 - used_percent
+
+                    volumes.append(
+                        VolumeInfo(
+                            mount_point=partition.mountpoint,
+                            device=partition.device,
+                            fstype=partition.fstype,
+                            total_gb=total_gb,
+                            used_gb=used_gb,
+                            free_gb=free_gb,
+                            used_percent=used_percent,
+                            free_percent=free_percent,
+                        )
+                    )
+                except (PermissionError, OSError) as e:
+                    # Skip volumes we can't access
+                    logger.debug(
+                        f"Cannot access volume {partition.mountpoint}: {e}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
+                    continue
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to get mounted volumes: {e}",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
+        return volumes
 
     def _get_active_jobs_count(self) -> int:
         """

@@ -48,6 +48,19 @@ class ServiceHealthInfo(BaseModel):
     )
 
 
+class VolumeInfo(BaseModel):
+    """Information about a mounted volume."""
+
+    mount_point: str = Field(..., description="Mount point path (e.g., /, /home)")
+    device: str = Field(..., description="Device path (e.g., /dev/sda1)")
+    fstype: str = Field(..., description="Filesystem type (e.g., ext4, xfs)")
+    total_gb: float = Field(..., description="Total capacity in GB")
+    used_gb: float = Field(..., description="Used space in GB")
+    free_gb: float = Field(..., description="Free space in GB")
+    used_percent: float = Field(..., description="Used space as percentage")
+    free_percent: float = Field(..., description="Free space as percentage")
+
+
 class SystemHealthInfo(BaseModel):
     """System resource health information."""
 
@@ -75,6 +88,9 @@ class SystemHealthInfo(BaseModel):
     )
     net_tx_kb_s: float = Field(
         default=0.0, description="Network transmit speed in KB/s (interval-averaged)"
+    )
+    volumes: List["VolumeInfo"] = Field(
+        default_factory=list, description="List of mounted non-removable volumes"
     )
 
 

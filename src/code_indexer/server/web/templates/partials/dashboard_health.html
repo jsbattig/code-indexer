@@ -23,7 +23,7 @@
         </header>
         <div class="honeycomb-container">
             {% if database_health %}
-            <svg class="honeycomb-svg" viewBox="0 0 280 160" preserveAspectRatio="xMidYMid meet">
+            <svg class="honeycomb-svg" viewBox="0 0 280 170" preserveAspectRatio="xMidYMid meet">
                 <!-- Honeycomb layout: 2 rows of 4 hexagons -->
                 {% for i, db in enumerate(database_health) %}
                 {% set row = i // 4 %}
@@ -33,9 +33,8 @@
                 {% set status_class = 'healthy' if db.status.value == 'healthy' else ('warning' if db.status.value == 'warning' else 'error') %}
                 <g class="hexagon-group" transform="translate({{ x }}, {{ y }})">
                     <polygon class="hexagon hex-{{ status_class }}"
-                             points="25,0 50,15 50,45 25,60 0,45 0,15"
-                             data-tooltip="{{ db.get_tooltip() }}">
-                        <title>{{ db.get_tooltip() }}</title>
+                             points="25,0 50,15 50,45 25,60 0,45 0,15">
+                        <title>{{ db.get_tooltip() | replace('\n', '&#10;') | safe }}</title>
                     </polygon>
                     <text class="hex-label" x="25" y="35" text-anchor="middle">
                         {{ db.display_name[:6] }}
@@ -57,31 +56,34 @@
         </div>
     </article>
 
-    <!-- Storage Status (Story #712 AC5: Complete disk metrics) -->
-    <article class="health-card">
+    <!-- Storage Status (Story #712: All mounted volumes with scrolling) -->
+    <article class="health-card volumes-card">
         <header>
             <h3>Disk Storage</h3>
         </header>
-        <div class="status-content">
-            {% set storage_status = health.services.get('storage') %}
-            {% if storage_status %}
-            <span class="status-indicator status-{{ storage_status.status.value }}"></span>
-            <span class="status-text">{{ storage_status.status.value | capitalize }}</span>
-            {% else %}
-            <span class="status-indicator status-unhealthy"></span>
-            <span class="status-text">Unknown</span>
-            {% endif %}
+        {% if health.system and health.system.volumes %}
+        <div class="volumes-container">
+            {% for vol in health.system.volumes %}
+            <div class="volume-entry">
+                <div class="volume-header">
+                    <span class="volume-mount" title="{{ vol.device }}">{{ vol.mount_point }}</span>
+                    <span class="volume-fstype">{{ vol.fstype }}</span>
+                </div>
+                <div class="volume-bar">
+                    <div class="volume-bar-fill {% if vol.used_percent > 90 %}critical{% elif vol.used_percent > 75 %}warning{% endif %}"
+                         style="width: {{ vol.used_percent }}%"></div>
+                </div>
+                <div class="volume-stats">
+                    <span class="volume-used">{{ "%.1f"|format(vol.used_gb) }} GB used ({{ "%.0f"|format(vol.used_percent) }}%)</span>
+                    <span class="volume-free">{{ "%.1f"|format(vol.free_gb) }} GB free</span>
+                </div>
+            </div>
+            {% endfor %}
         </div>
-        {% if health.system %}
-        <div class="disk-metrics">
-            <div class="disk-metric free">
-                <span class="disk-value">{{ "%.1f"|format(health.system.disk_free_space_gb) }} GB free</span>
-                <span class="disk-percent">({{ "%.1f"|format(health.system.disk_free_percent) }}%)</span>
-            </div>
-            <div class="disk-metric used">
-                <span class="disk-value">{{ "%.1f"|format(health.system.disk_used_space_gb) }} GB used</span>
-                <span class="disk-percent">({{ "%.1f"|format(health.system.disk_used_percent) }}%)</span>
-            </div>
+        {% else %}
+        <div class="status-content">
+            <span class="status-indicator status-unhealthy"></span>
+            <span class="status-text">No volumes detected</span>
         </div>
         {% endif %}
     </article>
