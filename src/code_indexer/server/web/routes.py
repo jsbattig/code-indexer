@@ -3997,6 +3997,9 @@ def _get_current_config() -> dict:
         # Provide defaults if telemetry config is missing
         telemetry_config = asdict(TelemetryConfig())
 
+    # Get claude_delegation config (Story #721)
+    claude_delegation_config = settings.get("claude_delegation", {})
+
     # Convert to template-friendly format
     return {
         "server": settings["server"],
@@ -4007,6 +4010,7 @@ def _get_current_config() -> dict:
         "oidc": oidc_config,
         "job_queue": job_queue_config,
         "telemetry": telemetry_config,
+        "claude_delegation": claude_delegation_config,
     }
 
 
@@ -4574,6 +4578,61 @@ async def config_page(request: Request):
         return _create_login_redirect(request)
 
     return _create_config_page_response(request, session)
+
+
+@web_router.post("/config/claude_delegation", response_class=HTMLResponse)
+async def update_claude_delegation_config(
+    request: Request,
+    csrf_token: Optional[str] = Form(None),
+):
+    """Update Claude Delegation configuration with connectivity validation (Story #721)."""
+    from ..services.config_service import get_config_service
+    from ..config.delegation_config import ClaudeDelegationConfig
+
+    session = _require_admin_session(request)
+    if not session:
+        return _create_login_redirect(request)
+
+    if not validate_login_csrf_token(request, csrf_token):
+        return _create_config_page_response(request, session, error_message="Invalid CSRF token")
+
+    form_data = await request.form()
+    config_service = get_config_service()
+    delegation_manager = config_service.get_delegation_manager()
+
+    # Extract credential, preserving existing if empty
+    credential = form_data.get("claude_server_credential", "")
+    if not credential:
+        existing = delegation_manager.load_config()
+        credential = existing.claude_server_credential if existing else ""
+
+    url = form_data.get("claude_server_url", "").strip()
+    username = form_data.get("claude_server_username", "").strip()
+
+    if not url or not username or not credential:
+        return _create_config_page_response(
+            request, session, error_message="URL, username, and credential are required",
+            validation_errors={"claude_delegation": "Missing required fields"})
+
+    # Validate connectivity before saving
+    cred_type = form_data.get("claude_server_credential_type", "password")
+    result = delegation_manager.validate_connectivity(url, username, credential, cred_type)
+
+    if not result.success:
+        return _create_config_page_response(
+            request, session, error_message=f"Connection failed: {result.error_message}",
+            validation_errors={"claude_delegation": result.error_message})
+
+    # Save configuration with encrypted credential
+    from ..config.delegation_config import DEFAULT_FUNCTION_REPO_ALIAS
+    config = ClaudeDelegationConfig(
+        function_repo_alias=form_data.get("function_repo_alias", "").strip() or DEFAULT_FUNCTION_REPO_ALIAS,
+        claude_server_url=url, claude_server_username=username,
+        claude_server_credential_type=cred_type, claude_server_credential=credential)
+    delegation_manager.save_config(config)
+
+    return _create_config_page_response(
+        request, session, success_message="Claude Delegation configuration saved and verified")
 
 
 @web_router.post("/config/{section}", response_class=HTMLResponse)

@@ -7109,3 +7109,309 @@ TOOL_REGISTRY["get_cached_content"] = {
     },
     "required_permission": "query_repos",
 }
+
+# Story #722: Session Impersonation for Delegated Queries
+TOOL_REGISTRY["set_session_impersonation"] = {
+    "name": "set_session_impersonation",
+    "description": (
+        "TL;DR: [ADMIN ONLY] Set or clear session impersonation to execute queries "
+        "on behalf of another user. "
+        "\n\n"
+        "WHAT IT DOES:\n"
+        "Allows ADMIN users to assume another user's identity for the duration of "
+        "their MCP session. All subsequent tool calls will use the target user's "
+        "permissions until impersonation is cleared.\n"
+        "\n"
+        "USE CASES:\n"
+        "(1) Support/helpdesk: Debug access issues by seeing what a user can see\n"
+        "(2) Delegated queries: claude.ai integrations executing on behalf of end users\n"
+        "(3) Testing: Verify permission configurations for specific users\n"
+        "\n"
+        "IMPORTANT SECURITY NOTES:\n"
+        "- Only ADMIN users can impersonate\n"
+        "- Impersonation CONSTRAINS permissions to the target user's level\n"
+        "- Admins CANNOT elevate permissions through impersonation\n"
+        "- All actions while impersonating are audit logged with both original actor "
+        "and impersonated user\n"
+        "\n"
+        "SETTING IMPERSONATION:\n"
+        "set_session_impersonation(username='target_user')\n"
+        "-> All subsequent calls use target_user's permissions\n"
+        "\n"
+        "CLEARING IMPERSONATION:\n"
+        "set_session_impersonation(username=null)\n"
+        "-> Restores original ADMIN permissions\n"
+        "\n"
+        "RETURNS:\n"
+        "{\n"
+        '  "status": "ok",\n'
+        '  "impersonating": "target_user" // or null if cleared\n'
+        "}\n"
+        "\n"
+        "ERRORS:\n"
+        "- 'Impersonation requires ADMIN role' -> Only admins can impersonate\n"
+        "- 'User not found: xyz' -> Target username doesn't exist\n"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "username": {
+                "type": ["string", "null"],
+                "description": (
+                    "Username to impersonate, or null/omitted to clear impersonation. "
+                    "When set, all subsequent tool calls in this session will use "
+                    "this user's permissions instead of your ADMIN permissions."
+                ),
+            },
+        },
+        "required": [],
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "status": {
+                "type": "string",
+                "description": "Operation status ('ok' on success)",
+            },
+            "impersonating": {
+                "type": ["string", "null"],
+                "description": (
+                    "Username currently being impersonated, "
+                    "or null if no impersonation is active"
+                ),
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
+        },
+        "required": ["status"],
+    },
+    "required_permission": "query_repos",  # All users can call, but only ADMIN succeeds
+}
+
+# Story #718: Function Discovery for claude.ai Users
+TOOL_REGISTRY["list_delegation_functions"] = {
+    "name": "list_delegation_functions",
+    "description": (
+        "List available delegation functions for the current user. "
+        "Returns functions from the configured delegation repository that the user "
+        "has access to based on their group membership. "
+        "\n\n"
+        "WHEN TO USE: When you need to discover what delegation functions are available "
+        "to execute on behalf of a user. Functions define specialized workflows that can "
+        "be invoked via the Claude Delegation feature. "
+        "\n\n"
+        "RETURNS: List of functions with name, description, and parameters. Only functions "
+        "whose allowed_groups include at least one of the user's groups are returned. "
+        "\n\n"
+        "IMPERSONATION: When an admin is impersonating another user, the impersonated "
+        "user's groups are used for filtering, not the admin's groups. "
+        "\n\n"
+        "ERRORS:\n"
+        "- 'Claude Delegation not configured' -> Delegation feature not set up by admin\n"
+        "- Empty functions list -> User has no accessible functions or repo is empty"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "True if operation succeeded",
+            },
+            "functions": {
+                "type": "array",
+                "description": "List of accessible delegation functions",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Unique function identifier",
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Human-readable description of what the function does",
+                        },
+                        "parameters": {
+                            "type": "array",
+                            "description": "Function parameters with name, type, required, description",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "type": {"type": "string"},
+                                    "required": {"type": "boolean"},
+                                    "description": {"type": "string"},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
+        },
+        "required": ["success"],
+    },
+    "required_permission": "query_repos",
+}
+
+# Story #719: Execute Delegation Function with Async Job
+TOOL_REGISTRY["execute_delegation_function"] = {
+    "name": "execute_delegation_function",
+    "description": (
+        "Execute a delegation function by delegating to Claude Server. "
+        "Creates an async job that can be polled for results. "
+        "\n\n"
+        "WHEN TO USE: After discovering available functions via list_delegation_functions, "
+        "use this tool to execute a specific function with the required parameters. "
+        "\n\n"
+        "EXECUTION FLOW:\n"
+        "1. Validates user access (group membership vs allowed_groups)\n"
+        "2. Validates required parameters are provided\n"
+        "3. Ensures required repositories are registered in Claude Server\n"
+        "4. Renders prompt template with impersonation instruction\n"
+        "5. Creates and starts job in Claude Server\n"
+        "6. Returns job_id for async polling\n"
+        "\n\n"
+        "IMPERSONATION: The function's impersonation_user is prepended as an instruction "
+        "in the prompt, ensuring Claude Server queries use the correct identity. "
+        "\n\n"
+        "ERRORS:\n"
+        "- 'Claude Delegation not configured' -> Delegation not set up\n"
+        "- 'Function not found' -> Invalid function_name\n"
+        "- 'Access denied' -> User not in allowed_groups\n"
+        "- 'Missing required parameter' -> Required param not provided\n"
+        "- 'Claude Server error' -> Communication error with Claude Server"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "function_name": {
+                "type": "string",
+                "description": "Name of the delegation function to execute",
+            },
+            "parameters": {
+                "type": "object",
+                "description": "Parameter values for the function template",
+                "additionalProperties": True,
+            },
+            "prompt": {
+                "type": "string",
+                "description": "User's additional prompt/query to include",
+            },
+        },
+        "required": ["function_name", "parameters", "prompt"],
+        "additionalProperties": False,
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "success": {
+                "type": "boolean",
+                "description": "True if job was created and started",
+            },
+            "job_id": {
+                "type": "string",
+                "description": "ID of the created job for async polling",
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message if operation failed",
+            },
+        },
+        "required": ["success"],
+    },
+    "required_permission": "query_repos",
+}
+
+# Story #720: Poll Delegation Job with Progress Feedback
+TOOL_REGISTRY["poll_delegation_job"] = {
+    "name": "poll_delegation_job",
+    "description": (
+        "Poll status of a delegation job with progress feedback. "
+        "Use this tool to check on jobs created by execute_delegation_function. "
+        "\n\n"
+        "POLLING STRATEGY:\n"
+        "1. Call poll_delegation_job with the job_id from execute_delegation_function\n"
+        "2. Check 'continue_polling' field in response:\n"
+        "   - true: Job still in progress, call again after a short delay\n"
+        "   - false: Job completed or failed, stop polling\n"
+        "\n\n"
+        "PHASES (in order):\n"
+        "- repo_registration: Registering repositories with Claude Server\n"
+        "- repo_cloning: Cloning repositories to workspace\n"
+        "- cidx_indexing: Building CIDX indexes for repositories\n"
+        "- job_running: Executing the Claude job (main processing)\n"
+        "- done: Job completed or failed\n"
+        "\n\n"
+        "RESPONSE FIELDS:\n"
+        "- status: 'in_progress', 'completed', or 'failed'\n"
+        "- phase: Current phase of the job\n"
+        "- progress: Phase-specific metrics (varies by phase)\n"
+        "- message: Human-readable status message\n"
+        "- result: Final result (only when status='completed')\n"
+        "- error: Error message (only when status='failed')\n"
+        "- continue_polling: Whether to continue polling"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "job_id": {
+                "type": "string",
+                "description": "Job ID from execute_delegation_function",
+            },
+        },
+        "required": ["job_id"],
+        "additionalProperties": False,
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "status": {
+                "type": "string",
+                "enum": ["in_progress", "completed", "failed"],
+                "description": "Current job status",
+            },
+            "phase": {
+                "type": "string",
+                "enum": ["repo_registration", "repo_cloning", "cidx_indexing", "job_running", "done"],
+                "description": "Current phase of job execution",
+            },
+            "progress": {
+                "type": "object",
+                "description": "Phase-specific progress metrics",
+            },
+            "message": {
+                "type": "string",
+                "description": "Human-readable status message",
+            },
+            "result": {
+                "type": "string",
+                "description": "Final result (only when completed)",
+            },
+            "error": {
+                "type": "string",
+                "description": "Error message (only when failed)",
+            },
+            "continue_polling": {
+                "type": "boolean",
+                "description": "Whether to continue polling for updates",
+            },
+            "success": {
+                "type": "boolean",
+                "description": "False if request failed (job not found, not configured)",
+            },
+        },
+    },
+    "required_permission": "query_repos",
+}

@@ -136,13 +136,16 @@ async def handle_tools_list(params: Dict[str, Any], user: User) -> Dict[str, Any
     return {"tools": tools}
 
 
-async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def handle_tools_call(
+    params: Dict[str, Any], user: User, session_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Handle tools/call method - dispatches to actual tool handlers.
 
     Args:
         params: Request parameters (must contain 'name' and optional 'arguments')
         user: Authenticated user
+        session_id: Optional MCP session ID for session state management
 
     Returns:
         Dictionary with call result
@@ -152,6 +155,7 @@ async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any
     """
     from .handlers import HANDLER_REGISTRY
     from .tools import TOOL_REGISTRY
+    from .session_registry import get_session_registry
 
     # Validate required 'name' parameter
     if "name" not in params:
@@ -164,10 +168,22 @@ async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any
     if tool_name not in TOOL_REGISTRY:
         raise ValueError(f"Unknown tool: {tool_name}")
 
+    # Get or create session state if session_id is provided
+    session_state = None
+    if session_id:
+        registry = get_session_registry()
+        session_state = registry.get_or_create_session(session_id, user)
+
+    # Determine effective user for permission checks (CRITICAL 2 fix)
+    # When impersonating, use the impersonated user's permissions
+    effective_user = user
+    if session_state and session_state.is_impersonating:
+        effective_user = session_state.effective_user
+
     # Check if user has permission for this tool
     tool_def = TOOL_REGISTRY[tool_name]
     required_permission = tool_def["required_permission"]
-    if not user.has_permission(required_permission):
+    if not effective_user.has_permission(required_permission):
         raise ValueError(
             f"Permission denied: {required_permission} required for tool {tool_name}"
         )
@@ -179,14 +195,21 @@ async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any
     handler = HANDLER_REGISTRY[tool_name]
 
     # Call handler with arguments
+    # Special handling for handlers that need session_state (CRITICAL 1, 3 fix)
     from typing import cast
+    import inspect
 
-    result = await handler(arguments, user)
+    # Check if handler accepts session_state parameter
+    sig = inspect.signature(handler)
+    if "session_state" in sig.parameters:
+        result = await handler(arguments, user, session_state=session_state)
+    else:
+        result = await handler(arguments, user)
     return cast(Dict[str, Any], result)
 
 
 async def process_jsonrpc_request(
-    request: Dict[str, Any], user: User
+    request: Dict[str, Any], user: User, session_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Process a single JSON-RPC 2.0 request.
@@ -194,6 +217,7 @@ async def process_jsonrpc_request(
     Args:
         request: The JSON-RPC request dictionary
         user: Authenticated user
+        session_id: Optional MCP session ID for session state management
 
     Returns:
         JSON-RPC response dictionary (success or error)
@@ -244,7 +268,7 @@ async def process_jsonrpc_request(
             result = {"resources": []}
             return create_jsonrpc_response(result, request_id)
         elif method == "tools/call":
-            result = await handle_tools_call(params, user)
+            result = await handle_tools_call(params, user, session_id=session_id)
             return create_jsonrpc_response(result, request_id)
         else:
             return create_jsonrpc_error(
@@ -264,7 +288,7 @@ async def process_jsonrpc_request(
 
 
 async def process_batch_request(
-    batch: List[Dict[str, Any]], user: User
+    batch: List[Dict[str, Any]], user: User, session_id: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Process a batch of JSON-RPC 2.0 requests.
@@ -272,6 +296,7 @@ async def process_batch_request(
     Args:
         batch: List of JSON-RPC request dictionaries
         user: Authenticated user
+        session_id: Optional MCP session ID for session state management
 
     Returns:
         List of JSON-RPC response dictionaries
@@ -279,7 +304,7 @@ async def process_batch_request(
     responses = []
 
     for request in batch:
-        response = await process_jsonrpc_request(request, user)
+        response = await process_jsonrpc_request(request, user, session_id=session_id)
         responses.append(response)
 
     return responses
@@ -310,8 +335,11 @@ async def mcp_endpoint(
     Returns:
         JSON-RPC response (single or batch)
     """
-    # Generate and set session ID header
-    session_id = str(uuid.uuid4())
+    # Bug fix: Use session_id from query parameter if provided (for session persistence)
+    # Otherwise generate a new one for new sessions
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        session_id = str(uuid.uuid4())
     response.headers["Mcp-Session-Id"] = session_id
 
     try:
@@ -334,9 +362,9 @@ async def mcp_endpoint(
 
     # Check if batch request (array) or single request (object)
     if isinstance(body, list):
-        return await process_batch_request(body, current_user)
+        return await process_batch_request(body, current_user, session_id=session_id)
     elif isinstance(body, dict):
-        return await process_jsonrpc_request(body, current_user)
+        return await process_jsonrpc_request(body, current_user, session_id=session_id)
     else:
         return create_jsonrpc_error(
             -32600, "Invalid Request: body must be object or array", None
@@ -490,6 +518,7 @@ async def process_public_jsonrpc_request(
     user: Optional[User],
     http_request: Request,
     http_response: Response,
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Process JSON-RPC request for /mcp-public endpoint."""
     request_id = request_data.get("id")
@@ -562,7 +591,7 @@ async def process_public_jsonrpc_request(
                     request_id,
                 )
 
-            result = await handle_tools_call(params, user)
+            result = await handle_tools_call(params, user, session_id=session_id)
             return create_jsonrpc_response(result, request_id)
 
         else:
@@ -604,7 +633,8 @@ async def mcp_public_endpoint(
     request: Request, response: Response
 ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
     """Public MCP endpoint (no OAuth challenge)."""
-    response.headers["Mcp-Session-Id"] = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    response.headers["Mcp-Session-Id"] = session_id
     # Sliding expiration for cookie-authenticated sessions
     token = request.cookies.get("cidx_session")
     if token and auth_deps.jwt_manager is not None:
@@ -624,11 +654,15 @@ async def mcp_public_endpoint(
 
     if isinstance(body, list):
         return [
-            await process_public_jsonrpc_request(req, user, request, response)
+            await process_public_jsonrpc_request(
+                req, user, request, response, session_id=session_id
+            )
             for req in body
         ]
     elif isinstance(body, dict):
-        return await process_public_jsonrpc_request(body, user, request, response)
+        return await process_public_jsonrpc_request(
+            body, user, request, response, session_id=session_id
+        )
     else:
         return create_jsonrpc_error(
             -32600, "Invalid Request: body must be object or array", None

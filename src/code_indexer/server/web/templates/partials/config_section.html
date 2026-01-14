@@ -951,3 +951,114 @@
         </form>
     </article>
 </details>
+
+<!-- Claude Delegation Settings Section (Story #721) -->
+<details class="config-section" id="section-claude_delegation">
+    <summary>
+        <h2>Claude Delegation</h2>
+    </summary>
+    <article>
+        <!-- Display Mode -->
+        <div id="display-claude_delegation">
+            <table class="config-table">
+                <tbody>
+                    <tr>
+                        <td class="config-label">Status</td>
+                        <td class="config-value">
+                            {% if config.claude_delegation.is_configured %}
+                                <span style="color: green;">Configured</span>
+                            {% else %}
+                                <span style="color: gray;">Not Configured</span>
+                            {% endif %}
+                        </td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Function Repository Alias</td>
+                        <td class="config-value">{{ config.claude_delegation.function_repo_alias }}</td>
+                        <td class="config-note"><small>Alias for delegation functions repository</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Claude Server URL</td>
+                        <td class="config-value">{{ config.claude_delegation.claude_server_url or 'Not configured' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Username</td>
+                        <td class="config-value">{{ config.claude_delegation.claude_server_username or 'Not configured' }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Credential Type</td>
+                        <td class="config-value">{{ config.claude_delegation.claude_server_credential_type }}</td>
+                        <td class="config-note"></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Credential</td>
+                        <td class="config-value">
+                            {% if config.claude_delegation.is_configured %}
+                                ********
+                            {% else %}
+                                Not configured
+                            {% endif %}
+                        </td>
+                        <td class="config-note"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="section-actions">
+                <button class="outline small" onclick="toggleEditMode('claude_delegation')">
+                    {% if config.claude_delegation.is_configured %}Update{% else %}Configure{% endif %}
+                </button>
+            </div>
+        </div>
+        <!-- Edit Mode -->
+        <form id="edit-form-claude_delegation" method="post" action="/config/claude_delegation" style="display: none;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if validation_errors.claude_delegation %}
+            <div class="validation-error">{{ validation_errors.claude_delegation }}</div>
+            {% endif %}
+            <div class="form-grid">
+                <label for="delegation-function-repo-alias">
+                    Function Repository Alias
+                    <input type="text" id="delegation-function-repo-alias" name="function_repo_alias"
+                           value="{{ config.claude_delegation.function_repo_alias }}"
+                           placeholder="claude-delegation-functions-global">
+                    <small>Alias for the repository containing delegation function definitions</small>
+                </label>
+                <label for="delegation-server-url">
+                    Claude Server URL
+                    <input type="text" id="delegation-server-url" name="claude_server_url"
+                           value="{{ config.claude_delegation.claude_server_url }}"
+                           placeholder="https://claude-server.example.com">
+                    <small>URL of the Claude Server for delegation</small>
+                </label>
+                <label for="delegation-username">
+                    Username
+                    <input type="text" id="delegation-username" name="claude_server_username"
+                           value="{{ config.claude_delegation.claude_server_username }}"
+                           placeholder="username">
+                    <small>Username for Claude Server authentication</small>
+                </label>
+                <label for="delegation-credential-type">
+                    Credential Type
+                    <select id="delegation-credential-type" name="claude_server_credential_type">
+                        <option value="password" {% if config.claude_delegation.claude_server_credential_type == 'password' %}selected{% endif %}>Password</option>
+                        <option value="api_key" {% if config.claude_delegation.claude_server_credential_type == 'api_key' %}selected{% endif %}>API Key</option>
+                    </select>
+                </label>
+                <label for="delegation-credential">
+                    Credential
+                    <input type="password" id="delegation-credential" name="claude_server_credential"
+                           placeholder="{% if config.claude_delegation.is_configured %}Leave empty to keep current{% else %}Enter password or API key{% endif %}">
+                    <small>{% if config.claude_delegation.is_configured %}Leave empty to keep existing credential{% else %}Password or API key for authentication{% endif %}</small>
+                </label>
+            </div>
+            <p><small><strong>Note:</strong> Connectivity will be validated before saving. Configuration will only be saved if connection to Claude Server is successful.</small></p>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save and Test Connection</button>
+                <button type="button" class="secondary" onclick="cancelEdit('claude_delegation')">Cancel</button>
+            </div>
+        </form>
+    </article>
+</details>
