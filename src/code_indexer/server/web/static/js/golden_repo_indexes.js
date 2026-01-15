@@ -78,6 +78,7 @@ async function submitAddIndex(alias) {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': csrfToken
             },
+            credentials: 'same-origin',  // Include cookies (session_id) in request
             body: JSON.stringify({ index_type: indexType })
         });
 

@@ -523,27 +523,37 @@ async def get_current_admin_user_hybrid(
     """
     # Try session-based auth first (for web UI)
     from code_indexer.server.web.auth import get_session_manager
+    import logging
+    logger = logging.getLogger(__name__)
 
     session_manager = get_session_manager()
     session_id = request.cookies.get("session_id")
 
+    logger.info(f"Hybrid auth: session_id={session_id[:20] + '...' if session_id else None}")
+
     if session_id:
         session = session_manager.get_session(session_id)
+        logger.info(f"Hybrid auth: session={session}, role={getattr(session, 'role', None) if session else None}")
         if session and session.role == "admin":
             # Create User object from session
             if not user_manager:
+                logger.error("Hybrid auth: user_manager not initialized")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="User manager not initialized",
                 )
             user = user_manager.get_user(session.username)
+            logger.debug(f"Hybrid auth: user lookup for {session.username}: {user is not None}")
             if user:
+                logger.info(f"Hybrid auth: Session auth SUCCESS for {session.username}")
                 return user
             # Session is valid but user not found - this shouldn't happen
+            logger.error(f"Hybrid auth: User {session.username} not found in database")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"User '{session.username}' not found in user database",
             )
+        logger.debug(f"Hybrid auth: Session invalid or not admin")
 
     # Fall back to token-based auth only if no session cookie exists
     if not session_id and credentials:
