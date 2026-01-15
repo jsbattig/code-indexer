@@ -501,6 +501,89 @@ async def get_current_user_for_mcp(request: Request) -> User:
         )
 
 
+async def get_current_user_hybrid(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> User:
+    """
+    Get current user supporting both session-based and token-based authentication.
+
+    This function tries session-based authentication first (for web UI),
+    then falls back to token-based authentication (for API clients).
+
+    Args:
+        request: FastAPI Request object
+        credentials: Optional bearer token credentials
+
+    Returns:
+        Authenticated User object
+
+    Raises:
+        HTTPException: If authentication fails
+    """
+    from code_indexer.server.web.auth import get_session_manager, SESSION_COOKIE_NAME
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Try session-based auth first (for web UI)
+    session_manager = get_session_manager()
+    session_cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
+
+    logger.info(
+        f"User hybrid auth: session_cookie={'present' if session_cookie_value else 'absent'}"
+    )
+
+    if session_cookie_value:
+        session = session_manager.get_session(request)
+        logger.info(
+            f"User hybrid auth: session={'valid' if session else 'invalid'}, username={session.username if session else None}"
+        )
+        if session:
+            # Create User object from session
+            if not user_manager:
+                logger.error("User hybrid auth: user_manager not initialized")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="User manager not initialized",
+                )
+            user = user_manager.get_user(session.username)
+            logger.debug(
+                f"User hybrid auth: user lookup for {session.username}: {user is not None}"
+            )
+            if user:
+                logger.info(
+                    f"User hybrid auth: Session auth SUCCESS for {session.username}"
+                )
+                return user
+            # Session is valid but user not found - this shouldn't happen
+            logger.error(
+                f"User hybrid auth: User {session.username} not found in database"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"User '{session.username}' not found in user database",
+            )
+        logger.debug(f"User hybrid auth: Session invalid")
+
+    # Fall back to token-based auth only if no session cookie exists
+    if not session_cookie_value and credentials:
+        try:
+            current_user = get_current_user(request, credentials)
+            logger.info(f"User hybrid auth: Token auth SUCCESS for {current_user.username}")
+            return current_user
+        except HTTPException:
+            raise
+
+    # No valid authentication found
+    logger.warning("User hybrid auth: No valid authentication found")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": _build_www_authenticate_header()},
+    )
+
+
 async def get_current_admin_user_hybrid(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),

@@ -4330,8 +4330,9 @@ def create_app() -> FastAPI:
 
     @app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
     async def get_job_status(
+        http_request: Request,
         job_id: str,
-        current_user: dependencies.User = Depends(dependencies.get_current_user),
+        current_user: dependencies.User = Depends(dependencies.get_current_user_hybrid),
     ):
         """
         Get status of a background job.
