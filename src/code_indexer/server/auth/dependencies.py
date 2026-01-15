@@ -522,17 +522,17 @@ async def get_current_admin_user_hybrid(
         HTTPException: If not authenticated or not admin
     """
     # Try session-based auth first (for web UI)
-    from code_indexer.server.web.auth import get_session_manager
+    from code_indexer.server.web.auth import get_session_manager, SESSION_COOKIE_NAME
     import logging
     logger = logging.getLogger(__name__)
 
     session_manager = get_session_manager()
-    session_id = request.cookies.get("session_id")
+    session_cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
 
-    logger.info(f"Hybrid auth: session_id={session_id[:20] + '...' if session_id else None}")
+    logger.info(f"Hybrid auth: session_cookie={session_cookie_value[:20] + '...' if session_cookie_value else None}")
 
-    if session_id:
-        session = session_manager.get_session(session_id)
+    if session_cookie_value:
+        session = session_manager.get_session(request)
         logger.info(f"Hybrid auth: session={session}, role={getattr(session, 'role', None) if session else None}")
         if session and session.role == "admin":
             # Create User object from session
@@ -556,7 +556,7 @@ async def get_current_admin_user_hybrid(
         logger.debug(f"Hybrid auth: Session invalid or not admin")
 
     # Fall back to token-based auth only if no session cookie exists
-    if not session_id and credentials:
+    if not session_cookie_value and credentials:
         try:
             current_user = get_current_user(request, credentials)
             if not current_user.has_permission("manage_users"):
