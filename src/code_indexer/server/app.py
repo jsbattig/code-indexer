@@ -1931,18 +1931,7 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI app
     """
-    global \
-        jwt_manager, \
-        user_manager, \
-        refresh_token_manager, \
-        golden_repo_manager, \
-        background_job_manager, \
-        activated_repo_manager, \
-        repository_listing_manager, \
-        semantic_query_manager, \
-        _server_start_time, \
-        _server_hnsw_cache, \
-        _server_fts_cache
+    global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time, _server_hnsw_cache, _server_fts_cache
 
     # Story #526: Initialize server-side HNSW cache at bootstrap for 1800x performance
     # Import and initialize global cache instance
@@ -4233,9 +4222,12 @@ def create_app() -> FastAPI:
         status_code=202,
     )
     async def add_golden_repo_index(
+        http_request: Request,
         alias: str,
         request: AddIndexRequest,
-        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
+        current_user: dependencies.User = Depends(
+            dependencies.get_current_admin_user_hybrid
+        ),
     ):
         """
         Add an index type to a golden repository (admin only) - async operation.
@@ -5935,30 +5927,28 @@ def create_app() -> FastAPI:
                 # Execute semantic search for hybrid or degraded mode
                 if search_mode_actual in ["semantic", "hybrid"]:
                     try:
-                        semantic_results_raw = (
-                            semantic_query_manager.query_user_repositories(
-                                username=current_user.username,
-                                query_text=request.query_text,
-                                repository_alias=request.repository_alias,
-                                limit=request.limit,
-                                min_score=request.min_score,
-                                file_extensions=request.file_extensions,
-                                # Phase 1 parameters (Story #503)
-                                exclude_language=request.exclude_language,
-                                exclude_path=request.exclude_path,
-                                accuracy=request.accuracy,
-                                # Temporal parameters (Story #446)
-                                time_range=request.time_range,
-                                time_range_all=request.time_range_all,
-                                at_commit=request.at_commit,
-                                include_removed=request.include_removed,
-                                show_evolution=request.show_evolution,
-                                evolution_limit=request.evolution_limit,
-                                # Phase 3 temporal filtering parameters (Story #503)
-                                diff_type=request.diff_type,
-                                author=request.author,
-                                chunk_type=request.chunk_type,
-                            )
+                        semantic_results_raw = semantic_query_manager.query_user_repositories(
+                            username=current_user.username,
+                            query_text=request.query_text,
+                            repository_alias=request.repository_alias,
+                            limit=request.limit,
+                            min_score=request.min_score,
+                            file_extensions=request.file_extensions,
+                            # Phase 1 parameters (Story #503)
+                            exclude_language=request.exclude_language,
+                            exclude_path=request.exclude_path,
+                            accuracy=request.accuracy,
+                            # Temporal parameters (Story #446)
+                            time_range=request.time_range,
+                            time_range_all=request.time_range_all,
+                            at_commit=request.at_commit,
+                            include_removed=request.include_removed,
+                            show_evolution=request.show_evolution,
+                            evolution_limit=request.evolution_limit,
+                            # Phase 3 temporal filtering parameters (Story #503)
+                            diff_type=request.diff_type,
+                            author=request.author,
+                            chunk_type=request.chunk_type,
                         )
                         semantic_results_list = [
                             QueryResultItem(**result)

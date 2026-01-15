@@ -499,3 +499,56 @@ async def get_current_user_for_mcp(request: Request) -> User:
             detail="Authentication required",
             headers={"WWW-Authenticate": _build_www_authenticate_header()},
         )
+
+
+async def get_current_admin_user_hybrid(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> User:
+    """
+    Get current admin user supporting both session-based and token-based authentication.
+
+    This dependency tries session-based auth first (for web UI), then falls back to
+    token-based auth (for API clients).
+
+    Args:
+        request: FastAPI request object
+        credentials: Optional bearer token credentials
+
+    Returns:
+        User with admin role
+
+    Raises:
+        HTTPException: If not authenticated or not admin
+    """
+    # Try session-based auth first (for web UI)
+    from code_indexer.server.web.auth import get_session_manager
+
+    session_manager = get_session_manager()
+    session_id = request.cookies.get("session_id")
+
+    if session_id:
+        session = session_manager.get_session(session_id)
+        if session and session.is_admin:
+            # Create User object from session
+            if not user_manager:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="User manager not initialized",
+                )
+            user = user_manager.get_user(session.username)
+            if user:
+                return user
+
+    # Fall back to token-based auth
+    try:
+        current_user = get_current_user(request, credentials)
+        if not current_user.has_permission("manage_users"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required",
+            )
+        return current_user
+    except HTTPException as e:
+        # If we got here, neither auth method worked
+        raise e
