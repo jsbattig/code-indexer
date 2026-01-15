@@ -529,7 +529,7 @@ async def get_current_admin_user_hybrid(
 
     if session_id:
         session = session_manager.get_session(session_id)
-        if session and session.is_admin:
+        if session and session.role == "admin":
             # Create User object from session
             if not user_manager:
                 raise HTTPException(
@@ -539,16 +539,28 @@ async def get_current_admin_user_hybrid(
             user = user_manager.get_user(session.username)
             if user:
                 return user
-
-    # Fall back to token-based auth
-    try:
-        current_user = get_current_user(request, credentials)
-        if not current_user.has_permission("manage_users"):
+            # Session is valid but user not found - this shouldn't happen
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"User '{session.username}' not found in user database",
             )
-        return current_user
-    except HTTPException as e:
-        # If we got here, neither auth method worked
-        raise e
+
+    # Fall back to token-based auth only if no session cookie exists
+    if not session_id and credentials:
+        try:
+            current_user = get_current_user(request, credentials)
+            if not current_user.has_permission("manage_users"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin access required",
+                )
+            return current_user
+        except HTTPException:
+            raise
+
+    # No valid authentication found
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": _build_www_authenticate_header()},
+    )
