@@ -2013,7 +2013,7 @@ async def golden_repo_details(
         # Get existing CSRF token from cookie or generate new one
         csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
 
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             "partials/golden_repos_list.html",
             {
                 "request": request,
@@ -2021,6 +2021,10 @@ async def golden_repo_details(
                 "repos": [repo.to_dict()],
             },
         )
+
+        # Set CSRF cookie to ensure token is available for form submission
+        set_csrf_cookie(response, csrf_token)
+        return response
     except HTTPException:
         raise
     except Exception as e:
@@ -2382,7 +2386,7 @@ async def repo_details(
         # Get existing CSRF token from cookie or generate new one
         csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
 
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             "partials/repos_list.html",
             {
                 "request": request,
@@ -2390,6 +2394,10 @@ async def repo_details(
                 "repos": [repo],
             },
         )
+
+        # Set CSRF cookie to ensure token is available for form submission
+        set_csrf_cookie(response, csrf_token)
+        return response
     except HTTPException:
         raise
     except Exception:
@@ -4387,7 +4395,7 @@ def _build_gitlab_repos_response(
     # Get existing CSRF token from cookie or generate new one
     csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "partials/gitlab_repos.html",
         {
             "request": request,
@@ -4402,6 +4410,10 @@ def _build_gitlab_repos_response(
             "search_term": search_term or "",
         },
     )
+
+    # Set CSRF cookie to ensure token is available for form submission
+    set_csrf_cookie(response, csrf_token)
+    return response
 
 
 def _build_github_repos_response(
@@ -4419,7 +4431,7 @@ def _build_github_repos_response(
     # Get existing CSRF token from cookie or generate new one
     csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "partials/github_repos.html",
         {
             "request": request,
@@ -4434,6 +4446,10 @@ def _build_github_repos_response(
             "search_term": search_term or "",
         },
     )
+
+    # Set CSRF cookie to ensure token is available for form submission
+    set_csrf_cookie(response, csrf_token)
+    return response
 
 
 @web_router.get("/auto-discovery", response_class=HTMLResponse)
