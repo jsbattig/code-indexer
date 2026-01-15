@@ -196,6 +196,8 @@ class ConfigService:
             "claude_server_username": delegation_config.claude_server_username,
             "claude_server_credential_type": delegation_config.claude_server_credential_type,
             "is_configured": delegation_config.is_configured,
+            "cidx_callback_url": delegation_config.cidx_callback_url,  # Story #720
+            "skip_ssl_verify": delegation_config.skip_ssl_verify,  # Allow self-signed certs for E2E
         }
 
     def update_setting(

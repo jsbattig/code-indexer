@@ -42,7 +42,9 @@ class ClaudeServerClient:
     and job creation/management for delegation function execution.
     """
 
-    def __init__(self, base_url: str, username: str, password: str):
+    def __init__(
+        self, base_url: str, username: str, password: str, skip_ssl_verify: bool = False
+    ):
         """
         Initialize the Claude Server client.
 
@@ -50,10 +52,12 @@ class ClaudeServerClient:
             base_url: Base URL of the Claude Server (e.g., https://claude.example.com)
             username: Username for authentication
             password: Decrypted password/credential for authentication
+            skip_ssl_verify: If True, skip SSL certificate verification (for E2E testing)
         """
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
+        self.skip_ssl_verify = skip_ssl_verify
         self._jwt_token: Optional[str] = None
         self._jwt_expires: Optional[datetime] = None
 
@@ -75,7 +79,7 @@ class ClaudeServerClient:
         login_url = f"{self.base_url}/auth/login"
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=not self.skip_ssl_verify) as client:
                 response = await client.post(
                     login_url,
                     json={"username": self.username, "password": self.password},
@@ -158,7 +162,7 @@ class ClaudeServerClient:
         url = f"{self.base_url}{endpoint}"
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=not self.skip_ssl_verify) as client:
                 headers = {"Authorization": f"Bearer {token}"}
 
                 if method.upper() == "GET":
@@ -226,7 +230,7 @@ class ClaudeServerClient:
         response = await self._make_authenticated_request(
             "POST",
             "/repositories/register",
-            json_data={"alias": alias, "remote": remote, "branch": branch},
+            json_data={"name": alias, "gitUrl": remote, "branch": branch},
         )
 
         if response.status_code in (200, 201):
@@ -342,4 +346,37 @@ class ClaudeServerClient:
         else:
             raise ClaudeServerError(
                 f"Failed to get job conversation: HTTP {response.status_code}"
+            )
+
+    async def register_callback(self, job_id: str, callback_url: str) -> None:
+        """
+        Register a callback URL with Claude Server for job completion notification.
+
+        Story #720: Callback-Based Delegation Job Completion
+
+        When the job completes (success or failure), Claude Server will POST
+        the result to the registered callback URL.
+
+        Args:
+            job_id: The ID of the job to register callback for
+            callback_url: URL that Claude Server will POST to on completion
+
+        Raises:
+            ClaudeServerNotFoundError: If job not found (404)
+            ClaudeServerError: If server error
+        """
+        response = await self._make_authenticated_request(
+            "POST",
+            f"/jobs/{job_id}/callbacks",
+            json_data={"url": callback_url},
+        )
+
+        if response.status_code in (200, 201):
+            logger.debug(f"Registered callback for job {job_id}: {callback_url}")
+            return
+        elif response.status_code == 404:
+            raise ClaudeServerNotFoundError(f"Job not found: {job_id}")
+        else:
+            raise ClaudeServerError(
+                f"Failed to register callback: HTTP {response.status_code}"
             )

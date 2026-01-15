@@ -335,3 +335,169 @@ class TestExecuteDelegationFunctionHandler:
         data = json.loads(response["content"][0]["text"])
         assert data["success"] is False
         assert "job_id" in data["error"].lower() or "no job" in data["error"].lower()
+
+
+class TestExecuteDelegationFunctionCallbackRegistration:
+    """Tests for callback registration in execute_delegation_function (Story #720)."""
+
+    @pytest.fixture(autouse=True)
+    def reset_tracker_singleton(self):
+        """Reset DelegationJobTracker singleton between tests."""
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
+
+        DelegationJobTracker._instance = None
+        yield
+        DelegationJobTracker._instance = None
+
+    @pytest.mark.asyncio
+    async def test_handler_registers_callback_url_with_claude_server(
+        self, test_user, temp_function_repo, mock_delegation_config, httpx_mock: HTTPXMock
+    ):
+        """
+        Handler registers callback URL with Claude Server after creating job.
+
+        Given a valid function execution request
+        When execute_delegation_function is called
+        Then it registers a callback URL with Claude Server
+        """
+        from code_indexer.server.mcp.handlers import handle_execute_delegation_function
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/auth/login",
+            json={"access_token": "token", "token_type": "bearer"},
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="https://claude-server.example.com/repositories/main-app",
+            json={"alias": "main-app"},
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/jobs",
+            json={"jobId": "job-12345", "status": "created"},
+            status_code=201,
+        )
+        # Callback registration endpoint
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/jobs/job-12345/callbacks",
+            json={"registered": True},
+            status_code=200,
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/jobs/job-12345/start",
+            json={"jobId": "job-12345", "status": "running"},
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_function_repo_path",
+                lambda: temp_function_repo,
+            )
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_user_groups",
+                lambda user: {"engineering"},
+            )
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+            # Mock the callback base URL
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_cidx_callback_base_url",
+                lambda: "https://cidx.example.com",
+            )
+
+            response = await handle_execute_delegation_function(
+                {"function_name": "semantic-search", "parameters": {"query": "bugs"}, "prompt": "Find"},
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["success"] is True
+        assert data["job_id"] == "job-12345"
+
+        # Verify callback registration request was made
+        requests = httpx_mock.get_requests()
+        callback_requests = [r for r in requests if "/callbacks" in str(r.url)]
+        assert len(callback_requests) == 1
+        callback_body = json.loads(callback_requests[0].content)
+        assert "job-12345" in callback_body["url"]
+
+    @pytest.mark.asyncio
+    async def test_handler_registers_job_in_tracker(
+        self, test_user, temp_function_repo, mock_delegation_config, httpx_mock: HTTPXMock
+    ):
+        """
+        Handler registers job in DelegationJobTracker after starting job.
+
+        Given a valid function execution request
+        When execute_delegation_function is called successfully
+        Then the job is registered in DelegationJobTracker
+        """
+        from code_indexer.server.mcp.handlers import handle_execute_delegation_function
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/auth/login",
+            json={"access_token": "token", "token_type": "bearer"},
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="https://claude-server.example.com/repositories/main-app",
+            json={"alias": "main-app"},
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/jobs",
+            json={"jobId": "job-tracker-test", "status": "created"},
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/jobs/job-tracker-test/callbacks",
+            json={"registered": True},
+            status_code=200,
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://claude-server.example.com/jobs/job-tracker-test/start",
+            json={"jobId": "job-tracker-test", "status": "running"},
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_function_repo_path",
+                lambda: temp_function_repo,
+            )
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_user_groups",
+                lambda user: {"engineering"},
+            )
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_cidx_callback_base_url",
+                lambda: "https://cidx.example.com",
+            )
+
+            response = await handle_execute_delegation_function(
+                {"function_name": "semantic-search", "parameters": {"query": "bugs"}, "prompt": "Find"},
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["success"] is True
+
+        # Verify the job is registered in the tracker
+        tracker = DelegationJobTracker.get_instance()
+        assert "job-tracker-test" in tracker._pending_jobs

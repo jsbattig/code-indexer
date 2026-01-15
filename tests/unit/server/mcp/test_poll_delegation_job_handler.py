@@ -10,7 +10,6 @@ import json
 from datetime import datetime, timezone
 
 import pytest
-from pytest_httpx import HTTPXMock
 
 from code_indexer.server.auth.user_manager import User, UserRole
 
@@ -40,208 +39,13 @@ def mock_delegation_config():
 
 
 class TestPollDelegationJobHandler:
-    """Tests for poll_delegation_job handler."""
+    """
+    Tests for poll_delegation_job handler basic validation.
 
-    @pytest.mark.asyncio
-    async def test_poll_returns_in_progress_with_phase(
-        self, test_user, mock_delegation_config, httpx_mock: HTTPXMock
-    ):
-        """
-        poll_delegation_job returns in_progress status with phase info.
-
-        Given a job that is in progress (JOB_RUNNING phase)
-        When poll_delegation_job is called
-        Then it returns status=in_progress, phase, progress, continue_polling=true
-        """
-        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
-
-        httpx_mock.add_response(
-            method="POST",
-            url="https://claude-server.example.com/auth/login",
-            json={"access_token": "token", "token_type": "bearer"},
-        )
-        httpx_mock.add_response(
-            method="GET",
-            url="https://claude-server.example.com/jobs/job-12345",
-            json={
-                "job_id": "job-12345",
-                "status": "in_progress",
-                "repositories": [
-                    {"alias": "repo1", "registered": True, "cloned": True, "indexed": True}
-                ],
-                "exchange_count": 5,
-                "tool_use_count": 12,
-            },
-        )
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "code_indexer.server.mcp.handlers._get_delegation_config",
-                lambda: mock_delegation_config,
-            )
-
-            response = await handle_poll_delegation_job(
-                {"job_id": "job-12345"},
-                test_user,
-            )
-
-        data = json.loads(response["content"][0]["text"])
-        assert data["status"] == "in_progress"
-        assert data["phase"] == "job_running"
-        assert data["progress"]["exchange_count"] == 5
-        assert data["progress"]["tool_use_count"] == 12
-        assert data["continue_polling"] is True
-
-    @pytest.mark.asyncio
-    async def test_poll_returns_completed_with_result(
-        self, test_user, mock_delegation_config, httpx_mock: HTTPXMock
-    ):
-        """
-        poll_delegation_job returns completed status with result from conversation.
-
-        Given a job that has completed successfully
-        When poll_delegation_job is called
-        Then it fetches the conversation and extracts the final assistant message
-        And returns status=completed, result, continue_polling=false
-        """
-        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
-
-        httpx_mock.add_response(
-            method="POST",
-            url="https://claude-server.example.com/auth/login",
-            json={"access_token": "token", "token_type": "bearer"},
-        )
-        # Job status endpoint - output field is for errors/metadata, not Claude's response
-        httpx_mock.add_response(
-            method="GET",
-            url="https://claude-server.example.com/jobs/job-12345",
-            json={
-                "job_id": "job-12345",
-                "status": "completed",
-                "output": "",  # Empty - actual response is in conversation
-            },
-        )
-        # Conversation endpoint - contains the actual Claude response
-        httpx_mock.add_response(
-            method="GET",
-            url="https://claude-server.example.com/jobs/job-12345/conversation",
-            json={
-                "jobId": "job-12345",
-                "sessions": [
-                    {
-                        "sessionId": "session-1",
-                        "exchanges": [
-                            {
-                                "userMessage": "What authentication does the system use?",
-                                "assistantMessage": "The authentication system uses JWT tokens for secure user sessions.",
-                            }
-                        ],
-                    }
-                ],
-            },
-        )
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "code_indexer.server.mcp.handlers._get_delegation_config",
-                lambda: mock_delegation_config,
-            )
-
-            response = await handle_poll_delegation_job(
-                {"job_id": "job-12345"},
-                test_user,
-            )
-
-        data = json.loads(response["content"][0]["text"])
-        assert data["status"] == "completed"
-        assert data["phase"] == "done"
-        assert "JWT tokens" in data["result"]
-        assert data["continue_polling"] is False
-
-    @pytest.mark.asyncio
-    async def test_poll_returns_error_for_nonexistent_job(
-        self, test_user, mock_delegation_config, httpx_mock: HTTPXMock
-    ):
-        """
-        poll_delegation_job returns error for non-existent job.
-
-        Given a job ID that does not exist
-        When poll_delegation_job is called
-        Then it returns an error with "Job not found"
-        """
-        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
-
-        httpx_mock.add_response(
-            method="POST",
-            url="https://claude-server.example.com/auth/login",
-            json={"access_token": "token", "token_type": "bearer"},
-        )
-        httpx_mock.add_response(
-            method="GET",
-            url="https://claude-server.example.com/jobs/nonexistent-job",
-            json={"detail": "Job not found"},
-            status_code=404,
-        )
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "code_indexer.server.mcp.handlers._get_delegation_config",
-                lambda: mock_delegation_config,
-            )
-
-            response = await handle_poll_delegation_job(
-                {"job_id": "nonexistent-job"},
-                test_user,
-            )
-
-        data = json.loads(response["content"][0]["text"])
-        assert data["success"] is False
-        assert "not found" in data["error"].lower()
-
-    @pytest.mark.asyncio
-    async def test_poll_returns_failed_with_error(
-        self, test_user, mock_delegation_config, httpx_mock: HTTPXMock
-    ):
-        """
-        poll_delegation_job returns failed status with error.
-
-        Given a job that has failed
-        When poll_delegation_job is called
-        Then it returns status=failed, error, continue_polling=false
-        """
-        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
-
-        httpx_mock.add_response(
-            method="POST",
-            url="https://claude-server.example.com/auth/login",
-            json={"access_token": "token", "token_type": "bearer"},
-        )
-        httpx_mock.add_response(
-            method="GET",
-            url="https://claude-server.example.com/jobs/job-12345",
-            json={
-                "job_id": "job-12345",
-                "status": "failed",
-                "error": "Repository clone failed",
-            },
-        )
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "code_indexer.server.mcp.handlers._get_delegation_config",
-                lambda: mock_delegation_config,
-            )
-
-            response = await handle_poll_delegation_job(
-                {"job_id": "job-12345"},
-                test_user,
-            )
-
-        data = json.loads(response["content"][0]["text"])
-        assert data["status"] == "failed"
-        assert data["phase"] == "done"
-        assert "clone failed" in data["error"]
-        assert data["continue_polling"] is False
+    Note: Story #720 changed poll_delegation_job from polling Claude Server
+    to callback-based completion. See TestPollDelegationJobCallbackBased for
+    tests of the callback-based behavior.
+    """
 
     @pytest.mark.asyncio
     async def test_poll_returns_error_when_not_configured(self, test_user):
@@ -269,29 +73,107 @@ class TestPollDelegationJobHandler:
         assert data["success"] is False
         assert "not configured" in data["error"].lower()
 
+
+class TestPollDelegationJobCallbackBased:
+    """Tests for callback-based job completion (Story #720)."""
+
+    @pytest.fixture(autouse=True)
+    def reset_tracker_singleton(self):
+        """Reset DelegationJobTracker singleton between tests."""
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
+
+        DelegationJobTracker._instance = None
+        yield
+        DelegationJobTracker._instance = None
+
     @pytest.mark.asyncio
-    async def test_poll_handles_network_error(
-        self, test_user, mock_delegation_config, httpx_mock: HTTPXMock
+    async def test_poll_waits_for_callback_and_returns_result(
+        self, test_user, mock_delegation_config
     ):
         """
-        poll_delegation_job returns error on network failure.
+        poll_delegation_job waits on tracker Future and returns result.
 
-        Given a network connectivity issue
-        When poll_delegation_job is called
-        Then it returns success=False with error message
+        Given a job is registered in the tracker
+        When callback completes the job
+        Then poll_delegation_job returns the result from the callback
         """
-        import httpx
-
+        import asyncio
         from code_indexer.server.mcp.handlers import handle_poll_delegation_job
-
-        # Auth succeeds
-        httpx_mock.add_response(
-            method="POST",
-            url="https://claude-server.example.com/auth/login",
-            json={"access_token": "token", "token_type": "bearer"},
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+            JobResult,
         )
-        # Job status fails with connection error
-        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
+
+        # Register job in tracker
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("callback-job-123")
+
+        # Simulate callback completing the job after a short delay
+        async def complete_after_delay():
+            await asyncio.sleep(0.05)
+            result = JobResult(
+                job_id="callback-job-123",
+                status="completed",
+                output="The authentication uses OAuth2 with JWT tokens.",
+                exit_code=0,
+                error=None,
+            )
+            await tracker.complete_job(result)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            # Run callback completion and poll concurrently
+            complete_task = asyncio.create_task(complete_after_delay())
+            poll_task = asyncio.create_task(
+                handle_poll_delegation_job(
+                    {"job_id": "callback-job-123", "timeout": 5.0},
+                    test_user,
+                )
+            )
+
+            await complete_task
+            response = await poll_task
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["status"] == "completed"
+        assert "OAuth2" in data["result"]
+        assert data["continue_polling"] is False
+
+    @pytest.mark.asyncio
+    async def test_poll_returns_failed_result_from_callback(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        poll_delegation_job returns failed result from callback.
+
+        Given a job is registered in the tracker
+        When callback completes the job with failed status
+        Then poll_delegation_job returns the error from the callback
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+            JobResult,
+        )
+
+        # Register and immediately complete with failure
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("failed-job-456")
+
+        result = JobResult(
+            job_id="failed-job-456",
+            status="failed",
+            output="Repository clone failed: authentication denied",
+            exit_code=1,
+            error="Repository clone failed: authentication denied",
+        )
+        await tracker.complete_job(result)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
@@ -300,38 +182,35 @@ class TestPollDelegationJobHandler:
             )
 
             response = await handle_poll_delegation_job(
-                {"job_id": "job-12345"},
+                {"job_id": "failed-job-456", "timeout_seconds": 1.0},
                 test_user,
             )
 
         data = json.loads(response["content"][0]["text"])
-        assert data["success"] is False
-        assert "error" in data
+        assert data["status"] == "failed"
+        assert "clone failed" in data["error"]
+        assert data["continue_polling"] is False
 
     @pytest.mark.asyncio
-    async def test_poll_error_includes_job_id(
-        self, test_user, mock_delegation_config, httpx_mock: HTTPXMock
+    async def test_poll_returns_waiting_when_callback_not_received(
+        self, test_user, mock_delegation_config
     ):
         """
-        poll_delegation_job error response includes job_id for traceability.
+        poll_delegation_job returns waiting status when timeout occurs (Story #720 fix).
 
-        Given a job ID that does not exist
-        When poll_delegation_job is called
-        Then the error response includes the job_id
+        Given a job is registered but callback hasn't arrived yet
+        When poll_delegation_job timeout expires
+        Then it returns status=waiting with continue_polling=True
+        So the caller can decide to poll again
         """
         from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
 
-        httpx_mock.add_response(
-            method="POST",
-            url="https://claude-server.example.com/auth/login",
-            json={"access_token": "token", "token_type": "bearer"},
-        )
-        httpx_mock.add_response(
-            method="GET",
-            url="https://claude-server.example.com/jobs/specific-job-id-123",
-            json={"detail": "Job not found"},
-            status_code=404,
-        )
+        # Register job but don't complete it
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("timeout-job-789")
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
@@ -340,11 +219,305 @@ class TestPollDelegationJobHandler:
             )
 
             response = await handle_poll_delegation_job(
-                {"job_id": "specific-job-id-123"},
+                {"job_id": "timeout-job-789", "timeout_seconds": 0.05},
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["status"] == "waiting"
+        assert "still running" in data["message"].lower() or "not yet received" in data["message"].lower()
+        # Key fix: continue_polling should be True so caller can retry
+        assert data["continue_polling"] is True
+
+        # Job should still exist in tracker (caller can poll again)
+        assert await tracker.has_job("timeout-job-789") is True
+
+    @pytest.mark.asyncio
+    async def test_can_retry_poll_after_timeout(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        Caller can poll again after timeout and get result (Story #720 fix).
+
+        Given a job times out on first poll
+        When callback arrives and caller polls again
+        Then the second poll returns the completed result
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+            JobResult,
+        )
+
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("retry-job-001")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            # First poll times out
+            response1 = await handle_poll_delegation_job(
+                {"job_id": "retry-job-001", "timeout_seconds": 0.05},
+                test_user,
+            )
+
+            data1 = json.loads(response1["content"][0]["text"])
+            assert data1["status"] == "waiting"
+            assert data1["continue_polling"] is True
+
+            # Now callback arrives (simulating Claude Server posting back)
+            job_result = JobResult(
+                job_id="retry-job-001",
+                status="completed",
+                output="The authentication module uses JWT tokens with RSA-256 signing.",
+                exit_code=0,
+                error=None,
+            )
+            await tracker.complete_job(job_result)
+
+            # Second poll gets the result
+            response2 = await handle_poll_delegation_job(
+                {"job_id": "retry-job-001", "timeout_seconds": 1.0},
+                test_user,
+            )
+
+            data2 = json.loads(response2["content"][0]["text"])
+            assert data2["status"] == "completed"
+            assert "JWT tokens" in data2["result"]
+            assert data2["continue_polling"] is False
+
+    @pytest.mark.asyncio
+    async def test_poll_returns_error_for_job_not_in_tracker(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        poll_delegation_job returns error when job not found in tracker.
+
+        Given a job_id that is not registered in the tracker
+        When poll_delegation_job is called
+        Then it returns an error indicating job not found
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            response = await handle_poll_delegation_job(
+                {"job_id": "nonexistent-tracker-job", "timeout_seconds": 1.0},
                 test_user,
             )
 
         data = json.loads(response["content"][0]["text"])
         assert data["success"] is False
-        # The error should include the job_id for traceability
-        assert "specific-job-id-123" in data["error"]
+        assert "not found" in data["error"].lower() or "already completed" in data["error"].lower()
+
+
+class TestPollDelegationJobTimeoutParameter:
+    """Tests for timeout_seconds parameter (Story #720)."""
+
+    @pytest.fixture(autouse=True)
+    def reset_tracker_singleton(self):
+        """Reset DelegationJobTracker singleton between tests."""
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
+
+        DelegationJobTracker._instance = None
+        yield
+        DelegationJobTracker._instance = None
+
+    @pytest.mark.asyncio
+    async def test_timeout_seconds_uses_default_45_when_not_specified(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        poll_delegation_job uses 45 seconds default timeout when not specified.
+
+        Given timeout_seconds is not provided
+        When poll_delegation_job is called
+        Then it should use 45 seconds default (below MCP's 60s)
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+            JobResult,
+        )
+
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("job-default-timeout")
+
+        # Complete job immediately so we don't wait
+        result = JobResult(
+            job_id="job-default-timeout",
+            status="completed",
+            output="Test",
+            exit_code=0,
+            error=None,
+        )
+        await tracker.complete_job(result)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            response = await handle_poll_delegation_job(
+                {"job_id": "job-default-timeout"},  # No timeout_seconds
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_timeout_seconds_accepts_valid_value(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        poll_delegation_job accepts timeout_seconds between 5 and 300.
+
+        Given a valid timeout_seconds value (e.g., 60)
+        When poll_delegation_job is called
+        Then it should use that timeout value
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+            JobResult,
+        )
+
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("job-custom-timeout")
+
+        # Complete job immediately so we don't wait
+        result = JobResult(
+            job_id="job-custom-timeout",
+            status="completed",
+            output="Test",
+            exit_code=0,
+            error=None,
+        )
+        await tracker.complete_job(result)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            response = await handle_poll_delegation_job(
+                {"job_id": "job-custom-timeout", "timeout_seconds": 60},
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_timeout_seconds_rejects_below_minimum(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        poll_delegation_job rejects timeout_seconds below 0.01.
+
+        Given timeout_seconds = 0.005 (below minimum 0.01)
+        When poll_delegation_job is called
+        Then it should return error
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
+
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("job-low-timeout")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            response = await handle_poll_delegation_job(
+                {"job_id": "job-low-timeout", "timeout_seconds": 0.005},
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["success"] is False
+        assert "timeout_seconds" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_timeout_seconds_rejects_above_maximum(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        poll_delegation_job rejects timeout_seconds above 300.
+
+        Given timeout_seconds = 500 (above maximum 300)
+        When poll_delegation_job is called
+        Then it should return error
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
+
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("job-high-timeout")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            response = await handle_poll_delegation_job(
+                {"job_id": "job-high-timeout", "timeout_seconds": 500},
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["success"] is False
+        assert "timeout_seconds" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_timeout_seconds_rejects_non_numeric(
+        self, test_user, mock_delegation_config
+    ):
+        """
+        poll_delegation_job rejects non-numeric timeout_seconds.
+
+        Given timeout_seconds = "fast" (not a number)
+        When poll_delegation_job is called
+        Then it should return error
+        """
+        from code_indexer.server.mcp.handlers import handle_poll_delegation_job
+        from code_indexer.server.services.delegation_job_tracker import (
+            DelegationJobTracker,
+        )
+
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job("job-string-timeout")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_delegation_config",
+                lambda: mock_delegation_config,
+            )
+
+            response = await handle_poll_delegation_job(
+                {"job_id": "job-string-timeout", "timeout_seconds": "fast"},
+                test_user,
+            )
+
+        data = json.loads(response["content"][0]["text"])
+        assert data["success"] is False
+        assert "timeout_seconds" in data["error"].lower()

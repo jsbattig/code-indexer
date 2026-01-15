@@ -7,6 +7,7 @@ Processes function templates with parameter substitution and prepends
 impersonation instructions for Claude Server delegation.
 """
 
+import re
 from typing import Any, Dict
 
 
@@ -16,7 +17,10 @@ class PromptTemplateProcessor:
 
     Renders function templates by:
     1. Prepending impersonation instruction with target user
-    2. Substituting {{param_name}} placeholders with parameter values
+    2. Substituting placeholders with parameter values (supports flexible spacing):
+       - {{param_name}} (no spaces)
+       - {{ param_name }} (single spaces)
+       - {{  param_name  }} (multiple spaces)
     3. Substituting {{user_prompt}} placeholder with user's additional prompt
     """
 
@@ -54,13 +58,19 @@ class PromptTemplateProcessor:
         )
 
         # Step 2: Substitute parameter placeholders
+        # Uses regex to match {{\s*param_name\s*}} pattern for flexible spacing
         result = template
         for param_name, param_value in parameters.items():
-            placeholder = "{{" + param_name + "}}"
-            result = result.replace(placeholder, str(param_value))
+            # Match {{ param_name }} with any amount of whitespace around param_name
+            pattern = r"\{\{\s*" + re.escape(param_name) + r"\s*\}\}"
+            # Use lambda to avoid regex interpretation of replacement value
+            replacement = str(param_value)
+            result = re.sub(pattern, lambda m: replacement, result)
 
-        # Step 3: Substitute user_prompt placeholder
-        result = result.replace("{{user_prompt}}", user_prompt)
+        # Step 3: Substitute user_prompt placeholder (also with flexible spacing)
+        user_prompt_pattern = r"\{\{\s*user_prompt\s*\}\}"
+        # Use lambda to avoid regex interpretation of user_prompt value
+        result = re.sub(user_prompt_pattern, lambda m: user_prompt, result)
 
         # Combine impersonation header with rendered template
         return impersonation_header + result

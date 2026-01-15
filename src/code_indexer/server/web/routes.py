@@ -4625,10 +4625,14 @@ async def update_claude_delegation_config(
 
     # Save configuration with encrypted credential
     from ..config.delegation_config import DEFAULT_FUNCTION_REPO_ALIAS
+    cidx_callback_url = form_data.get("cidx_callback_url", "").strip()  # Story #720
+    skip_ssl_verify = form_data.get("skip_ssl_verify", "false").lower() == "true"
     config = ClaudeDelegationConfig(
         function_repo_alias=form_data.get("function_repo_alias", "").strip() or DEFAULT_FUNCTION_REPO_ALIAS,
         claude_server_url=url, claude_server_username=username,
-        claude_server_credential_type=cred_type, claude_server_credential=credential)
+        claude_server_credential_type=cred_type, claude_server_credential=credential,
+        cidx_callback_url=cidx_callback_url,
+        skip_ssl_verify=skip_ssl_verify)
     delegation_manager.save_config(config)
 
     return _create_config_page_response(

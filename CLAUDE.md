@@ -34,6 +34,28 @@
 
 ---
 
+## CRITICAL: LOCAL TESTING BEFORE DEPLOYMENT
+
+**ABSOLUTE PROHIBITION**: NEVER deploy to or test on the production CIDX server until work is approved.
+
+**MANDATORY WORKFLOW**:
+1. **ALL development and testing happens LOCALLY** on the development machine
+2. CIDX server runs locally at localhost:8000
+3. For callbacks, use the development machine's external IP (reachable from Claude Server)
+4. The development machine and Claude Server can see each other - use this for E2E testing
+5. The production server is in a special firewalled network area - DO NOT TOUCH
+
+**DEPLOYMENT ONLY WHEN**:
+- User explicitly approves the work
+- User tells you to "commit and push to master" (triggers auto-deployment), OR
+- User tells you to "deploy manually to production server"
+
+**WHY**: The production server is production. Test everything locally first with full E2E validation before any deployment.
+
+**VIOLATION = FUNDAMENTAL FAILURE**: Touching production server without explicit user approval breaks the development workflow.
+
+---
+
 ## SSH SERVER RESTART - CRITICAL PROCEDURE
 
 **ABSOLUTE PROHIBITION**: NEVER use `kill -15 && nohup python3 -m ... &` for server restarts.
@@ -64,10 +86,10 @@ systemctl status cidx-server --no-pager
 
 **LOCKED CONFIGURATION** (verified working 2025-11-30):
 - cidx-server systemd service: port 8000
-- HAProxy backend (192.168.60.30): forwards to 192.168.60.20:8000
-- Firewall (192.168.60.20): allows port 8000 from 192.168.60.30
+- HAProxy backend: forwards to production server on port 8000
+- Firewall: allows port 8000 from HAProxy server
 
-**WHY**: These three components must be synchronized. Changing any one breaks external access via https://linner.ddns.net:8383.
+**WHY**: These three components must be synchronized. Changing any one breaks external HTTPS access.
 
 **VIOLATION = SERVER INACCESSIBLE**: Any port change will cause HAProxy 503 errors.
 
@@ -89,6 +111,56 @@ When `cidx scip generate` runs:
 **Query commands work with .scip.db files**, not raw .scip protobuf files.
 
 **RECORDED**: 2025-12-21 - After repeatedly searching for non-existent .scip files during C# SCIP indexer testing.
+
+---
+
+## CIDX SERVER CONFIGURATION - NO ENVIRONMENT VARIABLES
+
+**ABSOLUTE PROHIBITION**: NEVER use environment variables to store settings, configuration, or state within the CIDX server context.
+
+**This is NOT negotiable. This is NOT a suggestion. This is a hard rule.**
+
+**WHY**: Environment variables are:
+- Invisible and hard to debug
+- Not persisted properly across restarts
+- Inconsistent between development and production
+- A source of repeated configuration failures in this project
+
+**CIDX SERVER HAS A DEDICATED CONFIGURATION SYSTEM**:
+
+The CIDX server uses a **Web UI Configuration Screen** for all settings. This is the single source of truth for server configuration.
+
+**MANDATORY**: When adding ANY new configurable setting to CIDX server:
+1. Add it to the Web UI Configuration Screen
+2. Store it in the server's configuration persistence layer
+3. Access it through the configuration API
+4. NEVER use environment variables as a shortcut
+
+**CORRECT APPROACHES** for CIDX server configuration:
+1. **Web UI Config Screen** (PRIMARY - use this for all new settings)
+2. Configuration files (JSON, YAML, TOML)
+3. Command-line arguments (for startup options only)
+4. In-memory configuration objects passed explicitly
+
+**WRONG APPROACH** (NEVER DO THIS):
+```python
+# WRONG - NEVER DO THIS
+import os
+os.environ["CIDX_SETTING"] = "value"
+setting = os.getenv("CIDX_SETTING")
+```
+
+**RIGHT APPROACH**:
+```python
+# RIGHT - Use the server's configuration system
+from code_indexer.server.config import get_config
+config = get_config()
+setting = config.some_setting
+```
+
+**VIOLATION = IMMEDIATE REJECTION**: Any code review that introduces environment variable usage for CIDX server settings MUST be rejected and rewritten.
+
+**RECORDED**: 2025-01-14 - After repeated failures caused by environment variable-based configuration.
 
 ---
 

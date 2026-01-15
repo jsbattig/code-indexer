@@ -9017,6 +9017,30 @@ async def _ensure_repos_registered(client, required_repos: List[Dict[str, Any]])
     return repo_aliases
 
 
+def _get_cidx_callback_base_url() -> Optional[str]:
+    """
+    Get the base URL for CIDX callback endpoints from delegation config.
+
+    Story #720: Callback-Based Delegation Job Completion
+
+    Returns:
+        The CIDX callback URL from delegation config, or None if not configured
+    """
+    from ..services.config_service import get_config_service
+
+    try:
+        config_service = get_config_service()
+        delegation_manager = config_service.get_delegation_manager()
+        delegation_config = delegation_manager.load_config()
+
+        if delegation_config and delegation_config.cidx_callback_url:
+            return delegation_config.cidx_callback_url
+        return None
+    except Exception as e:
+        logger.warning("Failed to get CIDX callback URL from delegation config: %s", e)
+        return None
+
+
 async def handle_execute_delegation_function(
     args: Dict[str, Any], user: User, *, session_state=None
 ) -> Dict[str, Any]:
@@ -9072,6 +9096,7 @@ async def handle_execute_delegation_function(
             base_url=delegation_config.claude_server_url,
             username=delegation_config.claude_server_username,
             password=delegation_config.claude_server_credential,
+            skip_ssl_verify=delegation_config.skip_ssl_verify,
         )
         repo_aliases = await _ensure_repos_registered(client, target_function.required_repos)
 
@@ -9090,6 +9115,27 @@ async def handle_execute_delegation_function(
         job_id = job_result.get("jobId") or job_result.get("job_id")
         if not job_id:
             return _mcp_response({"success": False, "error": "Job created but no job_id returned"})
+
+        # Story #720: Register callback URL with Claude Server for completion notification
+        callback_base_url = _get_cidx_callback_base_url()
+        if callback_base_url:
+            callback_url = f"{callback_base_url.rstrip('/')}/api/delegation/callback/{job_id}"
+            try:
+                await client.register_callback(job_id, callback_url)
+                logger.debug(f"Registered callback URL for job {job_id}: {callback_url}")
+            except Exception as callback_err:
+                # Log but don't fail - callback registration is best-effort
+                logger.warning(
+                    f"Failed to register callback for job {job_id}: {callback_err}",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
+        # Story #720: Register job in tracker for callback-based completion
+        from ..services.delegation_job_tracker import DelegationJobTracker
+
+        tracker = DelegationJobTracker.get_instance()
+        await tracker.register_job(job_id)
+
         await client.start_job(job_id)
 
         return _mcp_response({"success": True, "job_id": job_id})
@@ -9109,25 +9155,24 @@ async def handle_poll_delegation_job(
     args: Dict[str, Any], user: User, *, session_state=None
 ) -> Dict[str, Any]:
     """
-    Poll status of a delegation job with progress feedback.
+    Wait for delegation job completion via callback mechanism.
 
-    Story #720: Poll Delegation Job with Progress Feedback
+    Story #720: Callback-Based Delegation Job Completion
+
+    Instead of polling Claude Server repeatedly, this waits on a Future
+    that gets resolved when Claude Server POSTs the callback to CIDX.
 
     Args:
-        args: Tool arguments with job_id
+        args: Tool arguments with job_id and optional timeout
         user: The authenticated user making the request
         session_state: Optional MCPSessionState for impersonation
 
     Returns:
-        MCP response with phase-aware progress or error details
+        MCP response with result when callback arrives, or timeout/error
     """
-    from ..clients.claude_server_client import (
-        ClaudeServerClient,
-        ClaudeServerError,
-        ClaudeServerNotFoundError,
-    )
-    from ..services.job_phase_detector import JobPhaseDetector
+    from ..services.delegation_job_tracker import DelegationJobTracker
 
+    job_id = ""
     try:
         # Configuration validation
         delegation_config = _get_delegation_config()
@@ -9139,77 +9184,60 @@ async def handle_poll_delegation_job(
         if not job_id:
             return _mcp_response({"success": False, "error": "Missing required parameter: job_id"})
 
-        # Create client and get job status
-        client = ClaudeServerClient(
-            base_url=delegation_config.claude_server_url,
-            username=delegation_config.claude_server_username,
-            password=delegation_config.claude_server_credential,
-        )
-        job_state = await client.get_job_status(job_id)
-
-        # Detect phase and get progress
-        detector = JobPhaseDetector()
-        phase = detector.detect_phase(job_state)
-        progress_info = detector.get_progress(job_state, phase)
-
-        # Build response based on job status
-        job_status = job_state.get("status", "in_progress")
-
-        if job_status == "completed":
-            # Extract the final result from the conversation API
-            # The job status "output" field is for errors/metadata, not Claude's response
-            # The actual response is the last assistantMessage in the conversation
-            final_result = ""
-            try:
-                conversation = await client.get_job_conversation(job_id)
-                sessions = conversation.get("sessions", [])
-                if sessions:
-                    # Get the last session's exchanges
-                    last_session = sessions[-1]
-                    exchanges = last_session.get("exchanges", [])
-                    if exchanges:
-                        # Get the last exchange's assistant message
-                        last_exchange = exchanges[-1]
-                        final_result = last_exchange.get("assistantMessage", "")
-            except Exception as conv_err:
-                logger.warning(
-                    f"Failed to fetch conversation for job {job_id}: {conv_err}",
-                    extra={"correlation_id": get_correlation_id()},
-                )
-                # Fall back to output field if conversation fetch fails
-                final_result = job_state.get("output", "")
-
+        # Story #720: Get timeout_seconds from args (default 45s, below MCP's 60s)
+        # Also support legacy "timeout" parameter for backward compatibility
+        timeout = args.get("timeout_seconds", args.get("timeout", 45))
+        if not isinstance(timeout, (int, float)):
             return _mcp_response({
-                "status": "completed",
-                "phase": phase.value,
-                "result": final_result,
-                "continue_polling": False,
+                "success": False,
+                "error": "timeout_seconds must be a number (recommended: 5-300)"
             })
-        elif job_status == "failed":
+        # Minimum 0.01s (for testing), maximum 300s (5 minutes)
+        # Recommended range for production: 5-300 seconds
+        if timeout < 0.01 or timeout > 300:
             return _mcp_response({
-                "status": "failed",
-                "phase": phase.value,
-                "error": job_state.get("error", "Unknown error"),
-                "continue_polling": False,
+                "success": False,
+                "error": "timeout_seconds must be between 0.01 and 300"
             })
-        else:
-            # In progress
+
+        # Check if job exists in tracker before waiting
+        tracker = DelegationJobTracker.get_instance()
+        job_exists = await tracker.has_job(job_id)
+        if not job_exists:
             return _mcp_response({
-                "status": "in_progress",
-                "phase": phase.value,
-                "progress": progress_info.progress,
-                "message": progress_info.message,
+                "success": False,
+                "error": f"Job {job_id} not found or already completed",
+            })
+
+        # Wait for callback via DelegationJobTracker
+        result = await tracker.wait_for_job(job_id, timeout=timeout)
+
+        if result is None:
+            # Timeout - job still exists, caller can try again
+            return _mcp_response({
+                "status": "waiting",
+                "message": "Job still running, callback not yet received",
                 "continue_polling": True,
             })
 
-    except ClaudeServerNotFoundError:
-        return _mcp_response({"success": False, "error": f"Job not found: {job_id}"})
-    except ClaudeServerError as e:
-        logger.error(f"Claude Server error for job {job_id}: {e}", extra={"correlation_id": get_correlation_id()})
-        return _mcp_response({"success": False, "error": f"Claude Server error for job {job_id}: {e}"})
+        # Return result based on status from callback
+        if result.status == "completed":
+            return _mcp_response({
+                "status": "completed",
+                "result": result.output,
+                "continue_polling": False,
+            })
+        else:
+            # Failed or other status
+            return _mcp_response({
+                "status": "failed",
+                "error": result.error or result.output,
+                "continue_polling": False,
+            })
+
     except Exception as e:
-        logger.exception(f"Error in poll_delegation_job for job {job_id}: {e}", extra={"correlation_id": get_correlation_id()})
-        return _mcp_response({"success": False, "error": f"Error for job {job_id}: {e}"})
+        logger.error(f"Error waiting for delegation job {job_id}: {e}", extra={"correlation_id": get_correlation_id()})
+        return _mcp_response({"success": False, "error": f"Error waiting for job completion: {str(e)}"})
 
 
 HANDLER_REGISTRY["poll_delegation_job"] = handle_poll_delegation_job

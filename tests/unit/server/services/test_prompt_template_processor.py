@@ -377,3 +377,297 @@ class TestPromptTemplateProcessorImpersonationPosition:
         assert template_pos > impersonation_pos, (
             "Template content must come after impersonation instruction"
         )
+
+
+class TestPromptTemplateProcessorSpaceVariantPlaceholders:
+    """
+    Tests for space-variant placeholder substitution.
+
+    Bug Fix: Template processor must handle placeholders with various spacing:
+    - {{param}} - no spaces
+    - {{ param }} - single spaces
+    - {{  param  }} - multiple spaces
+
+    Root cause: Line 59 creates "{{" + param_name + "}}" (no spaces)
+    but templates often use "{{ param }}" with spaces.
+    """
+
+    def test_substitutes_placeholder_with_no_spaces(self):
+        """
+        Render should substitute {{param}} placeholders (no spaces).
+
+        Given template "Hello {{message}}"
+        When I render with parameters={'message': 'World'}
+        Then result contains "Hello World"
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Hello {{message}}"
+        parameters = {"message": "World"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="",
+            impersonation_user="user1",
+        )
+
+        assert "Hello World" in result
+        assert "{{message}}" not in result
+
+    def test_substitutes_placeholder_with_single_spaces(self):
+        """
+        Render should substitute {{ param }} placeholders (single spaces).
+
+        Given template "Hello {{ message }}"
+        When I render with parameters={'message': 'World'}
+        Then result contains "Hello World"
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Hello {{ message }}"
+        parameters = {"message": "World"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="",
+            impersonation_user="user1",
+        )
+
+        assert "Hello World" in result
+        assert "{{ message }}" not in result
+
+    def test_substitutes_placeholder_with_multiple_spaces(self):
+        """
+        Render should substitute {{  param  }} placeholders (multiple spaces).
+
+        Given template "Hello {{  message  }}"
+        When I render with parameters={'message': 'World'}
+        Then result contains "Hello World"
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Hello {{  message  }}"
+        parameters = {"message": "World"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="",
+            impersonation_user="user1",
+        )
+
+        assert "Hello World" in result
+        assert "{{  message  }}" not in result
+
+    def test_substitutes_mixed_spacing_formats_in_same_template(self):
+        """
+        Render should handle mixed placeholder formats in same template.
+
+        Given template with {{param1}} and {{ param2 }} and {{  param3  }}
+        When I render with all three parameters
+        Then all placeholders are substituted
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Values: {{param1}}, {{ param2 }}, {{  param3  }}"
+        parameters = {"param1": "one", "param2": "two", "param3": "three"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="",
+            impersonation_user="user1",
+        )
+
+        assert "one" in result
+        assert "two" in result
+        assert "three" in result
+        assert "{{param1}}" not in result
+        assert "{{ param2 }}" not in result
+        assert "{{  param3  }}" not in result
+
+    def test_user_prompt_placeholder_with_spaces(self):
+        """
+        Render should substitute {{ user_prompt }} with spaces.
+
+        Given template with {{ user_prompt }} placeholder
+        When I render with user_prompt="Find bugs"
+        Then {{ user_prompt }} is replaced with the prompt
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "User request: {{ user_prompt }}"
+        parameters = {}
+        user_prompt = "Find security bugs"
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt=user_prompt,
+            impersonation_user="user1",
+        )
+
+        assert "Find security bugs" in result
+        assert "{{ user_prompt }}" not in result
+
+    def test_user_prompt_placeholder_with_multiple_spaces(self):
+        """
+        Render should substitute {{  user_prompt  }} with multiple spaces.
+
+        Given template with {{  user_prompt  }} placeholder
+        When I render with user_prompt="Find bugs"
+        Then {{  user_prompt  }} is replaced with the prompt
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "User request: {{  user_prompt  }}"
+        parameters = {}
+        user_prompt = "Find security bugs"
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt=user_prompt,
+            impersonation_user="user1",
+        )
+
+        assert "Find security bugs" in result
+        assert "{{  user_prompt  }}" not in result
+
+    def test_impersonation_still_prepended_with_spaced_placeholders(self):
+        """
+        Impersonation instruction should still be prepended when using spaced placeholders.
+
+        Given template with {{ param }} (with spaces)
+        When I render the template
+        Then result still starts with impersonation instruction
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Search {{ repo }} for code"
+        parameters = {"repo": "myrepo"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="",
+            impersonation_user="service_user",
+        )
+
+        assert result.startswith("CRITICAL:")
+        assert "set_session_impersonation" in result
+        assert "service_user" in result
+        assert "myrepo" in result
+
+    def test_multiple_parameters_with_different_spacing(self):
+        """
+        Render should handle multiple different parameters with various spacing.
+
+        Given template with {{a}}, {{ b }}, {{  c  }}, and {{ user_prompt }}
+        When I render with all parameters
+        Then all are correctly substituted
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Params: {{a}}, {{ b }}, {{  c  }}. Query: {{ user_prompt }}"
+        parameters = {"a": "alpha", "b": "beta", "c": "gamma"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="my query",
+            impersonation_user="user1",
+        )
+
+        assert "alpha" in result
+        assert "beta" in result
+        assert "gamma" in result
+        assert "my query" in result
+        assert "{{a}}" not in result
+        assert "{{ b }}" not in result
+        assert "{{  c  }}" not in result
+        assert "{{ user_prompt }}" not in result
+
+    def test_unknown_placeholder_with_spaces_left_unchanged(self):
+        """
+        Unknown placeholders should be left unchanged even with spaces.
+
+        Given template with {{ unknown }} (not in parameters)
+        When I render without that parameter
+        Then {{ unknown }} remains in the output as-is
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Known: {{known}}, Unknown: {{ unknown }}"
+        parameters = {"known": "value"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="",
+            impersonation_user="user1",
+        )
+
+        # Known parameter should be substituted
+        assert "value" in result
+        assert "{{known}}" not in result
+        # Unknown placeholder should remain unchanged
+        assert "{{ unknown }}" in result
+
+    def test_multiple_occurrences_with_different_spacing(self):
+        """
+        Same parameter appearing with different spacing should all be substituted.
+
+        Given template with {{name}}, {{ name }}, {{  name  }} all referring to 'name'
+        When I render with name='Bob'
+        Then all occurrences are replaced with 'Bob'
+        """
+        from code_indexer.server.services.prompt_template_processor import (
+            PromptTemplateProcessor,
+        )
+
+        processor = PromptTemplateProcessor()
+        template = "Hello {{name}}! Welcome {{ name }}. Hi {{  name  }}."
+        parameters = {"name": "Bob"}
+
+        result = processor.render(
+            template=template,
+            parameters=parameters,
+            user_prompt="",
+            impersonation_user="user1",
+        )
+
+        # All three should be replaced
+        assert result.count("Bob") == 3
+        assert "{{name}}" not in result
+        assert "{{ name }}" not in result
+        assert "{{  name  }}" not in result

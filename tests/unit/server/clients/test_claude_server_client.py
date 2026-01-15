@@ -287,15 +287,15 @@ class TestClaudeServerClientRepositoryOperations:
             status_code=200,
         )
 
-        # Register repository response
+        # Register repository response (Claude Server uses name/gitUrl fields)
         httpx_mock.add_response(
             method="POST",
             url=f"{TEST_BASE_URL}/repositories/register",
             json={
-                "alias": "new-repo",
-                "remote": "https://github.com/org/new-repo",
+                "name": "new-repo",
+                "gitUrl": "https://github.com/org/new-repo",
                 "branch": "main",
-                "status": "pending",
+                "cloneStatus": "cloning",
             },
             status_code=201,
         )
@@ -312,8 +312,8 @@ class TestClaudeServerClientRepositoryOperations:
             branch="main",
         )
 
-        assert result["alias"] == "new-repo"
-        assert result["status"] == "pending"
+        assert result["name"] == "new-repo"
+        assert result["cloneStatus"] == "cloning"
 
 
 class TestClaudeServerClientJobOperations:
@@ -1014,3 +1014,142 @@ class TestClaudeServerClientJobPolling:
         assert "not found" in str(exc_info.value).lower()
         # Also verify it's a subclass of ClaudeServerError for catch-all handling
         assert isinstance(exc_info.value, ClaudeServerError)
+
+
+class TestClaudeServerClientCallbackRegistration:
+    """Tests for callback registration (Story #720)."""
+
+    @pytest.mark.asyncio
+    async def test_register_callback_success(self, httpx_mock: HTTPXMock):
+        """
+        register_callback() should register callback URL with Claude Server.
+
+        Given a valid job_id and callback_url
+        When I call register_callback(job_id, callback_url)
+        Then the callback URL is registered with Claude Server
+        """
+        from code_indexer.server.clients.claude_server_client import (
+            ClaudeServerClient,
+        )
+
+        # Auth response
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{TEST_BASE_URL}/auth/login",
+            json={"access_token": "token", "token_type": "bearer"},
+            status_code=200,
+        )
+
+        # Register callback response
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{TEST_BASE_URL}/jobs/job-12345/callbacks",
+            json={"registered": True},
+            status_code=200,
+        )
+
+        client = ClaudeServerClient(
+            base_url=TEST_BASE_URL,
+            username=TEST_USERNAME,
+            password=TEST_PASSWORD,
+        )
+
+        # Should not raise
+        await client.register_callback(
+            job_id="job-12345",
+            callback_url="https://cidx.example.com/api/delegation/callback/job-12345",
+        )
+
+        # Verify the request was made with correct URL in JSON body
+        requests = httpx_mock.get_requests()
+        callback_request = requests[-1]
+        assert callback_request.url.path == "/jobs/job-12345/callbacks"
+        import json
+        body = json.loads(callback_request.content)
+        assert body["url"] == "https://cidx.example.com/api/delegation/callback/job-12345"
+
+    @pytest.mark.asyncio
+    async def test_register_callback_raises_on_error(self, httpx_mock: HTTPXMock):
+        """
+        register_callback() should raise on server error.
+
+        Given a server error response
+        When I call register_callback()
+        Then ClaudeServerError is raised
+        """
+        from code_indexer.server.clients.claude_server_client import (
+            ClaudeServerClient,
+            ClaudeServerError,
+        )
+
+        # Auth response
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{TEST_BASE_URL}/auth/login",
+            json={"access_token": "token", "token_type": "bearer"},
+            status_code=200,
+        )
+
+        # Server error
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{TEST_BASE_URL}/jobs/job-12345/callbacks",
+            json={"detail": "Internal server error"},
+            status_code=500,
+        )
+
+        client = ClaudeServerClient(
+            base_url=TEST_BASE_URL,
+            username=TEST_USERNAME,
+            password=TEST_PASSWORD,
+        )
+
+        with pytest.raises(ClaudeServerError):
+            await client.register_callback(
+                job_id="job-12345",
+                callback_url="https://cidx.example.com/api/delegation/callback/job-12345",
+            )
+
+    @pytest.mark.asyncio
+    async def test_register_callback_raises_not_found_for_unknown_job(
+        self, httpx_mock: HTTPXMock
+    ):
+        """
+        register_callback() should raise ClaudeServerNotFoundError for unknown job.
+
+        Given a non-existent job_id
+        When I call register_callback()
+        Then ClaudeServerNotFoundError is raised
+        """
+        from code_indexer.server.clients.claude_server_client import (
+            ClaudeServerClient,
+            ClaudeServerNotFoundError,
+        )
+
+        # Auth response
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{TEST_BASE_URL}/auth/login",
+            json={"access_token": "token", "token_type": "bearer"},
+            status_code=200,
+        )
+
+        # Job not found
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{TEST_BASE_URL}/jobs/nonexistent-job/callbacks",
+            json={"detail": "Job not found"},
+            status_code=404,
+        )
+
+        client = ClaudeServerClient(
+            base_url=TEST_BASE_URL,
+            username=TEST_USERNAME,
+            password=TEST_PASSWORD,
+        )
+
+        with pytest.raises(ClaudeServerNotFoundError):
+            await client.register_callback(
+                job_id="nonexistent-job",
+                callback_url="https://cidx.example.com/api/delegation/callback/nonexistent-job",
+            )

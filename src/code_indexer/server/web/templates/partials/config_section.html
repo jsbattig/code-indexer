@@ -1004,6 +1004,16 @@
                         </td>
                         <td class="config-note"></td>
                     </tr>
+                    <tr>
+                        <td class="config-label">CIDX Callback URL</td>
+                        <td class="config-value">{{ config.claude_delegation.cidx_callback_url or 'Not configured' }}</td>
+                        <td class="config-note"><small>URL for job completion callbacks</small></td>
+                    </tr>
+                    <tr>
+                        <td class="config-label">Skip SSL Verification</td>
+                        <td class="config-value">{{ 'Yes' if config.claude_delegation.skip_ssl_verify else 'No' }}</td>
+                        <td class="config-note"><small>Allow self-signed certificates (E2E testing only)</small></td>
+                    </tr>
                 </tbody>
             </table>
             <div class="section-actions">
@@ -1052,6 +1062,21 @@
                     <input type="password" id="delegation-credential" name="claude_server_credential"
                            placeholder="{% if config.claude_delegation.is_configured %}Leave empty to keep current{% else %}Enter password or API key{% endif %}">
                     <small>{% if config.claude_delegation.is_configured %}Leave empty to keep existing credential{% else %}Password or API key for authentication{% endif %}</small>
+                </label>
+                <label for="delegation-cidx-callback-url">
+                    CIDX Callback URL
+                    <input type="text" id="delegation-cidx-callback-url" name="cidx_callback_url"
+                           value="{{ config.claude_delegation.cidx_callback_url }}"
+                           placeholder="http://192.168.60.20:8000">
+                    <small>URL that Claude Server will use to POST job completion callbacks</small>
+                </label>
+                <label for="delegation-skip-ssl-verify">
+                    Skip SSL Verification
+                    <select id="delegation-skip-ssl-verify" name="skip_ssl_verify">
+                        <option value="false" {% if not config.claude_delegation.skip_ssl_verify %}selected{% endif %}>No</option>
+                        <option value="true" {% if config.claude_delegation.skip_ssl_verify %}selected{% endif %}>Yes</option>
+                    </select>
+                    <small>WARNING: Only enable for testing with self-signed certificates</small>
                 </label>
             </div>
             <p><small><strong>Note:</strong> Connectivity will be validated before saving. Configuration will only be saved if connection to Claude Server is successful.</small></p>
