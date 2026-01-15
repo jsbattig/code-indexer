@@ -6,11 +6,7 @@ The service should derive collection_name from user_alias if not present.
 """
 
 import tempfile
-import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestDashboardServiceCollectionName:
@@ -45,8 +41,10 @@ class TestDashboardServiceCollectionName:
         ]
 
         # Mock the managers and store
-        with patch.object(service, '_get_golden_repo_manager') as mock_golden, \
-             patch.object(service, '_get_activated_repo_manager') as mock_activated:
+        with (
+            patch.object(service, "_get_golden_repo_manager") as mock_golden,
+            patch.object(service, "_get_activated_repo_manager") as mock_activated,
+        ):
 
             # Setup golden repo manager mock
             mock_golden_manager = MagicMock()
@@ -60,7 +58,9 @@ class TestDashboardServiceCollectionName:
             mock_activated.return_value = mock_activated_manager
 
             # Mock FilesystemVectorStore at its source module
-            with patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as mock_store_class:
+            with patch(
+                "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ) as mock_store_class:
                 mock_store = MagicMock()
                 mock_store.get_indexed_file_count_fast.return_value = 100
                 mock_store_class.return_value = mock_store
@@ -71,8 +71,9 @@ class TestDashboardServiceCollectionName:
                 # Both repos should be processed (total_files = 200 if both counted)
                 # With the bug, only 1 repo would be counted (100)
                 # After the fix, both should be counted (200)
-                assert result.total_files == 200, \
-                    f"Expected 200 total files (both repos), got {result.total_files}"
+                assert (
+                    result.total_files == 200
+                ), f"Expected 200 total files (both repos), got {result.total_files}"
 
                 # Verify get_indexed_file_count_fast was called twice
                 assert mock_store.get_indexed_file_count_fast.call_count == 2
@@ -80,10 +81,12 @@ class TestDashboardServiceCollectionName:
                 # Verify the legacy repo was called with user_alias as collection_name
                 calls = mock_store.get_indexed_file_count_fast.call_args_list
                 collection_names = [call[0][0] for call in calls]
-                assert "legacy-repo-active" in collection_names, \
-                    "Legacy repo should use user_alias as collection_name"
-                assert "modern-repo-active" in collection_names, \
-                    "Modern repo should use its collection_name"
+                assert (
+                    "legacy-repo-active" in collection_names
+                ), "Legacy repo should use user_alias as collection_name"
+                assert (
+                    "modern-repo-active" in collection_names
+                ), "Modern repo should use its collection_name"
 
     def test_get_repo_counts_with_all_missing_collection_names(self):
         """
@@ -112,8 +115,10 @@ class TestDashboardServiceCollectionName:
             },
         ]
 
-        with patch.object(service, '_get_golden_repo_manager') as mock_golden, \
-             patch.object(service, '_get_activated_repo_manager') as mock_activated:
+        with (
+            patch.object(service, "_get_golden_repo_manager") as mock_golden,
+            patch.object(service, "_get_activated_repo_manager") as mock_activated,
+        ):
 
             mock_golden_manager = MagicMock()
             mock_golden_manager.list_golden_repos.return_value = []
@@ -124,7 +129,9 @@ class TestDashboardServiceCollectionName:
             mock_activated_manager.data_dir = tempfile.mkdtemp()
             mock_activated.return_value = mock_activated_manager
 
-            with patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as mock_store_class:
+            with patch(
+                "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ) as mock_store_class:
                 mock_store = MagicMock()
                 mock_store.get_indexed_file_count_fast.return_value = 50
                 mock_store_class.return_value = mock_store
@@ -132,8 +139,9 @@ class TestDashboardServiceCollectionName:
                 result = service._get_repo_counts("testuser")
 
                 # All 3 repos should be processed
-                assert result.total_files == 150, \
-                    f"Expected 150 total files (3 repos * 50), got {result.total_files}"
+                assert (
+                    result.total_files == 150
+                ), f"Expected 150 total files (3 repos * 50), got {result.total_files}"
                 assert mock_store.get_indexed_file_count_fast.call_count == 3
 
     def test_get_repo_counts_handles_repo_missing_user_alias_too(self):
@@ -159,8 +167,10 @@ class TestDashboardServiceCollectionName:
             },
         ]
 
-        with patch.object(service, '_get_golden_repo_manager') as mock_golden, \
-             patch.object(service, '_get_activated_repo_manager') as mock_activated:
+        with (
+            patch.object(service, "_get_golden_repo_manager") as mock_golden,
+            patch.object(service, "_get_activated_repo_manager") as mock_activated,
+        ):
 
             mock_golden_manager = MagicMock()
             mock_golden_manager.list_golden_repos.return_value = []
@@ -171,7 +181,9 @@ class TestDashboardServiceCollectionName:
             mock_activated_manager.data_dir = tempfile.mkdtemp()
             mock_activated.return_value = mock_activated_manager
 
-            with patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as mock_store_class:
+            with patch(
+                "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ) as mock_store_class:
                 mock_store = MagicMock()
                 mock_store.get_indexed_file_count_fast.return_value = 100
                 mock_store_class.return_value = mock_store
@@ -180,6 +192,7 @@ class TestDashboardServiceCollectionName:
                 result = service._get_repo_counts("testuser")
 
                 # Only the working repo should be counted
-                assert result.total_files == 100, \
-                    f"Expected 100 total files (1 working repo), got {result.total_files}"
+                assert (
+                    result.total_files == 100
+                ), f"Expected 100 total files (1 working repo), got {result.total_files}"
                 assert mock_store.get_indexed_file_count_fast.call_count == 1

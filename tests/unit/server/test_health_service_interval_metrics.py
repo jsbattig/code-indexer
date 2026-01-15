@@ -34,7 +34,7 @@ class TestSystemHealthInfoModel:
             net_rx_kb_s=2048.0,
             net_tx_kb_s=1024.0,
         )
-        assert hasattr(info, 'disk_read_kb_s')
+        assert hasattr(info, "disk_read_kb_s")
         assert info.disk_read_kb_s == 1024.0
 
     def test_system_health_info_has_disk_write_kb_s_field(self):
@@ -49,7 +49,7 @@ class TestSystemHealthInfoModel:
             net_rx_kb_s=2048.0,
             net_tx_kb_s=1024.0,
         )
-        assert hasattr(info, 'disk_write_kb_s')
+        assert hasattr(info, "disk_write_kb_s")
         assert info.disk_write_kb_s == 512.0
 
     def test_system_health_info_has_net_rx_kb_s_field(self):
@@ -64,7 +64,7 @@ class TestSystemHealthInfoModel:
             net_rx_kb_s=2048.0,
             net_tx_kb_s=1024.0,
         )
-        assert hasattr(info, 'net_rx_kb_s')
+        assert hasattr(info, "net_rx_kb_s")
         assert info.net_rx_kb_s == 2048.0
 
     def test_system_health_info_has_net_tx_kb_s_field(self):
@@ -79,7 +79,7 @@ class TestSystemHealthInfoModel:
             net_rx_kb_s=2048.0,
             net_tx_kb_s=1024.0,
         )
-        assert hasattr(info, 'net_tx_kb_s')
+        assert hasattr(info, "net_tx_kb_s")
         assert info.net_tx_kb_s == 1024.0
 
     def test_system_health_info_all_io_fields_are_floats(self):
@@ -112,14 +112,14 @@ class TestSystemHealthInfoModel:
             net_tx_kb_s=1024.125,
         )
         json_dict = info.model_dump()
-        assert 'disk_read_kb_s' in json_dict
-        assert 'disk_write_kb_s' in json_dict
-        assert 'net_rx_kb_s' in json_dict
-        assert 'net_tx_kb_s' in json_dict
-        assert json_dict['disk_read_kb_s'] == 1024.5
-        assert json_dict['disk_write_kb_s'] == 512.25
-        assert json_dict['net_rx_kb_s'] == 2048.75
-        assert json_dict['net_tx_kb_s'] == 1024.125
+        assert "disk_read_kb_s" in json_dict
+        assert "disk_write_kb_s" in json_dict
+        assert "net_rx_kb_s" in json_dict
+        assert "net_tx_kb_s" in json_dict
+        assert json_dict["disk_read_kb_s"] == 1024.5
+        assert json_dict["disk_write_kb_s"] == 512.25
+        assert json_dict["net_rx_kb_s"] == 2048.75
+        assert json_dict["net_tx_kb_s"] == 1024.125
 
 
 class TestHealthServiceCpuIntervalAveraged:
@@ -129,7 +129,9 @@ class TestHealthServiceCpuIntervalAveraged:
         """AC1: CPU should use psutil.cpu_percent(interval=None) for interval-averaging."""
         # We need to verify that the service calls cpu_percent with interval=None
         # This test verifies the implementation uses interval=None, not interval=0.1
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             # Setup mock returns
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
@@ -142,10 +144,12 @@ class TestHealthServiceCpuIntervalAveraged:
             )
 
             # Import after patching
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
             # Create service and call _get_system_info
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -164,7 +168,9 @@ class TestHealthServiceDiskIO:
 
     def test_first_call_returns_zero_disk_io(self):
         """AC5: First call should return 0.0 for disk I/O metrics."""
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -175,9 +181,11 @@ class TestHealthServiceDiskIO:
                 bytes_recv=2000000, bytes_sent=1000000
             )
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -192,9 +200,11 @@ class TestHealthServiceDiskIO:
 
     def test_second_call_calculates_disk_io_rate(self):
         """AC2: Second call should calculate disk I/O in KB/s from counter diffs."""
-        DiskCounters = namedtuple('DiskCounters', ['read_bytes', 'write_bytes'])
+        DiskCounters = namedtuple("DiskCounters", ["read_bytes", "write_bytes"])
 
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -203,15 +213,21 @@ class TestHealthServiceDiskIO:
             )
 
             # First call: 1MB read, 500KB written
-            first_counters = DiskCounters(read_bytes=1024 * 1024, write_bytes=512 * 1024)
+            first_counters = DiskCounters(
+                read_bytes=1024 * 1024, write_bytes=512 * 1024
+            )
             # Second call: 2MB read (1MB more), 1MB written (512KB more), 1 second later
-            second_counters = DiskCounters(read_bytes=2 * 1024 * 1024, write_bytes=1024 * 1024)
+            second_counters = DiskCounters(
+                read_bytes=2 * 1024 * 1024, write_bytes=1024 * 1024
+            )
 
             mock_psutil.disk_io_counters.side_effect = [first_counters, second_counters]
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -235,9 +251,11 @@ class TestHealthServiceDiskIO:
 
     def test_disk_io_calculation_formula_accuracy(self):
         """AC2: Verify KB/s formula: (bytes_diff / 1024) / elapsed_seconds."""
-        DiskCounters = namedtuple('DiskCounters', ['read_bytes', 'write_bytes'])
+        DiskCounters = namedtuple("DiskCounters", ["read_bytes", "write_bytes"])
 
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -253,9 +271,11 @@ class TestHealthServiceDiskIO:
 
             mock_psutil.disk_io_counters.side_effect = [first_counters, second_counters]
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -283,7 +303,9 @@ class TestHealthServiceNetworkIO:
 
     def test_first_call_returns_zero_network_io(self):
         """AC5: First call should return 0.0 for network I/O metrics."""
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -294,9 +316,11 @@ class TestHealthServiceNetworkIO:
                 bytes_recv=2000000, bytes_sent=1000000
             )
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -311,9 +335,11 @@ class TestHealthServiceNetworkIO:
 
     def test_second_call_calculates_network_io_rate(self):
         """AC3: Second call should calculate network I/O in KB/s from counter diffs."""
-        NetCounters = namedtuple('NetCounters', ['bytes_recv', 'bytes_sent'])
+        NetCounters = namedtuple("NetCounters", ["bytes_recv", "bytes_sent"])
 
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -324,13 +350,17 @@ class TestHealthServiceNetworkIO:
             # First call: 1MB received, 500KB sent
             first_counters = NetCounters(bytes_recv=1024 * 1024, bytes_sent=512 * 1024)
             # Second call: 2MB received (1MB more), 1MB sent (512KB more), 1 second later
-            second_counters = NetCounters(bytes_recv=2 * 1024 * 1024, bytes_sent=1024 * 1024)
+            second_counters = NetCounters(
+                bytes_recv=2 * 1024 * 1024, bytes_sent=1024 * 1024
+            )
 
             mock_psutil.net_io_counters.side_effect = [first_counters, second_counters]
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -354,9 +384,11 @@ class TestHealthServiceNetworkIO:
 
     def test_network_io_calculation_formula_accuracy(self):
         """AC3: Verify KB/s formula: (bytes_diff / 1024) / elapsed_seconds."""
-        NetCounters = namedtuple('NetCounters', ['bytes_recv', 'bytes_sent'])
+        NetCounters = namedtuple("NetCounters", ["bytes_recv", "bytes_sent"])
 
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -374,9 +406,11 @@ class TestHealthServiceNetworkIO:
 
             mock_psutil.net_io_counters.side_effect = [first_counters, second_counters]
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -405,18 +439,28 @@ class TestDashboardRefreshInterval:
         from pathlib import Path
 
         # Find the dashboard.html template
-        template_path = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "server" / "web" / "templates" / "dashboard.html"
+        template_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "server"
+            / "web"
+            / "templates"
+            / "dashboard.html"
+        )
 
         if template_path.exists():
             content = template_path.read_text()
 
             # Verify the interval is 2000ms (2 seconds), not 5000ms
-            assert "setInterval(refreshAll, 2000)" in content, \
-                "Dashboard should use 2000ms (2 second) refresh interval"
+            assert (
+                "setInterval(refreshAll, 2000)" in content
+            ), "Dashboard should use 2000ms (2 second) refresh interval"
 
             # Verify 5000ms is NOT present (old interval)
-            assert "setInterval(refreshAll, 5000)" not in content, \
-                "Dashboard should NOT use 5000ms (5 second) refresh interval"
+            assert (
+                "setInterval(refreshAll, 5000)" not in content
+            ), "Dashboard should NOT use 5000ms (5 second) refresh interval"
         else:
             pytest.skip("Dashboard template not found at expected path")
 
@@ -428,16 +472,27 @@ class TestDashboardHealthTemplate:
         """AC2: Dashboard should display disk read/write speeds."""
         from pathlib import Path
 
-        template_path = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "server" / "web" / "templates" / "partials" / "dashboard_health.html"
+        template_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "server"
+            / "web"
+            / "templates"
+            / "partials"
+            / "dashboard_health.html"
+        )
 
         if template_path.exists():
             content = template_path.read_text()
 
             # Verify disk I/O metrics are displayed
-            assert "disk_read_kb_s" in content, \
-                "Dashboard should display disk read speed (disk_read_kb_s)"
-            assert "disk_write_kb_s" in content, \
-                "Dashboard should display disk write speed (disk_write_kb_s)"
+            assert (
+                "disk_read_kb_s" in content
+            ), "Dashboard should display disk read speed (disk_read_kb_s)"
+            assert (
+                "disk_write_kb_s" in content
+            ), "Dashboard should display disk write speed (disk_write_kb_s)"
         else:
             pytest.skip("Dashboard health template not found at expected path")
 
@@ -445,16 +500,27 @@ class TestDashboardHealthTemplate:
         """AC3: Dashboard should display network Rx/Tx speeds."""
         from pathlib import Path
 
-        template_path = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "server" / "web" / "templates" / "partials" / "dashboard_health.html"
+        template_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "server"
+            / "web"
+            / "templates"
+            / "partials"
+            / "dashboard_health.html"
+        )
 
         if template_path.exists():
             content = template_path.read_text()
 
             # Verify network I/O metrics are displayed
-            assert "net_rx_kb_s" in content, \
-                "Dashboard should display network receive speed (net_rx_kb_s)"
-            assert "net_tx_kb_s" in content, \
-                "Dashboard should display network transmit speed (net_tx_kb_s)"
+            assert (
+                "net_rx_kb_s" in content
+            ), "Dashboard should display network receive speed (net_rx_kb_s)"
+            assert (
+                "net_tx_kb_s" in content
+            ), "Dashboard should display network transmit speed (net_tx_kb_s)"
         else:
             pytest.skip("Dashboard health template not found at expected path")
 
@@ -462,18 +528,26 @@ class TestDashboardHealthTemplate:
         """Dashboard should have user-friendly labels for I/O metrics."""
         from pathlib import Path
 
-        template_path = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "server" / "web" / "templates" / "partials" / "dashboard_health.html"
+        template_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "server"
+            / "web"
+            / "templates"
+            / "partials"
+            / "dashboard_health.html"
+        )
 
         if template_path.exists():
             content = template_path.read_text()
 
             # Verify user-friendly labels exist
-            assert "Disk" in content, \
-                "Dashboard should have Disk label"
-            assert "Network" in content or "Net" in content, \
-                "Dashboard should have Network label"
-            assert "KB/s" in content, \
-                "Dashboard should display KB/s units"
+            assert "Disk" in content, "Dashboard should have Disk label"
+            assert (
+                "Network" in content or "Net" in content
+            ), "Dashboard should have Network label"
+            assert "KB/s" in content, "Dashboard should display KB/s units"
         else:
             pytest.skip("Dashboard health template not found at expected path")
 
@@ -483,7 +557,9 @@ class TestHealthServiceStatePersistence:
 
     def test_state_variables_persist_across_calls(self):
         """State variables should persist across _get_system_info calls."""
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -494,9 +570,11 @@ class TestHealthServiceStatePersistence:
                 bytes_recv=2000000, bytes_sent=1000000
             )
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = None
                 service._last_disk_time = None
@@ -515,7 +593,9 @@ class TestHealthServiceStatePersistence:
 
     def test_zero_elapsed_time_no_division_error(self):
         """Edge case: Handle zero elapsed time without division by zero."""
-        with patch('src.code_indexer.server.services.health_service.psutil') as mock_psutil:
+        with patch(
+            "src.code_indexer.server.services.health_service.psutil"
+        ) as mock_psutil:
             mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0)
             mock_psutil.cpu_percent.return_value = 25.0
             mock_psutil.disk_usage.return_value = MagicMock(free=100 * 1024**3)
@@ -526,9 +606,11 @@ class TestHealthServiceStatePersistence:
                 bytes_recv=2000000, bytes_sent=1000000
             )
 
-            from src.code_indexer.server.services.health_service import HealthCheckService
+            from src.code_indexer.server.services.health_service import (
+                HealthCheckService,
+            )
 
-            with patch.object(HealthCheckService, '__init__', lambda self: None):
+            with patch.object(HealthCheckService, "__init__", lambda self: None):
                 service = HealthCheckService()
                 service._last_disk_counters = MagicMock(
                     read_bytes=500000, write_bytes=250000

@@ -8,8 +8,6 @@ Story #702: Migrate Central JSON Files to SQLite
 import json
 from pathlib import Path
 
-import pytest
-
 
 class TestMigrationServiceInit:
     """Tests for MigrationService initialization."""
@@ -274,8 +272,8 @@ class TestMigrationIdempotency:
 
         # Run migration twice
         service = MigrationService(str(source_dir), str(db_path))
-        result1 = service.migrate_global_repos()
-        result2 = service.migrate_global_repos()
+        service.migrate_global_repos()
+        service.migrate_global_repos()
 
         # Second run should report as already migrated or update-in-place
         backend = GlobalReposSqliteBackend(str(db_path))
@@ -347,7 +345,9 @@ class TestBackgroundJobsMigration:
         """
         from code_indexer.server.storage.database_manager import DatabaseSchema
         from code_indexer.server.storage.migration_service import MigrationService
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
 
         # Setup source JSON
         source_dir = tmp_path / "source"
@@ -488,7 +488,9 @@ class TestBackgroundJobsMigration:
         """
         from code_indexer.server.storage.database_manager import DatabaseSchema
         from code_indexer.server.storage.migration_service import MigrationService
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
 
         # Setup source JSON
         source_dir = tmp_path / "source"
@@ -613,7 +615,9 @@ class TestBackgroundJobsMigration:
         """
         from code_indexer.server.storage.database_manager import DatabaseSchema
         from code_indexer.server.storage.migration_service import MigrationService
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
 
         # Setup source JSON with underscore-prefixed internal keys
         source_dir = tmp_path / "source"

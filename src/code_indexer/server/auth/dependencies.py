@@ -549,7 +549,9 @@ async def _hybrid_auth_impl(
             else:
                 # Create User object from session
                 if not user_manager:
-                    logger.error(f"Hybrid auth ({auth_type}): user_manager not initialized")
+                    logger.error(
+                        f"Hybrid auth ({auth_type}): user_manager not initialized"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail="User manager not initialized",

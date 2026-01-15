@@ -14,14 +14,10 @@ AC7: Timeout Handling (30s) with Recommendations
 AC8: SCIP Index Availability Handling
 """
 
-import asyncio
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 from code_indexer.server.multi.scip_models import (
     SCIPMultiRequest,
-    SCIPMultiResponse,
-    SCIPResult,
 )
 from code_indexer.scip.query.primitives import QueryResult
 
@@ -36,14 +32,11 @@ class TestSCIPMultiServiceDefinition:
 
         service = SCIPMultiService()
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo2"],
-            symbol="UserService"
+            repositories=["repo1", "repo2"], symbol="UserService"
         )
 
         # Mock the single-repo definition method
-        with patch.object(
-            service, "_find_definition_in_repo"
-        ) as mock_find:
+        with patch.object(service, "_find_definition_in_repo") as mock_find:
             # Repo1 has definition, repo2 doesn't
             mock_find.side_effect = [
                 [
@@ -53,10 +46,10 @@ class TestSCIPMultiServiceDefinition:
                         file_path="src/auth.py",
                         line=42,
                         column=4,
-                        kind="definition"
+                        kind="definition",
                     )
                 ],
-                []  # repo2 has no definition
+                [],  # repo2 has no definition
             ]
 
             response = await service.definition(request)
@@ -74,8 +67,7 @@ class TestSCIPMultiServiceDefinition:
 
         service = SCIPMultiService()
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo_no_scip"],
-            symbol="UserService"
+            repositories=["repo1", "repo_no_scip"], symbol="UserService"
         )
 
         with patch.object(service, "_find_definition_in_repo") as mock_find:
@@ -88,10 +80,10 @@ class TestSCIPMultiServiceDefinition:
                         file_path="src/auth.py",
                         line=42,
                         column=4,
-                        kind="definition"
+                        kind="definition",
                     )
                 ],
-                None  # Indicates no SCIP index
+                None,  # Indicates no SCIP index
             ]
 
             response = await service.definition(request)
@@ -111,8 +103,7 @@ class TestSCIPMultiServiceReferences:
 
         service = SCIPMultiService()
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo2"],
-            symbol="UserService"
+            repositories=["repo1", "repo2"], symbol="UserService"
         )
 
         with patch.object(service, "_find_references_in_repo") as mock_find:
@@ -125,7 +116,7 @@ class TestSCIPMultiServiceReferences:
                         file_path="tests/test_auth.py",
                         line=10,
                         column=0,
-                        kind="reference"
+                        kind="reference",
                     )
                 ],
                 [
@@ -135,9 +126,9 @@ class TestSCIPMultiServiceReferences:
                         file_path="lib/user.py",
                         line=5,
                         column=4,
-                        kind="reference"
+                        kind="reference",
                     )
-                ]
+                ],
             ]
 
             response = await service.references(request)
@@ -160,8 +151,7 @@ class TestSCIPMultiServiceDependencies:
 
         service = SCIPMultiService()
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo2"],
-            symbol="UserService"
+            repositories=["repo1", "repo2"], symbol="UserService"
         )
 
         with patch.object(service, "_get_dependencies_in_repo") as mock_deps:
@@ -174,7 +164,7 @@ class TestSCIPMultiServiceDependencies:
                         file_path="src/auth.py",
                         line=5,
                         column=0,
-                        kind="dependency"
+                        kind="dependency",
                     )
                 ],
                 [
@@ -184,9 +174,9 @@ class TestSCIPMultiServiceDependencies:
                         file_path="lib/user.py",
                         line=2,
                         column=0,
-                        kind="dependency"
+                        kind="dependency",
                     )
-                ]
+                ],
             ]
 
             response = await service.dependencies(request)
@@ -207,8 +197,7 @@ class TestSCIPMultiServiceDependents:
 
         service = SCIPMultiService()
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo2"],
-            symbol="UserService"
+            repositories=["repo1", "repo2"], symbol="UserService"
         )
 
         with patch.object(service, "_get_dependents_in_repo") as mock_deps:
@@ -221,7 +210,7 @@ class TestSCIPMultiServiceDependents:
                         file_path="src/api.py",
                         line=20,
                         column=4,
-                        kind="dependent"
+                        kind="dependent",
                     )
                 ],
                 [
@@ -231,9 +220,9 @@ class TestSCIPMultiServiceDependents:
                         file_path="controllers/user.py",
                         line=15,
                         column=0,
-                        kind="dependent"
+                        kind="dependent",
                     )
-                ]
+                ],
             ]
 
             response = await service.dependents(request)
@@ -257,7 +246,7 @@ class TestSCIPMultiServiceCallChain:
             repositories=["repo1", "repo2"],
             symbol="",  # Not used for callchain
             from_symbol="api_handler",
-            to_symbol="database_query"
+            to_symbol="database_query",
         )
 
         with patch.object(service, "_trace_callchain_in_repo") as mock_chain:
@@ -271,7 +260,7 @@ class TestSCIPMultiServiceCallChain:
                         line=0,
                         column=0,
                         kind="callchain",
-                        context="api_handler -> service -> database_query"
+                        context="api_handler -> service -> database_query",
                     )
                 ],
                 [
@@ -282,9 +271,9 @@ class TestSCIPMultiServiceCallChain:
                         line=0,
                         column=0,
                         kind="callchain",
-                        context="api_handler -> database_query"
+                        context="api_handler -> database_query",
                     )
-                ]
+                ],
             ]
 
             response = await service.callchain(request)
@@ -300,7 +289,9 @@ class TestSCIPMultiServiceCallChain:
             repo1_chain = response.results["repo1"][0].context
             repo2_chain = response.results["repo2"][0].context
             assert "service" in repo1_chain  # repo1 has intermediate symbol
-            assert "service" not in repo2_chain  # repo2 doesn't have intermediate symbol
+            assert (
+                "service" not in repo2_chain
+            )  # repo2 doesn't have intermediate symbol
 
             # Verify repository attribution is correct
             assert response.results["repo1"][0].repository == "repo1"
@@ -320,8 +311,7 @@ class TestSCIPMultiServiceTimeout:
         assert service.query_timeout_seconds == 1
 
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo2"],
-            symbol="UserService"
+            repositories=["repo1", "repo2"], symbol="UserService"
         )
 
         with patch.object(service, "_find_definition_in_repo") as mock_find:
@@ -333,7 +323,7 @@ class TestSCIPMultiServiceTimeout:
                     file_path="src/auth.py",
                     line=42,
                     column=4,
-                    kind="definition"
+                    kind="definition",
                 )
             ]
 
@@ -354,8 +344,7 @@ class TestSCIPMultiServiceResultAggregation:
 
         service = SCIPMultiService()
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo2", "repo3"],
-            symbol="UserService"
+            repositories=["repo1", "repo2", "repo3"], symbol="UserService"
         )
 
         with patch.object(service, "_find_definition_in_repo") as mock_find:
@@ -367,7 +356,7 @@ class TestSCIPMultiServiceResultAggregation:
                         file_path="src/auth.py",
                         line=42,
                         column=4,
-                        kind="definition"
+                        kind="definition",
                     )
                 ],
                 [],  # repo2 has no results
@@ -378,9 +367,9 @@ class TestSCIPMultiServiceResultAggregation:
                         file_path="lib/auth.py",
                         line=10,
                         column=0,
-                        kind="definition"
+                        kind="definition",
                     )
-                ]
+                ],
             ]
 
             response = await service.definition(request)
@@ -399,7 +388,9 @@ class TestSCIPMultiServiceResultAggregation:
 
             # Verify metadata
             assert response.metadata.repos_searched == 3
-            assert response.metadata.repos_with_results == 2  # repo1 and repo3 have results
+            assert (
+                response.metadata.repos_with_results == 2
+            )  # repo1 and repo3 have results
             assert response.metadata.total_results == 2
 
 
@@ -413,11 +404,11 @@ class TestSCIPMultiServicePartialFailure:
 
         service = SCIPMultiService()
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo_error", "repo3"],
-            symbol="UserService"
+            repositories=["repo1", "repo_error", "repo3"], symbol="UserService"
         )
 
         with patch.object(service, "_find_definition_in_repo") as mock_find:
+
             def find_with_error(repo_id, symbol):
                 if repo_id == "repo_error":
                     raise RuntimeError("Database connection failed")
@@ -428,7 +419,7 @@ class TestSCIPMultiServicePartialFailure:
                         file_path="src/auth.py",
                         line=42,
                         column=4,
-                        kind="definition"
+                        kind="definition",
                     )
                 ]
 

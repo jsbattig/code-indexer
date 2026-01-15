@@ -90,10 +90,14 @@ class TestAC3IndependentCachingPerField:
         match_text_retrieved = await cache.retrieve(match_text_handle, page=0)
 
         # Verify correct content was cached
-        assert snippet_content in snippet_retrieved.content or \
-            snippet_retrieved.content in snippet_content
-        assert match_text_content in match_text_retrieved.content or \
-            match_text_retrieved.content in match_text_content
+        assert (
+            snippet_content in snippet_retrieved.content
+            or snippet_retrieved.content in snippet_content
+        )
+        assert (
+            match_text_content in match_text_retrieved.content
+            or match_text_retrieved.content in match_text_content
+        )
 
     @pytest.mark.asyncio
     async def test_only_snippet_large(self, cache):

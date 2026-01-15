@@ -31,7 +31,9 @@ class MultiResultAggregator:
         self.limit = limit
         self.min_score = min_score
 
-    def aggregate(self, repo_results: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    def aggregate(
+        self, repo_results: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Aggregate results in per-repository mode with optional score filtering.
 

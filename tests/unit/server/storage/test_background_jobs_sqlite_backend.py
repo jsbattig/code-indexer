@@ -58,7 +58,10 @@ class TestBackgroundJobsSqliteBackend:
         result_data = {"files_indexed": 100, "time_seconds": 60}
         claude_actions = ["Installed dependencies", "Built project"]
         extended_error = {"code": "SCIP_FAILED", "project": "backend"}
-        language_status = {"python": {"status": "completed"}, "java": {"status": "failed"}}
+        language_status = {
+            "python": {"status": "completed"},
+            "java": {"status": "failed"},
+        }
 
         backend.save_job(
             job_id="job-full",
@@ -149,12 +152,20 @@ class TestBackgroundJobsSqliteBackend:
     def test_list_jobs_returns_all_records(self, backend) -> None:
         """When list_jobs() is called, it returns all jobs."""
         backend.save_job(
-            job_id="job-a", operation_type="add_golden_repo", status="pending",
-            created_at="2025-01-15T10:00:00+00:00", username="user1", progress=0,
+            job_id="job-a",
+            operation_type="add_golden_repo",
+            status="pending",
+            created_at="2025-01-15T10:00:00+00:00",
+            username="user1",
+            progress=0,
         )
         backend.save_job(
-            job_id="job-b", operation_type="refresh_repo", status="running",
-            created_at="2025-01-15T10:01:00+00:00", username="user2", progress=50,
+            job_id="job-b",
+            operation_type="refresh_repo",
+            status="running",
+            created_at="2025-01-15T10:01:00+00:00",
+            username="user2",
+            progress=50,
         )
 
         result = backend.list_jobs()
@@ -167,16 +178,28 @@ class TestBackgroundJobsSqliteBackend:
     def test_list_jobs_by_username(self, backend) -> None:
         """When list_jobs() is called with username filter, it returns only that user's jobs."""
         backend.save_job(
-            job_id="job-user1-a", operation_type="add_golden_repo", status="completed",
-            created_at="2025-01-15T10:00:00+00:00", username="user1", progress=100,
+            job_id="job-user1-a",
+            operation_type="add_golden_repo",
+            status="completed",
+            created_at="2025-01-15T10:00:00+00:00",
+            username="user1",
+            progress=100,
         )
         backend.save_job(
-            job_id="job-user1-b", operation_type="refresh_repo", status="running",
-            created_at="2025-01-15T10:01:00+00:00", username="user1", progress=50,
+            job_id="job-user1-b",
+            operation_type="refresh_repo",
+            status="running",
+            created_at="2025-01-15T10:01:00+00:00",
+            username="user1",
+            progress=50,
         )
         backend.save_job(
-            job_id="job-user2-a", operation_type="add_golden_repo", status="pending",
-            created_at="2025-01-15T10:02:00+00:00", username="user2", progress=0,
+            job_id="job-user2-a",
+            operation_type="add_golden_repo",
+            status="pending",
+            created_at="2025-01-15T10:02:00+00:00",
+            username="user2",
+            progress=0,
         )
 
         result = backend.list_jobs(username="user1")
@@ -187,12 +210,20 @@ class TestBackgroundJobsSqliteBackend:
     def test_list_jobs_by_status(self, backend) -> None:
         """When list_jobs() is called with status filter, it returns only jobs with that status."""
         backend.save_job(
-            job_id="job-pending", operation_type="add_golden_repo", status="pending",
-            created_at="2025-01-15T10:00:00+00:00", username="user1", progress=0,
+            job_id="job-pending",
+            operation_type="add_golden_repo",
+            status="pending",
+            created_at="2025-01-15T10:00:00+00:00",
+            username="user1",
+            progress=0,
         )
         backend.save_job(
-            job_id="job-running", operation_type="refresh_repo", status="running",
-            created_at="2025-01-15T10:01:00+00:00", username="user1", progress=50,
+            job_id="job-running",
+            operation_type="refresh_repo",
+            status="running",
+            created_at="2025-01-15T10:01:00+00:00",
+            username="user1",
+            progress=50,
         )
 
         result = backend.list_jobs(status="running")
@@ -204,8 +235,12 @@ class TestBackgroundJobsSqliteBackend:
         """When list_jobs() is called with limit and offset, it returns paginated results."""
         for i in range(5):
             backend.save_job(
-                job_id=f"job-{i}", operation_type="add_golden_repo", status="completed",
-                created_at=f"2025-01-15T10:0{i}:00+00:00", username="user1", progress=100,
+                job_id=f"job-{i}",
+                operation_type="add_golden_repo",
+                status="completed",
+                created_at=f"2025-01-15T10:0{i}:00+00:00",
+                username="user1",
+                progress=100,
             )
 
         page1 = backend.list_jobs(limit=2, offset=0)
@@ -219,8 +254,12 @@ class TestBackgroundJobsSqliteBackend:
     def test_delete_job_removes_record(self, backend) -> None:
         """When delete_job() is called, the record is removed."""
         backend.save_job(
-            job_id="job-del", operation_type="add_golden_repo", status="completed",
-            created_at="2025-01-15T10:00:00+00:00", username="user1", progress=100,
+            job_id="job-del",
+            operation_type="add_golden_repo",
+            status="completed",
+            created_at="2025-01-15T10:00:00+00:00",
+            username="user1",
+            progress=100,
         )
 
         assert backend.get_job("job-del") is not None
@@ -239,18 +278,30 @@ class TestBackgroundJobsSqliteBackend:
         recent_time = datetime.now(timezone.utc) - timedelta(hours=1)
 
         backend.save_job(
-            job_id="old-completed", operation_type="add_golden_repo", status="completed",
-            created_at=old_time.isoformat(), completed_at=old_time.isoformat(),
-            username="user1", progress=100,
+            job_id="old-completed",
+            operation_type="add_golden_repo",
+            status="completed",
+            created_at=old_time.isoformat(),
+            completed_at=old_time.isoformat(),
+            username="user1",
+            progress=100,
         )
         backend.save_job(
-            job_id="recent-completed", operation_type="add_golden_repo", status="completed",
-            created_at=recent_time.isoformat(), completed_at=recent_time.isoformat(),
-            username="user1", progress=100,
+            job_id="recent-completed",
+            operation_type="add_golden_repo",
+            status="completed",
+            created_at=recent_time.isoformat(),
+            completed_at=recent_time.isoformat(),
+            username="user1",
+            progress=100,
         )
         backend.save_job(
-            job_id="running", operation_type="add_golden_repo", status="running",
-            created_at=old_time.isoformat(), username="user1", progress=50,
+            job_id="running",
+            operation_type="add_golden_repo",
+            status="running",
+            created_at=old_time.isoformat(),
+            username="user1",
+            progress=50,
         )
 
         cleaned_count = backend.cleanup_old_jobs(max_age_hours=24)
@@ -263,16 +314,28 @@ class TestBackgroundJobsSqliteBackend:
     def test_count_jobs_by_status(self, backend) -> None:
         """When count_jobs_by_status() is called, it returns counts for each status."""
         backend.save_job(
-            job_id="job-pending", operation_type="add_golden_repo", status="pending",
-            created_at="2025-01-15T10:00:00+00:00", username="user1", progress=0,
+            job_id="job-pending",
+            operation_type="add_golden_repo",
+            status="pending",
+            created_at="2025-01-15T10:00:00+00:00",
+            username="user1",
+            progress=0,
         )
         backend.save_job(
-            job_id="job-running-1", operation_type="refresh_repo", status="running",
-            created_at="2025-01-15T10:01:00+00:00", username="user1", progress=50,
+            job_id="job-running-1",
+            operation_type="refresh_repo",
+            status="running",
+            created_at="2025-01-15T10:01:00+00:00",
+            username="user1",
+            progress=50,
         )
         backend.save_job(
-            job_id="job-running-2", operation_type="refresh_repo", status="running",
-            created_at="2025-01-15T10:02:00+00:00", username="user2", progress=30,
+            job_id="job-running-2",
+            operation_type="refresh_repo",
+            status="running",
+            created_at="2025-01-15T10:02:00+00:00",
+            username="user2",
+            progress=30,
         )
 
         counts = backend.count_jobs_by_status()
@@ -287,14 +350,23 @@ class TestBackgroundJobsSqliteBackend:
         old_time = datetime.now(timezone.utc) - timedelta(days=3)
 
         backend.save_job(
-            job_id="recent-completed", operation_type="add_golden_repo", status="completed",
-            created_at=recent_time.isoformat(), completed_at=recent_time.isoformat(),
-            username="user1", progress=100,
+            job_id="recent-completed",
+            operation_type="add_golden_repo",
+            status="completed",
+            created_at=recent_time.isoformat(),
+            completed_at=recent_time.isoformat(),
+            username="user1",
+            progress=100,
         )
         backend.save_job(
-            job_id="old-failed", operation_type="refresh_repo", status="failed",
-            created_at=old_time.isoformat(), completed_at=old_time.isoformat(),
-            error="Something went wrong", username="user1", progress=25,
+            job_id="old-failed",
+            operation_type="refresh_repo",
+            status="failed",
+            created_at=old_time.isoformat(),
+            completed_at=old_time.isoformat(),
+            error="Something went wrong",
+            username="user1",
+            progress=25,
         )
 
         stats_24h = backend.get_job_stats(time_filter="24h")
@@ -312,8 +384,12 @@ class TestBackgroundJobsSqliteBackendScipFields:
     def test_update_scip_resolution_status(self, backend) -> None:
         """When update_job() is called with language_resolution_status, it is updated correctly."""
         backend.save_job(
-            job_id="scip-job", operation_type="scip_generate", status="running",
-            created_at="2025-01-15T10:00:00+00:00", username="admin", progress=25,
+            job_id="scip-job",
+            operation_type="scip_generate",
+            status="running",
+            created_at="2025-01-15T10:00:00+00:00",
+            username="admin",
+            progress=25,
             language_resolution_status={"python": {"status": "pending"}},
         )
 
@@ -345,10 +421,16 @@ class TestBackgroundJobsSqliteBackendScipFields:
         }
 
         backend.save_job(
-            job_id="failed-scip", operation_type="scip_generate", status="failed",
-            created_at="2025-01-15T10:00:00+00:00", completed_at="2025-01-15T10:05:00+00:00",
-            error="SCIP indexer failed for java project", username="admin", progress=50,
-            extended_error=extended_error, failure_reason="Maven dependencies missing",
+            job_id="failed-scip",
+            operation_type="scip_generate",
+            status="failed",
+            created_at="2025-01-15T10:00:00+00:00",
+            completed_at="2025-01-15T10:05:00+00:00",
+            error="SCIP indexer failed for java project",
+            username="admin",
+            progress=50,
+            extended_error=extended_error,
+            failure_reason="Maven dependencies missing",
         )
 
         job = backend.get_job("failed-scip")

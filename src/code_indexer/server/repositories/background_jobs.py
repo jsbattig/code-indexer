@@ -718,8 +718,12 @@ class BackgroundJobManager:
                     self._sqlite_backend.update_job(
                         job_id=job_id,
                         status=job.status.value,
-                        started_at=job.started_at.isoformat() if job.started_at else None,
-                        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                        started_at=(
+                            job.started_at.isoformat() if job.started_at else None
+                        ),
+                        completed_at=(
+                            job.completed_at.isoformat() if job.completed_at else None
+                        ),
                         result=job.result,
                         error=job.error,
                         progress=job.progress,
@@ -737,8 +741,12 @@ class BackgroundJobManager:
                         operation_type=job.operation_type,
                         status=job.status.value,
                         created_at=job.created_at.isoformat(),
-                        started_at=job.started_at.isoformat() if job.started_at else None,
-                        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                        started_at=(
+                            job.started_at.isoformat() if job.started_at else None
+                        ),
+                        completed_at=(
+                            job.completed_at.isoformat() if job.completed_at else None
+                        ),
                         result=job.result,
                         error=job.error,
                         progress=job.progress,

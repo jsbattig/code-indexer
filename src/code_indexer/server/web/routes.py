@@ -2530,7 +2530,9 @@ def _get_all_jobs(
         ]
 
     # Sort by started_at (most recently started first), fall back to created_at
-    all_jobs.sort(key=lambda x: x.get("started_at") or x.get("created_at") or "", reverse=True)
+    all_jobs.sort(
+        key=lambda x: x.get("started_at") or x.get("created_at") or "", reverse=True
+    )
 
     # Pagination
     total_count = len(all_jobs)

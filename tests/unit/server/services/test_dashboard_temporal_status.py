@@ -39,7 +39,9 @@ class TestGetTemporalIndexStatus:
             ) as MockPath:
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = True
-                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
+                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = (
+                    mock_temporal_path
+                )
 
                 # Mock format detection at source module
                 with patch(
@@ -94,7 +96,9 @@ class TestGetTemporalIndexStatus:
             ) as MockPath:
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = True
-                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
+                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = (
+                    mock_temporal_path
+                )
 
                 # Mock format detection at source module
                 with patch(
@@ -149,7 +153,9 @@ class TestGetTemporalIndexStatus:
                 # Mock temporal collection path does not exist
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = False
-                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
+                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = (
+                    mock_temporal_path
+                )
 
                 # Act
                 result = service.get_temporal_index_status(username, repo_alias)
@@ -211,7 +217,9 @@ class TestGetTemporalIndexStatus:
             ) as MockPath:
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = False
-                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
+                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = (
+                    mock_temporal_path
+                )
 
                 # Act - Call with username parameter
                 result = service.get_temporal_index_status(

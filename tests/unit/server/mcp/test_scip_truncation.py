@@ -260,7 +260,9 @@ class TestApplyScipPayloadTruncation:
         assert "context_has_more" not in result[0]
 
     @pytest.mark.asyncio
-    async def test_cache_error_returns_unchanged_with_metadata(self, mock_payload_cache):
+    async def test_cache_error_returns_unchanged_with_metadata(
+        self, mock_payload_cache
+    ):
         """Test that cache errors leave context unchanged but add metadata."""
         from code_indexer.server.mcp.handlers import _apply_scip_payload_truncation
 
@@ -313,7 +315,9 @@ class TestScipDefinitionPayloadTruncation:
     """Tests for SCIP definition handler with payload truncation."""
 
     @pytest.mark.asyncio
-    async def test_scip_definition_applies_truncation(self, mock_user, mock_payload_cache):
+    async def test_scip_definition_applies_truncation(
+        self, mock_user, mock_payload_cache
+    ):
         """Test that scip_definition applies payload truncation to results."""
         from code_indexer.server.mcp.handlers import scip_definition
 
@@ -336,12 +340,17 @@ class TestScipDefinitionPayloadTruncation:
         # Set up store() mock for truncation (AsyncMock imported at line 12)
         mock_payload_cache.store = AsyncMock(return_value="uuid-def-123")
 
-        with patch(
-            "code_indexer.server.mcp.handlers.app_module.app.state"
-        ) as mock_state, patch(
-            "code_indexer.server.mcp.handlers._find_scip_files"
-        ) as mock_find_files, patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine", return_value=mock_engine
+        with (
+            patch(
+                "code_indexer.server.mcp.handlers.app_module.app.state"
+            ) as mock_state,
+            patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find_files,
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine",
+                return_value=mock_engine,
+            ),
         ):
             mock_state.payload_cache = mock_payload_cache
             mock_find_files.return_value = [Mock()]  # One mock SCIP file
@@ -365,7 +374,9 @@ class TestScipReferencesPayloadTruncation:
     """Tests for SCIP references handler with payload truncation."""
 
     @pytest.mark.asyncio
-    async def test_scip_references_applies_truncation(self, mock_user, mock_payload_cache):
+    async def test_scip_references_applies_truncation(
+        self, mock_user, mock_payload_cache
+    ):
         """Test that scip_references applies payload truncation to results."""
         from code_indexer.server.mcp.handlers import scip_references
 
@@ -388,12 +399,17 @@ class TestScipReferencesPayloadTruncation:
         # Set up store() mock for truncation (AsyncMock imported at line 12)
         mock_payload_cache.store = AsyncMock(return_value="uuid-ref-123")
 
-        with patch(
-            "code_indexer.server.mcp.handlers.app_module.app.state"
-        ) as mock_state, patch(
-            "code_indexer.server.mcp.handlers._find_scip_files"
-        ) as mock_find_files, patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine", return_value=mock_engine
+        with (
+            patch(
+                "code_indexer.server.mcp.handlers.app_module.app.state"
+            ) as mock_state,
+            patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find_files,
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine",
+                return_value=mock_engine,
+            ),
         ):
             mock_state.payload_cache = mock_payload_cache
             mock_find_files.return_value = [Mock()]
@@ -415,7 +431,9 @@ class TestScipDependenciesPayloadTruncation:
     """Tests for SCIP dependencies handler with payload truncation."""
 
     @pytest.mark.asyncio
-    async def test_scip_dependencies_applies_truncation(self, mock_user, mock_payload_cache):
+    async def test_scip_dependencies_applies_truncation(
+        self, mock_user, mock_payload_cache
+    ):
         """Test that scip_dependencies applies payload truncation to results."""
         from code_indexer.server.mcp.handlers import scip_dependencies
 
@@ -437,12 +455,17 @@ class TestScipDependenciesPayloadTruncation:
         # Set up store() mock for truncation (AsyncMock imported at line 12)
         mock_payload_cache.store = AsyncMock(return_value="uuid-dep-123")
 
-        with patch(
-            "code_indexer.server.mcp.handlers.app_module.app.state"
-        ) as mock_state, patch(
-            "code_indexer.server.mcp.handlers._find_scip_files"
-        ) as mock_find_files, patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine", return_value=mock_engine
+        with (
+            patch(
+                "code_indexer.server.mcp.handlers.app_module.app.state"
+            ) as mock_state,
+            patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find_files,
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine",
+                return_value=mock_engine,
+            ),
         ):
             mock_state.payload_cache = mock_payload_cache
             mock_find_files.return_value = [Mock()]
@@ -462,7 +485,9 @@ class TestScipDependentsPayloadTruncation:
     """Tests for SCIP dependents handler with payload truncation."""
 
     @pytest.mark.asyncio
-    async def test_scip_dependents_applies_truncation(self, mock_user, mock_payload_cache):
+    async def test_scip_dependents_applies_truncation(
+        self, mock_user, mock_payload_cache
+    ):
         """Test that scip_dependents applies payload truncation to results."""
         from code_indexer.server.mcp.handlers import scip_dependents
 
@@ -484,12 +509,17 @@ class TestScipDependentsPayloadTruncation:
         # Set up store() mock for truncation (AsyncMock imported at line 12)
         mock_payload_cache.store = AsyncMock(return_value="uuid-dpt-123")
 
-        with patch(
-            "code_indexer.server.mcp.handlers.app_module.app.state"
-        ) as mock_state, patch(
-            "code_indexer.server.mcp.handlers._find_scip_files"
-        ) as mock_find_files, patch(
-            "code_indexer.scip.query.primitives.SCIPQueryEngine", return_value=mock_engine
+        with (
+            patch(
+                "code_indexer.server.mcp.handlers.app_module.app.state"
+            ) as mock_state,
+            patch(
+                "code_indexer.server.mcp.handlers._find_scip_files"
+            ) as mock_find_files,
+            patch(
+                "code_indexer.scip.query.primitives.SCIPQueryEngine",
+                return_value=mock_engine,
+            ),
         ):
             mock_state.payload_cache = mock_payload_cache
             mock_find_files.return_value = [Mock()]

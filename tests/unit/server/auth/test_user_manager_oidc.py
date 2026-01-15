@@ -136,7 +136,9 @@ class TestUserManagerOIDCSQLite:
         schema.initialize_database()
         return str(db_path)
 
-    def test_get_user_by_email_sqlite_mode_returns_user(self, sqlite_db_path: str) -> None:
+    def test_get_user_by_email_sqlite_mode_returns_user(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a UserManager in SQLite mode with a user that has an email
         When get_user_by_email() is called
@@ -154,7 +156,9 @@ class TestUserManagerOIDCSQLite:
         assert user is not None
         assert user.username == "sqliteuser"
 
-    def test_get_user_by_email_sqlite_mode_case_insensitive(self, sqlite_db_path: str) -> None:
+    def test_get_user_by_email_sqlite_mode_case_insensitive(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a UserManager in SQLite mode with a user
         When get_user_by_email() is called with different case
@@ -172,7 +176,9 @@ class TestUserManagerOIDCSQLite:
         assert user is not None
         assert user.username == "caseuser"
 
-    def test_get_user_by_email_sqlite_mode_returns_none_when_not_found(self, sqlite_db_path: str) -> None:
+    def test_get_user_by_email_sqlite_mode_returns_none_when_not_found(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a UserManager in SQLite mode without a matching user
         When get_user_by_email() is called
@@ -189,7 +195,9 @@ class TestUserManagerOIDCSQLite:
 
         assert user is None
 
-    def test_set_oidc_identity_sqlite_mode_stores_identity(self, sqlite_db_path: str) -> None:
+    def test_set_oidc_identity_sqlite_mode_stores_identity(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a UserManager in SQLite mode with an existing user
         When set_oidc_identity() is called
@@ -217,7 +225,9 @@ class TestUserManagerOIDCSQLite:
         assert user_data["oidc_identity"] is not None
         assert user_data["oidc_identity"]["subject"] == "sqlite-oidc-123"
 
-    def test_set_oidc_identity_sqlite_mode_returns_false_for_nonexistent(self, sqlite_db_path: str) -> None:
+    def test_set_oidc_identity_sqlite_mode_returns_false_for_nonexistent(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a UserManager in SQLite mode without the specified user
         When set_oidc_identity() is called
@@ -230,7 +240,9 @@ class TestUserManagerOIDCSQLite:
 
         assert result is False
 
-    def test_set_oidc_identity_sqlite_mode_overwrites_existing(self, sqlite_db_path: str) -> None:
+    def test_set_oidc_identity_sqlite_mode_overwrites_existing(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a user with existing OIDC identity in SQLite mode
         When set_oidc_identity() is called with new identity
@@ -312,7 +324,9 @@ class TestUserManagerSQLiteMCPAndOIDC:
         assert len(creds) == 1
         assert creds[0]["credential_id"] == "cred-2"
 
-    def test_update_mcp_credential_last_used_sqlite_mode(self, sqlite_db_path: str) -> None:
+    def test_update_mcp_credential_last_used_sqlite_mode(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a UserManager in SQLite mode with a user with MCP credentials
         When update_mcp_credential_last_used() is called
@@ -389,10 +403,13 @@ class TestUserManagerSQLiteMCPAndOIDC:
 
         # Create user and set OIDC identity
         manager.create_user("oidcremoveuser", "SecurePass123!@#", UserRole.NORMAL_USER)
-        manager.set_oidc_identity("oidcremoveuser", {
-            "subject": "oidc-123",
-            "email": "oidc@example.com",
-        })
+        manager.set_oidc_identity(
+            "oidcremoveuser",
+            {
+                "subject": "oidc-123",
+                "email": "oidc@example.com",
+            },
+        )
 
         # Verify identity exists
         user_data = manager._sqlite_backend.get_user("oidcremoveuser")
@@ -438,7 +455,9 @@ class TestUserManagerSQLiteMCPAndOIDC:
         assert user_data["email"] == "jit@example.com"
         assert user_data["oidc_identity"]["subject"] == "oidc-jit-123"
 
-    def test_get_mcp_credentials_with_secrets_sqlite_mode(self, sqlite_db_path: str) -> None:
+    def test_get_mcp_credentials_with_secrets_sqlite_mode(
+        self, sqlite_db_path: str
+    ) -> None:
         """
         Given a UserManager in SQLite mode with a user with MCP credentials
         When get_mcp_credentials_with_secrets() is called
@@ -464,4 +483,6 @@ class TestUserManagerSQLiteMCPAndOIDC:
         assert len(creds) == 1
         assert creds[0]["credential_id"] == "secret-cred"
         assert creds[0]["client_id"] == "mcp_secret123"
-        assert creds[0]["client_secret_hash"] == "argon2$hash$goes$here"  # Hash should be included
+        assert (
+            creds[0]["client_secret_hash"] == "argon2$hash$goes$here"
+        )  # Hash should be included

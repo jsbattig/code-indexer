@@ -22,8 +22,7 @@ class TestSCIPMultiRequest:
         from code_indexer.server.multi.scip_models import SCIPMultiRequest
 
         request = SCIPMultiRequest(
-            repositories=["repo1", "repo2"],
-            symbol="UserService"
+            repositories=["repo1", "repo2"], symbol="UserService"
         )
 
         assert request.repositories == ["repo1", "repo2"]
@@ -39,7 +38,7 @@ class TestSCIPMultiRequest:
             repositories=["repo1"],
             symbol="",  # Not used for callchain
             from_symbol="api_handler",
-            to_symbol="database_query"
+            to_symbol="database_query",
         )
 
         assert request.repositories == ["repo1"]
@@ -51,10 +50,7 @@ class TestSCIPMultiRequest:
         from code_indexer.server.multi.scip_models import SCIPMultiRequest
 
         with pytest.raises(ValidationError):
-            SCIPMultiRequest(
-                repositories=[],
-                symbol="UserService"
-            )
+            SCIPMultiRequest(repositories=[], symbol="UserService")
 
     def test_missing_symbol_rejected(self):
         """Request without symbol is rejected."""
@@ -77,7 +73,7 @@ class TestSCIPResult:
             line=42,
             column=4,
             symbol="UserService",
-            kind="definition"
+            kind="definition",
         )
 
         assert result.repository == "repo1"
@@ -99,7 +95,7 @@ class TestSCIPResult:
             column=0,
             symbol="UserService",
             kind="reference",
-            context="    user = UserService()"
+            context="    user = UserService()",
         )
 
         assert result.kind == "reference"
@@ -115,7 +111,7 @@ class TestSCIPResult:
             line=5,
             column=0,
             symbol="DatabaseConnection",
-            kind="dependency"
+            kind="dependency",
         )
 
         assert result.kind == "dependency"
@@ -130,7 +126,7 @@ class TestSCIPResult:
             line=20,
             column=4,
             symbol="APIHandler",
-            kind="dependent"
+            kind="dependent",
         )
 
         assert result.kind == "dependent"
@@ -147,7 +143,7 @@ class TestSCIPMultiMetadata:
             total_results=25,
             repos_searched=3,
             repos_with_results=2,
-            execution_time_ms=450
+            execution_time_ms=450,
         )
 
         assert metadata.total_results == 25
@@ -163,7 +159,7 @@ class TestSCIPMultiMetadata:
             total_results=0,
             repos_searched=2,
             repos_with_results=0,
-            execution_time_ms=100
+            execution_time_ms=100,
         )
 
         assert metadata.total_results == 0
@@ -178,7 +174,7 @@ class TestSCIPMultiResponse:
         from code_indexer.server.multi.scip_models import (
             SCIPMultiResponse,
             SCIPResult,
-            SCIPMultiMetadata
+            SCIPMultiMetadata,
         )
 
         results = {
@@ -189,7 +185,7 @@ class TestSCIPMultiResponse:
                     line=42,
                     column=4,
                     symbol="UserService",
-                    kind="definition"
+                    kind="definition",
                 )
             ],
             "repo2": [
@@ -199,23 +195,19 @@ class TestSCIPMultiResponse:
                     line=10,
                     column=0,
                     symbol="UserService",
-                    kind="reference"
+                    kind="reference",
                 )
-            ]
+            ],
         }
 
         metadata = SCIPMultiMetadata(
             total_results=2,
             repos_searched=2,
             repos_with_results=2,
-            execution_time_ms=300
+            execution_time_ms=300,
         )
 
-        response = SCIPMultiResponse(
-            results=results,
-            metadata=metadata,
-            skipped={}
-        )
+        response = SCIPMultiResponse(results=results, metadata=metadata, skipped={})
 
         assert len(response.results) == 2
         assert "repo1" in response.results
@@ -228,7 +220,7 @@ class TestSCIPMultiResponse:
         from code_indexer.server.multi.scip_models import (
             SCIPMultiResponse,
             SCIPResult,
-            SCIPMultiMetadata
+            SCIPMultiMetadata,
         )
 
         results = {
@@ -239,7 +231,7 @@ class TestSCIPMultiResponse:
                     line=42,
                     column=4,
                     symbol="UserService",
-                    kind="definition"
+                    kind="definition",
                 )
             ]
         }
@@ -248,13 +240,13 @@ class TestSCIPMultiResponse:
             total_results=1,
             repos_searched=1,
             repos_with_results=1,
-            execution_time_ms=200
+            execution_time_ms=200,
         )
 
         response = SCIPMultiResponse(
             results=results,
             metadata=metadata,
-            skipped={"repo2": "No SCIP index available"}
+            skipped={"repo2": "No SCIP index available"},
         )
 
         assert len(response.results) == 1
@@ -265,21 +257,21 @@ class TestSCIPMultiResponse:
         """Valid response with errors from some repos."""
         from code_indexer.server.multi.scip_models import (
             SCIPMultiResponse,
-            SCIPMultiMetadata
+            SCIPMultiMetadata,
         )
 
         metadata = SCIPMultiMetadata(
             total_results=0,
             repos_searched=0,
             repos_with_results=0,
-            execution_time_ms=150
+            execution_time_ms=150,
         )
 
         response = SCIPMultiResponse(
             results={},
             metadata=metadata,
             skipped={},
-            errors={"repo1": "Database connection failed"}
+            errors={"repo1": "Database connection failed"},
         )
 
         assert len(response.results) == 0
@@ -290,21 +282,17 @@ class TestSCIPMultiResponse:
         """Valid empty response (no results, no errors)."""
         from code_indexer.server.multi.scip_models import (
             SCIPMultiResponse,
-            SCIPMultiMetadata
+            SCIPMultiMetadata,
         )
 
         metadata = SCIPMultiMetadata(
             total_results=0,
             repos_searched=1,
             repos_with_results=0,
-            execution_time_ms=50
+            execution_time_ms=50,
         )
 
-        response = SCIPMultiResponse(
-            results={},
-            metadata=metadata,
-            skipped={}
-        )
+        response = SCIPMultiResponse(results={}, metadata=metadata, skipped={})
 
         assert len(response.results) == 0
         assert len(response.skipped) == 0

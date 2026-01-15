@@ -6,8 +6,6 @@ Story #679: Add Payload Cache Settings to Web UI Config Screen
 Tests that _validate_config_section properly validates payload cache fields.
 """
 
-import pytest
-
 # Import the validation function
 from code_indexer.server.web.routes import _validate_config_section
 

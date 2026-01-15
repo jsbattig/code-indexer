@@ -8,10 +8,9 @@ incorrectly called on ISO datetime strings like '2025-12-09T18:42:39.792746+00:0
 
 import tempfile
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from pathlib import Path
 
-import pytest
 
 from src.code_indexer.server.repositories.background_jobs import (
     BackgroundJobManager,
@@ -33,6 +32,7 @@ class TestJobDatetimeSorting:
             self.manager.shutdown()
         import shutil
         import os
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -43,6 +43,7 @@ class TestJobDatetimeSorting:
         The bug was that int() was being called on ISO format datetime strings
         like '2025-12-09T18:42:39.792746+00:00', causing a ValueError.
         """
+
         def success_task():
             return {"status": "success"}
 
@@ -61,48 +62,50 @@ class TestJobDatetimeSorting:
         # This should NOT raise ValueError when sorting by completed_at
         # Previously this would crash with:
         # ValueError: invalid literal for int() with base 10: '2025-12-09T18:42:39.792746+00:00'
-        recent_jobs = self.manager.get_recent_jobs_with_filter(
-            time_filter="24h"
-        )
+        recent_jobs = self.manager.get_recent_jobs_with_filter(time_filter="24h")
 
         # Verify we got jobs back
-        assert len(recent_jobs) >= 3, f"Expected at least 3 jobs, got {len(recent_jobs)}"
+        assert (
+            len(recent_jobs) >= 3
+        ), f"Expected at least 3 jobs, got {len(recent_jobs)}"
 
         # Verify they are sorted by completion time (newest first)
         for i in range(len(recent_jobs) - 1):
             current_time = recent_jobs[i]["completed_at"]
             next_time = recent_jobs[i + 1]["completed_at"]
             # Both should be ISO format strings
-            assert isinstance(current_time, str), f"Expected string, got {type(current_time)}"
+            assert isinstance(
+                current_time, str
+            ), f"Expected string, got {type(current_time)}"
             assert isinstance(next_time, str), f"Expected string, got {type(next_time)}"
             # Current should be >= next (descending order)
             current_dt = datetime.fromisoformat(current_time)
             next_dt = datetime.fromisoformat(next_time)
-            assert current_dt >= next_dt, f"Jobs not sorted correctly: {current_time} < {next_time}"
+            assert (
+                current_dt >= next_dt
+            ), f"Jobs not sorted correctly: {current_time} < {next_time}"
 
     def test_get_recent_jobs_handles_none_completed_at(self):
         """Test that sorting handles jobs with None completed_at gracefully."""
+
         def success_task():
             return {"status": "success"}
 
         # Submit a job
-        job_id = self.manager.submit_job(
-            "test_op", success_task, submitter_username="testuser"
-        )
+        self.manager.submit_job("test_op", success_task, submitter_username="testuser")
 
         # Wait for completion
         time.sleep(0.2)
 
         # This should work without error
-        recent_jobs = self.manager.get_recent_jobs_with_filter(
-            time_filter="24h"
-        )
+        recent_jobs = self.manager.get_recent_jobs_with_filter(time_filter="24h")
 
         # Should have at least the one job we submitted
         assert len(recent_jobs) >= 1
 
     def test_get_recent_jobs_with_various_time_filters(self):
         """Test get_recent_jobs_with_filter with different time filters."""
+
         def success_task():
             return {"status": "success"}
 
@@ -121,13 +124,12 @@ class TestJobDatetimeSorting:
     def test_get_recent_jobs_empty_list_does_not_crash(self):
         """Test that an empty job list doesn't cause sorting issues."""
         # No jobs submitted - should return empty list without crashing
-        recent_jobs = self.manager.get_recent_jobs_with_filter(
-            time_filter="24h"
-        )
+        recent_jobs = self.manager.get_recent_jobs_with_filter(time_filter="24h")
         assert recent_jobs == []
 
     def test_datetime_sorting_with_timezone_aware_strings(self):
         """Test sorting handles timezone-aware ISO strings correctly."""
+
         def success_task():
             return {"status": "success"}
 
@@ -140,9 +142,7 @@ class TestJobDatetimeSorting:
 
         time.sleep(0.3)
 
-        recent_jobs = self.manager.get_recent_jobs_with_filter(
-            time_filter="24h"
-        )
+        recent_jobs = self.manager.get_recent_jobs_with_filter(time_filter="24h")
 
         # Verify all completed_at values are valid ISO format with timezone
         for job in recent_jobs:
@@ -151,4 +151,6 @@ class TestJobDatetimeSorting:
             # Should be parseable as ISO format
             dt = datetime.fromisoformat(completed_at)
             # Should be timezone aware
-            assert dt.tzinfo is not None, f"Expected timezone-aware datetime, got {completed_at}"
+            assert (
+                dt.tzinfo is not None
+            ), f"Expected timezone-aware datetime, got {completed_at}"

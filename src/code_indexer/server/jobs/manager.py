@@ -110,6 +110,7 @@ class SyncJobManager:
             from code_indexer.server.storage.sqlite_backends import (
                 SyncJobsSqliteBackend,
             )
+
             self._sqlite_backend = SyncJobsSqliteBackend(db_path)
 
         self._jobs: Dict[str, SyncJob] = {}
@@ -446,8 +447,14 @@ class SyncJobManager:
                     job_id=job_id,
                     username=username,
                     user_alias=user_alias,
-                    job_type=job_type.value if hasattr(job_type, "value") else str(job_type),
-                    status=initial_status.value if hasattr(initial_status, "value") else str(initial_status),
+                    job_type=(
+                        job_type.value if hasattr(job_type, "value") else str(job_type)
+                    ),
+                    status=(
+                        initial_status.value
+                        if hasattr(initial_status, "value")
+                        else str(initial_status)
+                    ),
                     repository_url=repository_url,
                 )
 
@@ -557,7 +564,11 @@ class SyncJobManager:
             if self._use_sqlite and self._sqlite_backend is not None:
                 self._sqlite_backend.update_job(
                     job_id=job_id,
-                    status=job.status.value if hasattr(job.status, "value") else str(job.status),
+                    status=(
+                        job.status.value
+                        if hasattr(job.status, "value")
+                        else str(job.status)
+                    ),
                     completed_at=completed_at.isoformat(),
                     progress=job.progress,
                     error_message=error_message,
@@ -619,7 +630,9 @@ class SyncJobManager:
                 self._sqlite_backend.update_job(
                     job_id=job_id,
                     status=JobStatus.CANCELLED.value,
-                    completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                    completed_at=(
+                        job.completed_at.isoformat() if job.completed_at else None
+                    ),
                 )
 
             # Persist changes (JSON file, no-op for SQLite)

@@ -152,7 +152,6 @@ class TestAC6CacheRetrievalForHybridFields:
     async def test_snippet_handle_pagination(self, cache):
         """Test that FTS snippet handle supports pagination."""
         from code_indexer.server.mcp.handlers import (
-            _apply_payload_truncation,
             _apply_fts_payload_truncation,
         )
 
@@ -186,7 +185,6 @@ class TestAC6CacheRetrievalForHybridFields:
     async def test_match_text_handle_pagination(self, cache):
         """Test that FTS match_text handle supports pagination."""
         from code_indexer.server.mcp.handlers import (
-            _apply_payload_truncation,
             _apply_fts_payload_truncation,
         )
 

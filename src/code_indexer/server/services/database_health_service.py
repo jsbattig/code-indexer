@@ -127,7 +127,9 @@ class DatabaseHealthService:
                 db_path = self.server_dir / "data" / file_name
             elif file_name == "payload_cache.db":
                 # Payload cache is in golden-repos cache directory
-                db_path = self.server_dir / "data" / "golden-repos" / ".cache" / file_name
+                db_path = (
+                    self.server_dir / "data" / "golden-repos" / ".cache" / file_name
+                )
             else:
                 # All other databases are in server root
                 db_path = self.server_dir / file_name

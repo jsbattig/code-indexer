@@ -6,7 +6,6 @@ These line limits work IN ADDITION to existing token limits.
 """
 
 import pytest
-from pathlib import Path
 
 from code_indexer.server.services.file_service import FileListingService
 from code_indexer.server.models.file_content_limits_config import (
@@ -24,9 +23,7 @@ def high_token_service(tmp_path):
     repo_path = tmp_path / "test_repo"
     repo_path.mkdir(parents=True)
 
-    config_manager = FileContentLimitsConfigManager(
-        db_path=str(tmp_path / "config.db")
-    )
+    config_manager = FileContentLimitsConfigManager(db_path=str(tmp_path / "config.db"))
     # 20000 tokens * 4 chars = 80000 chars max (max allowed by config)
     # This is enough for 500 lines * 10 chars = 5000 chars for short lines
     config_manager.update_config(

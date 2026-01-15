@@ -192,7 +192,7 @@ class TestTemporalCodeSnippetTruncation:
         from code_indexer.server.mcp.handlers import _apply_temporal_payload_truncation
 
         # Unicode content - emojis are 1+ chars but multiple bytes
-        unicode_snippet = "\U0001F600" * (PREVIEW_SIZE + 1000)
+        unicode_snippet = "\U0001f600" * (PREVIEW_SIZE + 1000)
 
         results = [{"code_snippet": unicode_snippet, "temporal_context": {}}]
 
@@ -207,7 +207,7 @@ class TestTemporalCodeSnippetTruncation:
 
         # Should truncate at char boundary, not byte boundary
         assert len(result["code_snippet_preview"]) == PREVIEW_SIZE
-        assert result["code_snippet_preview"] == "\U0001F600" * PREVIEW_SIZE
+        assert result["code_snippet_preview"] == "\U0001f600" * PREVIEW_SIZE
         assert result["code_snippet_total_size"] == PREVIEW_SIZE + 1000
 
     @pytest.mark.asyncio

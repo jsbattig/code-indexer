@@ -60,7 +60,9 @@ def gitlab_provider():
     )
 
 
-def create_mock_response(projects: list, total: Optional[int] = None, total_pages: int = 1):
+def create_mock_response(
+    projects: list, total: Optional[int] = None, total_pages: int = 1
+):
     """Create a mock HTTP response for GitLab API."""
     if total is None:
         total = len(projects)
@@ -80,12 +82,18 @@ class TestGitLabProviderSearchFilter:
         """Test that search matches repository name substring."""
         projects = [
             create_mock_gitlab_project("auth-service", "team/auth-service", "Auth"),
-            create_mock_gitlab_project("payment-service", "team/payment-service", "Pay"),
+            create_mock_gitlab_project(
+                "payment-service", "team/payment-service", "Pay"
+            ),
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="auth")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="auth"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "team/auth-service"
@@ -94,13 +102,19 @@ class TestGitLabProviderSearchFilter:
     async def test_search_by_description_matches(self, gitlab_provider):
         """Test that search matches repository description substring."""
         projects = [
-            create_mock_gitlab_project("gateway", "team/gateway", "API with authentication"),
+            create_mock_gitlab_project(
+                "gateway", "team/gateway", "API with authentication"
+            ),
             create_mock_gitlab_project("utils", "team/utils", "Utility functions"),
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="authentication")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="authentication"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "team/gateway"
@@ -113,24 +127,38 @@ class TestGitLabProviderSearchFilter:
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="myproject")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="myproject"
+            )
         assert len(result.repositories) == 1
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="important")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="important"
+            )
         assert len(result.repositories) == 1
 
     @pytest.mark.asyncio
     async def test_search_no_matches(self, gitlab_provider):
         """Test that search returns empty list when no matches."""
         projects = [
-            create_mock_gitlab_project("api-service", "team/api-service", "API backend"),
+            create_mock_gitlab_project(
+                "api-service", "team/api-service", "API backend"
+            ),
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="nonexistent")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="nonexistent"
+            )
 
         assert len(result.repositories) == 0
 
@@ -143,26 +171,40 @@ class TestGitLabProviderSearchFilter:
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search=""
+            )
         assert len(result.repositories) == 2
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search=None)
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search=None
+            )
         assert len(result.repositories) == 2
 
     @pytest.mark.asyncio
     async def test_search_special_characters_handled_safely(self, gitlab_provider):
         """Test that special characters in search are handled safely."""
         projects = [
-            create_mock_gitlab_project("test-project", "team/test-project", "Test (v1.0)"),
+            create_mock_gitlab_project(
+                "test-project", "team/test-project", "Test (v1.0)"
+            ),
         ]
         mock_response = create_mock_response(projects)
 
         special_searches = ["(v1.0)", "[test]", "test.*", "test/path"]
         for search_term in special_searches:
-            with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-                result = await gitlab_provider.discover_repositories(page=1, page_size=50, search=search_term)
+            with patch.object(
+                gitlab_provider, "_make_api_request", return_value=mock_response
+            ):
+                result = await gitlab_provider.discover_repositories(
+                    page=1, page_size=50, search=search_term
+                )
                 assert isinstance(result.repositories, list)
 
     @pytest.mark.asyncio
@@ -174,8 +216,12 @@ class TestGitLabProviderSearchFilter:
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="target")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="target"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "team/target"
@@ -189,12 +235,18 @@ class TestGitLabProviderSearchFilter:
 
         projects = [
             create_mock_gitlab_project("auth-service", "team/auth-service", "Indexed"),
-            create_mock_gitlab_project("auth-middleware", "team/auth-middleware", "Not indexed"),
+            create_mock_gitlab_project(
+                "auth-middleware", "team/auth-middleware", "Not indexed"
+            ),
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="auth")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="auth"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "team/auth-middleware"
@@ -204,20 +256,28 @@ class TestGitLabProviderSearchFilter:
         """Search by commit hash should find matching repos."""
         projects = [
             create_mock_gitlab_project(
-                "project-a", "team/project-a", "Desc A",
+                "project-a",
+                "team/project-a",
+                "Desc A",
                 last_commit_hash="abc1234def5678",
-                last_commit_author="John Doe"
+                last_commit_author="John Doe",
             ),
             create_mock_gitlab_project(
-                "project-b", "team/project-b", "Desc B",
+                "project-b",
+                "team/project-b",
+                "Desc B",
                 last_commit_hash="xyz9999fff1111",
-                last_commit_author="Jane Smith"
+                last_commit_author="Jane Smith",
             ),
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="abc1234")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="abc1234"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "team/project-a"
@@ -227,20 +287,28 @@ class TestGitLabProviderSearchFilter:
         """Search by committer name should find matching repos."""
         projects = [
             create_mock_gitlab_project(
-                "project-a", "team/project-a", "Desc A",
+                "project-a",
+                "team/project-a",
+                "Desc A",
                 last_commit_hash="abc1234def5678",
-                last_commit_author="John Doe"
+                last_commit_author="John Doe",
             ),
             create_mock_gitlab_project(
-                "project-b", "team/project-b", "Desc B",
+                "project-b",
+                "team/project-b",
+                "Desc B",
                 last_commit_hash="xyz9999fff1111",
-                last_commit_author="Jane Smith"
+                last_commit_author="Jane Smith",
             ),
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="jane")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="jane"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "team/project-b"
@@ -250,17 +318,23 @@ class TestGitLabProviderSearchFilter:
         """Search by committer should be case insensitive."""
         projects = [
             create_mock_gitlab_project(
-                "project-a", "team/project-a", "Desc A",
+                "project-a",
+                "team/project-a",
+                "Desc A",
                 last_commit_hash="abc1234def5678",
-                last_commit_author="John Doe"
+                last_commit_author="John Doe",
             ),
         ]
         mock_response = create_mock_response(projects)
 
         # Search with different case variations
         for search_term in ["john", "JOHN", "John", "doe", "DOE"]:
-            with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-                result = await gitlab_provider.discover_repositories(page=1, page_size=50, search=search_term)
+            with patch.object(
+                gitlab_provider, "_make_api_request", return_value=mock_response
+            ):
+                result = await gitlab_provider.discover_repositories(
+                    page=1, page_size=50, search=search_term
+                )
             assert len(result.repositories) == 1, f"Search '{search_term}' should match"
 
     @pytest.mark.asyncio
@@ -268,18 +342,26 @@ class TestGitLabProviderSearchFilter:
         """Search should handle repos with null commit info gracefully."""
         projects = [
             create_mock_gitlab_project(
-                "no-commit", "team/no-commit", "No commit info",
+                "no-commit",
+                "team/no-commit",
+                "No commit info",
             ),
             create_mock_gitlab_project(
-                "has-commit", "team/has-commit", "Has commit info",
+                "has-commit",
+                "team/has-commit",
+                "Has commit info",
                 last_commit_hash="abc1234",
-                last_commit_author="Author"
+                last_commit_author="Author",
             ),
         ]
         mock_response = create_mock_response(projects)
 
-        with patch.object(gitlab_provider, "_make_api_request", return_value=mock_response):
-            result = await gitlab_provider.discover_repositories(page=1, page_size=50, search="abc1234")
+        with patch.object(
+            gitlab_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await gitlab_provider.discover_repositories(
+                page=1, page_size=50, search="abc1234"
+            )
 
         # Should only find the one with commit info, not crash on null
         assert len(result.repositories) == 1
@@ -358,8 +440,12 @@ class TestGitHubProviderSearchFilter:
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="auth")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search="auth"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "owner/auth-lib"
@@ -368,13 +454,19 @@ class TestGitHubProviderSearchFilter:
     async def test_search_by_description_matches(self, github_provider):
         """Test that search matches repository description substring."""
         repos = [
-            create_mock_github_repo("gateway", "owner/gateway", "API with authentication"),
+            create_mock_github_repo(
+                "gateway", "owner/gateway", "API with authentication"
+            ),
             create_mock_github_repo("utils", "owner/utils", "Utility functions"),
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="authentication")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search="authentication"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "owner/gateway"
@@ -387,20 +479,30 @@ class TestGitHubProviderSearchFilter:
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="awesome")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search="awesome"
+            )
         assert len(result.repositories) == 1
 
     @pytest.mark.asyncio
     async def test_search_no_matches(self, github_provider):
         """Test that search returns empty list when no matches."""
         repos = [
-            create_mock_github_repo("my-service", "owner/my-service", "Service backend"),
+            create_mock_github_repo(
+                "my-service", "owner/my-service", "Service backend"
+            ),
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="nonexistent")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search="nonexistent"
+            )
 
         assert len(result.repositories) == 0
 
@@ -413,12 +515,20 @@ class TestGitHubProviderSearchFilter:
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search=""
+            )
         assert len(result.repositories) == 2
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search=None)
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search=None
+            )
         assert len(result.repositories) == 2
 
     @pytest.mark.asyncio
@@ -431,8 +541,12 @@ class TestGitHubProviderSearchFilter:
 
         special_searches = ["(v2.0)", "[test]", "test.*", "test/path"]
         for search_term in special_searches:
-            with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-                result = await github_provider.discover_repositories(page=1, page_size=50, search=search_term)
+            with patch.object(
+                github_provider, "_make_api_request", return_value=mock_response
+            ):
+                result = await github_provider.discover_repositories(
+                    page=1, page_size=50, search=search_term
+                )
                 assert isinstance(result.repositories, list)
 
     @pytest.mark.asyncio
@@ -440,20 +554,28 @@ class TestGitHubProviderSearchFilter:
         """Search by commit hash should find matching repos."""
         repos = [
             create_mock_github_repo(
-                "repo-a", "owner/repo-a", "Desc A",
+                "repo-a",
+                "owner/repo-a",
+                "Desc A",
                 last_commit_hash="abc1234def5678",
-                last_commit_author="John Doe"
+                last_commit_author="John Doe",
             ),
             create_mock_github_repo(
-                "repo-b", "owner/repo-b", "Desc B",
+                "repo-b",
+                "owner/repo-b",
+                "Desc B",
                 last_commit_hash="xyz9999fff1111",
-                last_commit_author="Jane Smith"
+                last_commit_author="Jane Smith",
             ),
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="abc1234")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search="abc1234"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "owner/repo-a"
@@ -463,20 +585,28 @@ class TestGitHubProviderSearchFilter:
         """Search by committer name should find matching repos."""
         repos = [
             create_mock_github_repo(
-                "repo-a", "owner/repo-a", "Desc A",
+                "repo-a",
+                "owner/repo-a",
+                "Desc A",
                 last_commit_hash="abc1234def5678",
-                last_commit_author="John Doe"
+                last_commit_author="John Doe",
             ),
             create_mock_github_repo(
-                "repo-b", "owner/repo-b", "Desc B",
+                "repo-b",
+                "owner/repo-b",
+                "Desc B",
                 last_commit_hash="xyz9999fff1111",
-                last_commit_author="Jane Smith"
+                last_commit_author="Jane Smith",
             ),
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="jane")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search="jane"
+            )
 
         assert len(result.repositories) == 1
         assert result.repositories[0].name == "owner/repo-b"
@@ -486,17 +616,23 @@ class TestGitHubProviderSearchFilter:
         """Search by committer should be case insensitive."""
         repos = [
             create_mock_github_repo(
-                "repo-a", "owner/repo-a", "Desc A",
+                "repo-a",
+                "owner/repo-a",
+                "Desc A",
                 last_commit_hash="abc1234def5678",
-                last_commit_author="John Doe"
+                last_commit_author="John Doe",
             ),
         ]
         mock_response = create_github_mock_response(repos)
 
         # Search with different case variations
         for search_term in ["john", "JOHN", "John", "doe", "DOE"]:
-            with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-                result = await github_provider.discover_repositories(page=1, page_size=50, search=search_term)
+            with patch.object(
+                github_provider, "_make_api_request", return_value=mock_response
+            ):
+                result = await github_provider.discover_repositories(
+                    page=1, page_size=50, search=search_term
+                )
             assert len(result.repositories) == 1, f"Search '{search_term}' should match"
 
     @pytest.mark.asyncio
@@ -504,18 +640,26 @@ class TestGitHubProviderSearchFilter:
         """Search should handle repos with null commit info gracefully."""
         repos = [
             create_mock_github_repo(
-                "no-commit", "owner/no-commit", "No commit info",
+                "no-commit",
+                "owner/no-commit",
+                "No commit info",
             ),
             create_mock_github_repo(
-                "has-commit", "owner/has-commit", "Has commit info",
+                "has-commit",
+                "owner/has-commit",
+                "Has commit info",
                 last_commit_hash="abc1234",
-                last_commit_author="Author"
+                last_commit_author="Author",
             ),
         ]
         mock_response = create_github_mock_response(repos)
 
-        with patch.object(github_provider, "_make_api_request", return_value=mock_response):
-            result = await github_provider.discover_repositories(page=1, page_size=50, search="abc1234")
+        with patch.object(
+            github_provider, "_make_api_request", return_value=mock_response
+        ):
+            result = await github_provider.discover_repositories(
+                page=1, page_size=50, search="abc1234"
+            )
 
         # Should only find the one with commit info, not crash on null
         assert len(result.repositories) == 1

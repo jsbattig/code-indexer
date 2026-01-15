@@ -8,7 +8,6 @@ and that they work correctly with ServerConfig serialization/deserialization.
 """
 
 import json
-import pytest
 
 from code_indexer.server.utils.config_manager import (
     CacheConfig,

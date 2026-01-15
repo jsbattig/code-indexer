@@ -7,7 +7,6 @@ Tests that PayloadCacheConfig can read from server config with env var overrides
 """
 
 import os
-import pytest
 from unittest.mock import patch
 
 from code_indexer.server.cache.payload_cache import PayloadCacheConfig

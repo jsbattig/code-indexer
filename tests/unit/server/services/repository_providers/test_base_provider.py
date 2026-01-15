@@ -8,7 +8,6 @@ repository providers (GitLab, GitHub) must implement.
 
 import pytest
 from abc import ABC
-from unittest.mock import AsyncMock
 
 
 class TestRepositoryProviderBase:
@@ -70,7 +69,6 @@ class TestRepositoryProviderBase:
         )
         from code_indexer.server.models.auto_discovery import (
             RepositoryDiscoveryResult,
-            DiscoveredRepository,
         )
 
         class ConcreteProvider(RepositoryProviderBase):

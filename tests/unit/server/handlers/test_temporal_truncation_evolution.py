@@ -325,9 +325,7 @@ class TestAC4MultipleEvolutionEntries:
         """Test that empty evolution array is handled correctly."""
         from code_indexer.server.mcp.handlers import _apply_temporal_payload_truncation
 
-        results = [
-            {"content": "main content", "temporal_context": {"evolution": []}}
-        ]
+        results = [{"content": "main content", "temporal_context": {"evolution": []}}]
 
         with patch(
             "code_indexer.server.mcp.handlers.app_module.app.state"

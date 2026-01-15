@@ -207,9 +207,7 @@ class TestGitDiffPagination:
         if "offset" in result:
             assert result["offset"] == 50
 
-    def test_git_diff_pagination_metadata(
-        self, git_repo_with_large_diff, git_service
-    ):
+    def test_git_diff_pagination_metadata(self, git_repo_with_large_diff, git_service):
         """git_diff should include pagination metadata when chunked."""
         result = git_service.git_diff(git_repo_with_large_diff, limit=100)
 
