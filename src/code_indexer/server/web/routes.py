@@ -2010,11 +2010,14 @@ async def golden_repo_details(
             )
 
         # Return repository details as JSON-like HTML response
+        # Get existing CSRF token from cookie or generate new one
+        csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+
         return templates.TemplateResponse(
             "partials/golden_repos_list.html",
             {
                 "request": request,
-                "csrf_token": generate_csrf_token(),
+                "csrf_token": csrf_token,
                 "repos": [repo.to_dict()],
             },
         )
@@ -2376,11 +2379,14 @@ async def repo_details(
         repo["username"] = username
 
         # Return repository details as HTML partial
+        # Get existing CSRF token from cookie or generate new one
+        csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+
         return templates.TemplateResponse(
             "partials/repos_list.html",
             {
                 "request": request,
-                "csrf_token": generate_csrf_token(),
+                "csrf_token": csrf_token,
                 "repos": [repo],
             },
         )
