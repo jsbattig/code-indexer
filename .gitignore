@@ -97,7 +97,7 @@ ollama-models/
 # scripts/ - NOW CONTAINS build_binary.py for MCPB releases
 code-index
 debug*.sh
-config/
+/config/
 PODMAN_SETUP.md
 code-indexing-structure.md
 
