@@ -2010,14 +2010,21 @@ async def golden_repo_details(
             )
 
         # Return repository details as JSON-like HTML response
-        return templates.TemplateResponse(
+        # Get existing CSRF token from cookie or generate new one
+        csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+
+        response = templates.TemplateResponse(
             "partials/golden_repos_list.html",
             {
                 "request": request,
-                "csrf_token": generate_csrf_token(),
+                "csrf_token": csrf_token,
                 "repos": [repo.to_dict()],
             },
         )
+
+        # Set CSRF cookie to ensure token is available for form submission
+        set_csrf_cookie(response, csrf_token)
+        return response
     except HTTPException:
         raise
     except Exception as e:
@@ -2376,14 +2383,21 @@ async def repo_details(
         repo["username"] = username
 
         # Return repository details as HTML partial
-        return templates.TemplateResponse(
+        # Get existing CSRF token from cookie or generate new one
+        csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+
+        response = templates.TemplateResponse(
             "partials/repos_list.html",
             {
                 "request": request,
-                "csrf_token": generate_csrf_token(),
+                "csrf_token": csrf_token,
                 "repos": [repo],
             },
         )
+
+        # Set CSRF cookie to ensure token is available for form submission
+        set_csrf_cookie(response, csrf_token)
+        return response
     except HTTPException:
         raise
     except Exception:
@@ -2530,7 +2544,9 @@ def _get_all_jobs(
         ]
 
     # Sort by started_at (most recently started first), fall back to created_at
-    all_jobs.sort(key=lambda x: x.get("started_at") or x.get("created_at") or "", reverse=True)
+    all_jobs.sort(
+        key=lambda x: x.get("started_at") or x.get("created_at") or "", reverse=True
+    )
 
     # Pagination
     total_count = len(all_jobs)
@@ -4376,10 +4392,14 @@ def _build_gitlab_repos_response(
     search_term: Optional[str] = None,
 ):
     """Build GitLab repos partial template response."""
-    return templates.TemplateResponse(
+    # Get existing CSRF token from cookie or generate new one
+    csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+
+    response = templates.TemplateResponse(
         "partials/gitlab_repos.html",
         {
             "request": request,
+            "csrf_token": csrf_token,
             "repositories": repositories or [],
             "total_count": total_count,
             "page": page,
@@ -4390,6 +4410,10 @@ def _build_gitlab_repos_response(
             "search_term": search_term or "",
         },
     )
+
+    # Set CSRF cookie to ensure token is available for form submission
+    set_csrf_cookie(response, csrf_token)
+    return response
 
 
 def _build_github_repos_response(
@@ -4404,10 +4428,14 @@ def _build_github_repos_response(
     search_term: Optional[str] = None,
 ):
     """Build GitHub repos partial template response."""
-    return templates.TemplateResponse(
+    # Get existing CSRF token from cookie or generate new one
+    csrf_token = get_csrf_token_from_cookie(request) or generate_csrf_token()
+
+    response = templates.TemplateResponse(
         "partials/github_repos.html",
         {
             "request": request,
+            "csrf_token": csrf_token,
             "repositories": repositories or [],
             "total_count": total_count,
             "page": page,
@@ -4418,6 +4446,10 @@ def _build_github_repos_response(
             "search_term": search_term or "",
         },
     )
+
+    # Set CSRF cookie to ensure token is available for form submission
+    set_csrf_cookie(response, csrf_token)
+    return response
 
 
 @web_router.get("/auto-discovery", response_class=HTMLResponse)
