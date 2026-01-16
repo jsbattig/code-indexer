@@ -74,12 +74,16 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
             # Returns: (commits_processed, files_processed, vectors_created)
             indexer._process_commits_parallel = Mock(return_value=(10, 15, 20))
 
-            # Mock commit history
-            with patch.object(indexer, "_get_commit_history") as mock_history:
+            # Mock commit history and _get_current_branch (to avoid git subprocess calls)
+            with (
+                patch.object(indexer, "_get_commit_history") as mock_history,
+                patch.object(indexer, "_get_current_branch") as mock_branch,
+            ):
                 mock_history.return_value = [
                     Mock(hash="commit1", timestamp=1000, message="Test commit 1"),
                     Mock(hash="commit2", timestamp=2000, message="Test commit 2"),
                 ]
+                mock_branch.return_value = "main"
 
                 # Call index_commits
                 indexer.index_commits(all_branches=False)
