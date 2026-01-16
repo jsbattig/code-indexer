@@ -6,8 +6,7 @@ Tests define the expected behavior for GitLab repository discovery.
 """
 
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 import httpx
 
 
@@ -408,10 +407,12 @@ class TestGitLabProviderSortingOrder:
             await provider.discover_repositories(page=1, page_size=50)
 
         # Verify sorting parameters are correct for last activity descending
-        assert captured_params.get("order_by") == "last_activity_at", \
-            f"Expected order_by='last_activity_at', got '{captured_params.get('order_by')}'"
-        assert captured_params.get("sort") == "desc", \
-            f"Expected sort='desc', got '{captured_params.get('sort')}'"
+        assert (
+            captured_params.get("order_by") == "last_activity_at"
+        ), f"Expected order_by='last_activity_at', got '{captured_params.get('order_by')}'"
+        assert (
+            captured_params.get("sort") == "desc"
+        ), f"Expected sort='desc', got '{captured_params.get('sort')}'"
 
 
 class TestGitLabProviderErrorHandling:
@@ -472,7 +473,10 @@ class TestGitLabProviderErrorHandling:
             with pytest.raises(GitLabProviderError) as exc_info:
                 await provider.discover_repositories(page=1, page_size=50)
 
-        assert "api" in str(exc_info.value).lower() or "error" in str(exc_info.value).lower()
+        assert (
+            "api" in str(exc_info.value).lower()
+            or "error" in str(exc_info.value).lower()
+        )
 
     @pytest.mark.asyncio
     async def test_handles_timeout(self):

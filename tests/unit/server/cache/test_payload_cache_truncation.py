@@ -88,4 +88,4 @@ class TestPayloadCacheTruncation:
         handle = result["cache_handle"]
         retrieved = await cache.retrieve(handle, page=0)
 
-        assert retrieved.content == large_content[:cache.config.max_fetch_size_chars]
+        assert retrieved.content == large_content[: cache.config.max_fetch_size_chars]

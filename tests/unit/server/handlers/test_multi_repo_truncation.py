@@ -153,7 +153,9 @@ class TestPerResultCacheHandleIndependence:
                 app_module.app.state.payload_cache = original
 
     @pytest.mark.asyncio
-    async def test_same_repo_multiple_results_get_independent_handles(self, cache_100_chars):
+    async def test_same_repo_multiple_results_get_independent_handles(
+        self, cache_100_chars
+    ):
         """Multiple results from SAME repo get independent cache handles."""
         from code_indexer.server.mcp.handlers import _apply_payload_truncation
         from code_indexer.server import app as app_module
@@ -207,7 +209,9 @@ class TestRepositoryAttributionPreservation:
     """AC6: Repository Attribution Preservation tests."""
 
     @pytest.mark.asyncio
-    async def test_all_metadata_fields_preserved_after_truncation(self, cache_100_chars):
+    async def test_all_metadata_fields_preserved_after_truncation(
+        self, cache_100_chars
+    ):
         """All metadata fields preserved after truncation (only content fields modified)."""
         from code_indexer.server.mcp.handlers import _apply_payload_truncation
         from code_indexer.server import app as app_module
@@ -343,7 +347,9 @@ class TestMixedResultsTruncation:
     """Tests for mixed truncated and non-truncated results from multiple repos."""
 
     @pytest.mark.asyncio
-    async def test_mixed_large_and_small_content_from_multiple_repos(self, cache_100_chars):
+    async def test_mixed_large_and_small_content_from_multiple_repos(
+        self, cache_100_chars
+    ):
         """Mix of large and small content from multiple repos handled correctly."""
         from code_indexer.server.mcp.handlers import _apply_payload_truncation
         from code_indexer.server import app as app_module

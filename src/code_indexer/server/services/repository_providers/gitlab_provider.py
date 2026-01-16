@@ -236,17 +236,13 @@ class GitLabProvider(RepositoryProviderBase):
             )
             response.raise_for_status()
         except httpx.TimeoutException as e:
-            raise GitLabProviderError(
-                f"GitLab API request timed out: {e}"
-            ) from e
+            raise GitLabProviderError(f"GitLab API request timed out: {e}") from e
         except httpx.HTTPStatusError as e:
             raise GitLabProviderError(
                 f"GitLab API error: {e.response.status_code}"
             ) from e
         except httpx.RequestError as e:
-            raise GitLabProviderError(
-                f"GitLab API request failed: {e}"
-            ) from e
+            raise GitLabProviderError(f"GitLab API request failed: {e}") from e
 
         # Parse response
         projects = response.json()
@@ -267,11 +263,18 @@ class GitLabProvider(RepositoryProviderBase):
         if search:
             search_lower = search.lower()
             repositories = [
-                repo for repo in repositories
+                repo
+                for repo in repositories
                 if search_lower in repo.name.lower()
                 or (repo.description and search_lower in repo.description.lower())
-                or (repo.last_commit_hash and search_lower in repo.last_commit_hash.lower())
-                or (repo.last_commit_author and search_lower in repo.last_commit_author.lower())
+                or (
+                    repo.last_commit_hash
+                    and search_lower in repo.last_commit_hash.lower()
+                )
+                or (
+                    repo.last_commit_author
+                    and search_lower in repo.last_commit_author.lower()
+                )
             ]
 
         return RepositoryDiscoveryResult(

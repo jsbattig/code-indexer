@@ -8,7 +8,7 @@ not just the truncation functions in isolation.
 """
 
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 
 class TestHybridModeHandlerTruncationLogic:

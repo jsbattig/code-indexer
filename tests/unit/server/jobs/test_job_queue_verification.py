@@ -36,12 +36,10 @@ class TestJobQueueConcurrency:
             job_ids.append(job_id)
 
         running_jobs = [
-            jid for jid in job_ids
-            if job_manager.get_job(jid)["status"] == "running"
+            jid for jid in job_ids if job_manager.get_job(jid)["status"] == "running"
         ]
         queued_jobs = [
-            jid for jid in job_ids
-            if job_manager.get_job(jid)["status"] == "queued"
+            jid for jid in job_ids if job_manager.get_job(jid)["status"] == "queued"
         ]
 
         assert len(running_jobs) == 2
@@ -60,12 +58,10 @@ class TestJobQueueConcurrency:
             job_ids.append(job_id)
 
         running_jobs = [
-            jid for jid in job_ids
-            if job_manager.get_job(jid)["status"] == "running"
+            jid for jid in job_ids if job_manager.get_job(jid)["status"] == "running"
         ]
         queued_jobs = [
-            jid for jid in job_ids
-            if job_manager.get_job(jid)["status"] == "queued"
+            jid for jid in job_ids if job_manager.get_job(jid)["status"] == "queued"
         ]
 
         assert len(running_jobs) == 1
@@ -222,7 +218,7 @@ class TestJobQueueStatusAPI:
         )
 
         # Create 3 jobs - 1 runs, 2 queued
-        job1 = manager.create_job(
+        manager.create_job(
             username="user1",
             user_alias="User 1",
             job_type=JobType.REPOSITORY_SYNC,

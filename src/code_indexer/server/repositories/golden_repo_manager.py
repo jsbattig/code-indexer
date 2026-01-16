@@ -1741,9 +1741,9 @@ class GoldenRepoManager:
             raise GoldenRepoError(f"Golden repository '{alias}' not found")
 
         branch_service = GoldenRepoBranchService(self)
-        branches: List[
-            "GoldenRepoBranchInfo"
-        ] = await branch_service.get_golden_repo_branches(alias)
+        branches: List["GoldenRepoBranchInfo"] = (
+            await branch_service.get_golden_repo_branches(alias)
+        )
         return branches
 
     def add_index_to_golden_repo(

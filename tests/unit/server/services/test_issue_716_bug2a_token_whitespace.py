@@ -7,8 +7,6 @@ The stripping should happen at the routes layer (save_api_key function).
 Tests are written FIRST following TDD methodology.
 """
 
-import pytest
-
 
 class TestTokenWhitespaceStripping:
     """Tests for Bug 2a: Whitespace should be stripped before token validation."""

@@ -106,9 +106,7 @@ class TestFileContentPagination:
             metadata["has_more"] is True
         ), "has_more should be True when more content exists"
         # Story #686: next_offset should be set for pagination
-        assert (
-            metadata["next_offset"] == 501
-        ), "next_offset should be 501 for next page"
+        assert metadata["next_offset"] == 501, "next_offset should be 501 for next page"
 
     # -------------------------------------------------------------------------
     # AC2: First Page (User Limit Respected Under MAX_ALLOWED_LIMIT - Story #686)
@@ -184,9 +182,7 @@ class TestFileContentPagination:
         assert (
             metadata["requires_pagination"] is True
         ), "requires_pagination should be True"
-        assert (
-            metadata["has_more"] is True
-        ), "Should have more lines after 4000"
+        assert metadata["has_more"] is True, "Should have more lines after 4000"
         # Story #686: next_offset should be set
         assert metadata["next_offset"] == 4001, "next_offset should be 4001"
 

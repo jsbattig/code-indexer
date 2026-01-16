@@ -1354,9 +1354,11 @@ class BackgroundJobsSqliteBackend:
                     json.dumps(claude_actions) if claude_actions else None,
                     failure_reason,
                     json.dumps(extended_error) if extended_error else None,
-                    json.dumps(language_resolution_status)
-                    if language_resolution_status
-                    else None,
+                    (
+                        json.dumps(language_resolution_status)
+                        if language_resolution_status
+                        else None
+                    ),
                 ),
             )
             return None

@@ -6,8 +6,6 @@ Story #679: Add Payload Cache Settings to Web UI Config Screen
 Tests that ConfigService properly exposes and updates payload cache settings.
 """
 
-import pytest
-
 from code_indexer.server.services.config_service import ConfigService
 
 

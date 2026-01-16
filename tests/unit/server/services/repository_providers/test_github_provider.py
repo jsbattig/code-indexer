@@ -267,7 +267,9 @@ class TestGitHubProviderLinkHeaderParsing:
         )
 
         # Only prev, no last - means we're on the last page
-        link_header = '<https://api.github.com/user/repos?page=1&per_page=30>; rel="prev"'
+        link_header = (
+            '<https://api.github.com/user/repos?page=1&per_page=30>; rel="prev"'
+        )
 
         total_pages = provider._parse_link_header_for_last_page(link_header)
         assert total_pages == 1
@@ -505,10 +507,12 @@ class TestGitHubProviderSortingOrder:
             await provider.discover_repositories(page=1, page_size=50)
 
         # Verify sorting parameters are correct for last push descending
-        assert captured_params.get("sort") == "pushed", \
-            f"Expected sort='pushed', got '{captured_params.get('sort')}'"
-        assert captured_params.get("direction") == "desc", \
-            f"Expected direction='desc', got '{captured_params.get('direction')}'"
+        assert (
+            captured_params.get("sort") == "pushed"
+        ), f"Expected sort='pushed', got '{captured_params.get('sort')}'"
+        assert (
+            captured_params.get("direction") == "desc"
+        ), f"Expected direction='desc', got '{captured_params.get('direction')}'"
 
 
 class TestGitHubProviderErrorHandling:
@@ -569,7 +573,10 @@ class TestGitHubProviderErrorHandling:
             with pytest.raises(GitHubProviderError) as exc_info:
                 await provider.discover_repositories(page=1, page_size=50)
 
-        assert "api" in str(exc_info.value).lower() or "error" in str(exc_info.value).lower()
+        assert (
+            "api" in str(exc_info.value).lower()
+            or "error" in str(exc_info.value).lower()
+        )
 
     @pytest.mark.asyncio
     async def test_handles_timeout(self):
@@ -630,7 +637,7 @@ class TestGitHubProviderErrorHandling:
         mock_response.status_code = 403
         mock_response.headers = {
             "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Reset": "1704067200"
+            "X-RateLimit-Reset": "1704067200",
         }
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "rate limit exceeded", request=MagicMock(), response=mock_response
@@ -641,4 +648,7 @@ class TestGitHubProviderErrorHandling:
                 await provider.discover_repositories(page=1, page_size=50)
 
         # Should include rate limit info in error
-        assert "rate limit" in str(exc_info.value).lower() or "api" in str(exc_info.value).lower()
+        assert (
+            "rate limit" in str(exc_info.value).lower()
+            or "api" in str(exc_info.value).lower()
+        )

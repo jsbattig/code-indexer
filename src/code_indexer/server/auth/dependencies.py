@@ -499,3 +499,152 @@ async def get_current_user_for_mcp(request: Request) -> User:
             detail="Authentication required",
             headers={"WWW-Authenticate": _build_www_authenticate_header()},
         )
+
+
+async def _hybrid_auth_impl(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials],
+    require_admin: bool = False,
+) -> User:
+    """
+    Internal implementation for hybrid authentication.
+
+    Args:
+        request: FastAPI Request object
+        credentials: Optional bearer token credentials
+        require_admin: If True, require admin role
+
+    Returns:
+        Authenticated User object
+
+    Raises:
+        HTTPException: If authentication fails
+    """
+    from code_indexer.server.web.auth import get_session_manager, SESSION_COOKIE_NAME
+    import logging
+
+    logger = logging.getLogger(__name__)
+    auth_type = "admin" if require_admin else "user"
+
+    # Try session-based auth first (for web UI)
+    session_manager = get_session_manager()
+    session_cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
+
+    logger.info(
+        f"Hybrid auth ({auth_type}): session_cookie={'present' if session_cookie_value else 'absent'}"
+    )
+
+    if session_cookie_value:
+        session = session_manager.get_session(request)
+        logger.info(
+            f"Hybrid auth ({auth_type}): session={'valid' if session else 'invalid'}, "
+            f"username={session.username if session else None}, "
+            f"role={session.role if session else None}"
+        )
+
+        # Check admin requirement for session auth
+        if session:
+            if require_admin and session.role != "admin":
+                logger.debug(f"Hybrid auth ({auth_type}): Session valid but not admin")
+            else:
+                # Create User object from session
+                if not user_manager:
+                    logger.error(
+                        f"Hybrid auth ({auth_type}): user_manager not initialized"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="User manager not initialized",
+                    )
+                user = user_manager.get_user(session.username)
+                logger.debug(
+                    f"Hybrid auth ({auth_type}): user lookup for {session.username}: {user is not None}"
+                )
+                if user:
+                    logger.info(
+                        f"Hybrid auth ({auth_type}): Session auth SUCCESS for {session.username}"
+                    )
+                    return user
+                # Session is valid but user not found - this shouldn't happen
+                logger.error(
+                    f"Hybrid auth ({auth_type}): User {session.username} not found in database"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"User '{session.username}' not found in user database",
+                )
+        else:
+            logger.debug(f"Hybrid auth ({auth_type}): Session invalid")
+
+    # Fall back to token-based auth only if no session cookie exists
+    if not session_cookie_value and credentials:
+        try:
+            current_user = get_current_user(request, credentials)
+
+            # Check admin requirement for token auth
+            if require_admin and not current_user.has_permission("manage_users"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin access required",
+                )
+
+            logger.info(
+                f"Hybrid auth ({auth_type}): Token auth SUCCESS for {current_user.username}"
+            )
+            return current_user
+        except HTTPException:
+            raise
+
+    # No valid authentication found
+    logger.warning(f"Hybrid auth ({auth_type}): No valid authentication found")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": _build_www_authenticate_header()},
+    )
+
+
+async def get_current_user_hybrid(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> User:
+    """
+    Get current user supporting both session-based and token-based authentication.
+
+    This function tries session-based authentication first (for web UI),
+    then falls back to token-based authentication (for API clients).
+
+    Args:
+        request: FastAPI Request object
+        credentials: Optional bearer token credentials
+
+    Returns:
+        Authenticated User object
+
+    Raises:
+        HTTPException: If authentication fails
+    """
+    return await _hybrid_auth_impl(request, credentials, require_admin=False)
+
+
+async def get_current_admin_user_hybrid(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> User:
+    """
+    Get current admin user supporting both session-based and token-based authentication.
+
+    This dependency tries session-based auth first (for web UI), then falls back to
+    token-based auth (for API clients).
+
+    Args:
+        request: FastAPI request object
+        credentials: Optional bearer token credentials
+
+    Returns:
+        User with admin role
+
+    Raises:
+        HTTPException: If not authenticated or not admin
+    """
+    return await _hybrid_auth_impl(request, credentials, require_admin=True)

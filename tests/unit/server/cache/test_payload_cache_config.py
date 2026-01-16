@@ -7,7 +7,6 @@ These tests follow TDD methodology - written BEFORE implementation.
 """
 
 import os
-import pytest
 from unittest.mock import patch
 
 

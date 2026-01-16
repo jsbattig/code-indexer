@@ -59,10 +59,14 @@ class TestGetTemporalIndexStatusGlobalRepos:
 
                 # Path(expected_index_path) / ".code-indexer" / "index"
                 mock_code_indexer_path = MagicMock()
-                mock_code_indexer_path.__truediv__ = MagicMock(return_value=mock_index_dir)
+                mock_code_indexer_path.__truediv__ = MagicMock(
+                    return_value=mock_index_dir
+                )
 
                 mock_main_path = MagicMock()
-                mock_main_path.__truediv__ = MagicMock(return_value=mock_code_indexer_path)
+                mock_main_path.__truediv__ = MagicMock(
+                    return_value=mock_code_indexer_path
+                )
                 MockPath.return_value = mock_main_path
 
                 # Act
@@ -70,7 +74,9 @@ class TestGetTemporalIndexStatusGlobalRepos:
 
                 # Assert - GlobalRegistry was used to look up the repo
                 MockRegistry.assert_called_once()
-                mock_registry_instance.get_global_repo.assert_called_once_with(repo_alias)
+                mock_registry_instance.get_global_repo.assert_called_once_with(
+                    repo_alias
+                )
 
                 # Assert - Result is valid (no temporal index in this case)
                 assert result["format"] == "none"
@@ -131,10 +137,14 @@ class TestGetTemporalIndexStatusGlobalRepos:
                 mock_index_dir.__truediv__ = MagicMock(return_value=mock_temporal_path)
 
                 mock_code_indexer_path = MagicMock()
-                mock_code_indexer_path.__truediv__ = MagicMock(return_value=mock_index_dir)
+                mock_code_indexer_path.__truediv__ = MagicMock(
+                    return_value=mock_index_dir
+                )
 
                 mock_main_path = MagicMock()
-                mock_main_path.__truediv__ = MagicMock(return_value=mock_code_indexer_path)
+                mock_main_path.__truediv__ = MagicMock(
+                    return_value=mock_code_indexer_path
+                )
                 MockPath.return_value = mock_main_path
 
                 # Mock format detection
@@ -148,7 +158,9 @@ class TestGetTemporalIndexStatusGlobalRepos:
                         "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
                     ) as MockVectorStore:
                         mock_store_instance = MockVectorStore.return_value
-                        mock_store_instance.get_indexed_file_count_fast.return_value = 200
+                        mock_store_instance.get_indexed_file_count_fast.return_value = (
+                            200
+                        )
 
                         # Act
                         result = service.get_temporal_index_status(username, repo_alias)
@@ -157,7 +169,10 @@ class TestGetTemporalIndexStatusGlobalRepos:
                         assert result["format"] == "v2"
                         assert result["file_count"] == 200
                         assert result["needs_reindex"] is False
-                        assert "active" in result["message"].lower() or "v2" in result["message"].lower()
+                        assert (
+                            "active" in result["message"].lower()
+                            or "v2" in result["message"].lower()
+                        )
 
     def test_activated_repo_still_uses_activated_manager(self):
         """Test that non-global repos still use activated_manager (regression test).
@@ -188,13 +203,17 @@ class TestGetTemporalIndexStatusGlobalRepos:
             ) as MockPath:
                 mock_temporal_path = MagicMock(spec=Path)
                 mock_temporal_path.exists.return_value = False
-                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = mock_temporal_path
+                MockPath.return_value.__truediv__.return_value.__truediv__.return_value = (
+                    mock_temporal_path
+                )
 
                 # Act
                 result = service.get_temporal_index_status(username, repo_alias)
 
                 # Assert - activated_manager was used (NOT GlobalRegistry)
-                mock_manager.get_repository.assert_called_once_with(username, repo_alias)
+                mock_manager.get_repository.assert_called_once_with(
+                    username, repo_alias
+                )
                 assert result["format"] == "none"
 
     def test_global_repo_golden_repos_dir_from_environment(self):
@@ -205,9 +224,7 @@ class TestGetTemporalIndexStatusGlobalRepos:
         repo_alias = "test-repo-global"
         custom_server_dir = "/custom/cidx-server"
 
-        with patch.dict(
-            "os.environ", {"CIDX_SERVER_DATA_DIR": custom_server_dir}
-        ):
+        with patch.dict("os.environ", {"CIDX_SERVER_DATA_DIR": custom_server_dir}):
             # Mock GlobalRegistry at source module (lazy import in function)
             with patch(
                 "code_indexer.global_repos.global_registry.GlobalRegistry"

@@ -525,7 +525,9 @@ class TestUsersSqliteBackendOIDCMethods:
         assert result is not None
         assert result["username"] == "caseuser"
 
-    def test_get_user_by_email_returns_none_when_not_found(self, tmp_path: Path) -> None:
+    def test_get_user_by_email_returns_none_when_not_found(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a database without a user with the specified email
         When get_user_by_email() is called
@@ -577,7 +579,9 @@ class TestUsersSqliteBackendOIDCMethods:
         assert result is not None
         assert result["username"] == "trimuser"
 
-    def test_get_user_by_email_includes_api_keys_and_mcp_credentials(self, tmp_path: Path) -> None:
+    def test_get_user_by_email_includes_api_keys_and_mcp_credentials(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a user with api_keys and mcp_credentials
         When get_user_by_email() is called
@@ -659,7 +663,9 @@ class TestUsersSqliteBackendOIDCMethods:
         assert user["oidc_identity"]["subject"] == "oidc-12345"
         assert user["oidc_identity"]["email"] == "oidc@example.com"
 
-    def test_set_oidc_identity_returns_false_for_nonexistent_user(self, tmp_path: Path) -> None:
+    def test_set_oidc_identity_returns_false_for_nonexistent_user(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a database without the specified user
         When set_oidc_identity() is called
@@ -679,7 +685,9 @@ class TestUsersSqliteBackendOIDCMethods:
 
         assert result is False
 
-    def test_set_oidc_identity_overwrites_existing_identity(self, tmp_path: Path) -> None:
+    def test_set_oidc_identity_overwrites_existing_identity(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a user with existing oidc_identity
         When set_oidc_identity() is called with new identity
@@ -731,7 +739,9 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
         schema.initialize_database()
 
         backend = UsersSqliteBackend(str(db_path))
-        backend.create_user(username="mcpuser", password_hash="hash", role="normal_user")
+        backend.create_user(
+            username="mcpuser", password_hash="hash", role="normal_user"
+        )
         backend.add_mcp_credential(
             username="mcpuser",
             credential_id="cred-to-delete",
@@ -760,7 +770,9 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
         assert len(user["mcp_credentials"]) == 1
         assert user["mcp_credentials"][0]["credential_id"] == "cred-to-keep"
 
-    def test_delete_mcp_credential_returns_false_for_nonexistent(self, tmp_path: Path) -> None:
+    def test_delete_mcp_credential_returns_false_for_nonexistent(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a user without the specified credential
         When delete_mcp_credential() is called
@@ -780,7 +792,9 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
 
         assert result is False
 
-    def test_update_mcp_credential_last_used_updates_timestamp(self, tmp_path: Path) -> None:
+    def test_update_mcp_credential_last_used_updates_timestamp(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a user with MCP credentials in SQLite
         When update_mcp_credential_last_used() is called
@@ -794,7 +808,9 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
         schema.initialize_database()
 
         backend = UsersSqliteBackend(str(db_path))
-        backend.create_user(username="lastused", password_hash="hash", role="normal_user")
+        backend.create_user(
+            username="lastused", password_hash="hash", role="normal_user"
+        )
         backend.add_mcp_credential(
             username="lastused",
             credential_id="cred-update",
@@ -819,7 +835,9 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
         assert user is not None
         assert user["mcp_credentials"][0]["last_used_at"] is not None
 
-    def test_update_mcp_credential_last_used_returns_false_for_nonexistent(self, tmp_path: Path) -> None:
+    def test_update_mcp_credential_last_used_returns_false_for_nonexistent(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a user without the specified credential
         When update_mcp_credential_last_used() is called
@@ -839,7 +857,9 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
 
         assert result is False
 
-    def test_list_all_mcp_credentials_returns_all_credentials(self, tmp_path: Path) -> None:
+    def test_list_all_mcp_credentials_returns_all_credentials(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given multiple users with MCP credentials
         When list_all_mcp_credentials() is called
@@ -929,8 +949,12 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
         schema.initialize_database()
 
         backend = UsersSqliteBackend(str(db_path))
-        backend.create_user(username="oidcremove", password_hash="hash", role="normal_user")
-        backend.set_oidc_identity("oidcremove", {"subject": "oidc-123", "email": "oidc@example.com"})
+        backend.create_user(
+            username="oidcremove", password_hash="hash", role="normal_user"
+        )
+        backend.set_oidc_identity(
+            "oidcremove", {"subject": "oidc-123", "email": "oidc@example.com"}
+        )
 
         # Verify identity exists
         user = backend.get_user("oidcremove")
@@ -947,7 +971,9 @@ class TestUsersSqliteBackendMCPAndOIDCMethods:
         assert user is not None
         assert user["oidc_identity"] is None
 
-    def test_remove_oidc_identity_returns_false_for_nonexistent_user(self, tmp_path: Path) -> None:
+    def test_remove_oidc_identity_returns_false_for_nonexistent_user(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a database without the specified user
         When remove_oidc_identity() is called
@@ -1105,8 +1131,20 @@ class TestSyncJobsSqliteBackend:
         schema.initialize_database()
 
         backend = SyncJobsSqliteBackend(str(db_path))
-        backend.create_job(job_id="job-a", username="user1", user_alias="U1", job_type="sync", status="pending")
-        backend.create_job(job_id="job-b", username="user2", user_alias="U2", job_type="refresh", status="running")
+        backend.create_job(
+            job_id="job-a",
+            username="user1",
+            user_alias="U1",
+            job_type="sync",
+            status="pending",
+        )
+        backend.create_job(
+            job_id="job-b",
+            username="user2",
+            user_alias="U2",
+            job_type="refresh",
+            status="running",
+        )
 
         result = backend.list_jobs()
 
@@ -1129,7 +1167,13 @@ class TestSyncJobsSqliteBackend:
         schema.initialize_database()
 
         backend = SyncJobsSqliteBackend(str(db_path))
-        backend.create_job(job_id="job-del", username="user", user_alias="U", job_type="sync", status="pending")
+        backend.create_job(
+            job_id="job-del",
+            username="user",
+            user_alias="U",
+            job_type="sync",
+            status="pending",
+        )
 
         # Verify it exists
         assert backend.get_job("job-del") is not None
@@ -1162,7 +1206,10 @@ class TestSyncJobsSqliteBackend:
             status="running",
         )
 
-        phases = {"clone": {"status": "completed", "progress": 100}, "index": {"status": "running", "progress": 50}}
+        phases = {
+            "clone": {"status": "completed", "progress": 100},
+            "index": {"status": "running", "progress": 50},
+        }
         phase_weights = {"clone": 0.3, "index": 0.7}
         analytics_data = {"files_processed": 100, "duration_seconds": 120}
 
@@ -1336,9 +1383,7 @@ class TestSessionsSqliteBackend:
 
         # Verify record was inserted
         conn = sqlite3.connect(str(db_path))
-        cursor = conn.execute(
-            "SELECT username, token_id FROM invalidated_sessions"
-        )
+        cursor = conn.execute("SELECT username, token_id FROM invalidated_sessions")
         row = cursor.fetchone()
         conn.close()
 
@@ -1346,7 +1391,9 @@ class TestSessionsSqliteBackend:
         assert row[0] == "testuser"
         assert row[1] == "token-abc-123"
 
-    def test_is_session_invalidated_returns_true_for_invalidated(self, tmp_path: Path) -> None:
+    def test_is_session_invalidated_returns_true_for_invalidated(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a database with an invalidated session
         When is_session_invalidated() is called
@@ -1366,7 +1413,9 @@ class TestSessionsSqliteBackend:
 
         assert result is True
 
-    def test_is_session_invalidated_returns_false_for_valid(self, tmp_path: Path) -> None:
+    def test_is_session_invalidated_returns_false_for_valid(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a database without the session invalidated
         When is_session_invalidated() is called
@@ -1432,7 +1481,9 @@ class TestSessionsSqliteBackend:
 
         assert result == "2025-01-20T14:00:00Z"
 
-    def test_get_password_change_timestamp_returns_none_for_nonexistent(self, tmp_path: Path) -> None:
+    def test_get_password_change_timestamp_returns_none_for_nonexistent(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a database without password change timestamp for user
         When get_password_change_timestamp() is called
@@ -1510,7 +1561,9 @@ class TestSessionsSqliteBackend:
         # recent_user should remain
         assert backend.get_password_change_timestamp("recent_user") is not None
 
-    def test_cleanup_old_data_returns_zero_when_nothing_to_clean(self, tmp_path: Path) -> None:
+    def test_cleanup_old_data_returns_zero_when_nothing_to_clean(
+        self, tmp_path: Path
+    ) -> None:
         """
         Given a database with only recent session data
         When cleanup_old_data() is called
@@ -1747,8 +1800,20 @@ class TestSSHKeysSqliteBackend:
         schema.initialize_database()
 
         backend = SSHKeysSqliteBackend(str(db_path))
-        backend.create_key(name="key1", fingerprint="fp1", key_type="ed25519", private_path="/p1", public_path="/p1.pub")
-        backend.create_key(name="key2", fingerprint="fp2", key_type="rsa", private_path="/p2", public_path="/p2.pub")
+        backend.create_key(
+            name="key1",
+            fingerprint="fp1",
+            key_type="ed25519",
+            private_path="/p1",
+            public_path="/p1.pub",
+        )
+        backend.create_key(
+            name="key2",
+            fingerprint="fp2",
+            key_type="rsa",
+            private_path="/p2",
+            public_path="/p2.pub",
+        )
         backend.assign_host("key1", "github.com")
 
         result = backend.list_keys()

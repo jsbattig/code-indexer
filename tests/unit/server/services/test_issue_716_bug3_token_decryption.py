@@ -8,7 +8,6 @@ Tests are written FIRST following TDD methodology.
 """
 
 import json
-import pytest
 
 
 class TestTokenDecryptionFailureHandling:

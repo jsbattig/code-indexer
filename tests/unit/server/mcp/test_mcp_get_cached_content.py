@@ -153,9 +153,7 @@ class TestGetCachedContentHandler:
             mock_state.payload_cache = mock_cache
 
             # Call without page parameter
-            result = await handle_get_cached_content(
-                {"handle": "test-handle"}, mock_user
-            )
+            await handle_get_cached_content({"handle": "test-handle"}, mock_user)
 
         # Verify retrieve was called with page=0
         mock_cache.retrieve.assert_called_once_with("test-handle", page=0)
@@ -180,4 +178,7 @@ class TestGetCachedContentHandler:
         data = json.loads(result["content"][0]["text"])
         assert data["success"] is False
         assert "error" in data
-        assert "unavailable" in data["error"].lower() or "not available" in data["error"].lower()
+        assert (
+            "unavailable" in data["error"].lower()
+            or "not available" in data["error"].lower()
+        )

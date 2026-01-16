@@ -58,7 +58,9 @@ class MultiSearchMetadata(BaseModel):
     """
 
     total_results: int = Field(..., description="Total number of results")
-    total_repos_searched: int = Field(..., description="Repositories successfully searched")
+    total_repos_searched: int = Field(
+        ..., description="Repositories successfully searched"
+    )
     execution_time_ms: int = Field(..., description="Execution time in milliseconds")
 
 

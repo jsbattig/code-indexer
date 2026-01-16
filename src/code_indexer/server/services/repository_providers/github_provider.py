@@ -203,9 +203,7 @@ class GitHubProvider(RepositoryProviderBase):
         pushed_at = repo.get("pushed_at")
         if pushed_at:
             try:
-                last_activity = datetime.fromisoformat(
-                    pushed_at.replace("Z", "+00:00")
-                )
+                last_activity = datetime.fromisoformat(pushed_at.replace("Z", "+00:00"))
             except (ValueError, TypeError):
                 pass
 
@@ -246,13 +244,13 @@ class GitHubProvider(RepositoryProviderBase):
                 if reset_time:
                     try:
                         reset_dt = datetime.fromtimestamp(int(reset_time))
-                        reset_msg = f" Rate limit resets at {reset_dt.strftime('%H:%M:%S')}"
+                        reset_msg = (
+                            f" Rate limit resets at {reset_dt.strftime('%H:%M:%S')}"
+                        )
                     except (ValueError, TypeError):
                         pass
 
-                raise GitHubProviderError(
-                    f"GitHub API rate limit exceeded.{reset_msg}"
-                )
+                raise GitHubProviderError(f"GitHub API rate limit exceeded.{reset_msg}")
 
     async def discover_repositories(
         self, page: int = 1, page_size: int = 50, search: Optional[str] = None
@@ -299,20 +297,16 @@ class GitHubProvider(RepositoryProviderBase):
 
             response.raise_for_status()
         except httpx.TimeoutException as e:
-            raise GitHubProviderError(
-                f"GitHub API request timed out: {e}"
-            ) from e
+            raise GitHubProviderError(f"GitHub API request timed out: {e}") from e
         except httpx.HTTPStatusError as e:
             # Check for rate limit in error response
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 self._check_rate_limit(e.response)
             raise GitHubProviderError(
                 f"GitHub API error: {e.response.status_code if hasattr(e, 'response') and e.response else 'unknown'}"
             ) from e
         except httpx.RequestError as e:
-            raise GitHubProviderError(
-                f"GitHub API request failed: {e}"
-            ) from e
+            raise GitHubProviderError(f"GitHub API request failed: {e}") from e
 
         # Parse response
         repos = response.json()
@@ -342,11 +336,18 @@ class GitHubProvider(RepositoryProviderBase):
         if search:
             search_lower = search.lower()
             repositories = [
-                repo for repo in repositories
+                repo
+                for repo in repositories
                 if search_lower in repo.name.lower()
                 or (repo.description and search_lower in repo.description.lower())
-                or (repo.last_commit_hash and search_lower in repo.last_commit_hash.lower())
-                or (repo.last_commit_author and search_lower in repo.last_commit_author.lower())
+                or (
+                    repo.last_commit_hash
+                    and search_lower in repo.last_commit_hash.lower()
+                )
+                or (
+                    repo.last_commit_author
+                    and search_lower in repo.last_commit_author.lower()
+                )
             ]
 
         return RepositoryDiscoveryResult(

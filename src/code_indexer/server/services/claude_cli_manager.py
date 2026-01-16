@@ -52,7 +52,9 @@ class ClaudeCliManager:
         """
         self._api_key = api_key
         self._max_workers = max_workers
-        self._work_queue: "queue.Queue[Optional[Tuple[Path, Callable[[bool, str], None]]]]" = queue.Queue()
+        self._work_queue: (
+            "queue.Queue[Optional[Tuple[Path, Callable[[bool, str], None]]]]"
+        ) = queue.Queue()
         self._worker_threads: List[threading.Thread] = []
         self._shutdown_event = threading.Event()
         self._cli_available: Optional[bool] = None

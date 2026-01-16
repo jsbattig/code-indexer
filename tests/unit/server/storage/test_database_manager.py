@@ -6,7 +6,6 @@ Story #702: Migrate Central JSON Files to SQLite
 """
 
 import sqlite3
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -50,9 +49,7 @@ class TestDatabaseSchema:
         ]
         assert sorted(tables) == sorted(expected_tables)
 
-    def test_database_schema_global_repos_table_structure(
-        self, tmp_path: Path
-    ) -> None:
+    def test_database_schema_global_repos_table_structure(self, tmp_path: Path) -> None:
         """
         Given an initialized database
         When we inspect global_repos table

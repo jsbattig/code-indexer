@@ -7,7 +7,6 @@ started jobs first. Falls back to created_at when started_at is not available.
 Tests are written FIRST following TDD methodology.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
@@ -59,7 +58,7 @@ class TestJobsSortingByStartedAt:
 
         with patch(
             "src.code_indexer.server.web.routes._get_background_job_manager",
-            return_value=mock_job_manager
+            return_value=mock_job_manager,
         ):
             jobs, total, pages = _get_all_jobs()
 
@@ -112,7 +111,7 @@ class TestJobsSortingByStartedAt:
 
         with patch(
             "src.code_indexer.server.web.routes._get_background_job_manager",
-            return_value=mock_job_manager
+            return_value=mock_job_manager,
         ):
             jobs, total, pages = _get_all_jobs()
 

@@ -166,9 +166,7 @@ class TestSCIPMultiRoutesReferences:
 class TestSCIPMultiRoutesDependencies:
     """Test /api/scip/multi/dependencies endpoint (AC3: Multi-Repository Dependency Analysis)."""
 
-    def test_successful_dependencies_analysis(
-        self, mock_auth, mock_scip_multi_service
-    ):
+    def test_successful_dependencies_analysis(self, mock_auth, mock_scip_multi_service):
         """Successful dependency analysis across multiple repositories."""
         pytest.skip("Route not implemented yet - TDD RED phase")
 
@@ -212,8 +210,6 @@ class TestSCIPMultiRoutesErrorHandling:
         """Service ValueError returns 422 Unprocessable Entity."""
         pytest.skip("Route not implemented yet - TDD RED phase")
 
-    def test_timeout_returns_partial_results(
-        self, mock_auth, mock_scip_multi_service
-    ):
+    def test_timeout_returns_partial_results(self, mock_auth, mock_scip_multi_service):
         """Timeout returns results from completed repos with error for timed out repos (AC7)."""
         pytest.skip("Route not implemented yet - TDD RED phase")
