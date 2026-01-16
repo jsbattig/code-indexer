@@ -99,10 +99,50 @@ class GitPullUpdater(UpdateStrategy):
         """
         Update repository using git pull.
 
+        Story #726 Defense in Depth:
+        Before pulling, checks for local modifications and resets them if found.
+        This handles cases where previous CIDX versions modified .gitignore or
+        where external processes modified tracked files.
+
         Raises:
             RuntimeError: If git pull fails
         """
         try:
+            # Story #726: Defense in depth - check for local modifications
+            status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(self.repo_path),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if status_result.returncode == 0 and status_result.stdout.strip():
+                # Local modifications detected - log warning and reset
+                modified_files = status_result.stdout.strip()
+                logger.warning(
+                    f"Local modifications detected in {self.repo_path}, "
+                    f"resetting to HEAD before pull. "
+                    f"Modified files: {modified_files}"
+                )
+
+                # Reset local modifications to allow clean pull
+                reset_result = subprocess.run(
+                    ["git", "reset", "--hard", "HEAD"],
+                    cwd=str(self.repo_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                if reset_result.returncode != 0:
+                    logger.warning(
+                        f"Git reset failed for {self.repo_path}: {reset_result.stderr}. "
+                        "Proceeding with pull anyway."
+                    )
+                else:
+                    logger.info(f"Git reset successful: {reset_result.stdout.strip()}")
+
             logger.info(f"Executing git pull for {self.repo_path}")
 
             result = subprocess.run(

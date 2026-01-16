@@ -8725,3 +8725,520 @@ async def handle_get_cached_content(args: Dict[str, Any], user: User) -> Dict[st
 
 # Register cache retrieval handler
 HANDLER_REGISTRY["get_cached_content"] = handle_get_cached_content
+
+
+# =============================================================================
+# Story #722: Session Impersonation for Delegated Queries
+# =============================================================================
+
+
+async def handle_set_session_impersonation(
+    args: Dict[str, Any], user: User, session_state=None
+) -> Dict[str, Any]:
+    """
+    Handler for set_session_impersonation tool.
+
+    Allows ADMIN users to set or clear session impersonation.
+    When impersonating, all subsequent tool calls use the target user's permissions.
+
+    Args:
+        args: Tool arguments containing optional 'username' to impersonate
+        user: The authenticated user making the request
+        session_state: Optional MCPSessionState for managing impersonation
+
+    Returns:
+        dict with status and impersonating username (or null if cleared)
+    """
+    from code_indexer.server.auth.user_manager import UserRole
+    from code_indexer.server.auth.audit_logger import password_audit_logger
+
+    username = args.get("username")
+
+    # Check if user is ADMIN
+    if user.role != UserRole.ADMIN:
+        password_audit_logger.log_impersonation_denied(
+            actor_username=user.username,
+            target_username=username or "(clear)",
+            reason="Impersonation requires ADMIN role",
+            session_id=session_state.session_id if session_state else "unknown",
+            ip_address="unknown",
+        )
+        return _mcp_response(
+            {"status": "error", "error": "Impersonation requires ADMIN role"}
+        )
+
+    # Handle clearing impersonation
+    if username is None:
+        if session_state and session_state.is_impersonating:
+            previous_target = session_state.impersonated_user.username
+            session_state.clear_impersonation()
+            password_audit_logger.log_impersonation_cleared(
+                actor_username=user.username,
+                previous_target=previous_target,
+                session_id=session_state.session_id,
+                ip_address="unknown",
+            )
+        return _mcp_response({"status": "ok", "impersonating": None})
+
+    # Look up target user and set impersonation
+    try:
+        # Bug fix: Use app_module.user_manager (properly configured with SQLite backend)
+        # instead of creating new UserManager() which defaults to JSON file storage
+        target_user = app_module.user_manager.get_user(username)
+
+        if target_user is None:
+            return _mcp_response(
+                {"status": "error", "error": f"User not found: {username}"}
+            )
+
+        if session_state:
+            session_state.set_impersonation(target_user)
+            password_audit_logger.log_impersonation_set(
+                actor_username=user.username,
+                target_username=username,
+                session_id=session_state.session_id,
+                ip_address="unknown",
+            )
+
+        return _mcp_response({"status": "ok", "impersonating": username})
+
+    except Exception as e:
+        logger.error(
+            f"Error in set_session_impersonation: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        return _mcp_response({"status": "error", "error": str(e)})
+
+
+# Register session impersonation handler
+HANDLER_REGISTRY["set_session_impersonation"] = handle_set_session_impersonation
+
+
+# =============================================================================
+# Story #718: Function Discovery for claude.ai Users
+# =============================================================================
+
+
+def _get_delegation_function_repo_path() -> Optional[Path]:
+    """
+    Get the path to the delegation function repository.
+
+    Returns:
+        Path to the function repository, or None if not configured
+    """
+    from ..services.config_service import get_config_service
+
+    try:
+        config_service = get_config_service()
+        delegation_manager = config_service.get_delegation_manager()
+        delegation_config = delegation_manager.load_config()
+
+        if delegation_config is None or not delegation_config.is_configured:
+            return None
+
+        # Get the function repo alias from config
+        function_repo_alias = delegation_config.function_repo_alias
+        if not function_repo_alias:
+            return None
+
+        # Get the actual path from golden repo manager
+        golden_repo_manager = getattr(app_module, "golden_repo_manager", None)
+        if not golden_repo_manager:
+            logger.warning("Golden repo manager not available")
+            return None
+
+        # Try to get the repo path
+        try:
+            repo_path = golden_repo_manager.get_actual_repo_path(function_repo_alias)
+            return Path(repo_path) if repo_path else None
+        except Exception as e:
+            logger.warning(f"Function repository '{function_repo_alias}' not found: {e}")
+            return None
+
+    except Exception as e:
+        logger.warning(f"Error getting delegation function repo path: {e}")
+        return None
+
+
+def _get_user_groups(user: User) -> set:
+    """
+    Get the groups the user belongs to.
+
+    Args:
+        user: The user to get groups for
+
+    Returns:
+        Set of group names the user belongs to
+    """
+    try:
+        group_manager = getattr(app_module.app.state, "group_manager", None)
+        if not group_manager:
+            logger.warning("Group manager not available")
+            return set()
+
+        group = group_manager.get_user_group(user.username)
+        if group:
+            return {group.name}
+        return set()
+
+    except Exception as e:
+        logger.warning(f"Error getting user groups for {user.username}: {e}")
+        return set()
+
+
+async def handle_list_delegation_functions(
+    args: Dict[str, Any], user: User, *, session_state=None
+) -> Dict[str, Any]:
+    """
+    List available delegation functions for the current user.
+
+    Functions are filtered based on the effective user's group memberships.
+    When impersonation is active, the impersonated user's groups are used.
+
+    Args:
+        args: Tool arguments (currently unused)
+        user: The authenticated user making the request
+        session_state: Optional MCPSessionState for accessing effective user
+
+    Returns:
+        MCP response with list of accessible functions
+    """
+    from ..services.delegation_function_loader import DelegationFunctionLoader
+
+    try:
+        # Get the function repository path
+        repo_path = _get_delegation_function_repo_path()
+        if repo_path is None:
+            return _mcp_response(
+                {"success": False, "error": "Claude Delegation not configured"}
+            )
+
+        # Determine effective user for group lookup (CRITICAL-1 fix)
+        # When impersonating, use the impersonated user's groups
+        effective_user = user
+        if session_state and session_state.is_impersonating:
+            effective_user = session_state.effective_user
+
+        # Get effective user's groups
+        user_groups = _get_user_groups(effective_user)
+
+        # Load and filter functions
+        loader = DelegationFunctionLoader()
+        all_functions = loader.load_functions(repo_path)
+        accessible_functions = loader.filter_by_groups(all_functions, user_groups)
+
+        # Format response
+        functions_data = [
+            {
+                "name": func.name,
+                "description": func.description,
+                "parameters": func.parameters,
+            }
+            for func in accessible_functions
+        ]
+
+        return _mcp_response({"success": True, "functions": functions_data})
+
+    except Exception as e:
+        logger.exception(
+            f"Error in list_delegation_functions: {e}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+# Register delegation functions handler
+HANDLER_REGISTRY["list_delegation_functions"] = handle_list_delegation_functions
+
+
+# =============================================================================
+# Story #719: Execute Delegation Function with Async Job
+# =============================================================================
+
+
+def _get_delegation_config():
+    """
+    Get the Claude Delegation configuration.
+
+    Returns:
+        ClaudeDelegationConfig if configured, None otherwise
+    """
+    from ..services.config_service import get_config_service
+
+    try:
+        config_service = get_config_service()
+        delegation_manager = config_service.get_delegation_manager()
+        return delegation_manager.load_config()
+    except Exception as e:
+        logger.warning(f"Error getting delegation config: {e}")
+        return None
+
+
+def _validate_function_parameters(target_function, parameters: Dict[str, Any]) -> Optional[str]:
+    """
+    Validate required parameters are present.
+
+    Returns:
+        Error message if validation fails, None if valid
+    """
+    for param in target_function.parameters:
+        if param.get("required", False):
+            param_name = param.get("name", "")
+            if param_name and param_name not in parameters:
+                return f"Missing required parameter: {param_name}"
+    return None
+
+
+async def _ensure_repos_registered(client, required_repos: List[Dict[str, Any]]) -> List[str]:
+    """
+    Ensure required repositories are registered in Claude Server.
+
+    Returns:
+        List of repository aliases
+    """
+    repo_aliases = []
+    for repo_def in required_repos:
+        # Support both string (alias only) and dict (full repo definition)
+        if isinstance(repo_def, str):
+            alias = repo_def
+            remote = ""
+            branch = "main"
+        else:
+            alias = repo_def.get("alias", "")
+            remote = repo_def.get("remote", "")
+            branch = repo_def.get("branch", "main")
+        if not alias:
+            continue
+        repo_aliases.append(alias)
+        exists = await client.check_repository_exists(alias)
+        if not exists and remote:
+            # Only register if we have remote URL and repo doesn't exist
+            await client.register_repository(alias, remote, branch)
+    return repo_aliases
+
+
+def _get_cidx_callback_base_url() -> Optional[str]:
+    """
+    Get the base URL for CIDX callback endpoints from delegation config.
+
+    Story #720: Callback-Based Delegation Job Completion
+
+    Returns:
+        The CIDX callback URL from delegation config, or None if not configured
+    """
+    from ..services.config_service import get_config_service
+
+    try:
+        config_service = get_config_service()
+        delegation_manager = config_service.get_delegation_manager()
+        delegation_config = delegation_manager.load_config()
+
+        if delegation_config and delegation_config.cidx_callback_url:
+            return delegation_config.cidx_callback_url
+        return None
+    except Exception as e:
+        logger.warning("Failed to get CIDX callback URL from delegation config: %s", e)
+        return None
+
+
+async def handle_execute_delegation_function(
+    args: Dict[str, Any], user: User, *, session_state=None
+) -> Dict[str, Any]:
+    """
+    Execute a delegation function by delegating to Claude Server.
+
+    Args:
+        args: Tool arguments with function_name, parameters, prompt
+        user: The authenticated user making the request
+        session_state: Optional MCPSessionState for impersonation
+
+    Returns:
+        MCP response with job_id on success or error details
+    """
+    from ..services.delegation_function_loader import DelegationFunctionLoader
+    from ..services.prompt_template_processor import PromptTemplateProcessor
+    from ..clients.claude_server_client import ClaudeServerClient, ClaudeServerError
+
+    try:
+        # Configuration validation
+        repo_path = _get_delegation_function_repo_path()
+        delegation_config = _get_delegation_config()
+
+        if repo_path is None or delegation_config is None or not delegation_config.is_configured:
+            return _mcp_response({"success": False, "error": "Claude Delegation not configured"})
+
+        function_name = args.get("function_name", "")
+        parameters = args.get("parameters", {})
+        user_prompt = args.get("prompt", "")
+
+        # Load and find function
+        loader = DelegationFunctionLoader()
+        all_functions = loader.load_functions(repo_path)
+        target_function = next((f for f in all_functions if f.name == function_name), None)
+
+        if target_function is None:
+            return _mcp_response({"success": False, "error": f"Function not found: {function_name}"})
+
+        # Access validation
+        effective_user = session_state.effective_user if session_state and session_state.is_impersonating else user
+        user_groups = _get_user_groups(effective_user)
+
+        if not (user_groups & set(target_function.allowed_groups)):
+            return _mcp_response({"success": False, "error": "Access denied: insufficient permissions"})
+
+        # Parameter validation
+        param_error = _validate_function_parameters(target_function, parameters)
+        if param_error:
+            return _mcp_response({"success": False, "error": param_error})
+
+        # Create client and ensure repos registered
+        # Story #732: Use async context manager for proper connection cleanup
+        async with ClaudeServerClient(
+            base_url=delegation_config.claude_server_url,
+            username=delegation_config.claude_server_username,
+            password=delegation_config.claude_server_credential,
+            skip_ssl_verify=delegation_config.skip_ssl_verify,
+        ) as client:
+            repo_aliases = await _ensure_repos_registered(client, target_function.required_repos)
+
+            # Render prompt and create job
+            processor = PromptTemplateProcessor()
+            impersonation_user = target_function.impersonation_user or effective_user.username
+            rendered_prompt = processor.render(
+                template=target_function.prompt_template,
+                parameters=parameters,
+                user_prompt=user_prompt,
+                impersonation_user=impersonation_user,
+            )
+
+            job_result = await client.create_job(prompt=rendered_prompt, repositories=repo_aliases)
+            # Claude Server returns camelCase "jobId"
+            job_id = job_result.get("jobId") or job_result.get("job_id")
+            if not job_id:
+                return _mcp_response({"success": False, "error": "Job created but no job_id returned"})
+
+            # Story #720: Register callback URL with Claude Server for completion notification
+            callback_base_url = _get_cidx_callback_base_url()
+            if callback_base_url:
+                callback_url = f"{callback_base_url.rstrip('/')}/api/delegation/callback/{job_id}"
+                try:
+                    await client.register_callback(job_id, callback_url)
+                    logger.debug(f"Registered callback URL for job {job_id}: {callback_url}")
+                except Exception as callback_err:
+                    # Log but don't fail - callback registration is best-effort
+                    logger.warning(
+                        f"Failed to register callback for job {job_id}: {callback_err}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
+
+            # Story #720: Register job in tracker for callback-based completion
+            from ..services.delegation_job_tracker import DelegationJobTracker
+
+            tracker = DelegationJobTracker.get_instance()
+            await tracker.register_job(job_id)
+
+            await client.start_job(job_id)
+
+            return _mcp_response({"success": True, "job_id": job_id})
+
+    except ClaudeServerError as e:
+        logger.error(f"Claude Server error: {e}", extra={"correlation_id": get_correlation_id()})
+        return _mcp_response({"success": False, "error": f"Claude Server error: {e}"})
+    except Exception as e:
+        logger.exception(f"Error in execute_delegation_function: {e}", extra={"correlation_id": get_correlation_id()})
+        return _mcp_response({"success": False, "error": str(e)})
+
+
+HANDLER_REGISTRY["execute_delegation_function"] = handle_execute_delegation_function
+
+
+async def handle_poll_delegation_job(
+    args: Dict[str, Any], user: User, *, session_state=None
+) -> Dict[str, Any]:
+    """
+    Wait for delegation job completion via callback mechanism.
+
+    Story #720: Callback-Based Delegation Job Completion
+
+    Instead of polling Claude Server repeatedly, this waits on a Future
+    that gets resolved when Claude Server POSTs the callback to CIDX.
+
+    Args:
+        args: Tool arguments with job_id and optional timeout
+        user: The authenticated user making the request
+        session_state: Optional MCPSessionState for impersonation
+
+    Returns:
+        MCP response with result when callback arrives, or timeout/error
+    """
+    from ..services.delegation_job_tracker import DelegationJobTracker
+
+    job_id = ""
+    try:
+        # Configuration validation
+        delegation_config = _get_delegation_config()
+
+        if delegation_config is None or not delegation_config.is_configured:
+            return _mcp_response({"success": False, "error": "Claude Delegation not configured"})
+
+        job_id = args.get("job_id", "")
+        if not job_id:
+            return _mcp_response({"success": False, "error": "Missing required parameter: job_id"})
+
+        # Story #720: Get timeout_seconds from args (default 45s, below MCP's 60s)
+        # Also support legacy "timeout" parameter for backward compatibility
+        timeout = args.get("timeout_seconds", args.get("timeout", 45))
+        if not isinstance(timeout, (int, float)):
+            return _mcp_response({
+                "success": False,
+                "error": "timeout_seconds must be a number (recommended: 5-300)"
+            })
+        # Minimum 0.01s (for testing), maximum 300s (5 minutes)
+        # Recommended range for production: 5-300 seconds
+        if timeout < 0.01 or timeout > 300:
+            return _mcp_response({
+                "success": False,
+                "error": "timeout_seconds must be between 0.01 and 300"
+            })
+
+        # Check if job exists in tracker before waiting
+        tracker = DelegationJobTracker.get_instance()
+        job_exists = await tracker.has_job(job_id)
+        if not job_exists:
+            return _mcp_response({
+                "success": False,
+                "error": f"Job {job_id} not found or already completed",
+            })
+
+        # Wait for callback via DelegationJobTracker
+        result = await tracker.wait_for_job(job_id, timeout=timeout)
+
+        if result is None:
+            # Timeout - job still exists, caller can try again
+            return _mcp_response({
+                "status": "waiting",
+                "message": "Job still running, callback not yet received",
+                "continue_polling": True,
+            })
+
+        # Return result based on status from callback
+        if result.status == "completed":
+            return _mcp_response({
+                "status": "completed",
+                "result": result.output,
+                "continue_polling": False,
+            })
+        else:
+            # Failed or other status
+            return _mcp_response({
+                "status": "failed",
+                "error": result.error or result.output,
+                "continue_polling": False,
+            })
+
+    except Exception as e:
+        logger.error(f"Error waiting for delegation job {job_id}: {e}", extra={"correlation_id": get_correlation_id()})
+        return _mcp_response({"success": False, "error": f"Error waiting for job completion: {str(e)}"})
+
+
+HANDLER_REGISTRY["poll_delegation_job"] = handle_poll_delegation_job

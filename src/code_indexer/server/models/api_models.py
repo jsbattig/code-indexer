@@ -103,6 +103,11 @@ class HealthCheckResponse(BaseModel):
         ..., description="Individual service health"
     )
     system: SystemHealthInfo = Field(..., description="System resource information")
+    failure_reasons: List[str] = Field(
+        default_factory=list,
+        description="List of failure reasons when status is DEGRADED or UNHEALTHY "
+        "(Story #727 AC5). Limited to 3 entries with '+N more' indicator if more exist.",
+    )
 
 
 class RepositoryFilesInfo(BaseModel):

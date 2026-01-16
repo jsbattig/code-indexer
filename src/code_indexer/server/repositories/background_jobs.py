@@ -808,11 +808,24 @@ class BackgroundJobManager:
     def _load_jobs_sqlite(self) -> None:
         """
         Load jobs from SQLite database into memory.
+
+        Story #723: Clean up orphaned jobs before loading.
+        On server restart, any 'running' or 'pending' jobs are orphaned
+        since the processes executing them no longer exist.
         """
         if not self._sqlite_backend:
             return
 
         try:
+            # Story #723: Clean up orphaned jobs on server startup
+            # This must happen BEFORE loading jobs into memory to ensure
+            # the in-memory state reflects the cleaned-up database state
+            orphan_count = self._sqlite_backend.cleanup_orphaned_jobs_on_startup()
+            if orphan_count > 0:
+                logging.info(
+                    f"Cleaned up {orphan_count} orphaned jobs on server startup"
+                )
+
             stored_jobs = self._sqlite_backend.list_jobs(limit=self.MAX_JOBS_TO_LOAD)
 
             for job_dict in stored_jobs:

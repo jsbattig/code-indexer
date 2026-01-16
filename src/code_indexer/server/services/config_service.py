@@ -14,6 +14,7 @@ from ..utils.config_manager import (
     ServerConfigManager,
     ServerConfig,
 )
+from ..config.delegation_config import ClaudeDelegationManager, ClaudeDelegationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ class ConfigService:
         """
         self.config_manager = ServerConfigManager(server_dir_path)
         self._config: Optional[ServerConfig] = None
+        self._delegation_manager = ClaudeDelegationManager(server_dir_path)
+
+    def get_delegation_manager(self) -> ClaudeDelegationManager:
+        """Get the Claude Delegation manager for config operations."""
+        return self._delegation_manager
 
     def load_config(self) -> ServerConfig:
         """
@@ -172,9 +178,27 @@ class ConfigService:
                 "trace_sample_rate": config.telemetry_config.trace_sample_rate,
                 "deployment_environment": config.telemetry_config.deployment_environment,
             },
+            # Claude Delegation configuration (Story #721)
+            "claude_delegation": self._get_delegation_settings(),
         }
 
         return settings
+
+    def _get_delegation_settings(self) -> Dict[str, Any]:
+        """Get Claude Delegation settings for display (credential masked)."""
+        delegation_config = self._delegation_manager.load_config()
+        if delegation_config is None:
+            delegation_config = ClaudeDelegationConfig()
+
+        return {
+            "function_repo_alias": delegation_config.function_repo_alias,
+            "claude_server_url": delegation_config.claude_server_url,
+            "claude_server_username": delegation_config.claude_server_username,
+            "claude_server_credential_type": delegation_config.claude_server_credential_type,
+            "is_configured": delegation_config.is_configured,
+            "cidx_callback_url": delegation_config.cidx_callback_url,  # Story #720
+            "skip_ssl_verify": delegation_config.skip_ssl_verify,  # Allow self-signed certs for E2E
+        }
 
     def update_setting(
         self, category: str, key: str, value: Any, skip_validation: bool = False

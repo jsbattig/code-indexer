@@ -1556,6 +1556,40 @@ class BackgroundJobsSqliteBackend:
 
         return stats
 
+    def cleanup_orphaned_jobs_on_startup(self) -> int:
+        """
+        Clean up orphaned jobs on server startup.
+
+        On server restart, any jobs with status 'running' or 'pending' are orphaned
+        because the processes that were executing them no longer exist.
+
+        This method marks them as 'failed' with an appropriate error message
+        and timestamp for audit trail.
+
+        Story #723: Clean Up Orphaned Jobs on Server Startup
+
+        Returns:
+            Number of orphaned jobs that were cleaned up.
+        """
+        interrupted_at = datetime.now(timezone.utc).isoformat()
+        error_message = "Job interrupted by server restart"
+
+        def operation(conn):
+            cursor = conn.execute(
+                """UPDATE background_jobs
+                   SET status = 'failed',
+                       error = ?,
+                       completed_at = ?
+                   WHERE status IN ('running', 'pending')""",
+                (error_message, interrupted_at),
+            )
+            return cursor.rowcount
+
+        count: int = self._conn_manager.execute_atomic(operation)
+        if count > 0:
+            logger.info(f"Cleaned up {count} orphaned jobs on server startup")
+        return count
+
     def close(self) -> None:
         """Close database connections."""
         self._conn_manager.close_all()

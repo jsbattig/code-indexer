@@ -95,8 +95,11 @@
                     <option value="add_golden_repo" {% if type_filter == 'add_golden_repo' %}selected{% endif %}>Add Golden Repo</option>
                     <option value="remove_golden_repo" {% if type_filter == 'remove_golden_repo' %}selected{% endif %}>Remove Golden Repo</option>
                     <option value="refresh_golden_repo" {% if type_filter == 'refresh_golden_repo' %}selected{% endif %}>Refresh Golden Repo</option>
-                    <option value="activate_repo" {% if type_filter == 'activate_repo' %}selected{% endif %}>Activate Repo</option>
-                    <option value="deactivate_repo" {% if type_filter == 'deactivate_repo' %}selected{% endif %}>Deactivate Repo</option>
+                    <option value="global_repo_refresh" {% if type_filter == 'global_repo_refresh' %}selected{% endif %}>Global Repo Refresh (Scheduled)</option>
+                    <option value="add_index" {% if type_filter == 'add_index' %}selected{% endif %}>Add Index</option>
+                    <option value="sync_repository" {% if type_filter == 'sync_repository' %}selected{% endif %}>Sync Repository</option>
+                    <option value="activate_repository" {% if type_filter == 'activate_repository' %}selected{% endif %}>Activate Repo</option>
+                    <option value="deactivate_repository" {% if type_filter == 'deactivate_repository' %}selected{% endif %}>Deactivate Repo</option>
                 </select>
             </div>
 

@@ -2,7 +2,17 @@
 Authentication and authorization module for CIDX Server.
 
 Provides JWT-based authentication, role-based access control,
-and user management functionality.
+user management, and session impersonation functionality.
 """
 
-__all__ = ["JWTManager", "UserManager", "PasswordManager", "User", "UserRole"]
+from .mcp_session_state import MCPSessionState, ImpersonationResult
+
+__all__ = [
+    "JWTManager",
+    "UserManager",
+    "PasswordManager",
+    "User",
+    "UserRole",
+    "MCPSessionState",
+    "ImpersonationResult",
+]

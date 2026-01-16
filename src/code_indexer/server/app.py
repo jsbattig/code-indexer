@@ -80,6 +80,7 @@ from .routers.files import router as files_router
 from .routers.git import router as git_router
 from .routers.indexing import router as indexing_router
 from .routers.cache import router as cache_router
+from .routers.delegation_callbacks import router as delegation_callbacks_router
 from .routers.groups import (
     router as groups_router,
     users_router,
@@ -2324,6 +2325,33 @@ def create_app() -> FastAPI:
             # Set payload_cache to None so handlers know it's unavailable
             app.state.payload_cache = None
 
+        # Startup: Initialize MCP Session cleanup (Story #731)
+        session_registry = None
+        logger.info(
+            "Server startup: Initializing MCP Session cleanup",
+            extra={"correlation_id": get_correlation_id()},
+        )
+        try:
+            from code_indexer.server.mcp.session_registry import get_session_registry
+
+            session_registry = get_session_registry()
+            session_registry.start_background_cleanup(
+                ttl_seconds=3600,  # 1 hour
+                cleanup_interval_seconds=900,  # 15 minutes
+            )
+            logger.info(
+                "MCP Session cleanup task started (TTL=3600s, interval=900s)",
+                extra={"correlation_id": get_correlation_id()},
+            )
+
+        except Exception as e:
+            # Log error but don't block server startup
+            logger.error(
+                f"Failed to initialize MCP Session cleanup: {e}",
+                exc_info=True,
+                extra={"correlation_id": get_correlation_id()},
+            )
+
         # Startup: Initialize TelemetryManager for OTEL (Story #695)
         telemetry_manager = None
         logger.info(
@@ -2529,6 +2557,21 @@ def create_app() -> FastAPI:
             except Exception as e:
                 logger.error(
                     f"Error stopping PayloadCache: {e}",
+                    exc_info=True,
+                    extra={"correlation_id": get_correlation_id()},
+                )
+
+        # Shutdown: Stop MCP Session cleanup (Story #731)
+        if session_registry is not None:
+            try:
+                session_registry.stop_background_cleanup()
+                logger.info(
+                    "MCP Session cleanup stopped",
+                    extra={"correlation_id": get_correlation_id()},
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error stopping MCP Session cleanup: {e}",
                     exc_info=True,
                     extra={"correlation_id": get_correlation_id()},
                 )
@@ -7513,6 +7556,7 @@ def create_app() -> FastAPI:
     app.include_router(groups_router)
     app.include_router(users_router)
     app.include_router(audit_router)
+    app.include_router(delegation_callbacks_router)
 
     # Mount Web Admin UI routes and static files
     from fastapi.staticfiles import StaticFiles

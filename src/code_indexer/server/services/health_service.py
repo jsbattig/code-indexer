@@ -10,8 +10,9 @@ from code_indexer.server.middleware.correlation import get_correlation_id
 import psutil
 import time
 import logging
+import threading
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
 from ..models.api_models import (
@@ -22,16 +23,28 @@ from ..models.api_models import (
     VolumeInfo,
 )
 from ...config import ConfigManager
+from .database_health_service import (
+    DatabaseHealthService,
+    DatabaseHealthStatus,
+    DatabaseHealthResult,
+)
 
 logger = logging.getLogger(__name__)
 
 # Health thresholds
 MEMORY_WARNING_THRESHOLD = 80.0  # 80% memory usage
-MEMORY_CRITICAL_THRESHOLD = 95.0  # 95% memory usage
+MEMORY_CRITICAL_THRESHOLD = 90.0  # 90% memory usage (Story #727 AC3: updated from 95%)
 DISK_WARNING_THRESHOLD = 5.0  # 5GB free space
 DISK_CRITICAL_THRESHOLD = 1.0  # 1GB free space
 RESPONSE_TIME_WARNING = 1000  # 1 second
 RESPONSE_TIME_CRITICAL = 5000  # 5 seconds
+MAX_FAILURE_REASONS = 3  # Story #727 AC5: Limit displayed failure reasons
+
+# CPU sustained threshold detection (Story #727 AC4)
+CPU_SUSTAINED_THRESHOLD = 95.0  # CPU % threshold for sustained high load detection
+MIN_CPU_READINGS_FOR_DEGRADED = 3  # Minimum readings needed for 30s assessment
+MIN_CPU_READINGS_FOR_UNHEALTHY = 6  # Minimum readings needed for 60s assessment
+MAX_CPU_HISTORY_SIZE = 120  # Safety limit to prevent unbounded growth
 
 
 class HealthCheckService:
@@ -60,6 +73,11 @@ class HealthCheckService:
             self._last_net_counters: Optional[Any] = None
             self._last_net_time: Optional[float] = None
 
+            # CPU history for sustained threshold detection (Story #727 AC4)
+            # List of (timestamp, cpu_percent) tuples for rolling 60s window
+            self._cpu_history: List[Tuple[float, float]] = []
+            self._cpu_history_lock = threading.Lock()  # Thread safety for concurrent requests
+
         except Exception as e:
             logger.error(
                 f"Failed to initialize real dependencies: {e}",
@@ -85,8 +103,14 @@ class HealthCheckService:
         # Get system metrics
         system_info = self._get_system_info()
 
-        # Determine overall health status
-        overall_status = self._calculate_overall_status(services, system_info)
+        # Story #727 AC1: Get all database health via DatabaseHealthService
+        db_health_service = DatabaseHealthService()
+        database_health = db_health_service.get_all_database_health()
+
+        # Determine overall health status with all indicators (Story #727)
+        overall_status, failure_reasons = self._calculate_overall_status(
+            services, system_info, database_health
+        )
 
         end_time = time.time()
         logger.info(
@@ -99,6 +123,7 @@ class HealthCheckService:
             timestamp=datetime.now(timezone.utc),
             services=services,
             system=system_info,
+            failure_reasons=failure_reasons,
         )
 
     def _check_database_health(self) -> ServiceHealthInfo:
@@ -316,42 +341,226 @@ class HealthCheckService:
             volumes=volumes,
         )
 
-    def _calculate_overall_status(
-        self, services: Dict[str, ServiceHealthInfo], system_info: SystemHealthInfo
-    ) -> HealthStatus:
+    def _collect_database_failures(
+        self, database_health: List[DatabaseHealthResult]
+    ) -> Tuple[bool, bool, List[str]]:
         """
-        Calculate overall system health based on individual services and system metrics.
+        Check all database health and collect failures (Story #727 AC1).
+
+        Args:
+            database_health: List of DatabaseHealthResult from DatabaseHealthService
+
+        Returns:
+            Tuple of (has_warning, has_error, failure_reasons)
+        """
+        reasons: List[str] = []
+        has_warning = False
+        has_error = False
+
+        for db_result in database_health:
+            if db_result.status == DatabaseHealthStatus.ERROR:
+                has_error = True
+                for check_name, check in db_result.checks.items():
+                    if not check.passed:
+                        reasons.append(
+                            f"{db_result.display_name} DB: {check.error_message or check_name}"
+                        )
+                        break
+            elif db_result.status == DatabaseHealthStatus.WARNING:
+                has_warning = True
+                for check_name, check in db_result.checks.items():
+                    if not check.passed:
+                        reasons.append(
+                            f"{db_result.display_name} DB: {check.error_message or check_name}"
+                        )
+                        break
+
+        return has_warning, has_error, reasons
+
+    def _collect_volume_failures(
+        self, volumes: List[VolumeInfo]
+    ) -> Tuple[bool, bool, List[str]]:
+        """
+        Check all volumes for low disk space (Story #727 AC2).
+
+        Args:
+            volumes: List of VolumeInfo from _get_mounted_volumes()
+
+        Returns:
+            Tuple of (has_warning, has_error, failure_reasons)
+        """
+        reasons: List[str] = []
+        has_warning = False
+        has_error = False
+
+        for volume in volumes:
+            if volume.free_gb < DISK_CRITICAL_THRESHOLD:
+                has_error = True
+                reasons.append(f"Volume {volume.mount_point}: {volume.free_gb:.1f}GB free")
+            elif volume.free_gb < DISK_WARNING_THRESHOLD:
+                has_warning = True
+                reasons.append(f"Volume {volume.mount_point}: {volume.free_gb:.1f}GB free")
+
+        return has_warning, has_error, reasons
+
+    def _collect_resource_failures(
+        self, memory_percent: float, cpu_percent: float
+    ) -> Tuple[bool, bool, List[str]]:
+        """
+        Check RAM and CPU thresholds (Story #727 AC3, AC4).
+
+        Args:
+            memory_percent: Current memory usage percentage
+            cpu_percent: Current CPU usage percentage
+
+        Returns:
+            Tuple of (has_warning, has_error, failure_reasons)
+        """
+        reasons: List[str] = []
+        has_warning = False
+        has_error = False
+
+        # AC3: RAM thresholds
+        if memory_percent >= MEMORY_CRITICAL_THRESHOLD:
+            has_error = True
+            reasons.append(f"RAM: {memory_percent:.0f}%")
+        elif memory_percent >= MEMORY_WARNING_THRESHOLD:
+            has_warning = True
+            reasons.append(f"RAM: {memory_percent:.0f}%")
+
+        # AC4: CPU sustained thresholds
+        cpu_degraded, cpu_unhealthy = self._check_cpu_sustained(cpu_percent)
+        if cpu_unhealthy:
+            has_error = True
+            reasons.append(f"CPU: {cpu_percent:.0f}% sustained >60s")
+        elif cpu_degraded:
+            has_warning = True
+            reasons.append(f"CPU: {cpu_percent:.0f}% sustained >30s")
+
+        return has_warning, has_error, reasons
+
+    def _check_cpu_sustained(self, current_cpu: float) -> Tuple[bool, bool]:
+        """
+        Check if CPU >95% for sustained periods (Story #727 AC4).
+
+        Tracks CPU history over rolling 60-second window and checks:
+        - 30+ seconds sustained >95% = degraded
+        - 60+ seconds sustained >95% = unhealthy
+
+        Thread-safe: Uses lock to protect _cpu_history from concurrent access.
+
+        Args:
+            current_cpu: Current CPU percentage reading
+
+        Returns:
+            Tuple of (is_degraded, is_unhealthy)
+        """
+        now = time.time()
+
+        with self._cpu_history_lock:
+            # Add current reading to history
+            self._cpu_history.append((now, current_cpu))
+
+            # Prune entries older than 60 seconds
+            self._cpu_history = [(t, c) for t, c in self._cpu_history if now - t <= 60]
+
+            # Safety limit to prevent unbounded growth
+            if len(self._cpu_history) > MAX_CPU_HISTORY_SIZE:
+                self._cpu_history = self._cpu_history[-MAX_CPU_HISTORY_SIZE:]
+
+            # Take snapshot for analysis outside lock
+            history_snapshot = list(self._cpu_history)
+
+        # Analysis proceeds outside lock using snapshot
+        if len(history_snapshot) < MIN_CPU_READINGS_FOR_DEGRADED:
+            return False, False
+
+        # Check readings in last 30 seconds
+        readings_30s = [c for t, c in history_snapshot if now - t <= 30]
+        # Check readings in last 60 seconds (already pruned to 60s max)
+        readings_60s = [c for t, c in history_snapshot]
+
+        # Degraded: CPU >95% sustained for 30+ seconds
+        is_degraded = (
+            len(readings_30s) >= MIN_CPU_READINGS_FOR_DEGRADED
+            and all(c > CPU_SUSTAINED_THRESHOLD for c in readings_30s)
+        )
+
+        # Unhealthy: CPU >95% sustained for 60+ seconds
+        is_unhealthy = (
+            len(readings_60s) >= MIN_CPU_READINGS_FOR_UNHEALTHY
+            and all(c > CPU_SUSTAINED_THRESHOLD for c in readings_60s)
+        )
+
+        return is_degraded, is_unhealthy
+
+    def _calculate_overall_status(
+        self,
+        services: Dict[str, ServiceHealthInfo],
+        system_info: SystemHealthInfo,
+        database_health: List[DatabaseHealthResult],
+    ) -> Tuple[HealthStatus, List[str]]:
+        """
+        Calculate overall system health based on all indicators (Story #727).
 
         Args:
             services: Dictionary of service health information
             system_info: System resource information
+            database_health: List of DatabaseHealthResult from DatabaseHealthService
 
         Returns:
-            Overall health status
+            Tuple of (overall_status, failure_reasons)
         """
-        service_statuses = [service.status for service in services.values()]
+        failure_reasons: List[str] = []
+        has_warning = False
+        has_error = False
 
-        # If any service is unhealthy, overall is unhealthy
-        if any(status == HealthStatus.UNHEALTHY for status in service_statuses):
-            return HealthStatus.UNHEALTHY
+        # AC1: Database health
+        db_warn, db_err, db_reasons = self._collect_database_failures(database_health)
+        has_warning = has_warning or db_warn
+        has_error = has_error or db_err
+        failure_reasons.extend(db_reasons)
 
-        # Check system resource limits
-        if (
-            system_info.memory_usage_percent > MEMORY_CRITICAL_THRESHOLD
-            or system_info.disk_free_space_gb < DISK_CRITICAL_THRESHOLD
-        ):
-            return HealthStatus.UNHEALTHY
+        # AC2: Volume health
+        vol_warn, vol_err, vol_reasons = self._collect_volume_failures(system_info.volumes)
+        has_warning = has_warning or vol_warn
+        has_error = has_error or vol_err
+        failure_reasons.extend(vol_reasons)
 
-        # If any service is degraded or system resources are strained
-        if (
-            any(status == HealthStatus.DEGRADED for status in service_statuses)
-            or system_info.memory_usage_percent > MEMORY_WARNING_THRESHOLD
-            or system_info.disk_free_space_gb < DISK_WARNING_THRESHOLD
-        ):
-            return HealthStatus.DEGRADED
+        # AC3 & AC4: RAM and CPU thresholds
+        res_warn, res_err, res_reasons = self._collect_resource_failures(
+            system_info.memory_usage_percent, system_info.cpu_usage_percent
+        )
+        has_warning = has_warning or res_warn
+        has_error = has_error or res_err
+        failure_reasons.extend(res_reasons)
 
-        # All services healthy and system resources good
-        return HealthStatus.HEALTHY
+        # Check individual service statuses (database, storage services)
+        # Issue #3: Add error messages to failure_reasons when services fail
+        for name, svc in services.items():
+            if svc.status == HealthStatus.UNHEALTHY:
+                has_error = True
+                if svc.error_message:
+                    failure_reasons.append(f"{name.capitalize()}: {svc.error_message}")
+            elif svc.status == HealthStatus.DEGRADED:
+                has_warning = True
+                if svc.error_message:
+                    failure_reasons.append(f"{name.capitalize()}: {svc.error_message}")
+
+        # Determine overall status
+        if has_error:
+            status = HealthStatus.UNHEALTHY
+        elif has_warning:
+            status = HealthStatus.DEGRADED
+        else:
+            status = HealthStatus.HEALTHY
+
+        # AC5: Limit to MAX_FAILURE_REASONS with "+N more" indicator
+        if len(failure_reasons) > MAX_FAILURE_REASONS:
+            extra_count = len(failure_reasons) - MAX_FAILURE_REASONS
+            failure_reasons = failure_reasons[:MAX_FAILURE_REASONS] + [f"+{extra_count} more"]
+
+        return status, failure_reasons
 
     def _get_mounted_volumes(self) -> list:
         """

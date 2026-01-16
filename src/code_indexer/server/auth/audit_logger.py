@@ -589,6 +589,125 @@ class PasswordChangeAuditLogger:
             extra={"correlation_id": get_correlation_id()},
         )
 
+    def log_impersonation_set(
+        self,
+        actor_username: str,
+        target_username: str,
+        session_id: str,
+        ip_address: str,
+        user_agent: Optional[str] = None,
+        additional_context: Optional[dict] = None,
+    ) -> None:
+        """
+        Log when an admin begins impersonating another user.
+
+        Story #722: Session Impersonation for Delegated Queries
+
+        Args:
+            actor_username: The admin user who initiated impersonation
+            target_username: The user being impersonated
+            session_id: MCP session identifier
+            ip_address: Client IP address
+            user_agent: Client user agent string (optional)
+            additional_context: Additional context information
+        """
+        log_entry = {
+            "event_type": "impersonation_set",
+            "actor_username": actor_username,
+            "target_username": target_username,
+            "session_id": session_id,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_agent": user_agent,
+            "additional_context": additional_context or {},
+        }
+
+        self.audit_logger.info(
+            f"IMPERSONATION_SET: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+
+    def log_impersonation_cleared(
+        self,
+        actor_username: str,
+        previous_target: str,
+        session_id: str,
+        ip_address: str,
+        user_agent: Optional[str] = None,
+        additional_context: Optional[dict] = None,
+    ) -> None:
+        """
+        Log when an admin stops impersonating another user.
+
+        Story #722: Session Impersonation for Delegated Queries
+
+        Args:
+            actor_username: The admin user who cleared impersonation
+            previous_target: The user who was being impersonated
+            session_id: MCP session identifier
+            ip_address: Client IP address
+            user_agent: Client user agent string (optional)
+            additional_context: Additional context information
+        """
+        log_entry = {
+            "event_type": "impersonation_cleared",
+            "actor_username": actor_username,
+            "previous_target": previous_target,
+            "session_id": session_id,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_agent": user_agent,
+            "additional_context": additional_context or {},
+        }
+
+        self.audit_logger.info(
+            f"IMPERSONATION_CLEARED: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+
+    def log_impersonation_denied(
+        self,
+        actor_username: str,
+        target_username: str,
+        reason: str,
+        session_id: str,
+        ip_address: str,
+        user_agent: Optional[str] = None,
+        additional_context: Optional[dict] = None,
+    ) -> None:
+        """
+        Log when an impersonation attempt is denied (non-admin user).
+
+        Story #722: Session Impersonation for Delegated Queries
+
+        This is a security event logged at WARNING level.
+
+        Args:
+            actor_username: The user who attempted impersonation
+            target_username: The user they attempted to impersonate
+            reason: Reason for denial (e.g., "Impersonation requires ADMIN role")
+            session_id: MCP session identifier
+            ip_address: Client IP address
+            user_agent: Client user agent string (optional)
+            additional_context: Additional context information
+        """
+        log_entry = {
+            "event_type": "impersonation_denied",
+            "actor_username": actor_username,
+            "target_username": target_username,
+            "reason": reason,
+            "session_id": session_id,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_agent": user_agent,
+            "additional_context": additional_context or {},
+        }
+
+        self.audit_logger.warning(
+            f"IMPERSONATION_DENIED: {json.dumps(log_entry)}",
+            extra={"correlation_id": get_correlation_id()},
+        )
+
     def get_pr_logs(
         self,
         repo_alias: Optional[str] = None,

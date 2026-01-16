@@ -221,8 +221,9 @@ class FilesystemVectorStore:
         collection_path = self.base_path / collection_name
         collection_path.mkdir(parents=True, exist_ok=True)
 
-        # Ensure collection directories are gitignored if in a git repo
-        self._ensure_gitignore(collection_name)
+        # Story #726: Removed _ensure_gitignore() call.
+        # CIDX must not modify files outside .code-indexer/ directory.
+        # The .gitignore modification was causing git pull failures in golden repositories.
 
         # Create projection matrix for this collection
         output_dim = 64  # Target 64-dim for 32-char hex path
@@ -1262,54 +1263,9 @@ class FilesystemVectorStore:
 
         path_index.save(path_index_file)
 
-    def _ensure_gitignore(self, collection_name: str) -> None:
-        """Ensure collection directory is in .gitignore if in a git repo.
-
-        This prevents collection storage from making the repo appear dirty.
-
-        Args:
-            collection_name: Name of the collection to add to .gitignore
-        """
-        try:
-            # Check if we're in a git repo
-            result = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                cwd=self.project_root,  # Use project_root instead of base_path
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-
-            if result.returncode != 0:
-                return  # Not a git repo, nothing to do
-
-            repo_root = Path(result.stdout.strip())
-            gitignore_path = repo_root / ".gitignore"
-
-            # Read existing .gitignore if it exists
-            existing_patterns = set()
-            if gitignore_path.exists():
-                with open(gitignore_path, "r") as f:
-                    existing_patterns = {
-                        line.strip()
-                        for line in f
-                        if line.strip() and not line.startswith("#")
-                    }
-
-            # Add collection pattern if not already present
-            pattern = f"/{collection_name}/"
-            if (
-                pattern not in existing_patterns
-                and collection_name not in existing_patterns
-            ):
-                with open(gitignore_path, "a") as f:
-                    f.write(
-                        f"\n# FilesystemVectorStore collection\n{collection_name}/\n"
-                    )
-
-        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
-            # Silently ignore errors - gitignore is best-effort
-            pass
+    # Story #726: _ensure_gitignore() method removed.
+    # CIDX must NEVER modify files outside .code-indexer/ directory.
+    # The .gitignore modification was causing git pull failures in golden repositories.
 
     def _prepare_vector_data_batch(
         self,

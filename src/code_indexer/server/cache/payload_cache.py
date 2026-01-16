@@ -292,6 +292,53 @@ class PayloadCache:
 
         return handle
 
+    async def store_with_key(self, key: str, content: str) -> None:
+        """Store content with explicit key.
+
+        Story #720: Delegation Result Caching
+
+        Unlike store() which generates UUID4, this uses the provided key.
+        If key already exists, updates the content and timestamp.
+
+        Args:
+            key: Explicit key for storage (e.g., "delegation:job-uuid")
+            content: Content to cache
+        """
+        created_at = time.time()
+        total_size = len(content)
+
+        async with aiosqlite.connect(str(self.db_path)) as db:
+            # Use INSERT OR REPLACE to handle updates
+            await db.execute(
+                """
+                INSERT OR REPLACE INTO payload_cache (handle, content, created_at, total_size)
+                VALUES (?, ?, ?, ?)
+                """,
+                (key, content, created_at, total_size),
+            )
+            await db.commit()
+
+    async def has_key(self, key: str) -> bool:
+        """Check if a key exists in the cache without retrieving content.
+
+        Story #720: Delegation Result Caching
+
+        Efficiently checks existence using COUNT(*) without loading content.
+
+        Args:
+            key: The key to check (can be UUID4 from store() or explicit key)
+
+        Returns:
+            True if key exists in cache, False otherwise
+        """
+        async with aiosqlite.connect(str(self.db_path)) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM payload_cache WHERE handle = ?",
+                (key,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] > 0 if row else False
+
     async def retrieve(self, handle: str, page: int = 0) -> CacheRetrievalResult:
         """Retrieve cached content by handle with pagination.
 
