@@ -9092,53 +9092,54 @@ async def handle_execute_delegation_function(
             return _mcp_response({"success": False, "error": param_error})
 
         # Create client and ensure repos registered
-        client = ClaudeServerClient(
+        # Story #732: Use async context manager for proper connection cleanup
+        async with ClaudeServerClient(
             base_url=delegation_config.claude_server_url,
             username=delegation_config.claude_server_username,
             password=delegation_config.claude_server_credential,
             skip_ssl_verify=delegation_config.skip_ssl_verify,
-        )
-        repo_aliases = await _ensure_repos_registered(client, target_function.required_repos)
+        ) as client:
+            repo_aliases = await _ensure_repos_registered(client, target_function.required_repos)
 
-        # Render prompt and create job
-        processor = PromptTemplateProcessor()
-        impersonation_user = target_function.impersonation_user or effective_user.username
-        rendered_prompt = processor.render(
-            template=target_function.prompt_template,
-            parameters=parameters,
-            user_prompt=user_prompt,
-            impersonation_user=impersonation_user,
-        )
+            # Render prompt and create job
+            processor = PromptTemplateProcessor()
+            impersonation_user = target_function.impersonation_user or effective_user.username
+            rendered_prompt = processor.render(
+                template=target_function.prompt_template,
+                parameters=parameters,
+                user_prompt=user_prompt,
+                impersonation_user=impersonation_user,
+            )
 
-        job_result = await client.create_job(prompt=rendered_prompt, repositories=repo_aliases)
-        # Claude Server returns camelCase "jobId"
-        job_id = job_result.get("jobId") or job_result.get("job_id")
-        if not job_id:
-            return _mcp_response({"success": False, "error": "Job created but no job_id returned"})
+            job_result = await client.create_job(prompt=rendered_prompt, repositories=repo_aliases)
+            # Claude Server returns camelCase "jobId"
+            job_id = job_result.get("jobId") or job_result.get("job_id")
+            if not job_id:
+                return _mcp_response({"success": False, "error": "Job created but no job_id returned"})
 
-        # Story #720: Register callback URL with Claude Server for completion notification
-        callback_base_url = _get_cidx_callback_base_url()
-        if callback_base_url:
-            callback_url = f"{callback_base_url.rstrip('/')}/api/delegation/callback/{job_id}"
-            try:
-                await client.register_callback(job_id, callback_url)
-                logger.debug(f"Registered callback URL for job {job_id}: {callback_url}")
-            except Exception as callback_err:
-                # Log but don't fail - callback registration is best-effort
-                logger.warning(
-                    f"Failed to register callback for job {job_id}: {callback_err}",
-                    extra={"correlation_id": get_correlation_id()},
-                )
+            # Story #720: Register callback URL with Claude Server for completion notification
+            callback_base_url = _get_cidx_callback_base_url()
+            if callback_base_url:
+                callback_url = f"{callback_base_url.rstrip('/')}/api/delegation/callback/{job_id}"
+                try:
+                    await client.register_callback(job_id, callback_url)
+                    logger.debug(f"Registered callback URL for job {job_id}: {callback_url}")
+                except Exception as callback_err:
+                    # Log but don't fail - callback registration is best-effort
+                    logger.warning(
+                        f"Failed to register callback for job {job_id}: {callback_err}",
+                        extra={"correlation_id": get_correlation_id()},
+                    )
 
-        # Story #720: Register job in tracker for callback-based completion
-        from ..services.delegation_job_tracker import DelegationJobTracker
+            # Story #720: Register job in tracker for callback-based completion
+            from ..services.delegation_job_tracker import DelegationJobTracker
 
-        tracker = DelegationJobTracker.get_instance()
-        await tracker.register_job(job_id)
+            tracker = DelegationJobTracker.get_instance()
+            await tracker.register_job(job_id)
 
-        await client.start_job(job_id)
+            await client.start_job(job_id)
 
-        return _mcp_response({"success": True, "job_id": job_id})
+            return _mcp_response({"success": True, "job_id": job_id})
 
     except ClaudeServerError as e:
         logger.error(f"Claude Server error: {e}", extra={"correlation_id": get_correlation_id()})

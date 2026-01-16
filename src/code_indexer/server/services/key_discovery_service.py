@@ -7,7 +7,7 @@ Discovers existing SSH keys and parses config file mappings.
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 # Files to ignore when discovering keys
@@ -45,15 +45,19 @@ class KeyDiscoveryService:
             ssh_dir = Path.home() / ".ssh"
         self.ssh_dir = ssh_dir
 
-    def _compute_fingerprint(self, public_key_path: Path) -> Optional[str]:
+    def _extract_key_info(
+        self, public_key_path: Path
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
-        Compute fingerprint of an SSH public key using ssh-keygen.
+        Extract fingerprint and key type from SSH public key using ssh-keygen.
 
         Args:
             public_key_path: Path to the public key file
 
         Returns:
-            Fingerprint string (e.g., "SHA256:xxxx...") or None if computation fails
+            Tuple of (fingerprint, key_type) or (None, None) if extraction fails.
+            fingerprint: String like "SHA256:xxxx..."
+            key_type: Lowercase string like "ed25519", "rsa", "ecdsa"
         """
         try:
             result = subprocess.run(
@@ -63,14 +67,40 @@ class KeyDiscoveryService:
                 timeout=5,
             )
             if result.returncode == 0 and result.stdout:
-                # Output format: "256 SHA256:xxxx... user@host (ED25519)"
-                # Extract the SHA256:xxxx... part (second field)
+                # Output format: "256 SHA256:xxxx... comment (ED25519)"
+                # parts[0] = "256" (bits)
+                # parts[1] = "SHA256:xxx" (fingerprint)
+                # parts[-1] = "(ED25519)" (key type in parens)
+                # parts[2:-1] = comment (may be empty or multi-word)
                 parts = result.stdout.strip().split()
-                if len(parts) >= 2:
-                    return parts[1]
-            return None
+                fingerprint = parts[1] if len(parts) >= 2 else None
+
+                # Key type is in parentheses at the end
+                key_type = None
+                if parts and parts[-1].startswith("(") and parts[-1].endswith(")"):
+                    key_type = parts[-1][1:-1].lower()  # Remove parens, lowercase
+
+                return fingerprint, key_type
+            return None, None
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
-            return None
+            return None, None
+
+    def _compute_fingerprint(self, public_key_path: Path) -> Optional[str]:
+        """
+        Compute fingerprint of an SSH public key using ssh-keygen.
+
+        DEPRECATED: Use _extract_key_info instead which returns both fingerprint
+        and key_type. This method is kept for backward compatibility with
+        existing tests.
+
+        Args:
+            public_key_path: Path to the public key file
+
+        Returns:
+            Fingerprint string (e.g., "SHA256:xxxx...") or None if computation fails
+        """
+        fingerprint, _ = self._extract_key_info(public_key_path)
+        return fingerprint
 
     def discover_existing_keys(self) -> List[KeyInfo]:
         """
@@ -101,13 +131,14 @@ class KeyDiscoveryService:
             # Check if corresponding .pub file exists
             pub_path = file_path.parent / f"{file_path.name}.pub"
             if pub_path.exists():
-                fingerprint = self._compute_fingerprint(pub_path)
+                fingerprint, key_type = self._extract_key_info(pub_path)
                 discovered_keys.append(
                     KeyInfo(
                         name=file_path.name,
                         private_path=file_path,
                         public_path=pub_path,
                         fingerprint=fingerprint,
+                        key_type=key_type,
                         is_cidx_managed=False,
                     )
                 )

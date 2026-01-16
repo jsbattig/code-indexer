@@ -16,6 +16,7 @@ Thread Safety:
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional, Dict, Any
 
@@ -77,6 +78,7 @@ class MCPSessionState:
         self._session_id = session_id
         self._authenticated_user = authenticated_user
         self._impersonated_user: Optional[User] = None
+        self._last_activity = datetime.now(timezone.utc)
 
     @property
     def session_id(self) -> str:
@@ -112,6 +114,26 @@ class MCPSessionState:
     def is_impersonating(self) -> bool:
         """Check if impersonation is currently active."""
         return self._impersonated_user is not None
+
+    @property
+    def last_activity(self) -> datetime:
+        """
+        Get last activity timestamp (thread-safe).
+
+        Returns:
+            The timestamp of the last activity on this session.
+        """
+        with self._lock:
+            return self._last_activity
+
+    def touch(self) -> None:
+        """
+        Update last activity timestamp (thread-safe).
+
+        Called when the session is accessed to track activity for TTL-based cleanup.
+        """
+        with self._lock:
+            self._last_activity = datetime.now(timezone.utc)
 
     def can_impersonate(self) -> bool:
         """

@@ -2,7 +2,7 @@
 
 <div class="health-grid">
     {% if health %}
-    <!-- Overall Status -->
+    <!-- Overall Status (Story #727 AC5: Display failure reasons) -->
     <article class="health-card overall-status">
         <header>
             <h3>Server Status</h3>
@@ -11,6 +11,15 @@
             <span class="status-indicator status-{{ health.status.value }}"></span>
             <span class="status-text">{{ health.status.value | capitalize }}</span>
         </div>
+        {% if health.failure_reasons and health.failure_reasons|length > 0 %}
+        <div class="failure-reasons">
+            <ul class="failure-list">
+                {% for reason in health.failure_reasons %}
+                <li class="failure-item">{{ reason }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
         <footer>
             <small>Last checked: {{ health.timestamp.strftime('%Y-%m-%d %H:%M:%S') if health.timestamp else 'N/A' }}</small>
         </footer>

@@ -61,6 +61,17 @@ class ClaudeServerClient:
         self._jwt_token: Optional[str] = None
         self._jwt_expires: Optional[datetime] = None
 
+        # Story #732: HTTP connection pooling
+        # Single shared client for all requests, enabling connection reuse
+        self._client = httpx.AsyncClient(
+            verify=not skip_ssl_verify,
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+            ),
+        )
+
     def __repr__(self) -> str:
         """Prevent accidental credential exposure in logs and debugging output."""
         return f"ClaudeServerClient(base_url={self.base_url!r}, username={self.username!r})"
@@ -79,38 +90,38 @@ class ClaudeServerClient:
         login_url = f"{self.base_url}/auth/login"
 
         try:
-            async with httpx.AsyncClient(verify=not self.skip_ssl_verify) as client:
-                response = await client.post(
-                    login_url,
-                    json={"username": self.username, "password": self.password},
-                    timeout=30.0,
-                )
+            # Story #732: Use shared client for connection pooling
+            # Timeout is configured at client level in __init__ (30s total, 10s connect)
+            response = await self._client.post(
+                login_url,
+                json={"username": self.username, "password": self.password},
+            )
 
-                if response.status_code == 200:
-                    data = response.json()
-                    # Support both Claude Server ("token") and standard OAuth ("access_token")
-                    self._jwt_token = data.get("token") or data.get("access_token")
-                    if not self._jwt_token:
-                        raise ClaudeServerError("No token in authentication response")
-                    # Calculate expiration time
-                    # Claude Server returns "expires" (ISO datetime), standard returns "expires_in" (seconds)
-                    if "expires" in data:
-                        from dateutil.parser import parse as parse_datetime
-                        self._jwt_expires = parse_datetime(data["expires"])
-                    else:
-                        expires_in = data.get("expires_in", 3600)
-                        self._jwt_expires = datetime.now(timezone.utc) + timedelta(
-                            seconds=expires_in
-                        )
-                    return self._jwt_token
-                elif response.status_code == 401:
-                    raise ClaudeServerAuthError(
-                        f"Authentication failed: {response.status_code}"
-                    )
+            if response.status_code == 200:
+                data = response.json()
+                # Support both Claude Server ("token") and standard OAuth ("access_token")
+                self._jwt_token = data.get("token") or data.get("access_token")
+                if not self._jwt_token:
+                    raise ClaudeServerError("No token in authentication response")
+                # Calculate expiration time
+                # Claude Server returns "expires" (ISO datetime), standard returns "expires_in" (seconds)
+                if "expires" in data:
+                    from dateutil.parser import parse as parse_datetime
+                    self._jwt_expires = parse_datetime(data["expires"])
                 else:
-                    raise ClaudeServerError(
-                        f"Authentication error: HTTP {response.status_code}"
+                    expires_in = data.get("expires_in", 3600)
+                    self._jwt_expires = datetime.now(timezone.utc) + timedelta(
+                        seconds=expires_in
                     )
+                return self._jwt_token
+            elif response.status_code == 401:
+                raise ClaudeServerAuthError(
+                    f"Authentication failed: {response.status_code}"
+                )
+            else:
+                raise ClaudeServerError(
+                    f"Authentication error: HTTP {response.status_code}"
+                )
 
         except httpx.ConnectError as e:
             raise ClaudeServerError(f"Connection error to Claude Server: {e}")
@@ -162,33 +173,32 @@ class ClaudeServerClient:
         url = f"{self.base_url}{endpoint}"
 
         try:
-            async with httpx.AsyncClient(verify=not self.skip_ssl_verify) as client:
-                headers = {"Authorization": f"Bearer {token}"}
+            # Story #732: Use shared client for connection pooling
+            # Timeout is configured at client level in __init__ (30s total, 10s connect)
+            headers = {"Authorization": f"Bearer {token}"}
 
-                if method.upper() == "GET":
-                    response = await client.get(url, headers=headers, timeout=30.0)
-                elif method.upper() == "POST":
-                    response = await client.post(
-                        url, headers=headers, json=json_data, timeout=30.0
-                    )
-                else:
-                    raise ClaudeServerError(f"Unsupported HTTP method: {method}")
+            if method.upper() == "GET":
+                response = await self._client.get(url, headers=headers)
+            elif method.upper() == "POST":
+                response = await self._client.post(url, headers=headers, json=json_data)
+            else:
+                raise ClaudeServerError(f"Unsupported HTTP method: {method}")
 
-                # Handle 401 with retry
-                if response.status_code == 401 and retry_on_401:
-                    # Clear token and re-authenticate
-                    self._jwt_token = None
-                    self._jwt_expires = None
-                    return await self._make_authenticated_request(
-                        method, endpoint, json_data, retry_on_401=False
-                    )
-                elif response.status_code == 401 and not retry_on_401:
-                    # Second 401 means auth truly failed - raise exception
-                    raise ClaudeServerAuthError(
-                        "Authentication failed after token refresh"
-                    )
+            # Handle 401 with retry
+            if response.status_code == 401 and retry_on_401:
+                # Clear token and re-authenticate
+                self._jwt_token = None
+                self._jwt_expires = None
+                return await self._make_authenticated_request(
+                    method, endpoint, json_data, retry_on_401=False
+                )
+            elif response.status_code == 401 and not retry_on_401:
+                # Second 401 means auth truly failed - raise exception
+                raise ClaudeServerAuthError(
+                    "Authentication failed after token refresh"
+                )
 
-                return response
+            return response
 
         except httpx.ConnectError as e:
             raise ClaudeServerError(f"Connection error to Claude Server: {e}")
@@ -380,3 +390,22 @@ class ClaudeServerClient:
             raise ClaudeServerError(
                 f"Failed to register callback: HTTP {response.status_code}"
             )
+
+    # Story #732: Connection pool lifecycle management
+
+    async def close(self) -> None:
+        """
+        Close the HTTP client and release connections.
+
+        Should be called when the client is no longer needed to properly
+        clean up connection pool resources. Safe to call multiple times.
+        """
+        await self._client.aclose()
+
+    async def __aenter__(self) -> "ClaudeServerClient":
+        """Support async context manager for automatic cleanup."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Close client on context exit."""
+        await self.close()

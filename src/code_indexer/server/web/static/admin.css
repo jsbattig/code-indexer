@@ -231,6 +231,34 @@ header.admin-header {
     color: var(--pico-muted-color);
 }
 
+/* Story #727 AC5: Failure reasons display in Server Status card */
+.failure-reasons {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--pico-muted-border-color);
+}
+
+.failure-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.8rem;
+}
+
+.failure-item {
+    color: var(--pico-muted-color);
+    padding: 0.15rem 0;
+    padding-left: 0.75rem;
+    position: relative;
+}
+
+.failure-item::before {
+    content: "-";
+    position: absolute;
+    left: 0;
+    color: #ef4444;
+}
+
 /* System metrics display (CPU/RAM bars) */
 .system-metrics {
     display: flex;

@@ -133,6 +133,11 @@ class TestExecuteDelegationFunctionHandler:
                 "code_indexer.server.mcp.handlers._get_delegation_config",
                 lambda: mock_delegation_config,
             )
+            # Skip callback registration - tested separately in TestExecuteDelegationFunctionCallbackRegistration
+            mp.setattr(
+                "code_indexer.server.mcp.handlers._get_cidx_callback_base_url",
+                lambda: None,
+            )
 
             response = await handle_execute_delegation_function(
                 {"function_name": "semantic-search", "parameters": {"query": "bugs"}, "prompt": "Find"},
