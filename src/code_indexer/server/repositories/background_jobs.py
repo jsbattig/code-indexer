@@ -145,6 +145,15 @@ class BackgroundJobManager:
         Raises:
             Exception: If user has exceeded max jobs limit (if configured)
         """
+        # Check maintenance mode first (Story #734)
+        from code_indexer.server.services.maintenance_service import (
+            get_maintenance_state,
+        )
+        from code_indexer.server.jobs.exceptions import MaintenanceModeError
+
+        if get_maintenance_state().is_maintenance_mode():
+            raise MaintenanceModeError()
+
         # NOTE: max_jobs_per_user limit has been removed as an artificial constraint
         # Jobs are no longer limited per user
 

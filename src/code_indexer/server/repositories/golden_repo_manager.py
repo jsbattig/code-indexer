@@ -243,7 +243,17 @@ class GoldenRepoManager:
             ValueError: If alias contains path traversal characters
             GoldenRepoError: If alias already exists
             GitOperationError: If git repository is invalid or inaccessible
+            MaintenanceModeError: If server is in maintenance mode (Story #734)
         """
+        # Check maintenance mode first (Story #734)
+        from code_indexer.server.services.maintenance_service import (
+            get_maintenance_state,
+        )
+        from code_indexer.server.jobs.exceptions import MaintenanceModeError
+
+        if get_maintenance_state().is_maintenance_mode():
+            raise MaintenanceModeError()
+
         # SECURITY: Validate alias BEFORE any operations (defense-in-depth)
         # Reject path traversal characters to prevent escaping golden repos directory
         if ".." in alias:
@@ -430,7 +440,17 @@ class GoldenRepoManager:
 
         Raises:
             GoldenRepoError: If repository not found
+            MaintenanceModeError: If server is in maintenance mode (Story #734)
         """
+        # Check maintenance mode first (Story #734)
+        from code_indexer.server.services.maintenance_service import (
+            get_maintenance_state,
+        )
+        from code_indexer.server.jobs.exceptions import MaintenanceModeError
+
+        if get_maintenance_state().is_maintenance_mode():
+            raise MaintenanceModeError()
+
         # Validate repository exists BEFORE submitting job
         if alias not in self.golden_repos:
             raise GoldenRepoError(f"Golden repository '{alias}' not found")

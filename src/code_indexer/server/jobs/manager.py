@@ -44,6 +44,7 @@ from .exceptions import (
     DuplicateRepositorySyncError,
     ResourceLimitExceededError,
     InvalidJobStateTransitionError,
+    MaintenanceModeError,
 )
 from .models import SyncJob, JobType, JobStatus, PhaseStatus
 
@@ -353,7 +354,16 @@ class SyncJobManager:
             ConcurrencyLimitExceededError: If user concurrency limits exceeded
             DuplicateRepositorySyncError: If repository is already being synced
             ResourceLimitExceededError: If system resource limits exceeded
+            MaintenanceModeError: If server is in maintenance mode (Story #734)
         """
+        # Check maintenance mode first (Story #734)
+        from code_indexer.server.services.maintenance_service import (
+            get_maintenance_state,
+        )
+
+        if get_maintenance_state().is_maintenance_mode():
+            raise MaintenanceModeError()
+
         # Validate parameters
         if not username or not username.strip():
             raise InvalidJobParametersError("Username cannot be empty")

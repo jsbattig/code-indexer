@@ -313,6 +313,9 @@ For complete configuration reference including environment variables, daemon set
 - [AI Integration Guide](docs/ai-integration.md) - Connect AI assistants to CIDX
 - [MCP Bridge Guide](docs/mcpb/README.md) - Claude Desktop integration via MCP
 
+### Server Administration
+- [Auto-Update Guide](docs/auto-update.md) - Job-aware auto-update with graceful drain mode
+
 ### Advanced
 - [Architecture Guide](docs/architecture.md) - System design and storage architecture
 - [Migration Guide](docs/migration-to-v8.md) - Upgrading from v7.x to v8.x

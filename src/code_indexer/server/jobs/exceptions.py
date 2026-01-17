@@ -98,3 +98,17 @@ class InvalidJobStateTransitionError(SyncJobError):
         self.job_id = job_id
         self.current_state = current_state
         self.attempted_state = attempted_state
+
+
+class MaintenanceModeError(SyncJobError):
+    """Raised when job creation is rejected due to maintenance mode.
+
+    Story #734: Job-Aware Auto-Update with Graceful Drain Mode
+    """
+
+    def __init__(self, retry_after_seconds: int = 60):
+        super().__init__(
+            f"Server is in maintenance mode. New jobs are not accepted. "
+            f"Please retry after {retry_after_seconds} seconds."
+        )
+        self.retry_after_seconds = retry_after_seconds

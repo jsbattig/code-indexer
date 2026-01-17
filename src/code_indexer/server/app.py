@@ -81,6 +81,8 @@ from .routers.git import router as git_router
 from .routers.indexing import router as indexing_router
 from .routers.cache import router as cache_router
 from .routers.delegation_callbacks import router as delegation_callbacks_router
+from .routers.maintenance_router import router as maintenance_router
+from .services.maintenance_service import get_maintenance_state
 from .routers.groups import (
     router as groups_router,
     users_router,
@@ -2843,6 +2845,7 @@ def create_app() -> FastAPI:
                     "failed_jobs": failed_jobs,
                 },
                 "started_at": get_server_start_time(),
+                "maintenance_mode": get_maintenance_state().is_maintenance_mode(),
             }
 
             # Add version if available
@@ -7557,6 +7560,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router)
     app.include_router(audit_router)
     app.include_router(delegation_callbacks_router)
+    app.include_router(maintenance_router)
 
     # Mount Web Admin UI routes and static files
     from fastapi.staticfiles import StaticFiles
