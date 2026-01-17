@@ -365,12 +365,12 @@ class TestServiceErrorMessagesInFailureReasons:
             ) as mock_net_io:
                 mock_mem.return_value = MagicMock(percent=50.0)
                 mock_cpu.return_value = 30.0
-                # Set disk space in warning range (between critical and warning thresholds)
+                # Set disk space in warning range (80-90% used = DEGRADED)
                 mock_disk.return_value = MagicMock(
-                    free=3 * 1024**3,  # 3GB - between 1GB critical and 5GB warning
-                    used=197 * 1024**3,
+                    free=30 * 1024**3,  # 30GB free
+                    used=170 * 1024**3,  # 170GB used
                     total=200 * 1024**3,
-                    percent=98.5,
+                    percent=85.0,  # 85% used (between 80% warning and 90% critical)
                 )
                 mock_parts.return_value = []
                 mock_disk_io.return_value = MagicMock(read_bytes=0, write_bytes=0)

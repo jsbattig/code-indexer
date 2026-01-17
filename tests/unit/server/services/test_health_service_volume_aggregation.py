@@ -2,7 +2,7 @@
 Tests for Story #727 AC2: Aggregate All Volume Health.
 
 Server Status should check ALL mounted volumes.
-Per-volume thresholds: <5GB free = WARNING, <1GB free = ERROR.
+Per-volume thresholds (percentage-based): 80% used = WARNING, 90% used = CRITICAL.
 """
 
 import pytest
@@ -45,8 +45,8 @@ def mock_db_health(healthy_db_result):
 class TestVolumeHealthAggregation:
     """AC2: Aggregate All Volume Health."""
 
-    def test_volume_with_less_than_5gb_free_returns_degraded(self, mock_db_health):
-        """When ANY volume has <5GB free, Server Status should be DEGRADED."""
+    def test_volume_with_warning_percent_returns_degraded(self, mock_db_health):
+        """When ANY volume has 80-90% used, Server Status should be DEGRADED."""
         from code_indexer.server.services.health_service import HealthCheckService
 
         with patch("psutil.virtual_memory") as mock_mem, patch(
@@ -70,10 +70,10 @@ class TestVolumeHealthAggregation:
             def disk_usage_side_effect(path):
                 if path == "/data":
                     return MagicMock(
-                        free=3 * 1024**3,  # 3GB free (< 5GB warning)
-                        used=97 * 1024**3,
+                        free=15 * 1024**3,  # 15GB free
+                        used=85 * 1024**3,  # 85GB used
                         total=100 * 1024**3,
-                        percent=97.0,
+                        percent=85.0,  # 85% used (between 80% warning and 90% critical)
                     )
                 return MagicMock(
                     free=100 * 1024**3,

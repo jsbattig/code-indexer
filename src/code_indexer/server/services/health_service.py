@@ -34,8 +34,12 @@ logger = logging.getLogger(__name__)
 # Health thresholds
 MEMORY_WARNING_THRESHOLD = 80.0  # 80% memory usage
 MEMORY_CRITICAL_THRESHOLD = 90.0  # 90% memory usage (Story #727 AC3: updated from 95%)
-DISK_WARNING_THRESHOLD = 5.0  # 5GB free space
-DISK_CRITICAL_THRESHOLD = 1.0  # 1GB free space
+DISK_WARNING_THRESHOLD = 5.0  # 5GB free space (legacy, for root volume only)
+DISK_CRITICAL_THRESHOLD = 1.0  # 1GB free space (legacy, for root volume only)
+# Percentage-based disk thresholds (used for multi-volume health checks)
+# These work correctly regardless of volume size (fixes small boot volume false positives)
+DISK_WARNING_THRESHOLD_PERCENT = 80.0  # 80% used = 20% free = warning
+DISK_CRITICAL_THRESHOLD_PERCENT = 90.0  # 90% used = 10% free = critical
 RESPONSE_TIME_WARNING = 1000  # 1 second
 RESPONSE_TIME_CRITICAL = 5000  # 5 seconds
 MAX_FAILURE_REASONS = 3  # Story #727 AC5: Limit displayed failure reasons
@@ -192,9 +196,10 @@ class HealthCheckService:
         start_time = time.time()
 
         try:
-            # Check disk space
+            # Check disk space (use percentage for consistency with multi-volume checks)
             disk_usage = psutil.disk_usage("/")
             free_space_gb = disk_usage.free / (1024**3)
+            disk_used_percent = disk_usage.percent
 
             # Check memory usage
             memory = psutil.virtual_memory()
@@ -202,14 +207,14 @@ class HealthCheckService:
 
             response_time = int((time.time() - start_time) * 1000)
 
-            # Determine status based on resource availability
+            # Determine status based on resource availability (percentage-based for disk)
             if (
-                free_space_gb >= DISK_WARNING_THRESHOLD
+                disk_used_percent < DISK_WARNING_THRESHOLD_PERCENT
                 and memory_percent <= MEMORY_WARNING_THRESHOLD
             ):
                 status = HealthStatus.HEALTHY
             elif (
-                free_space_gb >= DISK_CRITICAL_THRESHOLD
+                disk_used_percent < DISK_CRITICAL_THRESHOLD_PERCENT
                 and memory_percent <= MEMORY_CRITICAL_THRESHOLD
             ):
                 status = HealthStatus.DEGRADED
@@ -217,8 +222,8 @@ class HealthCheckService:
                 status = HealthStatus.UNHEALTHY
 
             error_message = None
-            if free_space_gb < DISK_WARNING_THRESHOLD:
-                error_message = f"Low disk space: {free_space_gb:.1f}GB free"
+            if disk_used_percent >= DISK_WARNING_THRESHOLD_PERCENT:
+                error_message = f"Low disk space: {disk_used_percent:.0f}% used ({free_space_gb:.1f}GB free)"
             elif memory_percent > MEMORY_WARNING_THRESHOLD:
                 error_message = f"High memory usage: {memory_percent:.1f}%"
 
@@ -394,12 +399,17 @@ class HealthCheckService:
         has_error = False
 
         for volume in volumes:
-            if volume.free_gb < DISK_CRITICAL_THRESHOLD:
+            # Use percentage-based thresholds (fixes false positives on small volumes like /boot)
+            if volume.used_percent >= DISK_CRITICAL_THRESHOLD_PERCENT:
                 has_error = True
-                reasons.append(f"Volume {volume.mount_point}: {volume.free_gb:.1f}GB free")
-            elif volume.free_gb < DISK_WARNING_THRESHOLD:
+                reasons.append(
+                    f"Volume {volume.mount_point}: {volume.used_percent:.0f}% used ({volume.free_gb:.1f}GB free)"
+                )
+            elif volume.used_percent >= DISK_WARNING_THRESHOLD_PERCENT:
                 has_warning = True
-                reasons.append(f"Volume {volume.mount_point}: {volume.free_gb:.1f}GB free")
+                reasons.append(
+                    f"Volume {volume.mount_point}: {volume.used_percent:.0f}% used ({volume.free_gb:.1f}GB free)"
+                )
 
         return has_warning, has_error, reasons
 
