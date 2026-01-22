@@ -50,15 +50,14 @@ class TestCPUTimeWindowThresholds:
         """A single CPU spike >95% should NOT trigger warning."""
         from code_indexer.server.services.health_service import HealthCheckService
 
-        with patch("psutil.virtual_memory") as mock_mem, patch(
-            "psutil.cpu_percent"
-        ) as mock_cpu, patch("psutil.disk_usage") as mock_disk, patch(
-            "psutil.disk_partitions"
-        ) as mock_parts, patch(
-            "psutil.disk_io_counters"
-        ) as mock_disk_io, patch(
-            "psutil.net_io_counters"
-        ) as mock_net_io:
+        with (
+            patch("psutil.virtual_memory") as mock_mem,
+            patch("psutil.cpu_percent") as mock_cpu,
+            patch("psutil.disk_usage") as mock_disk,
+            patch("psutil.disk_partitions") as mock_parts,
+            patch("psutil.disk_io_counters") as mock_disk_io,
+            patch("psutil.net_io_counters") as mock_net_io,
+        ):
             mock_mem.return_value = MagicMock(percent=50.0)
             mock_cpu.return_value = 98.0  # High CPU spike
             mock_disk.return_value = MagicMock(
@@ -81,17 +80,15 @@ class TestCPUTimeWindowThresholds:
         """CPU >95% sustained for 30 seconds should return DEGRADED."""
         from code_indexer.server.services.health_service import HealthCheckService
 
-        with patch("psutil.virtual_memory") as mock_mem, patch(
-            "psutil.cpu_percent"
-        ) as mock_cpu, patch("psutil.disk_usage") as mock_disk, patch(
-            "psutil.disk_partitions"
-        ) as mock_parts, patch(
-            "psutil.disk_io_counters"
-        ) as mock_disk_io, patch(
-            "psutil.net_io_counters"
-        ) as mock_net_io, patch(
-            "time.time"
-        ) as mock_time:
+        with (
+            patch("psutil.virtual_memory") as mock_mem,
+            patch("psutil.cpu_percent") as mock_cpu,
+            patch("psutil.disk_usage") as mock_disk,
+            patch("psutil.disk_partitions") as mock_parts,
+            patch("psutil.disk_io_counters") as mock_disk_io,
+            patch("psutil.net_io_counters") as mock_net_io,
+            patch("time.time") as mock_time,
+        ):
             mock_mem.return_value = MagicMock(percent=50.0)
             mock_cpu.return_value = 98.0  # High CPU
             mock_disk.return_value = MagicMock(
@@ -120,17 +117,15 @@ class TestCPUTimeWindowThresholds:
         """CPU >95% sustained for 60 seconds should return UNHEALTHY."""
         from code_indexer.server.services.health_service import HealthCheckService
 
-        with patch("psutil.virtual_memory") as mock_mem, patch(
-            "psutil.cpu_percent"
-        ) as mock_cpu, patch("psutil.disk_usage") as mock_disk, patch(
-            "psutil.disk_partitions"
-        ) as mock_parts, patch(
-            "psutil.disk_io_counters"
-        ) as mock_disk_io, patch(
-            "psutil.net_io_counters"
-        ) as mock_net_io, patch(
-            "time.time"
-        ) as mock_time:
+        with (
+            patch("psutil.virtual_memory") as mock_mem,
+            patch("psutil.cpu_percent") as mock_cpu,
+            patch("psutil.disk_usage") as mock_disk,
+            patch("psutil.disk_partitions") as mock_parts,
+            patch("psutil.disk_io_counters") as mock_disk_io,
+            patch("psutil.net_io_counters") as mock_net_io,
+            patch("time.time") as mock_time,
+        ):
             mock_mem.return_value = MagicMock(percent=50.0)
             mock_cpu.return_value = 98.0  # High CPU
             mock_disk.return_value = MagicMock(
@@ -159,15 +154,14 @@ class TestCPUTimeWindowThresholds:
         """HealthCheckService should have _cpu_history attribute."""
         from code_indexer.server.services.health_service import HealthCheckService
 
-        with patch("psutil.virtual_memory") as mock_mem, patch(
-            "psutil.cpu_percent"
-        ) as mock_cpu, patch("psutil.disk_usage") as mock_disk, patch(
-            "psutil.disk_partitions"
-        ) as mock_parts, patch(
-            "psutil.disk_io_counters"
-        ) as mock_disk_io, patch(
-            "psutil.net_io_counters"
-        ) as mock_net_io:
+        with (
+            patch("psutil.virtual_memory") as mock_mem,
+            patch("psutil.cpu_percent") as mock_cpu,
+            patch("psutil.disk_usage") as mock_disk,
+            patch("psutil.disk_partitions") as mock_parts,
+            patch("psutil.disk_io_counters") as mock_disk_io,
+            patch("psutil.net_io_counters") as mock_net_io,
+        ):
             mock_mem.return_value = MagicMock(percent=50.0)
             mock_cpu.return_value = 30.0
             mock_disk.return_value = MagicMock(

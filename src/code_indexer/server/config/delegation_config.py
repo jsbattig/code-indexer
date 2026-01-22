@@ -52,7 +52,9 @@ class ClaudeDelegationConfig:
     claude_server_credential_type: Literal["password", "api_key"] = "password"
     claude_server_credential: str = ""  # Encrypted at rest
     skip_ssl_verify: bool = False  # Allow self-signed certificates for E2E testing
-    cidx_callback_url: str = ""  # Story #720: URL that Claude Server uses to POST callbacks
+    cidx_callback_url: str = (
+        ""  # Story #720: URL that Claude Server uses to POST callbacks
+    )
 
     @property
     def is_configured(self) -> bool:

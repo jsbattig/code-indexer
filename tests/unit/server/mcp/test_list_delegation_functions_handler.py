@@ -178,6 +178,7 @@ class TestListDelegationFunctionsHandler:
                 "code_indexer.server.mcp.handlers._get_delegation_function_repo_path",
                 lambda: temp_function_repo,
             )
+
             # _get_user_groups is called with the effective user
             # Impersonated user belongs to 'admins' group
             # Admin user (if NOT impersonating) would belong to 'engineering' group

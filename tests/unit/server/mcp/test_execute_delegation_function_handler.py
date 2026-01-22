@@ -12,7 +12,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -93,7 +92,11 @@ class TestExecuteDelegationFunctionHandler:
 
     @pytest.mark.asyncio
     async def test_handler_returns_job_id_on_success(
-        self, test_user, temp_function_repo, mock_delegation_config, httpx_mock: HTTPXMock
+        self,
+        test_user,
+        temp_function_repo,
+        mock_delegation_config,
+        httpx_mock: HTTPXMock,
     ):
         """Handler returns job_id on successful execution."""
         from code_indexer.server.mcp.handlers import handle_execute_delegation_function
@@ -140,7 +143,11 @@ class TestExecuteDelegationFunctionHandler:
             )
 
             response = await handle_execute_delegation_function(
-                {"function_name": "semantic-search", "parameters": {"query": "bugs"}, "prompt": "Find"},
+                {
+                    "function_name": "semantic-search",
+                    "parameters": {"query": "bugs"},
+                    "prompt": "Find",
+                },
                 test_user,
             )
 
@@ -254,7 +261,11 @@ class TestExecuteDelegationFunctionHandler:
             )
 
             response = await handle_execute_delegation_function(
-                {"function_name": "semantic-search", "parameters": {}, "prompt": "Test"},
+                {
+                    "function_name": "semantic-search",
+                    "parameters": {},
+                    "prompt": "Test",
+                },
                 test_user,
             )
 
@@ -288,7 +299,11 @@ class TestExecuteDelegationFunctionHandler:
 
     @pytest.mark.asyncio
     async def test_handler_returns_error_when_job_id_missing(
-        self, test_user, temp_function_repo, mock_delegation_config, httpx_mock: HTTPXMock
+        self,
+        test_user,
+        temp_function_repo,
+        mock_delegation_config,
+        httpx_mock: HTTPXMock,
     ):
         """
         Handler returns error when create_job response has no job_id.
@@ -333,7 +348,11 @@ class TestExecuteDelegationFunctionHandler:
             )
 
             response = await handle_execute_delegation_function(
-                {"function_name": "semantic-search", "parameters": {"query": "bugs"}, "prompt": "Find"},
+                {
+                    "function_name": "semantic-search",
+                    "parameters": {"query": "bugs"},
+                    "prompt": "Find",
+                },
                 test_user,
             )
 
@@ -358,7 +377,11 @@ class TestExecuteDelegationFunctionCallbackRegistration:
 
     @pytest.mark.asyncio
     async def test_handler_registers_callback_url_with_claude_server(
-        self, test_user, temp_function_repo, mock_delegation_config, httpx_mock: HTTPXMock
+        self,
+        test_user,
+        temp_function_repo,
+        mock_delegation_config,
+        httpx_mock: HTTPXMock,
     ):
         """
         Handler registers callback URL with Claude Server after creating job.
@@ -418,7 +441,11 @@ class TestExecuteDelegationFunctionCallbackRegistration:
             )
 
             response = await handle_execute_delegation_function(
-                {"function_name": "semantic-search", "parameters": {"query": "bugs"}, "prompt": "Find"},
+                {
+                    "function_name": "semantic-search",
+                    "parameters": {"query": "bugs"},
+                    "prompt": "Find",
+                },
                 test_user,
             )
 
@@ -435,7 +462,11 @@ class TestExecuteDelegationFunctionCallbackRegistration:
 
     @pytest.mark.asyncio
     async def test_handler_registers_job_in_tracker(
-        self, test_user, temp_function_repo, mock_delegation_config, httpx_mock: HTTPXMock
+        self,
+        test_user,
+        temp_function_repo,
+        mock_delegation_config,
+        httpx_mock: HTTPXMock,
     ):
         """
         Handler registers job in DelegationJobTracker after starting job.
@@ -496,7 +527,11 @@ class TestExecuteDelegationFunctionCallbackRegistration:
             )
 
             response = await handle_execute_delegation_function(
-                {"function_name": "semantic-search", "parameters": {"query": "bugs"}, "prompt": "Find"},
+                {
+                    "function_name": "semantic-search",
+                    "parameters": {"query": "bugs"},
+                    "prompt": "Find",
+                },
                 test_user,
             )
 

@@ -76,9 +76,7 @@ class JobPhaseDetector:
         # All repos ready, job is running
         return JobPhase.JOB_RUNNING
 
-    def get_progress(
-        self, job_state: Dict[str, Any], phase: JobPhase
-    ) -> PhaseProgress:
+    def get_progress(self, job_state: Dict[str, Any], phase: JobPhase) -> PhaseProgress:
         """
         Extract phase-specific progress metrics.
 
@@ -100,15 +98,16 @@ class JobPhaseDetector:
             )
             return PhaseProgress(
                 phase=phase,
-                progress={"repos_total": repos_total, "repos_registered": repos_registered},
+                progress={
+                    "repos_total": repos_total,
+                    "repos_registered": repos_registered,
+                },
                 message=f"Registering repositories ({repos_registered}/{repos_total})...",
                 is_terminal=False,
             )
 
         if phase == JobPhase.REPO_CLONING:
-            repos_cloned = sum(
-                1 for repo in repositories if repo.get("cloned", False)
-            )
+            repos_cloned = sum(1 for repo in repositories if repo.get("cloned", False))
             return PhaseProgress(
                 phase=phase,
                 progress={"repos_total": repos_total, "repos_cloned": repos_cloned},
@@ -132,7 +131,10 @@ class JobPhaseDetector:
             tool_use_count = job_state.get("tool_use_count", 0)
             return PhaseProgress(
                 phase=phase,
-                progress={"exchange_count": exchange_count, "tool_use_count": tool_use_count},
+                progress={
+                    "exchange_count": exchange_count,
+                    "tool_use_count": tool_use_count,
+                },
                 message=f"Processing query ({exchange_count} exchanges, {tool_use_count} tool calls)...",
                 is_terminal=False,
             )

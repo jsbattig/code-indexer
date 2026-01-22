@@ -144,7 +144,9 @@ class TestKeyDiscoveryServiceFingerprint:
         # Mock _extract_key_info to return known fingerprint and key_type
         # (discover_existing_keys now calls _extract_key_info directly)
         with patch.object(
-            service, "_extract_key_info", return_value=("SHA256:abcdef123456", "ed25519")
+            service,
+            "_extract_key_info",
+            return_value=("SHA256:abcdef123456", "ed25519"),
         ) as mock_extract:
             keys = service.discover_existing_keys()
 
@@ -399,7 +401,9 @@ class TestKeyDiscoveryServiceKeyTypeExtraction:
         service = KeyDiscoveryService(ssh_dir=ssh_dir)
 
         with patch.object(
-            kds_module.subprocess, "run", side_effect=subprocess.TimeoutExpired("cmd", 5)
+            kds_module.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired("cmd", 5),
         ):
             fingerprint, key_type = service._extract_key_info(pub_key_path)
 

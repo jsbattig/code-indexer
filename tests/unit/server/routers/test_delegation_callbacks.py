@@ -77,9 +77,7 @@ class TestDelegationCallbackEndpoint:
 
         tracker = DelegationJobTracker.get_instance()
         # Register the job
-        asyncio.get_event_loop().run_until_complete(
-            tracker.register_job("job-12345")
-        )
+        asyncio.get_event_loop().run_until_complete(tracker.register_job("job-12345"))
 
         response = client.post(
             "/api/delegation/callback/job-12345",
@@ -115,9 +113,7 @@ class TestDelegationCallbackEndpoint:
         import asyncio
 
         tracker = DelegationJobTracker.get_instance()
-        asyncio.get_event_loop().run_until_complete(
-            tracker.register_job("job-99999")
-        )
+        asyncio.get_event_loop().run_until_complete(tracker.register_job("job-99999"))
 
         response = client.post(
             "/api/delegation/callback/job-99999",
@@ -176,9 +172,7 @@ class TestDelegationCallbackEndpoint:
         import asyncio
 
         tracker = DelegationJobTracker.get_instance()
-        asyncio.get_event_loop().run_until_complete(
-            tracker.register_job("path-job-id")
-        )
+        asyncio.get_event_loop().run_until_complete(tracker.register_job("path-job-id"))
 
         response = client.post(
             "/api/delegation/callback/path-job-id",
@@ -254,9 +248,7 @@ class TestDelegationCallbackEndpoint:
         import asyncio
 
         tracker = DelegationJobTracker.get_instance()
-        asyncio.get_event_loop().run_until_complete(
-            tracker.register_job("minimal-job")
-        )
+        asyncio.get_event_loop().run_until_complete(tracker.register_job("minimal-job"))
 
         # Minimal payload - only JobId, Status, Output
         response = client.post(

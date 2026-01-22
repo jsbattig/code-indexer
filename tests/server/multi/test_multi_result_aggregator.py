@@ -56,12 +56,10 @@ class TestMultiResultAggregatorPerRepoMode:
         """Per-repo limit is enforced independently."""
         repo_results = {
             "repo1": [
-                {"file": f"file{i}.py", "score": 0.9 - i * 0.01}
-                for i in range(20)
+                {"file": f"file{i}.py", "score": 0.9 - i * 0.01} for i in range(20)
             ],
             "repo2": [
-                {"file": f"file{i}.py", "score": 0.85 - i * 0.01}
-                for i in range(15)
+                {"file": f"file{i}.py", "score": 0.85 - i * 0.01} for i in range(15)
             ],
         }
 
@@ -119,8 +117,7 @@ class TestMultiResultAggregatorEdgeCases:
         """Limit smaller than number of results per repo."""
         repo_results = {
             "repo1": [
-                {"file": f"file{i}.py", "score": 0.9 - i * 0.1}
-                for i in range(10)
+                {"file": f"file{i}.py", "score": 0.9 - i * 0.1} for i in range(10)
             ],
         }
 
@@ -217,13 +214,9 @@ class TestMultiResultAggregatorScoreFiltering:
         """Score filtering is applied before per-repo limit enforcement."""
         repo_results = {
             "repo1": [
-                {"file": f"high{i}.py", "score": 0.9 - i * 0.01}
-                for i in range(5)
+                {"file": f"high{i}.py", "score": 0.9 - i * 0.01} for i in range(5)
             ]
-            + [
-                {"file": f"low{i}.py", "score": 0.5 - i * 0.01}
-                for i in range(10)
-            ],
+            + [{"file": f"low{i}.py", "score": 0.5 - i * 0.01} for i in range(10)],
         }
 
         # Limit is 3, min_score is 0.7
@@ -287,8 +280,7 @@ class TestMultiResultAggregatorScoreFiltering:
         """Score filtering combined with per-repo limit works correctly."""
         repo_results = {
             "repo1": [
-                {"file": f"file{i}.py", "score": 0.95 - i * 0.05}
-                for i in range(10)
+                {"file": f"file{i}.py", "score": 0.95 - i * 0.05} for i in range(10)
             ],
         }
 

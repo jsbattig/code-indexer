@@ -72,7 +72,9 @@ class MaintenanceState:
                 "maintenance_mode": True,
                 "running_jobs": running_jobs,
                 "queued_jobs": queued_jobs,
-                "entered_at": self._entered_at.isoformat() if self._entered_at else None,
+                "entered_at": (
+                    self._entered_at.isoformat() if self._entered_at else None
+                ),
                 "message": f"Maintenance mode active. {running_jobs} running, {queued_jobs} queued.",
             }
 
@@ -137,7 +139,9 @@ class MaintenanceState:
                 "drained": drained,
                 "running_jobs": running_jobs,
                 "queued_jobs": queued_jobs,
-                "entered_at": self._entered_at.isoformat() if self._entered_at else None,
+                "entered_at": (
+                    self._entered_at.isoformat() if self._entered_at else None
+                ),
             }
 
     def is_drained(self) -> bool:

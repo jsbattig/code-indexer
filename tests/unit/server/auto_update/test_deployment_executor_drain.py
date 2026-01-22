@@ -162,9 +162,11 @@ class TestDeploymentExecutorRestartFlow:
         with tempfile.TemporaryDirectory() as tmpdir:
             executor = DeploymentExecutor(repo_path=Path(tmpdir))
 
-            with patch.object(executor, "_enter_maintenance_mode") as mock_enter, \
-                 patch.object(executor, "_wait_for_drain") as mock_drain, \
-                 patch("subprocess.run") as mock_run:
+            with (
+                patch.object(executor, "_enter_maintenance_mode") as mock_enter,
+                patch.object(executor, "_wait_for_drain") as mock_drain,
+                patch("subprocess.run") as mock_run,
+            ):
                 mock_enter.return_value = True
                 mock_drain.return_value = True
                 mock_run.return_value = MagicMock(returncode=0)
@@ -184,9 +186,11 @@ class TestDeploymentExecutorRestartFlow:
         with tempfile.TemporaryDirectory() as tmpdir:
             executor = DeploymentExecutor(repo_path=Path(tmpdir))
 
-            with patch.object(executor, "_enter_maintenance_mode") as mock_enter, \
-                 patch.object(executor, "_wait_for_drain") as mock_drain, \
-                 patch("subprocess.run") as mock_run:
+            with (
+                patch.object(executor, "_enter_maintenance_mode") as mock_enter,
+                patch.object(executor, "_wait_for_drain") as mock_drain,
+                patch("subprocess.run") as mock_run,
+            ):
                 mock_enter.return_value = True
                 mock_drain.return_value = False  # Drain timeout exceeded
                 mock_run.return_value = MagicMock(returncode=0)
@@ -221,11 +225,17 @@ class TestDeploymentExecutorForceRestartLogging:
                 },
             ]
 
-            with patch.object(executor, "_enter_maintenance_mode") as mock_enter, \
-                 patch.object(executor, "_wait_for_drain") as mock_drain, \
-                 patch.object(executor, "_get_running_jobs_for_logging") as mock_get_jobs, \
-                 patch("subprocess.run") as mock_run, \
-                 patch("code_indexer.server.auto_update.deployment_executor.logger") as mock_logger:
+            with (
+                patch.object(executor, "_enter_maintenance_mode") as mock_enter,
+                patch.object(executor, "_wait_for_drain") as mock_drain,
+                patch.object(
+                    executor, "_get_running_jobs_for_logging"
+                ) as mock_get_jobs,
+                patch("subprocess.run") as mock_run,
+                patch(
+                    "code_indexer.server.auto_update.deployment_executor.logger"
+                ) as mock_logger,
+            ):
                 mock_enter.return_value = True
                 mock_drain.return_value = False  # Drain timeout exceeded
                 mock_get_jobs.return_value = mock_jobs
@@ -235,8 +245,13 @@ class TestDeploymentExecutorForceRestartLogging:
 
                 assert result is True
                 mock_logger.warning.assert_called()
-                warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
-                assert any("job-123" in str(call) or "running" in str(call).lower() for call in warning_calls)
+                warning_calls = [
+                    str(call) for call in mock_logger.warning.call_args_list
+                ]
+                assert any(
+                    "job-123" in str(call) or "running" in str(call).lower()
+                    for call in warning_calls
+                )
 
     def test_get_running_jobs_for_logging_fetches_from_drain_status(self):
         """_get_running_jobs_for_logging should fetch jobs from drain-status endpoint."""
@@ -304,10 +319,14 @@ class TestDeploymentExecutorDrainSuccessLogging:
         with tempfile.TemporaryDirectory() as tmpdir:
             executor = DeploymentExecutor(repo_path=Path(tmpdir))
 
-            with patch.object(executor, "_enter_maintenance_mode") as mock_enter, \
-                 patch.object(executor, "_wait_for_drain") as mock_drain, \
-                 patch("subprocess.run") as mock_run, \
-                 patch("code_indexer.server.auto_update.deployment_executor.logger") as mock_logger:
+            with (
+                patch.object(executor, "_enter_maintenance_mode") as mock_enter,
+                patch.object(executor, "_wait_for_drain") as mock_drain,
+                patch("subprocess.run") as mock_run,
+                patch(
+                    "code_indexer.server.auto_update.deployment_executor.logger"
+                ) as mock_logger,
+            ):
                 mock_enter.return_value = True
                 mock_drain.return_value = True  # Drain succeeds
                 mock_run.return_value = MagicMock(returncode=0)

@@ -225,7 +225,10 @@ class TestPollDelegationJobCallbackBased:
 
         data = json.loads(response["content"][0]["text"])
         assert data["status"] == "waiting"
-        assert "still running" in data["message"].lower() or "not yet received" in data["message"].lower()
+        assert (
+            "still running" in data["message"].lower()
+            or "not yet received" in data["message"].lower()
+        )
         # Key fix: continue_polling should be True so caller can retry
         assert data["continue_polling"] is True
 
@@ -315,7 +318,10 @@ class TestPollDelegationJobCallbackBased:
 
         data = json.loads(response["content"][0]["text"])
         assert data["success"] is False
-        assert "not found" in data["error"].lower() or "already completed" in data["error"].lower()
+        assert (
+            "not found" in data["error"].lower()
+            or "already completed" in data["error"].lower()
+        )
 
 
 class TestPollDelegationJobTimeoutParameter:

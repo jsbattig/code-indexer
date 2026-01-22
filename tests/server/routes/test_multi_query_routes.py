@@ -222,9 +222,7 @@ class TestMultiQueryRoutesPartialFailures:
 
         pytest.skip("Route not implemented yet")
 
-    def test_all_repos_fail_returns_errors(
-        self, mock_auth, mock_multi_search_service
-    ):
+    def test_all_repos_fail_returns_errors(self, mock_auth, mock_multi_search_service):
         """When all repos fail, returns empty results with errors."""
         pytest.skip("Route not implemented yet")
 
@@ -276,10 +274,9 @@ class TestMultiQueryRoutesErrorHandling:
         """Non-existent repository returns error in errors field."""
         pytest.skip("Route not implemented yet")
 
-    def test_service_exception_returns_500(
-        self, mock_auth, mock_multi_search_service
-    ):
+    def test_service_exception_returns_500(self, mock_auth, mock_multi_search_service):
         """Unexpected service exception returns 500 Internal Server Error."""
+
         async def mock_search(request):
             raise RuntimeError("Unexpected error")
 

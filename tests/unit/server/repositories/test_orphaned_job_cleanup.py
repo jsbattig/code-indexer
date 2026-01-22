@@ -244,7 +244,9 @@ class TestBackgroundJobsSqliteBackendOrphanedJobCleanup:
     ) -> None:
         """When cleanup_orphaned_jobs() is called with no orphans, it returns 0."""
         from code_indexer.server.storage.database_manager import DatabaseSchema
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
 
         db_path = tmp_path / "clean_test.db"
         schema = DatabaseSchema(str(db_path))
@@ -275,8 +277,12 @@ class TestBackgroundJobManagerOrphanedJobCleanup:
     def test_manager_cleans_orphaned_jobs_on_sqlite_load(self, tmp_path: Path) -> None:
         """When BackgroundJobManager initializes with SQLite, orphaned jobs are cleaned up."""
         from code_indexer.server.storage.database_manager import DatabaseSchema
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
-        from code_indexer.server.repositories.background_jobs import BackgroundJobManager
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJobManager,
+        )
 
         # Setup: Create database with orphaned jobs
         db_path = tmp_path / "manager_test.db"
@@ -331,8 +337,12 @@ class TestBackgroundJobManagerOrphanedJobCleanup:
         """When BackgroundJobManager cleans orphaned jobs, it logs the count."""
         import logging
         from code_indexer.server.storage.database_manager import DatabaseSchema
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
-        from code_indexer.server.repositories.background_jobs import BackgroundJobManager
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJobManager,
+        )
 
         # Setup: Create database with orphaned jobs
         db_path = tmp_path / "log_test.db"
@@ -379,8 +389,12 @@ class TestBackgroundJobManagerOrphanedJobCleanup:
     ) -> None:
         """After restart with orphaned jobs, running and pending counts should be zero."""
         from code_indexer.server.storage.database_manager import DatabaseSchema
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
-        from code_indexer.server.repositories.background_jobs import BackgroundJobManager
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJobManager,
+        )
 
         # Setup: Create database with orphaned jobs
         db_path = tmp_path / "counts_test.db"
@@ -425,8 +439,12 @@ class TestBackgroundJobManagerOrphanedJobCleanup:
     ) -> None:
         """When manager initializes, completed jobs from before restart are preserved."""
         from code_indexer.server.storage.database_manager import DatabaseSchema
-        from code_indexer.server.storage.sqlite_backends import BackgroundJobsSqliteBackend
-        from code_indexer.server.repositories.background_jobs import BackgroundJobManager
+        from code_indexer.server.storage.sqlite_backends import (
+            BackgroundJobsSqliteBackend,
+        )
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJobManager,
+        )
 
         # Setup: Create database with mixed job states
         db_path = tmp_path / "preserve_test.db"

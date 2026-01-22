@@ -103,7 +103,9 @@ class TestPayloadCacheStoreWithKey:
                 assert row[0] == 12345
 
     @pytest.mark.asyncio
-    async def test_store_with_key_updates_timestamp_on_replace(self, cache, temp_db_path):
+    async def test_store_with_key_updates_timestamp_on_replace(
+        self, cache, temp_db_path
+    ):
         """
         store_with_key() updates created_at timestamp when updating existing key.
 
@@ -277,7 +279,9 @@ class TestPayloadCacheHasKey:
         # Create cache with very short TTL
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir) / "short_ttl_cache.db"
-            short_ttl_config = PayloadCacheConfig(cache_ttl_seconds=0)  # Immediate expiry
+            short_ttl_config = PayloadCacheConfig(
+                cache_ttl_seconds=0
+            )  # Immediate expiry
             short_ttl_cache = PayloadCache(db_path=temp_path, config=short_ttl_config)
             await short_ttl_cache.initialize()
 

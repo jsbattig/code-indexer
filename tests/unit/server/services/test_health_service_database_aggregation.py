@@ -33,15 +33,14 @@ def healthy_db_results():
 @pytest.fixture
 def mock_healthy_system():
     """Fixture providing healthy system metrics mocks."""
-    with patch("psutil.virtual_memory") as mock_mem, patch(
-        "psutil.cpu_percent"
-    ) as mock_cpu, patch("psutil.disk_usage") as mock_disk, patch(
-        "psutil.disk_partitions"
-    ) as mock_parts, patch(
-        "psutil.disk_io_counters"
-    ) as mock_disk_io, patch(
-        "psutil.net_io_counters"
-    ) as mock_net_io:
+    with (
+        patch("psutil.virtual_memory") as mock_mem,
+        patch("psutil.cpu_percent") as mock_cpu,
+        patch("psutil.disk_usage") as mock_disk,
+        patch("psutil.disk_partitions") as mock_parts,
+        patch("psutil.disk_io_counters") as mock_disk_io,
+        patch("psutil.net_io_counters") as mock_net_io,
+    ):
         mock_mem.return_value = MagicMock(percent=50.0)
         mock_cpu.return_value = 30.0
         mock_disk.return_value = MagicMock(

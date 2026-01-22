@@ -7410,7 +7410,13 @@ TOOL_REGISTRY["poll_delegation_job"] = {
             },
             "phase": {
                 "type": "string",
-                "enum": ["repo_registration", "repo_cloning", "cidx_indexing", "job_running", "done"],
+                "enum": [
+                    "repo_registration",
+                    "repo_cloning",
+                    "cidx_indexing",
+                    "job_running",
+                    "done",
+                ],
                 "description": "Current phase of job execution",
             },
             "progress": {

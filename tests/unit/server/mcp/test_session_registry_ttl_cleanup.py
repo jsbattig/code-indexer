@@ -43,7 +43,9 @@ class TestMCPSessionStateLastActivity:
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
         before_creation = datetime.now(timezone.utc)
-        session = MCPSessionState(session_id="test-session", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="test-session", authenticated_user=admin_user
+        )
         after_creation = datetime.now(timezone.utc)
 
         # last_activity should be set during creation
@@ -59,7 +61,9 @@ class TestMCPSessionStateLastActivity:
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
         import time
 
-        session = MCPSessionState(session_id="test-session", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="test-session", authenticated_user=admin_user
+        )
         original_activity = session.last_activity
 
         # Wait a small amount to ensure timestamp changes
@@ -76,7 +80,9 @@ class TestMCPSessionStateLastActivity:
         import threading
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="test-session", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="test-session", authenticated_user=admin_user
+        )
         errors: List[Exception] = []
 
         def touch_repeatedly():
@@ -103,7 +109,9 @@ class TestMCPSessionStateLastActivity:
         import threading
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="test-session", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="test-session", authenticated_user=admin_user
+        )
         errors: List[Exception] = []
         activities: List[datetime] = []
 
@@ -160,7 +168,9 @@ class TestSessionRegistryTouchOnAccess:
         registry.clear_all()
         return registry
 
-    def test_get_or_create_session_touches_existing_session(self, admin_user, fresh_registry):
+    def test_get_or_create_session_touches_existing_session(
+        self, admin_user, fresh_registry
+    ):
         """Test that get_or_create_session() calls touch() on existing session (AC2)."""
         import time
 
@@ -199,7 +209,9 @@ class TestSessionRegistryTouchOnAccess:
         # last_activity should be updated
         assert session_again.last_activity > original_activity
 
-    def test_get_session_returns_none_for_nonexistent_without_touching(self, fresh_registry):
+    def test_get_session_returns_none_for_nonexistent_without_touching(
+        self, fresh_registry
+    ):
         """Test that get_session() returns None for non-existent session (no touch needed)."""
         result = fresh_registry.get_session("nonexistent-session-xyz")
         assert result is None
@@ -267,15 +279,21 @@ class TestSessionRegistryCleanup:
         assert removed_count == 0
         assert fresh_registry.get_session(session_id) is not None
 
-    def test_cleanup_returns_count_of_removed_sessions(self, admin_user, fresh_registry):
+    def test_cleanup_returns_count_of_removed_sessions(
+        self, admin_user, fresh_registry
+    ):
         """Test that cleanup_stale_sessions() returns correct count (AC3, AC5)."""
         # Create multiple sessions
         for i in range(5):
-            session = fresh_registry.get_or_create_session(f"cleanup-count-{i}", admin_user)
+            session = fresh_registry.get_or_create_session(
+                f"cleanup-count-{i}", admin_user
+            )
             # Make first 3 stale
             if i < 3:
                 with session._lock:
-                    session._last_activity = datetime.now(timezone.utc) - timedelta(hours=2)
+                    session._last_activity = datetime.now(timezone.utc) - timedelta(
+                        hours=2
+                    )
 
         # Set TTL to 1 hour
         fresh_registry._ttl_seconds = 3600
@@ -288,7 +306,9 @@ class TestSessionRegistryCleanup:
         # 2 active sessions should remain
         assert fresh_registry.session_count() == 2
 
-    def test_cleanup_logs_when_sessions_removed(self, admin_user, fresh_registry, caplog):
+    def test_cleanup_logs_when_sessions_removed(
+        self, admin_user, fresh_registry, caplog
+    ):
         """Test that cleanup logs the count of removed sessions (AC5)."""
         # Create a stale session
         session_id = "log-test-session"
@@ -306,7 +326,9 @@ class TestSessionRegistryCleanup:
         assert removed_count == 1
         assert "Cleaned up 1 stale MCP sessions" in caplog.text
 
-    def test_cleanup_does_not_log_when_no_sessions_removed(self, admin_user, fresh_registry, caplog):
+    def test_cleanup_does_not_log_when_no_sessions_removed(
+        self, admin_user, fresh_registry, caplog
+    ):
         """Test that cleanup does not log when no sessions are removed (AC5)."""
         # Create an active session
         fresh_registry.get_or_create_session("active-no-log", admin_user)
@@ -378,7 +400,9 @@ class TestSessionRegistryBackgroundCleanup:
         assert task.cancelled() or task.done()
 
     @pytest.mark.asyncio
-    async def test_background_cleanup_uses_configured_ttl(self, admin_user, fresh_registry):
+    async def test_background_cleanup_uses_configured_ttl(
+        self, admin_user, fresh_registry
+    ):
         """Test that background cleanup uses configured TTL value (AC3, AC4)."""
         # Start cleanup with short TTL (1 second) and very short interval
         fresh_registry.start_background_cleanup(
@@ -427,7 +451,9 @@ class TestSessionRegistryBackgroundCleanup:
         await asyncio.sleep(0.01)
 
     @pytest.mark.asyncio
-    async def test_start_background_cleanup_logs_configuration(self, fresh_registry, caplog):
+    async def test_start_background_cleanup_logs_configuration(
+        self, fresh_registry, caplog
+    ):
         """Test that start_background_cleanup logs the configuration (AC5)."""
         with caplog.at_level(logging.INFO):
             fresh_registry.start_background_cleanup(
@@ -471,6 +497,8 @@ class TestSessionRegistryDefaultConfiguration:
 
     def test_default_cleanup_interval_is_fifteen_minutes(self):
         """Test that default cleanup interval is 15 minutes (900 seconds) as per AC4."""
-        from code_indexer.server.mcp.session_registry import DEFAULT_CLEANUP_INTERVAL_SECONDS
+        from code_indexer.server.mcp.session_registry import (
+            DEFAULT_CLEANUP_INTERVAL_SECONDS,
+        )
 
         assert DEFAULT_CLEANUP_INTERVAL_SECONDS == 900  # 15 minutes

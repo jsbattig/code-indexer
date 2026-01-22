@@ -225,7 +225,10 @@ class TestClaudeDelegationConnectivityValidation:
         )
 
         assert result.success is False
-        assert "401" in result.error_message or "unauthorized" in result.error_message.lower()
+        assert (
+            "401" in result.error_message
+            or "unauthorized" in result.error_message.lower()
+        )
 
 
 class TestConfigServiceDelegationIntegration:
@@ -254,7 +257,9 @@ class TestConfigServiceDelegationIntegration:
         assert delegation["claude_server_credential_type"] == "password"
         assert delegation["is_configured"] is False
 
-    def test_get_all_settings_claude_delegation_includes_cidx_callback_url(self, tmp_path):
+    def test_get_all_settings_claude_delegation_includes_cidx_callback_url(
+        self, tmp_path
+    ):
         """Test that cidx_callback_url is included in settings output (Story #720)."""
         from code_indexer.server.services.config_service import ConfigService
 
@@ -289,7 +294,6 @@ class TestGetCidxCallbackBaseUrl:
         manager.save_config(config)
 
         # Mock the config service to use our temp directory
-        import pytest
         with pytest.MonkeyPatch.context() as mp:
             mock_service = ConfigService(server_dir_path=str(tmp_path))
             mp.setattr(
@@ -306,7 +310,6 @@ class TestGetCidxCallbackBaseUrl:
         from code_indexer.server.mcp.handlers import _get_cidx_callback_base_url
         from code_indexer.server.services.config_service import ConfigService
 
-        import pytest
         with pytest.MonkeyPatch.context() as mp:
             mock_service = ConfigService(server_dir_path=str(tmp_path))
             mp.setattr(
@@ -367,7 +370,10 @@ class TestURLValidationSSRF:
         )
 
         assert result.success is False
-        assert "scheme" in result.error_message.lower() or "url" in result.error_message.lower()
+        assert (
+            "scheme" in result.error_message.lower()
+            or "url" in result.error_message.lower()
+        )
 
     def test_validate_connectivity_accepts_https_scheme(self, tmp_path, httpx_mock):
         """Test that https:// URLs are accepted."""
@@ -409,7 +415,10 @@ class TestCredentialTypeValidation:
         )
 
         assert result.success is False
-        assert "credential" in result.error_message.lower() or "type" in result.error_message.lower()
+        assert (
+            "credential" in result.error_message.lower()
+            or "type" in result.error_message.lower()
+        )
 
     def test_validate_connectivity_accepts_password_type(self, tmp_path, httpx_mock):
         """Test that 'password' credential type is accepted."""
@@ -463,7 +472,6 @@ class TestErrorMessageSanitization:
 
     def test_error_message_does_not_contain_password(self, tmp_path, httpx_mock):
         """Test that password is not leaked in any error scenario."""
-        import httpx
 
         from code_indexer.server.config.delegation_config import ClaudeDelegationManager
 
@@ -514,10 +522,13 @@ class TestFilePermissionsCheck:
 
         # Check that a warning was logged about permissions
         permission_warnings = [
-            record for record in caplog.records
+            record
+            for record in caplog.records
             if "permission" in record.message.lower() or "600" in record.message
         ]
-        assert len(permission_warnings) > 0, "Should warn about insecure file permissions"
+        assert (
+            len(permission_warnings) > 0
+        ), "Should warn about insecure file permissions"
 
     def test_load_config_no_warning_if_permissions_600(self, tmp_path, caplog):
         """Test that no warning is logged if config file permissions are 0600."""
@@ -546,10 +557,13 @@ class TestFilePermissionsCheck:
 
         # Check that no permission warning was logged
         permission_warnings = [
-            record for record in caplog.records
+            record
+            for record in caplog.records
             if "permission" in record.message.lower() and "600" in record.message
         ]
-        assert len(permission_warnings) == 0, "Should not warn about secure file permissions"
+        assert (
+            len(permission_warnings) == 0
+        ), "Should not warn about secure file permissions"
 
 
 class TestDefaultFunctionRepoAliasConstant:
@@ -560,7 +574,10 @@ class TestDefaultFunctionRepoAliasConstant:
         from code_indexer.server.config import delegation_config
 
         assert hasattr(delegation_config, "DEFAULT_FUNCTION_REPO_ALIAS")
-        assert delegation_config.DEFAULT_FUNCTION_REPO_ALIAS == "claude-delegation-functions-global"
+        assert (
+            delegation_config.DEFAULT_FUNCTION_REPO_ALIAS
+            == "claude-delegation-functions-global"
+        )
 
     def test_dataclass_uses_constant_for_default(self):
         """Test that ClaudeDelegationConfig uses the constant for its default."""

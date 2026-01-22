@@ -49,15 +49,14 @@ class TestVolumeHealthAggregation:
         """When ANY volume has 80-90% used, Server Status should be DEGRADED."""
         from code_indexer.server.services.health_service import HealthCheckService
 
-        with patch("psutil.virtual_memory") as mock_mem, patch(
-            "psutil.cpu_percent"
-        ) as mock_cpu, patch("psutil.disk_usage") as mock_disk, patch(
-            "psutil.disk_partitions"
-        ) as mock_parts, patch(
-            "psutil.disk_io_counters"
-        ) as mock_disk_io, patch(
-            "psutil.net_io_counters"
-        ) as mock_net_io:
+        with (
+            patch("psutil.virtual_memory") as mock_mem,
+            patch("psutil.cpu_percent") as mock_cpu,
+            patch("psutil.disk_usage") as mock_disk,
+            patch("psutil.disk_partitions") as mock_parts,
+            patch("psutil.disk_io_counters") as mock_disk_io,
+            patch("psutil.net_io_counters") as mock_net_io,
+        ):
             mock_mem.return_value = MagicMock(percent=50.0)
             mock_cpu.return_value = 30.0
 
@@ -96,15 +95,14 @@ class TestVolumeHealthAggregation:
         """When ANY volume has <1GB free, Server Status should be UNHEALTHY."""
         from code_indexer.server.services.health_service import HealthCheckService
 
-        with patch("psutil.virtual_memory") as mock_mem, patch(
-            "psutil.cpu_percent"
-        ) as mock_cpu, patch("psutil.disk_usage") as mock_disk, patch(
-            "psutil.disk_partitions"
-        ) as mock_parts, patch(
-            "psutil.disk_io_counters"
-        ) as mock_disk_io, patch(
-            "psutil.net_io_counters"
-        ) as mock_net_io:
+        with (
+            patch("psutil.virtual_memory") as mock_mem,
+            patch("psutil.cpu_percent") as mock_cpu,
+            patch("psutil.disk_usage") as mock_disk,
+            patch("psutil.disk_partitions") as mock_parts,
+            patch("psutil.disk_io_counters") as mock_disk_io,
+            patch("psutil.net_io_counters") as mock_net_io,
+        ):
             mock_mem.return_value = MagicMock(percent=50.0)
             mock_cpu.return_value = 30.0
 

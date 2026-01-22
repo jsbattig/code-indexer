@@ -979,13 +979,15 @@ class SemanticQueryManager:
             # Story #725: Only warn when non-default filters are explicitly set
             # Note: accuracy="balanced" is the default, so we only warn if accuracy
             # is set to something other than "balanced" or None
-            has_non_default_filters = any([
-                language,           # None is default
-                exclude_language,   # None is default
-                path_filter,        # None is default
-                exclude_path,       # None is default
-                accuracy and accuracy != "balanced"  # "balanced" is default
-            ])
+            has_non_default_filters = any(
+                [
+                    language,  # None is default
+                    exclude_language,  # None is default
+                    path_filter,  # None is default
+                    exclude_path,  # None is default
+                    accuracy and accuracy != "balanced",  # "balanced" is default
+                ]
+            )
             if search_mode in ["semantic", "hybrid"] and has_non_default_filters:
                 self.logger.warning(
                     f"Advanced filter parameters (language={language}, exclude_language={exclude_language}, "

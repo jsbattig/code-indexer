@@ -89,7 +89,12 @@ class TestJobPhaseDetection:
             "status": "in_progress",
             "repositories": [
                 {"alias": "repo1", "registered": True, "cloned": True, "indexed": True},
-                {"alias": "repo2", "registered": True, "cloned": True, "indexed": False},
+                {
+                    "alias": "repo2",
+                    "registered": True,
+                    "cloned": True,
+                    "indexed": False,
+                },
             ],
         }
 
@@ -255,7 +260,12 @@ class TestPhaseProgressExtraction:
             "status": "in_progress",
             "repositories": [
                 {"alias": "repo1", "registered": True, "cloned": True, "indexed": True},
-                {"alias": "repo2", "registered": True, "cloned": True, "indexed": False},
+                {
+                    "alias": "repo2",
+                    "registered": True,
+                    "cloned": True,
+                    "indexed": False,
+                },
             ],
         }
 
@@ -305,7 +315,10 @@ class TestPhaseProgressExtraction:
 
         progress = detector.get_progress(job_state, JobPhase.DONE)
 
-        assert progress.progress.get("result") == "The authentication system uses JWT tokens..."
+        assert (
+            progress.progress.get("result")
+            == "The authentication system uses JWT tokens..."
+        )
         assert progress.is_terminal is True
 
     def test_get_progress_done_failed_includes_error(self):

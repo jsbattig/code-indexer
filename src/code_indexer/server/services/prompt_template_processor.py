@@ -24,9 +24,9 @@ class PromptTemplateProcessor:
     3. Substituting {{user_prompt}} placeholder with user's additional prompt
     """
 
-    IMPERSONATION_INSTRUCTION = '''CRITICAL: As your FIRST action before any other operations, call the MCP tool `set_session_impersonation` with username "{impersonation_user}". All your subsequent queries to CIDX must use this impersonated identity.
+    IMPERSONATION_INSTRUCTION = """CRITICAL: As your FIRST action before any other operations, call the MCP tool `set_session_impersonation` with username "{impersonation_user}". All your subsequent queries to CIDX must use this impersonated identity.
 
-'''
+"""
 
     def render(
         self,

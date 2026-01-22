@@ -107,6 +107,7 @@ class ClaudeServerClient:
                 # Claude Server returns "expires" (ISO datetime), standard returns "expires_in" (seconds)
                 if "expires" in data:
                     from dateutil.parser import parse as parse_datetime
+
                     self._jwt_expires = parse_datetime(data["expires"])
                 else:
                     expires_in = data.get("expires_in", 3600)
@@ -194,9 +195,7 @@ class ClaudeServerClient:
                 )
             elif response.status_code == 401 and not retry_on_401:
                 # Second 401 means auth truly failed - raise exception
-                raise ClaudeServerAuthError(
-                    "Authentication failed after token refresh"
-                )
+                raise ClaudeServerAuthError("Authentication failed after token refresh")
 
             return response
 
@@ -250,9 +249,7 @@ class ClaudeServerClient:
                 f"Repository registration failed: HTTP {response.status_code}"
             )
 
-    async def create_job(
-        self, prompt: str, repositories: List[str]
-    ) -> Dict[str, Any]:
+    async def create_job(self, prompt: str, repositories: List[str]) -> Dict[str, Any]:
         """
         Create a new job with the given prompt.
 
@@ -276,13 +273,9 @@ class ClaudeServerClient:
         if response.status_code in (200, 201):
             return response.json()
         elif response.status_code >= 500:
-            raise ClaudeServerError(
-                f"Claude Server error: HTTP {response.status_code}"
-            )
+            raise ClaudeServerError(f"Claude Server error: HTTP {response.status_code}")
         else:
-            raise ClaudeServerError(
-                f"Job creation failed: HTTP {response.status_code}"
-            )
+            raise ClaudeServerError(f"Job creation failed: HTTP {response.status_code}")
 
     async def start_job(self, job_id: str) -> Dict[str, Any]:
         """

@@ -45,9 +45,9 @@ class TestClaudeServerClientPoolingInitialization:
         )
 
         assert hasattr(client, "_client"), "Missing _client attribute"
-        assert isinstance(client._client, httpx.AsyncClient), (
-            "_client should be httpx.AsyncClient instance"
-        )
+        assert isinstance(
+            client._client, httpx.AsyncClient
+        ), "_client should be httpx.AsyncClient instance"
 
     def test_client_respects_skip_ssl_verify_setting(self):
         """
@@ -96,12 +96,12 @@ class TestClaudeServerClientPoolingLimits:
 
         # httpx.AsyncClient stores limits in the transport pool
         pool = client._client._transport._pool
-        assert pool._max_connections == 10, (
-            f"Expected max_connections=10, got {pool._max_connections}"
-        )
-        assert pool._max_keepalive_connections == 5, (
-            f"Expected max_keepalive_connections=5, got {pool._max_keepalive_connections}"
-        )
+        assert (
+            pool._max_connections == 10
+        ), f"Expected max_connections=10, got {pool._max_connections}"
+        assert (
+            pool._max_keepalive_connections == 5
+        ), f"Expected max_keepalive_connections=5, got {pool._max_keepalive_connections}"
 
     def test_client_has_proper_timeout_configuration(self):
         """
@@ -123,7 +123,9 @@ class TestClaudeServerClientPoolingLimits:
 
         timeout = client._client.timeout
         assert timeout.read == 30.0, f"Expected read timeout=30.0, got {timeout.read}"
-        assert timeout.connect == 10.0, f"Expected connect timeout=10.0, got {timeout.connect}"
+        assert (
+            timeout.connect == 10.0
+        ), f"Expected connect timeout=10.0, got {timeout.connect}"
 
 
 class TestClaudeServerClientPoolingReuse:
@@ -181,9 +183,9 @@ class TestClaudeServerClientPoolingReuse:
         await client.check_repository_exists("repo2")
 
         # Verify same client instance was used
-        assert client._client is original_client, (
-            "Client instance should not change between requests"
-        )
+        assert (
+            client._client is original_client
+        ), "Client instance should not change between requests"
 
     @pytest.mark.asyncio
     async def test_no_new_async_client_per_request(self, httpx_mock: HTTPXMock):

@@ -5,7 +5,6 @@ Tests AC1 (Server Maintenance Mode API) - Basic operations.
 """
 
 import pytest
-import threading
 from unittest.mock import MagicMock
 
 
@@ -276,7 +275,9 @@ class TestSyncJobManagerMaintenanceIntegration:
             get_maintenance_state,
         )
         from code_indexer.global_repos.refresh_scheduler import RefreshScheduler
-        from code_indexer.server.repositories.background_jobs import BackgroundJobManager
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJobManager,
+        )
         from code_indexer.server.jobs.exceptions import MaintenanceModeError
         from unittest.mock import MagicMock, patch
         import tempfile

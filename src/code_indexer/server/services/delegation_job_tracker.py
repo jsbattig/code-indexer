@@ -125,9 +125,7 @@ class DelegationJobTracker:
         async with self._lock:
             future = self._pending_jobs.get(result.job_id)
             if future is None:
-                logger.warning(
-                    f"complete_job called for unknown job: {result.job_id}"
-                )
+                logger.warning(f"complete_job called for unknown job: {result.job_id}")
                 return False
 
             if future.done():
@@ -209,7 +207,9 @@ class DelegationJobTracker:
             return result
         except asyncio.TimeoutError:
             # DO NOT remove on timeout - job is still valid, caller can retry
-            logger.debug(f"wait_for_job timed out for job: {job_id}, keeping in tracker")
+            logger.debug(
+                f"wait_for_job timed out for job: {job_id}, keeping in tracker"
+            )
             return None
         except asyncio.CancelledError:
             # Shield was cancelled but Future may still be valid - propagate

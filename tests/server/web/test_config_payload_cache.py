@@ -34,14 +34,14 @@ class TestPayloadCacheConfigDisplay:
         assert (
             "payload max fetch size" in text_lower
         ), "Should show Payload Max Fetch Size field"
-        assert (
-            "payload cache ttl" in text_lower
-        ), "Should show Payload Cache TTL field"
+        assert "payload cache ttl" in text_lower, "Should show Payload Cache TTL field"
         assert (
             "payload cleanup interval" in text_lower
         ), "Should show Payload Cleanup Interval field"
 
-    def test_payload_cache_default_values_displayed(self, authenticated_client: TestClient):
+    def test_payload_cache_default_values_displayed(
+        self, authenticated_client: TestClient
+    ):
         """
         Payload cache fields should show default values.
 
@@ -59,9 +59,7 @@ class TestPayloadCacheConfigDisplay:
         assert "2000" in response.text, "Should show default preview size (2000)"
         assert "5000" in response.text, "Should show default max fetch size (5000)"
         assert "900" in response.text, "Should show default cache TTL (900)"
-        assert (
-            "60" in response.text
-        ), "Should show default cleanup interval (60)"
+        assert "60" in response.text, "Should show default cleanup interval (60)"
 
 
 class TestPayloadCacheConfigEditing:

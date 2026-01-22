@@ -459,7 +459,11 @@ class TestDelegationJobTracker:
         await tracker.register_job("job-B")
 
         result_a = JobResult(
-            job_id="job-A", status="completed", output="Result A", exit_code=0, error=None
+            job_id="job-A",
+            status="completed",
+            output="Result A",
+            exit_code=0,
+            error=None,
         )
         result_b = JobResult(
             job_id="job-B", status="failed", output="", exit_code=1, error="Error B"
@@ -718,7 +722,9 @@ class TestDelegationJobTrackerCacheIntegration:
         assert "Cached result" in result.output
 
     @pytest.mark.asyncio
-    async def test_wait_for_job_falls_back_to_future_when_not_cached(self, payload_cache):
+    async def test_wait_for_job_falls_back_to_future_when_not_cached(
+        self, payload_cache
+    ):
         """
         wait_for_job() waits on Future when result not in cache.
 

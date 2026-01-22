@@ -60,7 +60,9 @@ class TestMCPSessionState:
         """Test that MCPSessionState initializes with correct default values."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
 
         assert session.session_id == "session-123"
         assert session.authenticated_user == admin_user
@@ -72,7 +74,9 @@ class TestMCPSessionState:
         """Test effective_user returns authenticated user when no impersonation is set."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
 
         assert session.effective_user == admin_user
         assert session.effective_user.username == "admin_user"
@@ -83,7 +87,9 @@ class TestMCPSessionState:
         """Test effective_user returns impersonated user when impersonation is set."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
 
         assert session.effective_user == target_user
@@ -97,7 +103,9 @@ class TestMCPSessionState:
         """Test set_impersonation stores the target user correctly."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
 
         assert session.impersonated_user == target_user
@@ -110,7 +118,9 @@ class TestMCPSessionState:
         """Test clear_impersonation removes the impersonated user."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
 
         # Verify impersonation is set
@@ -129,7 +139,9 @@ class TestMCPSessionState:
         """Test is_impersonating returns False when no impersonation is active."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
 
         assert session.is_impersonating is False
 
@@ -139,7 +151,9 @@ class TestMCPSessionState:
         """Test is_impersonating returns True when impersonation is active."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
 
         assert session.is_impersonating is True
@@ -150,7 +164,9 @@ class TestMCPSessionState:
         """Test that impersonation doesn't affect the authenticated_user object."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
 
         # Original admin should still have admin role
@@ -164,7 +180,9 @@ class TestMCPSessionState:
         """Test that impersonation can be changed multiple times."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
 
         # First impersonation
         session.set_impersonation(target_user)
@@ -208,7 +226,9 @@ class TestMCPSessionStateWithGroups:
         """Test that effective permissions come from impersonated user."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
 
         # Admin has manage_users permission
         assert session.effective_user.has_permission("manage_users") is True
@@ -227,7 +247,9 @@ class TestMCPSessionStateWithGroups:
         """Test that impersonation constrains to target user's permissions, not elevates."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(sales_user)
 
         # Verify the effective user has ONLY the target user's permissions
@@ -292,7 +314,9 @@ class TestMCPSessionStateAdminChecks:
         """Test that admin users are allowed to impersonate."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
 
         assert session.can_impersonate() is True
 
@@ -300,7 +324,9 @@ class TestMCPSessionStateAdminChecks:
         """Test that power users are NOT allowed to impersonate."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=power_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=power_user
+        )
 
         assert session.can_impersonate() is False
 
@@ -308,7 +334,9 @@ class TestMCPSessionStateAdminChecks:
         """Test that normal users are NOT allowed to impersonate."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=normal_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=normal_user
+        )
 
         assert session.can_impersonate() is False
 
@@ -318,7 +346,9 @@ class TestMCPSessionStateAdminChecks:
         """Test try_set_impersonation succeeds for admin users."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         result = session.try_set_impersonation(target_user)
 
         assert result.success is True
@@ -331,7 +361,9 @@ class TestMCPSessionStateAdminChecks:
         """Test try_set_impersonation fails for power users."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=power_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=power_user
+        )
         result = session.try_set_impersonation(target_user)
 
         assert result.success is False
@@ -344,7 +376,9 @@ class TestMCPSessionStateAdminChecks:
         """Test try_set_impersonation fails for normal users."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=normal_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=normal_user
+        )
         result = session.try_set_impersonation(target_user)
 
         assert result.success is False
@@ -379,7 +413,9 @@ class TestMCPSessionStateToDict:
         """Test to_dict when not impersonating."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         result = session.to_dict()
 
         assert result["session_id"] == "session-123"
@@ -391,7 +427,9 @@ class TestMCPSessionStateToDict:
         """Test to_dict when impersonating."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
         result = session.to_dict()
 
@@ -406,7 +444,9 @@ class TestMCPSessionStateToDict:
         """Test to_dict includes effective_user when not impersonating (HIGH 1 fix)."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         result = session.to_dict()
 
         # effective_user should be included and match authenticated_user
@@ -419,7 +459,9 @@ class TestMCPSessionStateToDict:
         """Test to_dict includes effective_user when impersonating (HIGH 1 fix)."""
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
         result = session.to_dict()
 
@@ -468,7 +510,9 @@ class TestMCPSessionStateThreadSafety:
         import threading
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         errors = []
 
         def set_impersonation_target():
@@ -505,7 +549,9 @@ class TestMCPSessionStateThreadSafety:
         import threading
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         errors = []
         effective_users = []
 
@@ -546,7 +592,9 @@ class TestMCPSessionStateThreadSafety:
         import threading
         from code_indexer.server.auth.mcp_session_state import MCPSessionState
 
-        session = MCPSessionState(session_id="session-123", authenticated_user=admin_user)
+        session = MCPSessionState(
+            session_id="session-123", authenticated_user=admin_user
+        )
         session.set_impersonation(target_user)
         errors = []
 

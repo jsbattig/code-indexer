@@ -41,9 +41,7 @@ class TestMultiSearchServiceThreadedExecution:
         )
 
         # Service should use thread pool for execution
-        with patch.object(
-            service.thread_executor, "submit"
-        ) as mock_submit:
+        with patch.object(service.thread_executor, "submit") as mock_submit:
             mock_future = Mock()
             mock_future.result.return_value = {"results": [], "error": None}
             mock_submit.return_value = mock_future
@@ -327,7 +325,9 @@ class TestMultiSearchServiceActionableErrors:
                 # - Add --path-filter
                 error_text = str(response.errors)
                 # At minimum, should mention timeout
-                assert "timeout" in error_text.lower() or "timed out" in error_text.lower()
+                assert (
+                    "timeout" in error_text.lower() or "timed out" in error_text.lower()
+                )
         except (AttributeError, NotImplementedError):
             pytest.fail("MultiSearchService actionable errors not implemented")
 
@@ -336,7 +336,9 @@ class TestMultiSearchServiceActionableErrors:
         """Timeout error lists which repositories timed out vs completed."""
         from code_indexer.server.multi.multi_search_service import MultiSearchService
 
-        config = MultiSearchConfig(max_workers=5, query_timeout_seconds=1)  # Very short timeout
+        config = MultiSearchConfig(
+            max_workers=5, query_timeout_seconds=1
+        )  # Very short timeout
         service = MultiSearchService(config)
 
         request = MultiSearchRequest(

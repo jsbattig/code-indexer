@@ -39,7 +39,9 @@ class CallbackPayload(BaseModel):
     Repository: Optional[str] = Field(None, description="Repository alias")
     CreatedAt: Optional[datetime] = Field(None, description="Job creation timestamp")
     StartedAt: Optional[datetime] = Field(None, description="Job start timestamp")
-    CompletedAt: Optional[datetime] = Field(None, description="Job completion timestamp")
+    CompletedAt: Optional[datetime] = Field(
+        None, description="Job completion timestamp"
+    )
     ReferenceId: Optional[str] = Field(None, description="Reference ID for tracking")
     AffinityToken: Optional[str] = Field(None, description="Affinity token for routing")
 
@@ -75,9 +77,7 @@ async def receive_delegation_callback(
     Returns:
         CallbackResponse indicating receipt and whether job was found
     """
-    logger.info(
-        f"Received callback for job {job_id}: status={payload.Status}"
-    )
+    logger.info(f"Received callback for job {job_id}: status={payload.Status}")
 
     tracker = DelegationJobTracker.get_instance()
 

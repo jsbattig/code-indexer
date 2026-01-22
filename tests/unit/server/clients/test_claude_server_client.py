@@ -581,9 +581,7 @@ class TestClaudeServerClientErrors:
         assert sensitive_password not in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_timeout_error_does_not_expose_password(
-        self, httpx_mock: HTTPXMock
-    ):
+    async def test_timeout_error_does_not_expose_password(self, httpx_mock: HTTPXMock):
         """
         Timeout error exception should NOT contain password.
 
@@ -814,7 +812,12 @@ class TestClaudeServerClientJobPolling:
                 "job_id": "job-12345",
                 "status": "in_progress",
                 "repositories": [
-                    {"alias": "repo1", "registered": True, "cloned": True, "indexed": True}
+                    {
+                        "alias": "repo1",
+                        "registered": True,
+                        "cloned": True,
+                        "indexed": True,
+                    }
                 ],
                 "exchange_count": 5,
                 "tool_use_count": 12,
@@ -879,7 +882,9 @@ class TestClaudeServerClientJobPolling:
         assert "JWT tokens" in result["result"]
 
     @pytest.mark.asyncio
-    async def test_get_job_status_raises_not_found_error_on_404(self, httpx_mock: HTTPXMock):
+    async def test_get_job_status_raises_not_found_error_on_404(
+        self, httpx_mock: HTTPXMock
+    ):
         """
         get_job_status() should raise ClaudeServerNotFoundError for non-existent job.
 
@@ -971,7 +976,9 @@ class TestClaudeServerClientJobPolling:
         assert "JWT tokens" in result["result"]
 
     @pytest.mark.asyncio
-    async def test_get_job_conversation_raises_not_found_error_on_404(self, httpx_mock: HTTPXMock):
+    async def test_get_job_conversation_raises_not_found_error_on_404(
+        self, httpx_mock: HTTPXMock
+    ):
         """
         get_job_conversation() should raise ClaudeServerNotFoundError for non-existent job.
 
@@ -1065,8 +1072,11 @@ class TestClaudeServerClientCallbackRegistration:
         callback_request = requests[-1]
         assert callback_request.url.path == "/jobs/job-12345/callbacks"
         import json
+
         body = json.loads(callback_request.content)
-        assert body["url"] == "https://cidx.example.com/api/delegation/callback/job-12345"
+        assert (
+            body["url"] == "https://cidx.example.com/api/delegation/callback/job-12345"
+        )
 
     @pytest.mark.asyncio
     async def test_register_callback_raises_on_error(self, httpx_mock: HTTPXMock):

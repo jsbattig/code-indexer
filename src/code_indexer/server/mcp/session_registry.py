@@ -82,7 +82,9 @@ class SessionRegistry:
                     # TTL cleanup attributes (Story #731)
                     instance._cleanup_task: Optional[asyncio.Task] = None
                     instance._ttl_seconds = DEFAULT_SESSION_TTL_SECONDS
-                    instance._cleanup_interval_seconds = DEFAULT_CLEANUP_INTERVAL_SECONDS
+                    instance._cleanup_interval_seconds = (
+                        DEFAULT_CLEANUP_INTERVAL_SECONDS
+                    )
                     cls._instance = instance
         return cls._instance
 

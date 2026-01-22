@@ -111,9 +111,7 @@ class DelegationFunctionLoader:
             prompt_template=body,
         )
 
-    def _parse_frontmatter(
-        self, content: str
-    ) -> tuple[Optional[Dict[str, Any]], str]:
+    def _parse_frontmatter(self, content: str) -> tuple[Optional[Dict[str, Any]], str]:
         """
         Parse YAML frontmatter from markdown content.
 
@@ -132,7 +130,7 @@ class DelegationFunctionLoader:
             return None, content
 
         frontmatter_str = content[3:end_index].strip()
-        body = content[end_index + 3:].strip()
+        body = content[end_index + 3 :].strip()
 
         try:
             frontmatter = yaml.safe_load(frontmatter_str)
@@ -159,8 +157,4 @@ class DelegationFunctionLoader:
         if not user_groups:
             return []
 
-        return [
-            func
-            for func in functions
-            if set(func.allowed_groups) & user_groups
-        ]
+        return [func for func in functions if set(func.allowed_groups) & user_groups]

@@ -400,9 +400,7 @@ class TestWarningLogConditions:
             mock_search_service.return_value = mock_service
 
             # Also mock FTS search
-            with patch.object(
-                query_manager, "_execute_fts_search", return_value=[]
-            ):
+            with patch.object(query_manager, "_execute_fts_search", return_value=[]):
                 with caplog.at_level(logging.WARNING):
                     query_manager._search_single_repository(
                         repo_path=mock_non_composite_repo,

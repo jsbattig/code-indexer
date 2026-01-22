@@ -4626,7 +4626,9 @@ async def update_claude_delegation_config(
         return _create_login_redirect(request)
 
     if not validate_login_csrf_token(request, csrf_token):
-        return _create_config_page_response(request, session, error_message="Invalid CSRF token")
+        return _create_config_page_response(
+            request, session, error_message="Invalid CSRF token"
+        )
 
     form_data = await request.form()
     config_service = get_config_service()
@@ -4643,32 +4645,48 @@ async def update_claude_delegation_config(
 
     if not url or not username or not credential:
         return _create_config_page_response(
-            request, session, error_message="URL, username, and credential are required",
-            validation_errors={"claude_delegation": "Missing required fields"})
+            request,
+            session,
+            error_message="URL, username, and credential are required",
+            validation_errors={"claude_delegation": "Missing required fields"},
+        )
 
     # Validate connectivity before saving
     cred_type = form_data.get("claude_server_credential_type", "password")
-    result = delegation_manager.validate_connectivity(url, username, credential, cred_type)
+    result = delegation_manager.validate_connectivity(
+        url, username, credential, cred_type
+    )
 
     if not result.success:
         return _create_config_page_response(
-            request, session, error_message=f"Connection failed: {result.error_message}",
-            validation_errors={"claude_delegation": result.error_message})
+            request,
+            session,
+            error_message=f"Connection failed: {result.error_message}",
+            validation_errors={"claude_delegation": result.error_message},
+        )
 
     # Save configuration with encrypted credential
     from ..config.delegation_config import DEFAULT_FUNCTION_REPO_ALIAS
+
     cidx_callback_url = form_data.get("cidx_callback_url", "").strip()  # Story #720
     skip_ssl_verify = form_data.get("skip_ssl_verify", "false").lower() == "true"
     config = ClaudeDelegationConfig(
-        function_repo_alias=form_data.get("function_repo_alias", "").strip() or DEFAULT_FUNCTION_REPO_ALIAS,
-        claude_server_url=url, claude_server_username=username,
-        claude_server_credential_type=cred_type, claude_server_credential=credential,
+        function_repo_alias=form_data.get("function_repo_alias", "").strip()
+        or DEFAULT_FUNCTION_REPO_ALIAS,
+        claude_server_url=url,
+        claude_server_username=username,
+        claude_server_credential_type=cred_type,
+        claude_server_credential=credential,
         cidx_callback_url=cidx_callback_url,
-        skip_ssl_verify=skip_ssl_verify)
+        skip_ssl_verify=skip_ssl_verify,
+    )
     delegation_manager.save_config(config)
 
     return _create_config_page_response(
-        request, session, success_message="Claude Delegation configuration saved and verified")
+        request,
+        session,
+        success_message="Claude Delegation configuration saved and verified",
+    )
 
 
 @web_router.post("/config/{section}", response_class=HTMLResponse)
