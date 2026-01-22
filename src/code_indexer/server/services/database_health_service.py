@@ -28,6 +28,9 @@ class DatabaseHealthStatus(str, Enum):
     HEALTHY = "healthy"  # Green - All 5 checks pass
     WARNING = "warning"  # Yellow - Some checks pass, some fail
     ERROR = "error"  # Red - Critical checks fail
+    NOT_INITIALIZED = (
+        "not_initialized"  # Blue/Gray - Lazy-loaded database not yet created
+    )
 
 
 @dataclass
@@ -54,12 +57,17 @@ class DatabaseHealthResult:
 
         Always shows display name and path.
         Unhealthy databases also show the failed condition.
+        NOT_INITIALIZED databases show they're optional and not yet created.
         """
         # Always include path in tooltip
         base_tooltip = f"{self.display_name}\n{self.db_path}"
 
         if self.status == DatabaseHealthStatus.HEALTHY:
             return base_tooltip
+
+        # NOT_INITIALIZED databases get special message
+        if self.status == DatabaseHealthStatus.NOT_INITIALIZED:
+            return f"{base_tooltip}\nNot initialized (optional)"
 
         # Find first failed check to include in tooltip
         for check_name, result in self.checks.items():
@@ -82,6 +90,10 @@ DATABASE_DISPLAY_NAMES: Dict[str, str] = {
     "groups.db": "Groups",
     "payload_cache.db": "Payload Cache",
 }
+
+# Lazy-loaded databases (singleton pattern with get_instance())
+# These databases are only created when their features are first accessed
+LAZY_LOADED_DATABASES = {"search_config.db", "file_content_limits.db"}
 
 
 class DatabaseHealthService:
@@ -203,6 +215,12 @@ class DatabaseHealthService:
         try:
             # Check if file exists first
             if not Path(db_path).exists():
+                # Check if this is a lazy-loaded database
+                file_name = Path(db_path).name
+                if file_name in LAZY_LOADED_DATABASES:
+                    return CheckResult(
+                        passed=False, error_message="Not initialized (optional)"
+                    )
                 return CheckResult(
                     passed=False, error_message="Connection failed: file not found"
                 )
@@ -314,7 +332,13 @@ class DatabaseHealthService:
         - GREEN (HEALTHY): All 5 checks pass
         - YELLOW (WARNING): Some checks pass, some fail (degraded but operational)
         - RED (ERROR): Critical checks fail (connect/read)
+        - BLUE/GRAY (NOT_INITIALIZED): Lazy-loaded database not yet created
         """
+        # Check for lazy-loaded database not yet initialized
+        if "connect" in checks and not checks["connect"].passed:
+            if checks["connect"].error_message == "Not initialized (optional)":
+                return DatabaseHealthStatus.NOT_INITIALIZED
+
         # Critical checks - if these fail, status is ERROR
         critical_checks = ["connect", "read"]
         for check_name in critical_checks:

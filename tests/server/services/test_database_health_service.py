@@ -37,7 +37,7 @@ class TestDatabaseHealthService:
                 "logs.db": "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY)",
                 "search_config.db": "CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY)",
                 "file_content_limits.db": "CREATE TABLE IF NOT EXISTS limits (id INTEGER PRIMARY KEY)",
-                "scip_audit.db": "CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY)",
+                "groups.db": "CREATE TABLE IF NOT EXISTS groups (id INTEGER PRIMARY KEY)",
                 "payload_cache.db": "CREATE TABLE IF NOT EXISTS cache (id INTEGER PRIMARY KEY)",
             }
 
@@ -80,7 +80,7 @@ class TestDatabaseHealthService:
             "logs.db",
             "search_config.db",
             "file_content_limits.db",
-            "scip_audit.db",
+            "groups.db",
             "payload_cache.db",
         }
         actual_files = {result.file_name for result in health_results}
@@ -110,7 +110,7 @@ class TestDatabaseHealthService:
             "logs.db": "Logs",
             "search_config.db": "Search Config",
             "file_content_limits.db": "File Limits",
-            "scip_audit.db": "SCIP Audit",
+            "groups.db": "Groups",
             "payload_cache.db": "Payload Cache",
         }
 
@@ -352,7 +352,7 @@ class TestDatabaseTooltips:
             yield db_path
 
     def test_healthy_database_tooltip_shows_only_name(self, healthy_db_path: Path):
-        """AC2: Healthy database tooltip shows only database name."""
+        """AC2: Healthy database tooltip shows database name and path."""
         from code_indexer.server.services.database_health_service import (
             DatabaseHealthService,
             DatabaseHealthStatus,
@@ -364,10 +364,15 @@ class TestDatabaseTooltips:
 
         assert result.status == DatabaseHealthStatus.HEALTHY
         tooltip = result.get_tooltip()
-        assert tooltip == "Main Server"
+        # Tooltip should contain display name and path (no error info for healthy DB)
+        assert "Main Server" in tooltip
+        assert str(healthy_db_path) in tooltip
+        # Should not contain error information for healthy database
+        assert "Connect:" not in tooltip
+        assert "failed" not in tooltip
 
     def test_unhealthy_database_tooltip_shows_failure(self, healthy_db_path: Path):
-        """AC3: Unhealthy database tooltip shows name AND failed condition."""
+        """AC3: Unhealthy database tooltip shows name, path, AND failed condition."""
         from code_indexer.server.services.database_health_service import (
             DatabaseHealthService,
             DatabaseHealthStatus,
@@ -380,8 +385,11 @@ class TestDatabaseTooltips:
 
         assert result.status == DatabaseHealthStatus.ERROR
         tooltip = result.get_tooltip()
+        # Tooltip should contain display name, path, and error info
         assert "OAuth" in tooltip
-        assert " - " in tooltip
+        assert str(healthy_db_path) in tooltip
+        # Should contain error information (check name + error message)
+        assert "Connect:" in tooltip or "failed" in tooltip
 
 
 # =============================================================================
@@ -455,3 +463,130 @@ class TestActivatedReposCountFix:
         assert (
             "_get_repo_counts" in source and "user_role" in source
         ), "get_stats_partial must pass user_role to _get_repo_counts"
+
+
+# =============================================================================
+# Lazy-Loaded Database Tests
+# =============================================================================
+
+
+class TestLazyLoadedDatabases:
+    """Tests for graceful handling of lazy-loaded databases."""
+
+    def test_lazy_loaded_database_not_initialized_status(self):
+        """
+        Lazy-loaded database that doesn't exist yet gets NOT_INITIALIZED status.
+
+        Given a lazy-loaded database file (search_config.db or file_content_limits.db)
+        When the database file doesn't exist yet
+        Then the health check returns NOT_INITIALIZED status instead of ERROR
+        """
+        from code_indexer.server.services.database_health_service import (
+            DatabaseHealthService,
+            DatabaseHealthStatus,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="cidx_lazy_test_") as tmp:
+            # Create non-existent path for lazy-loaded database
+            db_path = Path(tmp) / "search_config.db"
+
+            result = DatabaseHealthService.check_database_health(
+                str(db_path), display_name="Search Config"
+            )
+
+            assert result.status == DatabaseHealthStatus.NOT_INITIALIZED
+            assert result.checks["connect"].passed is False
+            assert (
+                result.checks["connect"].error_message == "Not initialized (optional)"
+            )
+
+    def test_lazy_loaded_database_initialized_is_healthy(self):
+        """
+        Lazy-loaded database that exists and is healthy gets HEALTHY status.
+
+        Given a lazy-loaded database file (search_config.db)
+        When the database file exists and all checks pass
+        Then the health check returns HEALTHY status
+        """
+        from code_indexer.server.services.database_health_service import (
+            DatabaseHealthService,
+            DatabaseHealthStatus,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="cidx_lazy_test_") as tmp:
+            # Create lazy-loaded database
+            db_path = Path(tmp) / "search_config.db"
+            with sqlite3.connect(str(db_path)) as conn:
+                conn.execute("CREATE TABLE config (id INTEGER PRIMARY KEY)")
+                conn.commit()
+
+            result = DatabaseHealthService.check_database_health(
+                str(db_path), display_name="Search Config"
+            )
+
+            assert result.status == DatabaseHealthStatus.HEALTHY
+            assert result.checks["connect"].passed is True
+
+    def test_non_lazy_database_missing_is_error(self):
+        """
+        Non-lazy-loaded database that doesn't exist gets ERROR status.
+
+        Given a non-lazy-loaded database (e.g., oauth.db)
+        When the database file doesn't exist
+        Then the health check returns ERROR status (not NOT_INITIALIZED)
+        """
+        from code_indexer.server.services.database_health_service import (
+            DatabaseHealthService,
+            DatabaseHealthStatus,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="cidx_lazy_test_") as tmp:
+            # Create non-existent path for non-lazy database
+            db_path = Path(tmp) / "oauth.db"
+
+            result = DatabaseHealthService.check_database_health(
+                str(db_path), display_name="OAuth"
+            )
+
+            assert result.status == DatabaseHealthStatus.ERROR
+            assert result.checks["connect"].passed is False
+            assert "file not found" in result.checks["connect"].error_message
+
+    def test_lazy_loaded_database_tooltip(self):
+        """
+        Lazy-loaded database tooltip shows 'Not initialized (optional)'.
+
+        Given a lazy-loaded database that doesn't exist yet
+        When get_tooltip() is called
+        Then it shows the display name, path, and 'Not initialized (optional)'
+        """
+        from code_indexer.server.services.database_health_service import (
+            DatabaseHealthService,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="cidx_lazy_test_") as tmp:
+            db_path = Path(tmp) / "file_content_limits.db"
+
+            result = DatabaseHealthService.check_database_health(
+                str(db_path), display_name="File Limits"
+            )
+
+            tooltip = result.get_tooltip()
+            assert "File Limits" in tooltip
+            assert str(db_path) in tooltip
+            assert "Not initialized (optional)" in tooltip
+
+    def test_both_lazy_databases_defined(self):
+        """
+        Verify both lazy-loaded databases are defined in LAZY_LOADED_DATABASES.
+
+        This test documents which databases are lazy-loaded and ensures
+        they're properly configured in the constant.
+        """
+        from code_indexer.server.services.database_health_service import (
+            LAZY_LOADED_DATABASES,
+        )
+
+        assert "search_config.db" in LAZY_LOADED_DATABASES
+        assert "file_content_limits.db" in LAZY_LOADED_DATABASES
+        assert len(LAZY_LOADED_DATABASES) == 2

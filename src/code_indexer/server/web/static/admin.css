@@ -837,6 +837,10 @@ button.danger, .button.danger {
     fill: #ef4444;
 }
 
+.hexagon.hex-not-initialized {
+    fill: #94a3b8;
+}
+
 /* AC2/AC3: Hover effect for tooltips (title attribute provides native tooltip) */
 .honeycomb-svg polygon.hexagon:hover {
     stroke-width: 2;
@@ -885,6 +889,10 @@ button.danger, .button.danger {
 
 .legend-dot.error {
     background-color: #ef4444;
+}
+
+.legend-dot.not-initialized {
+    background-color: #94a3b8;
 }
 
 /* ==========================================================================

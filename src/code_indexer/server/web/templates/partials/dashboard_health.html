@@ -39,7 +39,7 @@
                 {% set col = i % 4 %}
                 {% set x = 35 + col * 55 %}
                 {% set y = 40 + row * 65 %}
-                {% set status_class = 'healthy' if db.status.value == 'healthy' else ('warning' if db.status.value == 'warning' else 'error') %}
+                {% set status_class = 'healthy' if db.status.value == 'healthy' else ('warning' if db.status.value == 'warning' else ('not-initialized' if db.status.value == 'not_initialized' else 'error')) %}
                 <g class="hexagon-group" transform="translate({{ x }}, {{ y }})">
                     <polygon class="hexagon hex-{{ status_class }}"
                              points="25,0 50,15 50,45 25,60 0,45 0,15">
@@ -55,6 +55,7 @@
                 <span class="legend-item"><span class="legend-dot healthy"></span>Healthy</span>
                 <span class="legend-item"><span class="legend-dot warning"></span>Warning</span>
                 <span class="legend-item"><span class="legend-dot error"></span>Error</span>
+                <span class="legend-item"><span class="legend-dot not-initialized"></span>Not Initialized</span>
             </div>
             {% else %}
             <div class="status-content">

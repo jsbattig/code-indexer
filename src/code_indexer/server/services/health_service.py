@@ -80,7 +80,9 @@ class HealthCheckService:
             # CPU history for sustained threshold detection (Story #727 AC4)
             # List of (timestamp, cpu_percent) tuples for rolling 60s window
             self._cpu_history: List[Tuple[float, float]] = []
-            self._cpu_history_lock = threading.Lock()  # Thread safety for concurrent requests
+            self._cpu_history_lock = (
+                threading.Lock()
+            )  # Thread safety for concurrent requests
 
         except Exception as e:
             logger.error(
@@ -379,6 +381,9 @@ class HealthCheckService:
                             f"{db_result.display_name} DB: {check.error_message or check_name}"
                         )
                         break
+            # NOT_INITIALIZED and HEALTHY statuses don't affect overall health
+            # NOT_INITIALIZED databases are lazy-loaded and optional (not yet created)
+            # HEALTHY databases are fully operational
 
         return has_warning, has_error, reasons
 
@@ -491,15 +496,13 @@ class HealthCheckService:
         readings_60s = [c for t, c in history_snapshot]
 
         # Degraded: CPU >95% sustained for 30+ seconds
-        is_degraded = (
-            len(readings_30s) >= MIN_CPU_READINGS_FOR_DEGRADED
-            and all(c > CPU_SUSTAINED_THRESHOLD for c in readings_30s)
+        is_degraded = len(readings_30s) >= MIN_CPU_READINGS_FOR_DEGRADED and all(
+            c > CPU_SUSTAINED_THRESHOLD for c in readings_30s
         )
 
         # Unhealthy: CPU >95% sustained for 60+ seconds
-        is_unhealthy = (
-            len(readings_60s) >= MIN_CPU_READINGS_FOR_UNHEALTHY
-            and all(c > CPU_SUSTAINED_THRESHOLD for c in readings_60s)
+        is_unhealthy = len(readings_60s) >= MIN_CPU_READINGS_FOR_UNHEALTHY and all(
+            c > CPU_SUSTAINED_THRESHOLD for c in readings_60s
         )
 
         return is_degraded, is_unhealthy
@@ -532,7 +535,9 @@ class HealthCheckService:
         failure_reasons.extend(db_reasons)
 
         # AC2: Volume health
-        vol_warn, vol_err, vol_reasons = self._collect_volume_failures(system_info.volumes)
+        vol_warn, vol_err, vol_reasons = self._collect_volume_failures(
+            system_info.volumes
+        )
         has_warning = has_warning or vol_warn
         has_error = has_error or vol_err
         failure_reasons.extend(vol_reasons)
@@ -568,7 +573,9 @@ class HealthCheckService:
         # AC5: Limit to MAX_FAILURE_REASONS with "+N more" indicator
         if len(failure_reasons) > MAX_FAILURE_REASONS:
             extra_count = len(failure_reasons) - MAX_FAILURE_REASONS
-            failure_reasons = failure_reasons[:MAX_FAILURE_REASONS] + [f"+{extra_count} more"]
+            failure_reasons = failure_reasons[:MAX_FAILURE_REASONS] + [
+                f"+{extra_count} more"
+            ]
 
         return status, failure_reasons
 
